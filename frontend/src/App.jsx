@@ -8,7 +8,7 @@ import CalendarCard from './components/CalendarCard'
 import ChatPanel from './components/ChatPanel'
 import SkeletonCard from './components/SkeletonCard'
 
-const API = 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const SAMPLE_TRANSCRIPT = `Sarah: Alright everyone, let's get started. Today we need to finalize the Q2 roadmap and discuss the upcoming product launch.
 
