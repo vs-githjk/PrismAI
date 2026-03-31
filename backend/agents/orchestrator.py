@@ -12,7 +12,7 @@ SYSTEM_PROMPT = (
     'Only include sentiment if there\'s tension or conflict.'
 )
 
-ALL_AGENTS = ["summarizer", "action_items", "sentiment", "email_drafter", "calendar_suggester"]
+ALL_AGENTS = ["summarizer", "action_items", "sentiment", "email_drafter", "calendar_suggester", "health_score"]
 
 
 def _strip_fences(text: str) -> str:
@@ -54,9 +54,11 @@ async def run_orchestrator(transcript: str) -> list[str]:
             data = json.loads(_strip_fences(raw2))
 
         agents = data.get("agents", ALL_AGENTS)
-        # Always ensure summarizer is included
+        # Always ensure core agents are included
         if "summarizer" not in agents:
             agents.insert(0, "summarizer")
+        if "health_score" not in agents:
+            agents.append("health_score")
         return agents
     except Exception:
         # fail open — run all agents

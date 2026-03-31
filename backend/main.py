@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import AsyncGroq
 
-from agents import orchestrator, summarizer, action_items, sentiment, email_drafter, calendar_suggester
+from agents import orchestrator, summarizer, action_items, sentiment, email_drafter, calendar_suggester, health_score
 
 app = FastAPI(title="Agentic Meeting Copilot")
 
@@ -28,6 +28,7 @@ AGENT_MAP = {
     "sentiment": sentiment.run,
     "email_drafter": email_drafter.run,
     "calendar_suggester": calendar_suggester.run,
+    "health_score": health_score.run,
 }
 
 DEFAULT_RESULT = {
@@ -36,6 +37,7 @@ DEFAULT_RESULT = {
     "sentiment": {"overall": "neutral", "score": 50, "notes": ""},
     "follow_up_email": {"subject": "", "body": ""},
     "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": ""},
+    "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
     "agents_run": [],
 }
 
@@ -83,8 +85,25 @@ async def analyze(req: AnalyzeRequest):
             result["follow_up_email"] = agent_result.get("follow_up_email", DEFAULT_RESULT["follow_up_email"])
         elif agent_name == "calendar_suggester":
             result["calendar_suggestion"] = agent_result.get("calendar_suggestion", DEFAULT_RESULT["calendar_suggestion"])
+        elif agent_name == "health_score":
+            result["health_score"] = agent_result.get("health_score", DEFAULT_RESULT["health_score"])
 
     return result
+
+
+@app.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Max 25MB.")
+    try:
+        transcription = await groq_client.audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=(file.filename, content, file.content_type or "audio/mpeg"),
+        )
+        return {"transcript": transcription.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
 
 @app.post("/chat")

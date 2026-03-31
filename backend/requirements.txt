@@ -4,3 +4,4 @@ groq
 python-dotenv
 httpx
 pydantic
+python-multipart
