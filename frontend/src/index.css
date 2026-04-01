@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Core animations ─────────────────────────────────────────── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -13,8 +14,8 @@
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 10px rgba(139,92,246,0.4); }
-  50%       { box-shadow: 0 0 28px rgba(139,92,246,0.7), 0 0 50px rgba(236,72,153,0.25); }
+  0%, 100% { box-shadow: 0 0 10px rgba(6,182,212,0.4); }
+  50%       { box-shadow: 0 0 28px rgba(6,182,212,0.7), 0 0 50px rgba(14,165,233,0.25); }
 }
 
 @keyframes float {
@@ -37,12 +38,45 @@
   from { width: 0%; }
 }
 
+/* ── Prism animations ────────────────────────────────────────── */
+@keyframes prism-drift-1 {
+  0%, 100% { transform: translate(0px, 0px) rotate(0deg);   opacity: 0.07; }
+  33%       { transform: translate(28px, -38px) rotate(20deg);  opacity: 0.12; }
+  66%       { transform: translate(-18px, 24px) rotate(-11deg); opacity: 0.08; }
+}
+
+@keyframes prism-drift-2 {
+  0%, 100% { transform: translate(0px, 0px) rotate(0deg);    opacity: 0.06; }
+  40%       { transform: translate(-32px, 22px) rotate(-16deg); opacity: 0.1; }
+  75%       { transform: translate(24px, -30px) rotate(13deg);  opacity: 0.07; }
+}
+
+@keyframes prism-drift-3 {
+  0%, 100% { transform: translate(0px, 0px) rotate(0deg);    opacity: 0.05; }
+  50%       { transform: translate(18px, 28px) rotate(-22deg); opacity: 0.09; }
+}
+
+@keyframes ray-pulse {
+  0%, 100% { opacity: 0.04; }
+  50%       { opacity: 0.11; }
+}
+
+@keyframes spectrum-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+
+/* ── Animation utility classes ───────────────────────────────── */
 .animate-fade-in-up  { animation: fadeInUp 0.45s ease-out both; }
 .animate-glow-pulse  { animation: glow-pulse 2.5s ease-in-out infinite; }
 .animate-float       { animation: float 3.2s ease-in-out infinite; }
 .animate-spin-slow   { animation: spin-slow 3s linear infinite; }
 .animate-orb-drift   { animation: orb-drift 10s ease-in-out infinite; }
 .animate-bar-grow    { animation: bar-grow 1s ease-out both; }
+.animate-prism-1     { animation: prism-drift-1 20s ease-in-out infinite; }
+.animate-prism-2     { animation: prism-drift-2 25s ease-in-out infinite; }
+.animate-prism-3     { animation: prism-drift-3 18s ease-in-out infinite; }
+.animate-ray-pulse   { animation: ray-pulse 4s ease-in-out infinite; }
 
 .card-delay-0 { animation-delay: 0s; }
 .card-delay-1 { animation-delay: 0.07s; }
@@ -51,32 +85,42 @@
 .card-delay-4 { animation-delay: 0.28s; }
 .card-delay-5 { animation-delay: 0.35s; }
 
-/* Vivid gradient headline text */
+/* ── Ocean prism gradient text ───────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(120deg, #38bdf8 0%, #a78bfa 45%, #f472b6 100%);
+  background: linear-gradient(120deg, #38bdf8 0%, #06b6d4 40%, #0d9488 100%);
+  background-size: 200% 200%;
+  animation: spectrum-shift 6s ease-in-out infinite;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Card glass surface */
+/* ── Card glass surface ──────────────────────────────────────── */
 .glass-card {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(14, 165, 233, 0.1);
 }
 
-/* Glowing colored card borders */
-.card-glow-violet  { box-shadow: 0 0 0 1px rgba(139,92,246,0.25), 0 8px 32px rgba(139,92,246,0.08); }
-.card-glow-cyan    { box-shadow: 0 0 0 1px rgba(6,182,212,0.25),  0 8px 32px rgba(6,182,212,0.08); }
-.card-glow-emerald { box-shadow: 0 0 0 1px rgba(16,185,129,0.25), 0 8px 32px rgba(16,185,129,0.08); }
-.card-glow-pink    { box-shadow: 0 0 0 1px rgba(236,72,153,0.25), 0 8px 32px rgba(236,72,153,0.08); }
-.card-glow-amber   { box-shadow: 0 0 0 1px rgba(245,158,11,0.25), 0 8px 32px rgba(245,158,11,0.08); }
-.card-glow-indigo  { box-shadow: 0 0 0 1px rgba(99,102,241,0.25), 0 8px 32px rgba(99,102,241,0.08); }
+/* ── Ocean card glows ────────────────────────────────────────── */
+.card-glow-cyan    { box-shadow: 0 0 0 1px rgba(6,182,212,0.25),   0 8px 32px rgba(6,182,212,0.08); }
+.card-glow-sky     { box-shadow: 0 0 0 1px rgba(14,165,233,0.25),  0 8px 32px rgba(14,165,233,0.08); }
+.card-glow-teal    { box-shadow: 0 0 0 1px rgba(20,184,166,0.25),  0 8px 32px rgba(20,184,166,0.08); }
+.card-glow-emerald { box-shadow: 0 0 0 1px rgba(16,185,129,0.25),  0 8px 32px rgba(16,185,129,0.08); }
+.card-glow-amber   { box-shadow: 0 0 0 1px rgba(245,158,11,0.25),  0 8px 32px rgba(245,158,11,0.08); }
+.card-glow-blue    { box-shadow: 0 0 0 1px rgba(59,130,246,0.25),  0 8px 32px rgba(59,130,246,0.08); }
 
-/* Scrollbar */
+/* ── Prism background shapes ─────────────────────────────────── */
+.prism-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar       { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.55); }
-
+::-webkit-scrollbar-thumb { background: rgba(6,182,212,0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(6,182,212,0.55); }
