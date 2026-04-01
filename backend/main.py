@@ -158,9 +158,38 @@ async def join_meeting(req: JoinMeetingRequest):
 
 @app.get("/bot-status/{bot_id}")
 async def bot_status(bot_id: str):
-    entry = bot_store.get(bot_id)
-    if not entry:
+    # Always check Recall.ai directly for live status
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{RECALL_API_BASE}/bot/{bot_id}/",
+            headers={"Authorization": f"Token {RECALL_API_KEY}"},
+            timeout=10,
+        )
+
+    if resp.status_code != 200:
         raise HTTPException(status_code=404, detail="Bot not found")
+
+    recall_data = resp.json()
+    recall_status = recall_data.get("status_changes", [{}])[-1].get("code", "") if recall_data.get("status_changes") else ""
+
+    # Map Recall status to our simplified states
+    status_map = {
+        "joining_call": "joining",
+        "in_call_not_recording": "joining",
+        "in_call_recording": "recording",
+        "call_ended": "processing",
+        "done": "done",
+        "fatal_error": "error",
+    }
+    our_status = status_map.get(recall_status, bot_store.get(bot_id, {}).get("status", "joining"))
+
+    # If call ended and we haven't processed yet, kick off processing
+    if recall_status in ("call_ended", "done") and bot_id not in bot_store:
+        bot_store[bot_id] = {"status": "processing", "result": None, "error": None}
+        asyncio.create_task(_process_bot_transcript(bot_id))
+
+    entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None})
+    entry["status"] = our_status if entry.get("status") not in ("done", "error") else entry["status"]
     return entry
 
 
