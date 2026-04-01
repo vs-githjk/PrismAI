@@ -184,10 +184,66 @@ export default function App() {
   const [transcribing, setTranscribing] = useState(false)
   const fileInputRef = useRef(null)
 
+  // Join Meeting state
+  const [inputTab, setInputTab] = useState('paste') // 'paste' | 'join'
+  const [meetingUrl, setMeetingUrl] = useState('')
+  const [botId, setBotId] = useState(null)
+  const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
+  const [botError, setBotError] = useState(null)
+  const pollRef = useRef(null)
+
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem('meeting-history') || '[]') } catch { return [] }
   })
   const [showHistory, setShowHistory] = useState(false)
+
+  const joinMeeting = async () => {
+    if (!meetingUrl.trim()) return
+    setBotError(null)
+    setBotStatus('joining')
+    setBotId(null)
+    try {
+      const res = await fetch(`${API}/join-meeting`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_url: meetingUrl }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
+      const data = await res.json()
+      setBotId(data.bot_id)
+      setBotStatus(data.status)
+      startPolling(data.bot_id)
+    } catch (e) {
+      setBotStatus('error')
+      setBotError(e.message)
+    }
+  }
+
+  const startPolling = (id) => {
+    clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/bot-status/${id}`)
+        if (!res.ok) return
+        const data = await res.json()
+        setBotStatus(data.status)
+        if (data.status === 'done') {
+          clearInterval(pollRef.current)
+          if (data.transcript) setTranscript(data.transcript)
+          if (data.result) {
+            setResult(data.result)
+            saveToHistory(data.transcript || '', data.result)
+          }
+        } else if (data.status === 'error') {
+          clearInterval(pollRef.current)
+          setBotError(data.error || 'Bot encountered an error')
+        }
+      } catch { /* network hiccup, keep polling */ }
+    }, 4000)
+  }
+
+  // Clean up poll on unmount
+  useEffect(() => () => clearInterval(pollRef.current), [])
 
   const saveToHistory = (t, r) => {
     const entry = {
@@ -401,72 +457,160 @@ export default function App() {
 
           {/* Transcript card */}
           <div className="mx-6 mb-4 rounded-2xl overflow-hidden" style={CARD_STYLE}>
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-300">Meeting Transcript</span>
-              <button onClick={() => setTranscript(SAMPLE_TRANSCRIPT)}
-                className="text-[11px] px-2.5 py-1 rounded-lg transition-colors"
-                style={{ background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.2)' }}>
-                Load sample
-              </button>
-            </div>
 
-            {/* Toolbar */}
-            <div className="px-4 pb-2 flex items-center gap-2 flex-wrap">
-              {micSupported && (
-                <button onClick={recording ? stopRecording : startRecording}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${recording ? 'animate-pulse' : ''}`}
-                  style={recording
-                    ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5' }
-                    : { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
-                  <svg className="w-3.5 h-3.5" fill={recording ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                  </svg>
-                  {recording ? 'Stop' : 'Record'}
+            {/* Tabs */}
+            <div className="flex px-4 pt-3 pb-0 gap-1">
+              {[
+                { id: 'paste', label: 'Paste / Record' },
+                { id: 'join',  label: 'Join Meeting' },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setInputTab(tab.id)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+                  style={inputTab === tab.id
+                    ? { background: 'rgba(139,92,246,0.2)', color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.35)' }
+                    : { background: 'transparent', color: '#6b7280', border: '1px solid transparent' }}>
+                  {tab.label}
+                </button>
+              ))}
+              {inputTab === 'paste' && (
+                <button onClick={() => setTranscript(SAMPLE_TRANSCRIPT)}
+                  className="ml-auto text-[11px] px-2.5 py-1 rounded-lg transition-colors"
+                  style={{ background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.2)' }}>
+                  Load sample
                 </button>
               )}
-
-              <button onClick={() => fileInputRef.current?.click()} disabled={transcribing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
-                {transcribing ? (
-                  <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Transcribing...</>
-                ) : (
-                  <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6v6m0 0v6m0-6h.01M9.172 16.172a4 4 0 015.656 0M6.343 9.343a8 8 0 0111.314 0" /></svg>Upload Audio</>
-                )}
-              </button>
-              <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" className="hidden" onChange={handleAudioUpload} />
-
-              {recording && (
-                <span className="text-[11px] text-red-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>Listening
-                </span>
-              )}
             </div>
 
-            <div className="px-4 pb-4">
-              <textarea
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Paste transcript, record, or upload audio..."
-                rows={8}
-                className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 transition-colors"
-                style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
-              />
-              <div className="flex items-center justify-between mt-3">
-                <span className="text-[11px] text-gray-600">
-                  {transcript.length > 0 ? `${transcript.split(/\s+/).filter(Boolean).length} words` : 'No transcript'}
-                </span>
-                <button onClick={analyze} disabled={!transcript.trim() || loading}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
-                  style={{ background: 'linear-gradient(135deg, #7c3aed, #db2777)', boxShadow: '0 4px 20px rgba(124,58,237,0.35)' }}>
-                  {loading ? (
-                    <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>
+            {inputTab === 'paste' ? (<>
+              {/* Toolbar */}
+              <div className="px-4 pt-2 pb-2 flex items-center gap-2 flex-wrap">
+                {micSupported && (
+                  <button onClick={recording ? stopRecording : startRecording}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${recording ? 'animate-pulse' : ''}`}
+                    style={recording
+                      ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5' }
+                      : { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
+                    <svg className="w-3.5 h-3.5" fill={recording ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    {recording ? 'Stop' : 'Record'}
+                  </button>
+                )}
+
+                <button onClick={() => fileInputRef.current?.click()} disabled={transcribing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
+                  {transcribing ? (
+                    <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Transcribing...</>
                   ) : (
-                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>
+                    <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6v6m0 0v6m0-6h.01M9.172 16.172a4 4 0 015.656 0M6.343 9.343a8 8 0 0111.314 0" /></svg>Upload Audio</>
                   )}
                 </button>
+                <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" className="hidden" onChange={handleAudioUpload} />
+
+                {recording && (
+                  <span className="text-[11px] text-red-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>Listening
+                  </span>
+                )}
               </div>
-            </div>
+
+              <div className="px-4 pb-4">
+                <textarea
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  placeholder="Paste transcript, record, or upload audio..."
+                  rows={8}
+                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 transition-colors"
+                  style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
+                />
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-[11px] text-gray-600">
+                    {transcript.length > 0 ? `${transcript.split(/\s+/).filter(Boolean).length} words` : 'No transcript'}
+                  </span>
+                  <button onClick={analyze} disabled={!transcript.trim() || loading}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ background: 'linear-gradient(135deg, #7c3aed, #db2777)', boxShadow: '0 4px 20px rgba(124,58,237,0.35)' }}>
+                    {loading ? (
+                      <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>
+                    ) : (
+                      <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </>) : (
+              /* Join Meeting tab */
+              <div className="px-4 pt-3 pb-4">
+                <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
+                  Paste a Zoom, Google Meet, or Teams link. PrismAI will join the meeting, record, and automatically analyze it when it ends.
+                </p>
+                <input
+                  type="url"
+                  value={meetingUrl}
+                  onChange={(e) => setMeetingUrl(e.target.value)}
+                  placeholder="https://zoom.us/j/... or meet.google.com/..."
+                  className="w-full rounded-xl px-3 py-2.5 text-xs text-gray-300 outline-none"
+                  style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
+                  disabled={botStatus && !['done', 'error'].includes(botStatus)}
+                />
+
+                {/* Status indicator */}
+                {botStatus && !['done', 'error'].includes(botStatus) && (
+                  <div className="mt-3 flex items-center gap-2 px-3 py-2.5 rounded-xl animate-fade-in-up"
+                    style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)' }}>
+                    <svg className="w-3.5 h-3.5 text-violet-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <div>
+                      <p className="text-[11px] font-medium text-violet-300">
+                        {botStatus === 'joining'    && 'Bot is joining the meeting...'}
+                        {botStatus === 'recording'  && 'Bot is recording...'}
+                        {botStatus === 'processing' && 'Meeting ended — analyzing transcript...'}
+                      </p>
+                      {botStatus === 'recording' && (
+                        <p className="text-[10px] text-gray-600 mt-0.5">Results will appear automatically when the meeting ends</p>
+                      )}
+                    </div>
+                    {botStatus === 'recording' && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></span>
+                    )}
+                  </div>
+                )}
+
+                {botStatus === 'error' && botError && (
+                  <div className="mt-3 px-3 py-2.5 rounded-xl text-[11px] text-red-300 animate-fade-in-up"
+                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                    {botError}
+                  </div>
+                )}
+
+                {botStatus === 'done' && (
+                  <div className="mt-3 px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up"
+                    style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Analysis complete — results are ready
+                  </div>
+                )}
+
+                <button
+                  onClick={botStatus && !['done', 'error'].includes(botStatus) ? undefined : joinMeeting}
+                  disabled={!meetingUrl.trim() || (botStatus && !['done', 'error'].includes(botStatus))}
+                  className="mt-3 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed, #0891b2)', boxShadow: '0 4px 20px rgba(124,58,237,0.3)' }}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {botStatus === 'joining'    ? 'Joining...' :
+                   botStatus === 'recording'  ? 'Recording...' :
+                   botStatus === 'processing' ? 'Processing...' :
+                   'Join Meeting'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Chat panel */}

@@ -9,5 +9,9 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      - key: RECALL_API_KEY
+        sync: false
+      - key: WEBHOOK_BASE_URL
+        value: https://meeting-copilot-api.onrender.com
       - key: PYTHON_VERSION
         value: 3.11.0
