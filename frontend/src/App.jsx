@@ -157,13 +157,22 @@ function AgentPipelineLoader() {
 // ── Empty state for right panel ──────────────────────────────────
 function EmptyState() {
   const [active, setActive] = useState(null)
+  const gridRef = useRef(null)
+
+  useEffect(() => {
+    if (!active) return
+    const handler = (e) => { if (!gridRef.current?.contains(e.target)) setActive(null) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [active])
+
   return (
     <div className="flex flex-col items-center justify-center h-full gap-8 px-10 py-16">
       <div className="text-center">
         <h2 className="text-2xl font-bold gradient-text mb-2">Ready to analyze</h2>
         <p className="text-gray-500 text-sm max-w-sm">Paste a transcript, record live audio, or upload an audio file — then hit Analyze Meeting.</p>
       </div>
-      <div className="grid grid-cols-4 gap-3 w-full max-w-2xl">
+      <div ref={gridRef} className="grid grid-cols-4 gap-3 w-full max-w-2xl">
         {AGENTS_META.map((a) => {
           const isActive = active === a.id
           return (
@@ -668,13 +677,18 @@ export default function App() {
                 )}
 
                 {botStatus === 'done' && (
-                  <div className="mt-3 px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up"
+                  <button
+                    onClick={() => document.getElementById('mobile-results')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="mt-3 w-full px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up cursor-pointer hover:bg-emerald-500/10 transition-colors"
                     style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
                     <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    Analysis complete — results are ready
-                  </div>
+                    Analysis complete — tap to see results
+                    <svg className="w-3 h-3 ml-auto flex-shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
                 )}
 
                 <button
@@ -757,7 +771,7 @@ export default function App() {
         </div>
 
         {/* Mobile results (below input) */}
-        <div className="lg:hidden w-full overflow-y-auto">
+        <div id="mobile-results" className="lg:hidden w-full overflow-y-auto">
           {loading && (
             <div className="h-80"><AgentPipelineLoader /></div>
           )}
