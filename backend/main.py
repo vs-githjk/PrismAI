@@ -149,6 +149,10 @@ async def join_meeting(req: JoinMeetingRequest):
     data = resp.json()
     bot_id = data["id"]
     bot_store[bot_id] = {"status": "joining", "result": None, "error": None}
+
+    # Send intro message once bot joins
+    asyncio.create_task(_send_bot_intro(bot_id))
+
     return {"bot_id": bot_id, "status": "joining"}
 
 
@@ -195,6 +199,24 @@ async def recall_webhook(request: Request):
         bot_store[bot_id]["error"] = "Bot encountered a fatal error"
 
     return {"ok": True}
+
+
+async def _send_bot_intro(bot_id: str):
+    """Wait for bot to join then send an intro message in the meeting chat."""
+    await asyncio.sleep(20)  # Give the bot time to join before messaging
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{RECALL_API_BASE}/bot/{bot_id}/send_chat_message/",
+                headers={
+                    "Authorization": f"Token {RECALL_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"message": "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."},
+                timeout=10,
+            )
+    except Exception:
+        pass  # Non-critical — don't affect main flow
 
 
 async def _process_bot_transcript(bot_id: str):
