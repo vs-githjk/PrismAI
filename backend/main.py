@@ -24,7 +24,7 @@ app.add_middleware(
 groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = "https://us-east-1.recall.ai/api/v1"
+RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
 
 # In-memory store: bot_id → { status, result, error, transcript }
