@@ -52,6 +52,15 @@ const AGENTS_META = [
   { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
 ]
 
+function extractSpeakers(transcript) {
+  const matches = transcript.match(/^([A-Z][a-zA-Z\s]{1,30}?):/gm) || []
+  const names = [...new Set(matches.map(m => m.replace(/:$/, '').trim()))]
+  return names
+    .filter(n => !/^speaker\s*\d+$/i.test(n))
+    .slice(0, 10)
+    .map(name => ({ name, role: '' }))
+}
+
 const BG_STYLE = {
   background: 'transparent',
 }
@@ -229,6 +238,9 @@ export default function App() {
   })
   const [showHistory, setShowHistory] = useState(false)
 
+  const [showSpeakerModal, setShowSpeakerModal] = useState(false)
+  const [speakers, setSpeakers] = useState([])
+
   const joinMeeting = async () => {
     if (!meetingUrl.trim()) return
     setBotError(null)
@@ -345,16 +357,24 @@ export default function App() {
     }
   }
 
-  const analyze = async () => {
+  const handleAnalyzeClick = () => {
     if (!transcript.trim()) return
+    const detected = extractSpeakers(transcript)
+    setSpeakers(detected.length > 0 ? detected : [{ name: '', role: '' }])
+    setShowSpeakerModal(true)
+  }
+
+  const runAnalysis = async (speakersParam) => {
+    setShowSpeakerModal(false)
     setLoading(true)
     setError(null)
     setResult(null)
+    const validSpeakers = speakersParam.filter(s => s.name.trim())
     try {
       const res = await fetch(`${API}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript, speakers: validSpeakers }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Server error ${res.status}`)
       const data = await res.json()
@@ -388,6 +408,72 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={BG_STYLE}>
+
+      {/* ── Speaker identification modal ── */}
+      {showSpeakerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up"
+            style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)' }}>
+
+            {/* Modal header */}
+            <div className="px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <h3 className="text-sm font-semibold text-white">Who was in this meeting?</h3>
+              <p className="text-[11px] text-gray-500 mt-0.5">Add roles so agents can attribute output correctly. Optional — skip to analyze without.</p>
+            </div>
+
+            {/* Speaker rows */}
+            <div className="px-5 py-4 space-y-2 max-h-64 overflow-y-auto">
+              {speakers.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={s.name}
+                    onChange={e => setSpeakers(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    placeholder="Name"
+                    className="w-32 flex-shrink-0 text-xs text-gray-200 rounded-lg px-3 py-2 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
+                    style={{ background: 'rgba(0,0,0,0.3)' }}
+                  />
+                  <input
+                    value={s.role}
+                    onChange={e => setSpeakers(prev => prev.map((x, j) => j === i ? { ...x, role: e.target.value } : x))}
+                    placeholder="Role (e.g. Engineering Lead)"
+                    className="flex-1 text-xs text-gray-200 rounded-lg px-3 py-2 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
+                    style={{ background: 'rgba(0,0,0,0.3)' }}
+                  />
+                  <button onClick={() => setSpeakers(prev => prev.filter((_, j) => j !== i))}
+                    className="text-gray-700 hover:text-red-400 transition-colors flex-shrink-0">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setSpeakers(prev => [...prev, { name: '', role: '' }])}
+                className="text-[11px] text-sky-500 hover:text-sky-400 transition-colors mt-1">
+                + Add person
+              </button>
+            </div>
+
+            {/* Modal footer */}
+            <div className="px-5 py-3 flex items-center justify-end gap-2"
+              style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+              <button
+                onClick={() => runAnalysis([])}
+                className="px-4 py-2 rounded-xl text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                style={{ background: 'rgba(255,255,255,0.05)' }}>
+                Skip
+              </button>
+              <button
+                onClick={() => runAnalysis(speakers)}
+                className="px-4 py-2 rounded-xl text-xs text-white font-medium transition-all hover:scale-105"
+                style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+                Analyze
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <header className="app-content flex-shrink-0 flex items-center justify-between px-6 py-3"
@@ -561,7 +647,7 @@ export default function App() {
                   <span className="text-[11px] text-gray-600">
                     {transcript.length > 0 ? `${transcript.split(/\s+/).filter(Boolean).length} words` : 'No transcript'}
                   </span>
-                  <button onClick={analyze} disabled={!transcript.trim() || loading}
+                  <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
                     style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
                     {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
@@ -591,7 +677,7 @@ export default function App() {
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center mt-3">
                       <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
-                      <button onClick={analyze} disabled={!transcript.trim() || loading}
+                      <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
                         style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
                         {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
@@ -625,7 +711,7 @@ export default function App() {
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center mt-3">
                       <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
-                      <button onClick={analyze} disabled={!transcript.trim() || loading}
+                      <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
                         style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
                         {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}

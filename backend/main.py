@@ -54,6 +54,7 @@ DEFAULT_RESULT = {
 
 class AnalyzeRequest(BaseModel):
     transcript: str
+    speakers: list = []
 
 
 class ChatRequest(BaseModel):
@@ -71,11 +72,21 @@ async def analyze(req: AnalyzeRequest):
     if not req.transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
-    agents_to_run = await orchestrator.run_orchestrator(req.transcript)
+    transcript = req.transcript
+    if req.speakers:
+        lines = ["Meeting participants:"]
+        for s in req.speakers:
+            name = (s.get("name") or "").strip()
+            role = (s.get("role") or "").strip()
+            if name:
+                lines.append(f"  - {name}: {role}" if role else f"  - {name}")
+        transcript = "\n".join(lines) + "\n\n" + transcript
+
+    agents_to_run = await orchestrator.run_orchestrator(transcript)
 
     # Run selected agents in parallel
     valid_agents = [a for a in agents_to_run if a in AGENT_MAP]
-    tasks = [AGENT_MAP[agent](req.transcript) for agent in valid_agents]
+    tasks = [AGENT_MAP[agent](transcript) for agent in valid_agents]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     result = dict(DEFAULT_RESULT)
