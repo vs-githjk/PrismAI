@@ -43,13 +43,13 @@ Sarah: Excellent. I think we're in good shape. Thanks everyone.`
 
 // ROYGBIV — white = transcript/orchestrator input, then splits into 7 agent colors
 const AGENTS_META = [
-  { id: 'summarizer',         label: 'Summarizer',    icon: '📝', grad: 'from-red-500 to-rose-600' },
-  { id: 'action_items',       label: 'Action Items',  icon: '✅', grad: 'from-orange-400 to-orange-600' },
-  { id: 'decisions',          label: 'Decisions',     icon: '⚖️', grad: 'from-yellow-400 to-yellow-600' },
-  { id: 'sentiment',          label: 'Sentiment',     icon: '💬', grad: 'from-green-400 to-emerald-600' },
-  { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-400 to-blue-600' },
-  { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-400 to-indigo-600' },
-  { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-400 to-violet-600' },
+  { id: 'summarizer',         label: 'Summarizer',    icon: '📝', grad: 'from-red-400 to-rose-400' },
+  { id: 'action_items',       label: 'Action Items',  icon: '✅', grad: 'from-orange-300 to-amber-400' },
+  { id: 'decisions',          label: 'Decisions',     icon: '⚖️', grad: 'from-yellow-300 to-yellow-400' },
+  { id: 'sentiment',          label: 'Sentiment',     icon: '💬', grad: 'from-green-300 to-emerald-400' },
+  { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-300 to-sky-400' },
+  { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-300 to-indigo-400' },
+  { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-300 to-purple-400' },
 ]
 
 const BG_STYLE = {
@@ -380,7 +380,7 @@ export default function App() {
               </button>
 
               {showHistory && (
-                <div className="absolute right-0 top-10 w-80 rounded-2xl shadow-2xl z-30 overflow-hidden animate-fade-in-up"
+                <div className="absolute right-0 top-10 w-80 rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
                   style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
                   <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                     <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
@@ -443,7 +443,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold"
             style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.2), rgba(6,182,212,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
-            6 agents
+            7 agents
           </div>
         </div>
       </header>
@@ -457,10 +457,10 @@ export default function App() {
           {/* Hero blurb */}
           <div className="px-6 pt-6 pb-4">
             <h1 className="text-xl font-bold text-white leading-snug">
-              <span className="gradient-text">PrismAI</span> — one transcript,<br />six dimensions of clarity.
+              <span className="gradient-text">PrismAI</span> — one transcript,<br />seven dimensions of clarity.
             </h1>
             <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-              Orchestrator routes your transcript to 6 parallel AI agents in real time.
+              Orchestrator routes your transcript to 7 parallel AI agents in real time.
             </p>
           </div>
 

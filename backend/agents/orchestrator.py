@@ -7,10 +7,9 @@ client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 SYSTEM_PROMPT = (
     'You are a meeting analysis orchestrator. Read this transcript and decide which agents are needed. '
     'Return ONLY valid JSON: { "agents": [...], "reasoning": "" }. '
-    'Always include summarizer and action_items and email_drafter and decisions. '
+    'Always include: summarizer, action_items, email_drafter, decisions, health_score. '
     'Only include calendar_suggester if a follow-up meeting was discussed. '
-    'Only include sentiment if there\'s tension or conflict. '
-    'Only include decisions if any explicit decisions or agreements were made.'
+    'Only include sentiment if there is tension, conflict, or strong emotion.'
 )
 
 ALL_AGENTS = ["summarizer", "action_items", "decisions", "sentiment", "email_drafter", "calendar_suggester", "health_score"]
@@ -58,6 +57,8 @@ async def run_orchestrator(transcript: str) -> list[str]:
         # Always ensure core agents are included
         if "summarizer" not in agents:
             agents.insert(0, "summarizer")
+        if "decisions" not in agents:
+            agents.append("decisions")
         if "health_score" not in agents:
             agents.append("health_score")
         return agents
