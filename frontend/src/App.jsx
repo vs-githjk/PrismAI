@@ -208,6 +208,8 @@ export default function App() {
   const [error, setError] = useState(null)
 
   const [sessionId, setSessionId] = useState(0)
+  const [meetingId, setMeetingId] = useState(null)
+  const [initialMessages, setInitialMessages] = useState([])
   const [recording, setRecording] = useState(false)
   const recognitionRef = useRef(null)
   const micSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
@@ -275,8 +277,9 @@ export default function App() {
   useEffect(() => () => clearInterval(pollRef.current), [])
 
   const saveToHistory = (t, r) => {
+    const id = Date.now()
     const entry = {
-      id: Date.now(),
+      id,
       date: new Date().toISOString(),
       transcript: t,
       result: r,
@@ -286,11 +289,16 @@ export default function App() {
     const updated = [entry, ...history].slice(0, 8)
     setHistory(updated)
     localStorage.setItem('meeting-history', JSON.stringify(updated))
+    setMeetingId(id)
   }
 
   const loadFromHistory = (entry) => {
     setTranscript(entry.transcript)
     setResult(entry.result)
+    setMeetingId(entry.id)
+    const saved = localStorage.getItem(`chat-${entry.id}`)
+    setInitialMessages(saved ? JSON.parse(saved) : [])
+    setSessionId(s => s + 1)
     setShowHistory(false)
   }
 
@@ -721,7 +729,7 @@ export default function App() {
               </div>
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
             </div>
-            <ChatPanel key={sessionId} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
+            <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
           </div>
         </div>
 

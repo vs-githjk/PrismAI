@@ -5,10 +5,9 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const SUGGESTED_QUESTIONS = [
   'What were the key decisions?',
   'Who owns what?',
-  'What\'s the timeline?',
+  "What's the timeline?",
 ]
 
-// Detect if the user wants to re-run an agent
 function detectAgentIntent(msg) {
   const m = msg.toLowerCase()
   if (/redraft|rewrite|redo|revise|formal|casual|shorter|longer/.test(m) && /email/.test(m)) return 'email_drafter'
@@ -21,15 +20,50 @@ function detectAgentIntent(msg) {
   return null
 }
 
-export default function ChatPanel({ transcript, result, onResultUpdate }) {
-  const [messages, setMessages] = useState([])
+function getChatHistory() {
+  try {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('chat-'))
+    const meetingHistory = JSON.parse(localStorage.getItem('meeting-history') || '[]')
+    return keys
+      .map(k => {
+        const id = parseInt(k.replace('chat-', ''))
+        const msgs = JSON.parse(localStorage.getItem(k) || '[]')
+        if (!msgs.length) return null
+        const meeting = meetingHistory.find(m => m.id === id)
+        return { id, msgs, title: meeting?.title || 'Meeting', date: meeting?.date || null }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 8)
+  } catch { return [] }
+}
+
+export default function ChatPanel({ meetingId, initialMessages = [], transcript, result, onResultUpdate }) {
+  const [messages, setMessages] = useState(initialMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const historyRef = useRef(null)
   const bottomRef = useRef(null)
+
+  // Persist messages whenever they change
+  useEffect(() => {
+    if (meetingId && messages.length > 0) {
+      localStorage.setItem(`chat-${meetingId}`, JSON.stringify(messages))
+    }
+  }, [messages, meetingId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Close history dropdown on outside click
+  useEffect(() => {
+    if (!showHistory) return
+    const h = (e) => { if (!historyRef.current?.contains(e.target)) setShowHistory(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [showHistory])
 
   const send = async (text) => {
     const msg = (text || input).trim()
@@ -43,7 +77,6 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
 
     try {
       if (agentIntent) {
-        // Re-run the specific agent with the user's instruction as extra context
         const res = await fetch(`${API}/agent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -52,7 +85,6 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
         if (!res.ok) throw new Error('Agent call failed')
         const data = await res.json()
 
-        // Update the relevant result card
         const agentKey = {
           email_drafter: 'follow_up_email',
           action_items: 'action_items',
@@ -67,14 +99,13 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
           onResultUpdate({ [agentKey]: data[agentKey] })
           setMessages((prev) => [...prev, {
             role: 'assistant',
-            content: `Done — I've updated the ${agentIntent.replace('_', ' ')} card with your changes.`,
+            content: `Done — I've updated the ${agentIntent.replace(/_/g, ' ')} card with your changes.`,
             agentUpdated: agentIntent,
           }])
         } else {
           throw new Error('No result')
         }
       } else {
-        // Regular chat
         const res = await fetch(`${API}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -92,11 +123,10 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
   }
 
   const handleKey = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
+
+  const chatHistory = getChatHistory()
 
   return (
     <div className="rounded-2xl border border-white/8 overflow-hidden flex flex-col" style={{ background: 'rgba(255,255,255,0.03)', height: '360px' }}>
@@ -115,9 +145,71 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
             agent-aware
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/8">
-          <div className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></div>
-          <span className="text-[10px] text-gray-500">llama-3.3-70b</span>
+
+        <div className="ml-auto flex items-center gap-2">
+          {/* Chat history button */}
+          {chatHistory.length > 0 && (
+            <div className="relative" ref={historyRef}>
+              <button
+                onClick={() => setShowHistory(v => !v)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] text-gray-400 hover:text-gray-200 transition-colors"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                History
+                <span className="w-3.5 h-3.5 rounded-full text-[9px] font-bold flex items-center justify-center"
+                  style={{ background: 'rgba(14,165,233,0.25)', color: '#7dd3fc' }}>{chatHistory.length}</span>
+              </button>
+
+              {showHistory && (
+                <div className="absolute right-0 top-8 w-72 rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
+                  style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div className="px-3 py-2.5 flex items-center justify-between"
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                    <span className="text-[11px] font-semibold text-gray-300">Past chats</span>
+                    <span className="text-[10px] text-gray-600">{chatHistory.length} session{chatHistory.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto">
+                    {chatHistory.map((session) => {
+                      const firstUser = session.msgs.find(m => m.role === 'user')
+                      const firstAssistant = session.msgs.find(m => m.role === 'assistant')
+                      return (
+                        <button
+                          key={session.id}
+                          onClick={() => { setMessages(session.msgs); setShowHistory(false) }}
+                          className="w-full text-left px-3 py-2.5 hover:bg-white/5 transition-colors"
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                        >
+                          <p className="text-[11px] font-medium text-gray-300 truncate">{session.title}</p>
+                          {firstUser && (
+                            <p className="text-[10px] text-gray-600 truncate mt-0.5">
+                              You: {firstUser.content}
+                            </p>
+                          )}
+                          {firstAssistant && (
+                            <p className="text-[10px] text-gray-700 truncate">
+                              AI: {firstAssistant.content}
+                            </p>
+                          )}
+                          <p className="text-[9px] text-gray-700 mt-1">
+                            {session.date ? new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                            · {session.msgs.length} message{session.msgs.length !== 1 ? 's' : ''}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/8">
+            <div className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></div>
+            <span className="text-[10px] text-gray-500">llama-3.3-70b</span>
+          </div>
         </div>
       </div>
 
