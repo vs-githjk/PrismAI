@@ -448,7 +448,7 @@ export default function App() {
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
                 placeholder="Paste transcript, record, or upload audio..."
-                rows={11}
+                rows={8}
                 className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 transition-colors"
                 style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
               />
