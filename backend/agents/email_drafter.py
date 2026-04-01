@@ -6,10 +6,11 @@ from fastapi import HTTPException
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
 SYSTEM_PROMPT = (
-    "You are a professional email drafter. Based on the meeting transcript, write a concise follow-up email "
+    "You are an email drafter. Based on the meeting transcript, write a follow-up email "
     "summarizing key decisions and action items. "
     'Return ONLY valid JSON: { "follow_up_email": { "subject": "", "body": "" } }. '
-    "The body should be professional and ready to send."
+    "If the transcript contains a [User instruction: ...] line, follow it exactly — "
+    "including any requested tone, style, length, or content changes."
 )
 
 

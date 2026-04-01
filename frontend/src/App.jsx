@@ -207,6 +207,7 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
 
+  const [sessionId, setSessionId] = useState(0)
   const [recording, setRecording] = useState(false)
   const recognitionRef = useRef(null)
   const micSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
@@ -257,6 +258,7 @@ export default function App() {
         if (data.status === 'done') {
           clearInterval(pollRef.current)
           setTranscript('')
+          setSessionId(s => s + 1)
           if (data.result) {
             setResult(data.result)
             saveToHistory(data.transcript || '', data.result)
@@ -458,7 +460,7 @@ export default function App() {
 
           {result && (
             <button
-              onClick={() => { setTranscript(''); setResult(null); setError(null) }}
+              onClick={() => { setTranscript(''); setResult(null); setError(null); setSessionId(s => s + 1) }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -719,7 +721,7 @@ export default function App() {
               </div>
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
             </div>
-            <ChatPanel transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
+            <ChatPanel key={sessionId} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
           </div>
         </div>
 
