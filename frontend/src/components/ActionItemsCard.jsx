@@ -9,8 +9,8 @@ export default function ActionItemsCard({ actionItems }) {
   const doneCount = Object.values(checked).filter(Boolean).length
 
   return (
-    <div className="rounded-2xl border border-white/8 overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)' }}>
-      <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #a855f7, #8b5cf6, transparent)' }}></div>
+    <div className="rounded-2xl overflow-hidden card-glow-violet" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)' }}>
+      <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #8b5cf6, #db2777, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">

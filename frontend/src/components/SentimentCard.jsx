@@ -36,7 +36,7 @@ export default function SentimentCard({ sentiment }) {
   const score = Math.max(0, Math.min(100, sentiment.score ?? 50))
 
   return (
-    <div className="rounded-2xl border border-white/8 overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)' }}>
+    <div className={`rounded-2xl overflow-hidden card-glow-amber`} style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
       <div className="h-0.5 w-full" style={{ background: config.accent }}></div>
       <div className="p-5">
         <div className="flex items-center gap-2 mb-4">

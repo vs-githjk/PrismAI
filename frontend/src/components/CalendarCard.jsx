@@ -2,8 +2,8 @@ export default function CalendarCard({ suggestion }) {
   if (!suggestion || !suggestion.recommended) return null
 
   return (
-    <div className="rounded-2xl border border-pink-500/20 overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)' }}>
-      <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #ec4899, #f472b6, transparent)' }}></div>
+    <div className="rounded-2xl overflow-hidden card-glow-pink" style={{ background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.22)' }}>
+      <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #ec4899, #a855f7, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center gap-2 mb-4">
           <div className="w-7 h-7 rounded-lg bg-pink-500/20 border border-pink-500/30 flex items-center justify-center">
