@@ -38,28 +38,6 @@
   from { width: 0%; }
 }
 
-/* ── Prism animations ────────────────────────────────────────── */
-@keyframes prism-drift-1 {
-  0%, 100% { transform: translate(0px, 0px) rotate(0deg);   opacity: 0.07; }
-  33%       { transform: translate(28px, -38px) rotate(20deg);  opacity: 0.12; }
-  66%       { transform: translate(-18px, 24px) rotate(-11deg); opacity: 0.08; }
-}
-
-@keyframes prism-drift-2 {
-  0%, 100% { transform: translate(0px, 0px) rotate(0deg);    opacity: 0.06; }
-  40%       { transform: translate(-32px, 22px) rotate(-16deg); opacity: 0.1; }
-  75%       { transform: translate(24px, -30px) rotate(13deg);  opacity: 0.07; }
-}
-
-@keyframes prism-drift-3 {
-  0%, 100% { transform: translate(0px, 0px) rotate(0deg);    opacity: 0.05; }
-  50%       { transform: translate(18px, 28px) rotate(-22deg); opacity: 0.09; }
-}
-
-@keyframes ray-pulse {
-  0%, 100% { opacity: 0.04; }
-  50%       { opacity: 0.11; }
-}
 
 @keyframes spectrum-shift {
   0%, 100% { background-position: 0% 50%; }
@@ -73,10 +51,6 @@
 .animate-spin-slow   { animation: spin-slow 3s linear infinite; }
 .animate-orb-drift   { animation: orb-drift 10s ease-in-out infinite; }
 .animate-bar-grow    { animation: bar-grow 1s ease-out both; }
-.animate-prism-1     { animation: prism-drift-1 20s ease-in-out infinite; }
-.animate-prism-2     { animation: prism-drift-2 25s ease-in-out infinite; }
-.animate-prism-3     { animation: prism-drift-3 18s ease-in-out infinite; }
-.animate-ray-pulse   { animation: ray-pulse 4s ease-in-out infinite; }
 
 .card-delay-0 { animation-delay: 0s; }
 .card-delay-1 { animation-delay: 0.07s; }
@@ -121,20 +95,6 @@ html, body {
   min-height: 100vh;
 }
 
-/* ── Prism background shapes ─────────────────────────────────── */
-.prism-bg {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  z-index: 0;
-}
-
-/* Content sits above prism layer */
-.app-content {
-  position: relative;
-  z-index: 1;
-}
 
 /* ── Scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar       { width: 4px; height: 4px; }

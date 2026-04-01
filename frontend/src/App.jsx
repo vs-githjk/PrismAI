@@ -95,61 +95,6 @@ function buildMarkdown(result) {
 }
 
 // ── Prism background ─────────────────────────────────────────────
-const PRISMS = [
-  { top: '8%',  left: '6%',  size: 180, color: 'rgba(6,182,212,0.35)',  glow: 'rgba(6,182,212,0.6)',   anim: 'prism-drift-1', delay: '0s' },
-  { top: '12%', left: '58%', size: 220, color: 'rgba(13,148,136,0.28)', glow: 'rgba(20,184,166,0.5)',  anim: 'prism-drift-2', delay: '2s' },
-  { top: '58%', left: '10%', size: 150, color: 'rgba(56,189,248,0.25)', glow: 'rgba(56,189,248,0.5)',  anim: 'prism-drift-3', delay: '1s' },
-  { top: '52%', left: '74%', size: 130, color: 'rgba(2,132,199,0.22)',  glow: 'rgba(14,165,233,0.45)', anim: 'prism-drift-1', delay: '5s' },
-  { top: '80%', left: '44%', size: 100, color: 'rgba(20,184,166,0.2)',  glow: 'rgba(6,182,212,0.4)',   anim: 'prism-drift-2', delay: '3s' },
-]
-
-const RAYS = [
-  { angle: 22, color: 'rgba(56,189,248,0.2)',  delay: '0s' },
-  { angle: 30, color: 'rgba(6,182,212,0.16)',  delay: '1s' },
-  { angle: 38, color: 'rgba(20,184,166,0.14)', delay: '2s' },
-  { angle: 15, color: 'rgba(14,165,233,0.18)', delay: '1.5s' },
-  { angle: 46, color: 'rgba(2,132,199,0.12)',  delay: '2.5s' },
-]
-
-function PrismBackground() {
-  return (
-    <div className="prism-bg">
-      {/* Floating prism triangles (clip-path divs — animate cleanly) */}
-      {PRISMS.map((p, i) => (
-        <div key={i} style={{
-          position: 'absolute',
-          top: p.top,
-          left: p.left,
-          width: p.size,
-          height: p.size * 0.87,
-          clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
-          background: `linear-gradient(160deg, ${p.color}, ${p.color.replace(/[\d.]+\)$/, '0.05)')})`,
-          animation: `${p.anim} ${18 + i * 3}s ease-in-out infinite`,
-          animationDelay: p.delay,
-          boxShadow: `0 0 40px ${p.glow}`,
-        }} />
-      ))}
-
-      {/* Spectrum light rays from top-left corner */}
-      {RAYS.map((r, i) => (
-        <div key={i} style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '70vw',
-          height: '2px',
-          background: `linear-gradient(90deg, ${r.color}, transparent)`,
-          transformOrigin: '0 0',
-          transform: `rotate(${r.angle}deg)`,
-          animation: `ray-pulse 4s ease-in-out infinite`,
-          animationDelay: r.delay,
-          borderRadius: '2px',
-        }} />
-      ))}
-    </div>
-  )
-}
-
 // ── Agent pipeline loader ────────────────────────────────────────
 function AgentPipelineLoader() {
   return (
@@ -398,7 +343,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={BG_STYLE}>
-      <PrismBackground />
 
       {/* ── Header ── */}
       <header className="app-content flex-shrink-0 flex items-center justify-between px-6 py-3"
