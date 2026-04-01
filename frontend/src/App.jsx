@@ -386,26 +386,51 @@ export default function App() {
                   </div>
                   <div className="max-h-72 overflow-y-auto">
                     {history.map((entry) => (
-                      <button key={entry.id} onClick={() => loadFromHistory(entry)}
-                        className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors group"
+                      <div key={entry.id} className="flex items-center group"
                         style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <div className="flex items-start gap-2">
-                          <p className="text-xs text-gray-300 group-hover:text-white flex-1 line-clamp-2">{entry.title}</p>
-                          {entry.score !== undefined && (
-                            <span className={`text-[11px] font-bold flex-shrink-0 ${entry.score >= 80 ? 'text-emerald-400' : entry.score >= 60 ? 'text-cyan-400' : entry.score >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
-                              {entry.score}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-gray-600 mt-1">
-                          {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </button>
+                        <button onClick={() => loadFromHistory(entry)}
+                          className="flex-1 text-left px-4 py-3 hover:bg-white/5 transition-colors">
+                          <div className="flex items-start gap-2">
+                            <p className="text-xs text-gray-300 group-hover:text-white flex-1 line-clamp-2">{entry.title}</p>
+                            {entry.score !== undefined && (
+                              <span className={`text-[11px] font-bold flex-shrink-0 ${entry.score >= 80 ? 'text-emerald-400' : entry.score >= 60 ? 'text-cyan-400' : entry.score >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                                {entry.score}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-gray-600 mt-1">
+                            {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const updated = history.filter(h => h.id !== entry.id)
+                            setHistory(updated)
+                            localStorage.setItem('meeting-history', JSON.stringify(updated))
+                          }}
+                          className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
+          )}
+
+          {result && (
+            <button
+              onClick={() => { setTranscript(''); setResult(null); setError(null) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Meeting
+            </button>
           )}
 
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] text-gray-400"
@@ -654,7 +679,7 @@ export default function App() {
               </div>
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
             </div>
-            <ChatPanel transcript={transcript} />
+            <ChatPanel transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
           </div>
         </div>
 

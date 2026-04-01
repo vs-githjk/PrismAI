@@ -311,6 +311,24 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["error"] = str(e)
 
 
+class AgentRequest(BaseModel):
+    agent: str
+    transcript: str
+    instruction: str = ""
+
+
+@app.post("/agent")
+async def run_agent(req: AgentRequest):
+    if req.agent not in AGENT_MAP:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {req.agent}")
+    # Append the user's instruction to the transcript as context
+    augmented = req.transcript
+    if req.instruction:
+        augmented += f"\n\n[User instruction: {req.instruction}]"
+    result = await AGENT_MAP[req.agent](augmented)
+    return result
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     context = ""
