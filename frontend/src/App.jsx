@@ -50,12 +50,12 @@ const AGENTS_META = [
 ]
 
 const BG_STYLE = {
-  background: '#020c18',
+  background: '#021220',
   backgroundImage: `
-    radial-gradient(ellipse 60% 50% at 10% 5%,  rgba(2,132,199,0.22)  0%, transparent 60%),
-    radial-gradient(ellipse 50% 40% at 90% 0%,  rgba(6,182,212,0.18)  0%, transparent 55%),
-    radial-gradient(ellipse 55% 45% at 80% 95%, rgba(20,184,166,0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 40% at 5%  90%, rgba(56,189,248,0.12) 0%, transparent 50%)
+    radial-gradient(ellipse 65% 55% at 10% 5%,  rgba(2,132,199,0.35)  0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 90% 0%,  rgba(6,182,212,0.28)  0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 80% 95%, rgba(20,184,166,0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 45% 45% at 5%  90%, rgba(56,189,248,0.2)  0%, transparent 50%)
   `,
 }
 
@@ -101,57 +101,58 @@ function buildMarkdown(result) {
 }
 
 // ── Prism background ─────────────────────────────────────────────
+const PRISMS = [
+  { top: '8%',  left: '6%',  size: 160, color: 'rgba(6,182,212,0.18)',  border: 'rgba(6,182,212,0.4)',  anim: 'prism-drift-1', delay: '0s' },
+  { top: '15%', left: '58%', size: 200, color: 'rgba(13,148,136,0.14)', border: 'rgba(20,184,166,0.35)', anim: 'prism-drift-2', delay: '2s' },
+  { top: '60%', left: '12%', size: 140, color: 'rgba(56,189,248,0.12)', border: 'rgba(56,189,248,0.3)',  anim: 'prism-drift-3', delay: '1s' },
+  { top: '55%', left: '72%', size: 110, color: 'rgba(2,132,199,0.1)',   border: 'rgba(14,165,233,0.25)', anim: 'prism-drift-1', delay: '5s' },
+  { top: '82%', left: '45%', size: 90,  color: 'rgba(20,184,166,0.09)', border: 'rgba(6,182,212,0.2)',   anim: 'prism-drift-2', delay: '3s' },
+]
+
+const RAYS = [
+  { angle: 22,  color: 'rgba(56,189,248,0.12)',  delay: '0s' },
+  { angle: 30,  color: 'rgba(6,182,212,0.09)',   delay: '1s' },
+  { angle: 38,  color: 'rgba(20,184,166,0.08)',  delay: '2s' },
+  { angle: 15,  color: 'rgba(14,165,233,0.1)',   delay: '1.5s' },
+  { angle: 46,  color: 'rgba(2,132,199,0.07)',   delay: '2.5s' },
+]
+
 function PrismBackground() {
   return (
     <div className="prism-bg">
-      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          <linearGradient id="pg1" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.04" />
-          </linearGradient>
-          <linearGradient id="pg2" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#0d9488" stopOpacity="0.14" />
-            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.04" />
-          </linearGradient>
-          <linearGradient id="pg3" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#0284c7" stopOpacity="0.03" />
-          </linearGradient>
-          <linearGradient id="pg4" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#0891b2" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.03" />
-          </linearGradient>
-        </defs>
+      {/* Floating prism triangles (clip-path divs — animate cleanly) */}
+      {PRISMS.map((p, i) => (
+        <div key={i} style={{
+          position: 'absolute',
+          top: p.top,
+          left: p.left,
+          width: p.size,
+          height: p.size * 0.87,
+          clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
+          background: `linear-gradient(160deg, ${p.color}, transparent)`,
+          border: 'none',
+          animation: `${p.anim} ${18 + i * 3}s ease-in-out infinite`,
+          animationDelay: p.delay,
+          filter: `drop-shadow(0 0 8px ${p.border})`,
+        }} />
+      ))}
 
-        {/* Floating prism triangles */}
-        <polygon className="animate-prism-1"
-          points="130,90 200,210 60,210"
-          fill="url(#pg1)" stroke="rgba(6,182,212,0.25)" strokeWidth="1"
-          style={{ transformOrigin: '130px 150px' }} />
-
-        <polygon className="animate-prism-2"
-          points="0,0 80,140 -80,140"
-          fill="url(#pg2)" stroke="rgba(20,184,166,0.2)" strokeWidth="1"
-          style={{ transformOrigin: '0px 70px', transform: 'translate(820px, 160px)' }} />
-
-        <polygon className="animate-prism-3"
-          points="0,0 90,155 -90,155"
-          fill="url(#pg3)" stroke="rgba(56,189,248,0.15)" strokeWidth="0.5"
-          style={{ transformOrigin: '0px 78px', transform: 'translate(220px, 580px)' }} />
-
-        <polygon className="animate-prism-1"
-          points="0,0 55,95 -55,95"
-          fill="url(#pg4)" stroke="rgba(6,182,212,0.12)" strokeWidth="0.5"
-          style={{ transformOrigin: '0px 48px', transform: 'translate(1100px, 380px)', animationDelay: '4s' }} />
-
-        {/* Spectrum light dispersion rays from top-left */}
-        <line x1="0" y1="0" x2="650" y2="280" stroke="rgba(56,189,248,0.07)"  strokeWidth="1.5" className="animate-ray-pulse" />
-        <line x1="0" y1="0" x2="520" y2="360" stroke="rgba(6,182,212,0.06)"   strokeWidth="1"   className="animate-ray-pulse" style={{ animationDelay: '0.8s' }} />
-        <line x1="0" y1="0" x2="420" y2="440" stroke="rgba(20,184,166,0.05)"  strokeWidth="1"   className="animate-ray-pulse" style={{ animationDelay: '1.6s' }} />
-        <line x1="0" y1="0" x2="720" y2="220" stroke="rgba(14,165,233,0.06)"  strokeWidth="1"   className="animate-ray-pulse" style={{ animationDelay: '2.4s' }} />
-        <line x1="0" y1="0" x2="350" y2="500" stroke="rgba(2,132,199,0.04)"   strokeWidth="0.5" className="animate-ray-pulse" style={{ animationDelay: '3.2s' }} />
-      </svg>
+      {/* Spectrum light rays from top-left corner */}
+      {RAYS.map((r, i) => (
+        <div key={i} style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '70vw',
+          height: '2px',
+          background: `linear-gradient(90deg, ${r.color}, transparent)`,
+          transformOrigin: '0 0',
+          transform: `rotate(${r.angle}deg)`,
+          animation: `ray-pulse 4s ease-in-out infinite`,
+          animationDelay: r.delay,
+          borderRadius: '2px',
+        }} />
+      ))}
     </div>
   )
 }
@@ -515,7 +516,7 @@ export default function App() {
             {/* Tabs */}
             <div className="flex px-4 pt-3 pb-0 gap-1">
               {[
-                { id: 'paste', label: 'Paste / Record' },
+                { id: 'paste', label: 'Paste / Upload' },
                 { id: 'join',  label: 'Join Meeting' },
               ].map(tab => (
                 <button key={tab.id} onClick={() => setInputTab(tab.id)}
