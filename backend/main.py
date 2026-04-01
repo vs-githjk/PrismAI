@@ -137,7 +137,6 @@ async def join_meeting(req: JoinMeetingRequest):
             json={
                 "meeting_url": req.meeting_url,
                 "bot_name": "PrismAI",
-                "transcription_options": {"provider": "assembly_ai"},
                 "webhook_url": webhook_url,
             },
             timeout=15,
