@@ -44,6 +44,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   const [loading, setLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
+  const [chatHistory, setChatHistory] = useState(() => getChatHistory())
   const historyRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -57,6 +58,11 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Refresh chat history when dropdown opens
+  useEffect(() => {
+    if (showHistory) setChatHistory(getChatHistory())
+  }, [showHistory])
 
   // Close history dropdown on outside click
   useEffect(() => {
@@ -142,7 +148,6 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
-  const chatHistory = getChatHistory()
 
   return (
     <div className="rounded-2xl border border-white/8 overflow-hidden flex flex-col" style={{ background: 'rgba(255,255,255,0.03)', height: '360px' }}>
@@ -192,28 +197,41 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                       const firstUser = session.msgs.find(m => m.role === 'user')
                       const firstAssistant = session.msgs.find(m => m.role === 'assistant')
                       return (
-                        <button
-                          key={session.id}
-                          onClick={() => { setViewingSession(session); setShowHistory(false) }}
-                          className="w-full text-left px-3 py-2.5 hover:bg-white/5 transition-colors"
-                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-                        >
-                          <p className="text-[11px] font-medium text-gray-300 truncate">{session.title}</p>
-                          {firstUser && (
-                            <p className="text-[10px] text-gray-600 truncate mt-0.5">
-                              You: {firstUser.content}
+                        <div key={session.id} className="group flex items-stretch"
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <button
+                            onClick={() => { setViewingSession(session); setShowHistory(false) }}
+                            className="flex-1 text-left px-3 py-2.5 hover:bg-white/5 transition-colors min-w-0"
+                          >
+                            <p className="text-[11px] font-medium text-gray-300 truncate">{session.title}</p>
+                            {firstUser && (
+                              <p className="text-[10px] text-gray-600 truncate mt-0.5">
+                                You: {firstUser.content}
+                              </p>
+                            )}
+                            {firstAssistant && (
+                              <p className="text-[10px] text-gray-700 truncate">
+                                AI: {firstAssistant.content}
+                              </p>
+                            )}
+                            <p className="text-[9px] text-gray-700 mt-1">
+                              {session.date ? new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                              · {session.msgs.length} message{session.msgs.length !== 1 ? 's' : ''}
                             </p>
-                          )}
-                          {firstAssistant && (
-                            <p className="text-[10px] text-gray-700 truncate">
-                              AI: {firstAssistant.content}
-                            </p>
-                          )}
-                          <p className="text-[9px] text-gray-700 mt-1">
-                            {session.date ? new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                            · {session.msgs.length} message{session.msgs.length !== 1 ? 's' : ''}
-                          </p>
-                        </button>
+                          </button>
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem(`chat-${session.id}`)
+                              setChatHistory(prev => prev.filter(s => s.id !== session.id))
+                              if (viewingSession?.id === session.id) setViewingSession(null)
+                            }}
+                            className="px-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
                       )
                     })}
                   </div>
