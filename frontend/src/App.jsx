@@ -3,6 +3,7 @@ import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
 import ActionItemsCard from './components/ActionItemsCard'
+import DecisionsCard from './components/DecisionsCard'
 import SentimentCard from './components/SentimentCard'
 import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
@@ -40,13 +41,15 @@ Mike: I'll loop in David from engineering to finalize specs. We'll get that done
 
 Sarah: Excellent. I think we're in good shape. Thanks everyone.`
 
+// ROYGBIV — white = transcript/orchestrator input, then splits into 7 agent colors
 const AGENTS_META = [
-  { id: 'summarizer',        label: 'Summarizer',    icon: '📝', grad: 'from-sky-500 to-blue-600' },
-  { id: 'action_items',      label: 'Action Items',  icon: '✅', grad: 'from-cyan-500 to-sky-500' },
-  { id: 'sentiment',         label: 'Sentiment',     icon: '💬', grad: 'from-amber-400 to-orange-500' },
-  { id: 'email_drafter',     label: 'Email Draft',   icon: '✉️', grad: 'from-emerald-400 to-teal-500' },
-  { id: 'calendar_suggester',label: 'Calendar',      icon: '📅', grad: 'from-teal-400 to-cyan-600' },
-  { id: 'health_score',      label: 'Health Score',  icon: '📊', grad: 'from-cyan-400 to-sky-500' },
+  { id: 'summarizer',         label: 'Summarizer',    icon: '📝', grad: 'from-red-500 to-rose-600' },
+  { id: 'action_items',       label: 'Action Items',  icon: '✅', grad: 'from-orange-400 to-orange-600' },
+  { id: 'decisions',          label: 'Decisions',     icon: '⚖️', grad: 'from-yellow-400 to-yellow-600' },
+  { id: 'sentiment',          label: 'Sentiment',     icon: '💬', grad: 'from-green-400 to-emerald-600' },
+  { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-400 to-blue-600' },
+  { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-400 to-indigo-600' },
+  { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-400 to-violet-600' },
 ]
 
 const BG_STYLE = {
@@ -102,8 +105,8 @@ function AgentPipelineLoader() {
       <div className="flex flex-col items-center gap-3 animate-fade-in-up card-delay-0">
         <div className="relative">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-glow-pulse"
-            style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.3), rgba(14,165,233,0.2))', border: '1px solid rgba(14,165,233,0.4)' }}>
-            <svg className="w-8 h-8 text-sky-400 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06))', border: '1px solid rgba(255,255,255,0.25)' }}>
+            <svg className="w-8 h-8 text-white/80 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
             </svg>
@@ -112,17 +115,17 @@ function AgentPipelineLoader() {
             style={{ borderColor: '#07040f' }}></span>
         </div>
         <div className="text-center">
-          <p className="font-semibold text-sky-300">Orchestrator</p>
+          <p className="font-semibold text-white/80">Orchestrator</p>
           <p className="text-xs text-gray-500 mt-0.5">LLaMA 3.3-70b · routing transcript</p>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-2 animate-fade-in-up card-delay-1">
-        <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(14,165,233,0.7), rgba(6,182,212,0.3))' }}></div>
-        <div className="text-xs text-gray-500 px-4 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          dispatching 6 agents in parallel
+        <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.4), rgba(255,255,255,0.15))' }}></div>
+        <div className="text-xs text-gray-400 px-4 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)' }}>
+          dispatching 7 agents in parallel
         </div>
-        <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(236,72,153,0.3), transparent)' }}></div>
+        <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)' }}></div>
       </div>
 
       <div className="grid grid-cols-3 gap-3 animate-fade-in-up card-delay-2">
@@ -137,7 +140,7 @@ function AgentPipelineLoader() {
       </div>
 
       <p className="text-xs text-gray-600 animate-fade-in-up card-delay-3 text-center">
-        Analyzing your meeting across 6 dimensions...
+        Analyzing your meeting across 7 dimensions...
       </p>
     </div>
   )
@@ -713,9 +716,10 @@ export default function App() {
                 <div className="animate-fade-in-up card-delay-2"><SentimentCard sentiment={result.sentiment} /></div>
               </div>
 
-              {/* Action items — full width */}
-              <div className="animate-fade-in-up card-delay-3">
-                <ActionItemsCard actionItems={result.action_items} />
+              {/* Action items + Decisions side by side */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} /></div>
+                <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
               </div>
 
               {/* Email + Calendar side by side */}
@@ -746,7 +750,8 @@ export default function App() {
               <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
               <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
               <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} /></div>
-              <div className="animate-fade-in-up card-delay-3"><SentimentCard sentiment={result.sentiment} /></div>
+              <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
+              <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
               <div className="animate-fade-in-up card-delay-4"><EmailCard email={result.follow_up_email} /></div>
               <div className="animate-fade-in-up card-delay-5"><CalendarCard suggestion={result.calendar_suggestion} /></div>
             </div>

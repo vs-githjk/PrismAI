@@ -7,12 +7,13 @@ client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 SYSTEM_PROMPT = (
     'You are a meeting analysis orchestrator. Read this transcript and decide which agents are needed. '
     'Return ONLY valid JSON: { "agents": [...], "reasoning": "" }. '
-    'Always include summarizer and action_items and email_drafter. '
+    'Always include summarizer and action_items and email_drafter and decisions. '
     'Only include calendar_suggester if a follow-up meeting was discussed. '
-    'Only include sentiment if there\'s tension or conflict.'
+    'Only include sentiment if there\'s tension or conflict. '
+    'Only include decisions if any explicit decisions or agreements were made.'
 )
 
-ALL_AGENTS = ["summarizer", "action_items", "sentiment", "email_drafter", "calendar_suggester", "health_score"]
+ALL_AGENTS = ["summarizer", "action_items", "decisions", "sentiment", "email_drafter", "calendar_suggester", "health_score"]
 
 
 def _strip_fences(text: str) -> str:

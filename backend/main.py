@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import AsyncGroq
 
-from agents import orchestrator, summarizer, action_items, sentiment, email_drafter, calendar_suggester, health_score
+from agents import orchestrator, summarizer, action_items, decisions, sentiment, email_drafter, calendar_suggester, health_score
 
 app = FastAPI(title="Agentic Meeting Copilot")
 
@@ -33,6 +33,7 @@ bot_store: dict = {}
 AGENT_MAP = {
     "summarizer": summarizer.run,
     "action_items": action_items.run,
+    "decisions": decisions.run,
     "sentiment": sentiment.run,
     "email_drafter": email_drafter.run,
     "calendar_suggester": calendar_suggester.run,
@@ -42,7 +43,8 @@ AGENT_MAP = {
 DEFAULT_RESULT = {
     "summary": "",
     "action_items": [],
-    "sentiment": {"overall": "neutral", "score": 50, "notes": ""},
+    "decisions": [],
+    "sentiment": {"overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": []},
     "follow_up_email": {"subject": "", "body": ""},
     "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": ""},
     "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
@@ -87,6 +89,8 @@ async def analyze(req: AnalyzeRequest):
             result["summary"] = agent_result.get("summary", "")
         elif agent_name == "action_items":
             result["action_items"] = agent_result.get("action_items", [])
+        elif agent_name == "decisions":
+            result["decisions"] = agent_result.get("decisions", [])
         elif agent_name == "sentiment":
             result["sentiment"] = agent_result.get("sentiment", DEFAULT_RESULT["sentiment"])
         elif agent_name == "email_drafter":
