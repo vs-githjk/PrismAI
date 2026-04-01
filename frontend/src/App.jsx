@@ -448,7 +448,7 @@ export default function App() {
           )}
 
           {/* Transcript card */}
-          <div className="mx-6 mb-4 rounded-2xl overflow-hidden" style={CARD_STYLE}>
+          <div className="mx-6 mb-4 rounded-2xl overflow-hidden card-breathe" style={CARD_STYLE}>
 
             {/* Input method dropdown */}
             <div className="px-4 pt-3 pb-2 flex items-center gap-2">
