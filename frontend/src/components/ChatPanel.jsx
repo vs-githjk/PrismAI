@@ -14,7 +14,7 @@ function detectAgentIntent(msg) {
   if (/redraft|rewrite|redo|revise|formal|casual|shorter|longer/.test(m) && /email/.test(m)) return 'email_drafter'
   if (/redo|regenerate|update|add|remove/.test(m) && /action item|task|owner|due/.test(m)) return 'action_items'
   if (/redo|regenerate|rewrite/.test(m) && /summar/.test(m)) return 'summarizer'
-  if (/redo|reschedule|suggest/.test(m) && /calendar|meeting|follow.up/.test(m)) return 'calendar_suggester'
+  if (/redo|reschedule|suggest|change|update|set|move|shift/.test(m) && /calendar|meeting|follow.up|date|week|month/.test(m)) return 'calendar_suggester'
   if (/redo|regenerate|update/.test(m) && /decision|decided|agreed/.test(m)) return 'decisions'
   return null
 }

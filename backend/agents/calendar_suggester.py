@@ -8,7 +8,8 @@ client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 SYSTEM_PROMPT = (
     "You are a calendar scheduling assistant. Based on the meeting transcript, determine if a follow-up meeting is needed. "
     'Return ONLY valid JSON: { "calendar_suggestion": { "recommended": true|false, "reason": "", "suggested_timeframe": "" } }. '
-    "If no follow-up is needed, set recommended to false and leave suggested_timeframe empty."
+    "If no follow-up is needed, set recommended to false and leave suggested_timeframe empty. "
+    "If the transcript contains a [User instruction: ...] line, follow it exactly — especially any specific date or timeframe the user requests."
 )
 
 
