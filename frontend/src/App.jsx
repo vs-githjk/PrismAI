@@ -512,7 +512,7 @@ export default function App() {
                   style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
                   <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                     <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
-                    <button onClick={() => { setHistory([]); localStorage.removeItem('meeting-history'); setShowHistory(false) }}
+                    <button onClick={() => { history.forEach(h => localStorage.removeItem(`chat-${h.id}`)); setHistory([]); localStorage.removeItem('meeting-history'); setShowHistory(false) }}
                       className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
                   </div>
                   <div className="max-h-72 overflow-y-auto">
@@ -538,6 +538,7 @@ export default function App() {
                             const updated = history.filter(h => h.id !== entry.id)
                             setHistory(updated)
                             localStorage.setItem('meeting-history', JSON.stringify(updated))
+                            localStorage.removeItem(`chat-${entry.id}`)
                           }}
                           className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
