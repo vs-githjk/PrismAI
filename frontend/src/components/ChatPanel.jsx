@@ -16,6 +16,8 @@ function detectAgentIntent(msg) {
   if (/redo|regenerate|rewrite/.test(m) && /summar/.test(m)) return 'summarizer'
   if (/redo|reschedule|suggest|change|update|set|move|shift/.test(m) && /calendar|meeting|follow.up|date|week|month/.test(m)) return 'calendar_suggester'
   if (/redo|regenerate|update/.test(m) && /decision|decided|agreed/.test(m)) return 'decisions'
+  if (/redo|regenerate|reanalyze|rerun/.test(m) && /sentiment|tone|mood|emotion/.test(m)) return 'sentiment'
+  if (/redo|regenerate|reanalyze|rerun/.test(m) && /health|score|quality/.test(m)) return 'health_score'
   return null
 }
 
@@ -57,6 +59,8 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
           decisions: 'decisions',
           summarizer: 'summary',
           calendar_suggester: 'calendar_suggestion',
+          sentiment: 'sentiment',
+          health_score: 'health_score',
         }[agentIntent]
 
         if (agentKey && data[agentKey] !== undefined) {

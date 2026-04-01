@@ -92,8 +92,8 @@ function buildMarkdown(result) {
     })
     md += '\n'
   }
-  if (result.sentiment) {
-    md += `## Sentiment: ${result.sentiment.overall} (${result.sentiment.score}/100)\n\n`
+  if (result.sentiment?.overall) {
+    md += `## Sentiment: ${result.sentiment.overall} (${result.sentiment.score ?? 50}/100)\n\n`
     if (result.sentiment.notes) md += `${result.sentiment.notes}\n\n`
   }
   if (result.follow_up_email?.subject) {

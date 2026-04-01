@@ -33,24 +33,33 @@ def _strip_fences(text: str) -> str:
 
 
 async def run(transcript: str) -> dict:
-    try:
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.1,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transcript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
-        data = json.loads(_strip_fences(raw))
-        return data
-    except Exception:
-        return {
-            "health_score": {
-                "score": 50,
-                "verdict": "Unable to analyze meeting quality.",
-                "badges": [],
-                "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
-            }
+    for attempt in range(2):
+        try:
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                temperature=0.1,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Transcript:\n{transcript}"},
+                ],
+            )
+            raw = response.choices[0].message.content
+            return json.loads(_strip_fences(raw))
+        except Exception:
+            if attempt == 1:
+                return {
+                    "health_score": {
+                        "score": 50,
+                        "verdict": "Unable to analyze meeting quality.",
+                        "badges": [],
+                        "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
+                    }
+                }
+    return {
+        "health_score": {
+            "score": 50,
+            "verdict": "Unable to analyze meeting quality.",
+            "badges": [],
+            "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
         }
+    }
