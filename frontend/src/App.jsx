@@ -50,13 +50,7 @@ const AGENTS_META = [
 ]
 
 const BG_STYLE = {
-  background: '#021220',
-  backgroundImage: `
-    radial-gradient(ellipse 65% 55% at 10% 5%,  rgba(2,132,199,0.35)  0%, transparent 60%),
-    radial-gradient(ellipse 55% 45% at 90% 0%,  rgba(6,182,212,0.28)  0%, transparent 55%),
-    radial-gradient(ellipse 60% 50% at 80% 95%, rgba(20,184,166,0.22) 0%, transparent 55%),
-    radial-gradient(ellipse 45% 45% at 5%  90%, rgba(56,189,248,0.2)  0%, transparent 50%)
-  `,
+  background: 'transparent',
 }
 
 const PANEL_STYLE = {
@@ -513,70 +507,41 @@ export default function App() {
           {/* Transcript card */}
           <div className="mx-6 mb-4 rounded-2xl overflow-hidden" style={CARD_STYLE}>
 
-            {/* Tabs */}
-            <div className="flex px-4 pt-3 pb-0 gap-1">
-              {[
-                { id: 'paste', label: 'Paste / Upload' },
-                { id: 'join',  label: 'Join Meeting' },
-              ].map(tab => (
-                <button key={tab.id} onClick={() => setInputTab(tab.id)}
-                  className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
-                  style={inputTab === tab.id
-                    ? { background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.3)' }
-                    : { background: 'transparent', color: '#6b7280', border: '1px solid transparent' }}>
-                  {tab.label}
-                </button>
-              ))}
-              {inputTab === 'paste' && (
+            {/* Input method dropdown */}
+            <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+              <div className="relative flex-1">
+                <select
+                  value={inputTab}
+                  onChange={(e) => setInputTab(e.target.value)}
+                  className="w-full rounded-lg px-3 py-2 text-xs font-medium outline-none appearance-none cursor-pointer pr-7"
+                  style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)', color: '#7dd3fc' }}>
+                  <option value="paste">Paste Transcript</option>
+                  {micSupported && <option value="record">Record Audio</option>}
+                  <option value="upload">Upload Audio</option>
+                  <option value="join">Join Meeting</option>
+                </select>
+                <svg className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              {inputTab !== 'join' && (
                 <button onClick={() => setTranscript(SAMPLE_TRANSCRIPT)}
-                  className="ml-auto text-[11px] px-2.5 py-1 rounded-lg transition-colors"
-                  style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                  className="text-[11px] px-2.5 py-2 rounded-lg transition-colors flex-shrink-0"
+                  style={{ background: 'rgba(14,165,233,0.08)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.15)' }}>
                   Load sample
                 </button>
               )}
             </div>
 
-            {inputTab === 'paste' ? (<>
-              {/* Toolbar */}
-              <div className="px-4 pt-2 pb-2 flex items-center gap-2 flex-wrap">
-                {micSupported && (
-                  <button onClick={recording ? stopRecording : startRecording}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${recording ? 'animate-pulse' : ''}`}
-                    style={recording
-                      ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5' }
-                      : { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
-                    <svg className="w-3.5 h-3.5" fill={recording ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                    {recording ? 'Stop' : 'Record'}
-                  </button>
-                )}
-
-                <button onClick={() => fileInputRef.current?.click()} disabled={transcribing}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
-                  {transcribing ? (
-                    <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Transcribing...</>
-                  ) : (
-                    <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6v6m0 0v6m0-6h.01M9.172 16.172a4 4 0 015.656 0M6.343 9.343a8 8 0 0111.314 0" /></svg>Upload Audio</>
-                  )}
-                </button>
-                <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" className="hidden" onChange={handleAudioUpload} />
-
-                {recording && (
-                  <span className="text-[11px] text-red-400 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>Listening
-                  </span>
-                )}
-              </div>
-
+            {/* Paste Transcript */}
+            {inputTab === 'paste' && (
               <div className="px-4 pb-4">
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  placeholder="Paste transcript, record, or upload audio..."
+                  placeholder="Paste your meeting transcript here..."
                   rows={8}
-                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 transition-colors"
+                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700"
                   style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
                 />
                 <div className="flex items-center justify-between mt-3">
@@ -586,15 +551,82 @@ export default function App() {
                   <button onClick={analyze} disabled={!transcript.trim() || loading}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
                     style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
-                    {loading ? (
-                      <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>
-                    ) : (
-                      <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>
-                    )}
+                    {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                   </button>
                 </div>
               </div>
-            </>) : (
+            )}
+
+            {/* Record Audio */}
+            {inputTab === 'record' && (
+              <div className="px-4 pb-4">
+                <p className="text-[11px] text-gray-500 mb-3">Speak and your words will appear in the transcript below. Hit Analyze when done.</p>
+                <button onClick={recording ? stopRecording : startRecording}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all mb-3 ${recording ? 'animate-pulse' : ''}`}
+                  style={recording
+                    ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5' }
+                    : { background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.3)', color: '#fff' }}>
+                  <svg className="w-4 h-4" fill={recording ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                  {recording ? <><span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />Stop Recording</> : 'Start Recording'}
+                </button>
+                {transcript ? (
+                  <>
+                    <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed"
+                      style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
+                    <div className="flex justify-between items-center mt-3">
+                      <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
+                      <button onClick={analyze} disabled={!transcript.trim() || loading}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
+                        style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
+                        {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-gray-700 text-center py-4">Transcript will appear here as you speak</p>
+                )}
+              </div>
+            )}
+
+            {/* Upload Audio */}
+            {inputTab === 'upload' && (
+              <div className="px-4 pb-4">
+                <p className="text-[11px] text-gray-500 mb-3">Upload an audio file and Whisper will transcribe it automatically. Supports mp3, wav, m4a, ogg, webm — max 25MB.</p>
+                <button onClick={() => fileInputRef.current?.click()} disabled={transcribing}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 mb-3 hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.3)' }}>
+                  {transcribing ? (
+                    <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Transcribing with Whisper...</>
+                  ) : (
+                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>Choose Audio File</>
+                  )}
+                </button>
+                <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" className="hidden" onChange={handleAudioUpload} />
+                {transcript ? (
+                  <>
+                    <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed"
+                      style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
+                    <div className="flex justify-between items-center mt-3">
+                      <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
+                      <button onClick={analyze} disabled={!transcript.trim() || loading}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
+                        style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
+                        {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-gray-700 text-center py-4">Transcript will appear here after upload</p>
+                )}
+              </div>
+            )}
+
+            {/* Join Meeting — was previously inline below */}
+            {inputTab === 'join' && (
               /* Join Meeting tab */
               <div className="px-4 pt-3 pb-4">
                 <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">

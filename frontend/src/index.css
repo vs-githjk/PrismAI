@@ -110,13 +110,24 @@
 .card-glow-amber   { box-shadow: 0 0 0 1px rgba(245,158,11,0.25),  0 8px 32px rgba(245,158,11,0.08); }
 .card-glow-blue    { box-shadow: 0 0 0 1px rgba(59,130,246,0.25),  0 8px 32px rgba(59,130,246,0.08); }
 
+/* ── Page background (applied to body so prism shapes layer above it) ── */
+html, body {
+  background: #021220;
+  background-image:
+    radial-gradient(ellipse 65% 55% at 10% 5%,  rgba(2,132,199,0.38)  0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 90% 0%,  rgba(6,182,212,0.3)   0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 80% 95%, rgba(20,184,166,0.25) 0%, transparent 55%),
+    radial-gradient(ellipse 45% 45% at 5%  90%, rgba(56,189,248,0.22) 0%, transparent 50%);
+  min-height: 100vh;
+}
+
 /* ── Prism background shapes ─────────────────────────────────── */
 .prism-bg {
   position: fixed;
   inset: 0;
   pointer-events: none;
   overflow: hidden;
-  z-index: 0;
+  z-index: -1;
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────── */
