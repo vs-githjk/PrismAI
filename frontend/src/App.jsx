@@ -84,6 +84,14 @@ function buildMarkdown(result) {
     })
     md += '\n'
   }
+  if (result.decisions?.length) {
+    md += `## Decisions\n\n`
+    result.decisions.forEach(d => {
+      const imp = d.importance === 1 ? 'Critical' : d.importance === 2 ? 'Significant' : 'Minor'
+      md += `- **${d.decision}**${d.owner && d.owner !== 'Team' ? ` *(${d.owner})*` : ''} — ${imp}\n`
+    })
+    md += '\n'
+  }
   if (result.sentiment) {
     md += `## Sentiment: ${result.sentiment.overall} (${result.sentiment.score}/100)\n\n`
     if (result.sentiment.notes) md += `${result.sentiment.notes}\n\n`
@@ -128,7 +136,7 @@ function AgentPipelineLoader() {
         <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)' }}></div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 animate-fade-in-up card-delay-2">
+      <div className="grid grid-cols-4 gap-3 animate-fade-in-up card-delay-2">
         {AGENTS_META.map((a, i) => (
           <div key={a.id} className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl animate-pulse"
             style={{ animationDelay: `${i * 0.18}s`, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -154,7 +162,7 @@ function EmptyState() {
         <h2 className="text-2xl font-bold gradient-text mb-2">Ready to analyze</h2>
         <p className="text-gray-500 text-sm max-w-sm">Paste a transcript, record live audio, or upload an audio file — then hit Analyze Meeting.</p>
       </div>
-      <div className="grid grid-cols-3 gap-4 w-full max-w-md">
+      <div className="grid grid-cols-4 gap-4 w-full max-w-lg">
         {AGENTS_META.map((a) => (
           <div key={a.id} className="flex flex-col items-center gap-2 p-4 rounded-2xl"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>

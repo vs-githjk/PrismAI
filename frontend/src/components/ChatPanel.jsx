@@ -15,6 +15,7 @@ function detectAgentIntent(msg) {
   if (/redo|regenerate|update|add|remove/.test(m) && /action item|task|owner|due/.test(m)) return 'action_items'
   if (/redo|regenerate|rewrite/.test(m) && /summar/.test(m)) return 'summarizer'
   if (/redo|reschedule|suggest/.test(m) && /calendar|meeting|follow.up/.test(m)) return 'calendar_suggester'
+  if (/redo|regenerate|update/.test(m) && /decision|decided|agreed/.test(m)) return 'decisions'
   return null
 }
 
@@ -53,6 +54,7 @@ export default function ChatPanel({ transcript, result, onResultUpdate }) {
         const agentKey = {
           email_drafter: 'follow_up_email',
           action_items: 'action_items',
+          decisions: 'decisions',
           summarizer: 'summary',
           calendar_suggester: 'calendar_suggestion',
         }[agentIntent]

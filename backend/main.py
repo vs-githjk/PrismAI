@@ -298,6 +298,8 @@ async def _process_bot_transcript(bot_id: str):
                 result["summary"] = agent_result.get("summary", "")
             elif agent_name == "action_items":
                 result["action_items"] = agent_result.get("action_items", [])
+            elif agent_name == "decisions":
+                result["decisions"] = agent_result.get("decisions", [])
             elif agent_name == "sentiment":
                 result["sentiment"] = agent_result.get("sentiment", DEFAULT_RESULT["sentiment"])
             elif agent_name == "email_drafter":
