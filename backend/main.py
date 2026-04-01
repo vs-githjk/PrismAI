@@ -255,13 +255,22 @@ async def _send_bot_intro(bot_id: str):
 async def _process_bot_transcript(bot_id: str):
     """Fetch transcript from Recall.ai and run it through the agent pipeline."""
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{RECALL_API_BASE}/bot/{bot_id}/transcript/",
-                headers={"Authorization": f"Token {RECALL_API_KEY}"},
-                timeout=30,
-            )
-        if resp.status_code != 200:
+        # Give Recall.ai time to finalize the transcript after call ends
+        await asyncio.sleep(5)
+
+        resp = None
+        for attempt in range(5):
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{RECALL_API_BASE}/bot/{bot_id}/transcript/",
+                    headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                    timeout=30,
+                )
+            if resp.status_code == 200:
+                break
+            await asyncio.sleep(5 * (attempt + 1))  # 5s, 10s, 15s, 20s backoff
+
+        if resp is None or resp.status_code != 200:
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = "Failed to fetch transcript from Recall.ai"
             return
