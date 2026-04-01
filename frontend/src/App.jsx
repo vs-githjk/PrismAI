@@ -224,7 +224,7 @@ export default function App() {
         setBotStatus(data.status)
         if (data.status === 'done') {
           clearInterval(pollRef.current)
-          if (data.transcript) setTranscript(data.transcript)
+          setTranscript('')
           if (data.result) {
             setResult(data.result)
             saveToHistory(data.transcript || '', data.result)
