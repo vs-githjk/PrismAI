@@ -70,7 +70,7 @@ const CARD_STYLE = {
 }
 
 // ── Generate markdown ───────────────────────────────────────────
-function buildMarkdown(transcript, result) {
+function buildMarkdown(result) {
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const h = result.health_score
   let md = `# Meeting Summary — ${date}\n\n`
@@ -276,7 +276,7 @@ export default function App() {
 
   const exportMarkdown = () => {
     if (!result) return
-    const md = buildMarkdown(transcript, result)
+    const md = buildMarkdown(result)
     const blob = new Blob([md], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -308,8 +308,8 @@ export default function App() {
             </svg>
           </div>
           <div>
-            <span className="text-sm font-bold gradient-text">Agentic Meeting Copilot</span>
-            <span className="hidden sm:inline text-[10px] text-gray-600 ml-2">multi-agent AI pipeline</span>
+            <span className="text-sm font-bold gradient-text">PrismAI</span>
+            <span className="hidden sm:inline text-[10px] text-gray-600 ml-2">meeting intelligence</span>
           </div>
         </div>
 
@@ -381,8 +381,7 @@ export default function App() {
           {/* Hero blurb */}
           <div className="px-6 pt-6 pb-4">
             <h1 className="text-xl font-bold text-white leading-snug">
-              Turn meetings into<br />
-              <span className="gradient-text">structured intelligence.</span>
+              <span className="gradient-text">PrismAI</span> — one transcript,<br />six dimensions of clarity.
             </h1>
             <p className="text-xs text-gray-500 mt-2 leading-relaxed">
               Orchestrator routes your transcript to 6 parallel AI agents in real time.

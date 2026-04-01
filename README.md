@@ -1,6 +1,8 @@
-ww# Agentic Meeting Copilot
+# PrismAI — Meeting Intelligence
 
-Multi-agent AI that transforms meeting transcripts into summaries, action items, sentiment analysis, follow-up emails, and calendar suggestions — powered by Groq + Llama 3.3 70B.
+One transcript. Six AI agents. Instant clarity.
+
+PrismAI transforms any meeting transcript into structured intelligence — summaries, action items, sentiment analysis, follow-up emails, calendar suggestions, and a meeting health score — powered by a multi-agent pipeline on Groq + LLaMA 3.3 70B.
 
 **[Live Demo](https://vs-githjk.github.io/Agentic-Meeting-Copilot/)**
 
@@ -8,16 +10,24 @@ Multi-agent AI that transforms meeting transcripts into summaries, action items,
 
 ## How it works
 
-Paste a meeting transcript and a team of specialized AI agents runs in parallel to produce:
+An orchestrator LLM reads your transcript and dynamically routes it to the right specialized agents, all running in parallel:
 
-- **Summary** — concise recap of what was discussed
-- **Action Items** — who owns what, with clear ownership
-- **Sentiment Analysis** — overall tone and engagement score
-- **Follow-up Email** — ready-to-send draft based on outcomes
-- **Calendar Suggestion** — recommends a follow-up meeting if needed
-- **Chat** — ask questions about the meeting in natural language
+| Agent | Output |
+|---|---|
+| Summarizer | Concise 2-3 sentence TL;DR |
+| Action Items | Who owns what, with due dates |
+| Sentiment | Tone score + conflict detection |
+| Email Drafter | Ready-to-send follow-up email |
+| Calendar Suggester | Follow-up meeting recommendation |
+| Health Score | 0-100 meeting quality score with breakdown |
 
-An orchestrator agent decides which agents to run based on the transcript content.
+Plus a **Chat** interface to ask questions about any meeting in natural language.
+
+## Input methods
+
+- **Paste** a transcript directly
+- **Record** live audio via browser microphone (Web Speech API)
+- **Upload** an audio file — transcribed via Groq Whisper large-v3
 
 ## Stack
 
@@ -25,8 +35,8 @@ An orchestrator agent decides which agents to run based on the transcript conten
 |---|---|
 | Frontend | React + Vite + Tailwind CSS |
 | Backend | FastAPI (Python) |
-| AI | Groq API — Llama 3.3 70B |
-| Hosting | GitHub Pages + Render |
+| AI | Groq API — LLaMA 3.3 70B + Whisper large-v3 |
+| Hosting | GitHub Pages (frontend) + Render (backend) |
 
 ## Run locally
 
