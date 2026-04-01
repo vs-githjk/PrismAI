@@ -1,12 +1,12 @@
 // ROYGBIV — one color per agent, white = orchestrator/input
 const AGENT_CONFIG = {
-  summarizer:         { label: 'Summarizer',   icon: '📝', bg: 'bg-red-500/15',    border: 'border-red-500/35',    text: 'text-red-300',    dot: 'bg-red-400' },
-  action_items:       { label: 'Action Items', icon: '✅', bg: 'bg-orange-500/15', border: 'border-orange-500/35', text: 'text-orange-300', dot: 'bg-orange-400' },
-  decisions:          { label: 'Decisions',    icon: '⚖️', bg: 'bg-yellow-500/15', border: 'border-yellow-500/35', text: 'text-yellow-300', dot: 'bg-yellow-400' },
-  sentiment:          { label: 'Sentiment',    icon: '💬', bg: 'bg-green-500/15',  border: 'border-green-500/35',  text: 'text-green-300',  dot: 'bg-green-400' },
-  email_drafter:      { label: 'Email Draft',  icon: '✉️', bg: 'bg-blue-500/15',   border: 'border-blue-500/35',   text: 'text-blue-300',   dot: 'bg-blue-400' },
-  calendar_suggester: { label: 'Calendar',     icon: '📅', bg: 'bg-indigo-500/15', border: 'border-indigo-500/35', text: 'text-indigo-300', dot: 'bg-indigo-400' },
-  health_score:       { label: 'Health Score', icon: '📊', bg: 'bg-violet-500/15', border: 'border-violet-500/35', text: 'text-violet-300', dot: 'bg-violet-400' },
+  summarizer:         { label: 'Summarizer',   icon: '📝', bg: 'bg-red-500/20',    border: 'border-red-500/40',    text: 'text-red-300',    dot: 'bg-red-400' },
+  action_items:       { label: 'Action Items', icon: '✅', bg: 'bg-orange-500/20', border: 'border-orange-500/40', text: 'text-orange-300', dot: 'bg-orange-400' },
+  decisions:          { label: 'Decisions',    icon: '⚖️', bg: 'bg-yellow-500/20', border: 'border-yellow-500/40', text: 'text-yellow-200', dot: 'bg-yellow-400' },
+  sentiment:          { label: 'Sentiment',    icon: '💬', bg: 'bg-emerald-500/20',border: 'border-emerald-500/40',text: 'text-emerald-300',dot: 'bg-emerald-400' },
+  email_drafter:      { label: 'Email Draft',  icon: '✉️', bg: 'bg-blue-500/20',   border: 'border-blue-500/40',   text: 'text-blue-300',   dot: 'bg-blue-400' },
+  calendar_suggester: { label: 'Calendar',     icon: '📅', bg: 'bg-indigo-500/20', border: 'border-indigo-500/40', text: 'text-indigo-300', dot: 'bg-indigo-400' },
+  health_score:       { label: 'Health Score', icon: '📊', bg: 'bg-violet-500/20', border: 'border-violet-500/40', text: 'text-violet-300', dot: 'bg-violet-400' },
 }
 
 export default function AgentTags({ agents }) {

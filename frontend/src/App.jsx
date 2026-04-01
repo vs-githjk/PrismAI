@@ -43,13 +43,13 @@ Sarah: Excellent. I think we're in good shape. Thanks everyone.`
 
 // ROYGBIV — white = transcript/orchestrator input, then splits into 7 agent colors
 const AGENTS_META = [
-  { id: 'summarizer',         label: 'Summarizer',    icon: '📝', grad: 'from-red-400 to-rose-400' },
-  { id: 'action_items',       label: 'Action Items',  icon: '✅', grad: 'from-orange-300 to-amber-400' },
-  { id: 'decisions',          label: 'Decisions',     icon: '⚖️', grad: 'from-yellow-300 to-yellow-400' },
-  { id: 'sentiment',          label: 'Sentiment',     icon: '💬', grad: 'from-green-300 to-emerald-400' },
-  { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-300 to-sky-400' },
-  { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-300 to-indigo-400' },
-  { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-300 to-purple-400' },
+  { id: 'summarizer',         label: 'Summarizer',    icon: '📝', grad: 'from-red-500 to-red-400',         desc: 'Condenses the entire meeting into a clear summary of key topics and outcomes.' },
+  { id: 'action_items',       label: 'Action Items',  icon: '✅', grad: 'from-orange-500 to-amber-400',    desc: 'Extracts every task, assigns owners, and flags due dates so nothing falls through the cracks.' },
+  { id: 'decisions',          label: 'Decisions',     icon: '⚖️', grad: 'from-yellow-400 to-yellow-300',   desc: 'Logs every decision made in the meeting, ranked by importance, with the accountable owner.' },
+  { id: 'sentiment',          label: 'Sentiment',     icon: '💬', grad: 'from-emerald-500 to-green-400',   desc: 'Reads the emotional tone — per speaker, mood arc, and moments where tension spiked.' },
+  { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-500 to-blue-400',       desc: 'Writes a polished follow-up email ready to send to all attendees.' },
+  { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-500 to-indigo-400',   desc: 'Detects if a follow-up meeting is needed and suggests the best timeframe.' },
+  { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
 ]
 
 const BG_STYLE = {
@@ -156,22 +156,37 @@ function AgentPipelineLoader() {
 
 // ── Empty state for right panel ──────────────────────────────────
 function EmptyState() {
+  const [active, setActive] = useState(null)
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-10 px-8 py-16">
+    <div className="flex flex-col items-center justify-center h-full gap-8 px-10 py-16">
       <div className="text-center">
         <h2 className="text-2xl font-bold gradient-text mb-2">Ready to analyze</h2>
         <p className="text-gray-500 text-sm max-w-sm">Paste a transcript, record live audio, or upload an audio file — then hit Analyze Meeting.</p>
       </div>
-      <div className="grid grid-cols-4 gap-4 w-full max-w-lg">
-        {AGENTS_META.map((a) => (
-          <div key={a.id} className="flex flex-col items-center gap-2 p-4 rounded-2xl"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-            <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-base shadow-lg opacity-70`}>{a.icon}</div>
-            <span className="text-[11px] text-gray-500 text-center leading-tight">{a.label}</span>
-          </div>
-        ))}
+      <div className="grid grid-cols-4 gap-3 w-full max-w-2xl">
+        {AGENTS_META.map((a) => {
+          const isActive = active === a.id
+          return (
+            <button
+              key={a.id}
+              onClick={() => setActive(isActive ? null : a.id)}
+              className="flex flex-col items-center gap-3 p-5 rounded-2xl text-left transition-all duration-200 cursor-pointer"
+              style={{
+                background: isActive ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+                border: isActive ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,255,255,0.07)',
+                transform: isActive ? 'scale(1.03)' : 'scale(1)',
+              }}
+            >
+              <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-xl shadow-lg`}>{a.icon}</div>
+              <span className="text-xs font-medium text-gray-300 text-center leading-tight w-full">{a.label}</span>
+              {isActive && (
+                <p className="text-[11px] text-gray-400 text-center leading-relaxed">{a.desc}</p>
+              )}
+            </button>
+          )
+        })}
       </div>
-      <p className="text-[11px] text-gray-700">Powered by LLaMA 3.3-70b via Groq</p>
+      <p className="text-[11px] text-gray-600">Tap an agent to learn what it does · Powered by LLaMA 3.3-70b via Groq</p>
     </div>
   )
 }
