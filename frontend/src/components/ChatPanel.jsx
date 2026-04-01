@@ -10,13 +10,13 @@ const SUGGESTED_QUESTIONS = [
 
 function detectAgentIntent(msg) {
   const m = msg.toLowerCase()
-  if (/redraft|rewrite|redo|revise|formal|casual|shorter|longer/.test(m) && /email/.test(m)) return 'email_drafter'
-  if (/redo|regenerate|update|add|remove/.test(m) && /action item|task|owner|due/.test(m)) return 'action_items'
-  if (/redo|regenerate|rewrite/.test(m) && /summar/.test(m)) return 'summarizer'
-  if (/redo|reschedule|suggest|change|update|set|move|shift/.test(m) && /calendar|meeting|follow.up|date|week|month/.test(m)) return 'calendar_suggester'
-  if (/redo|regenerate|update/.test(m) && /decision|decided|agreed/.test(m)) return 'decisions'
-  if (/redo|regenerate|reanalyze|rerun/.test(m) && /sentiment|tone|mood|emotion/.test(m)) return 'sentiment'
-  if (/redo|regenerate|reanalyze|rerun/.test(m) && /health|score|quality/.test(m)) return 'health_score'
+  if (/email/.test(m) && /redraft|rewrite|redo|revise|make|formal|casual|shorter|longer|concise|tone|style/.test(m)) return 'email_drafter'
+  if (/action item|task|todo/.test(m) && /redo|regenerate|update|add|remove|change|rewrite/.test(m)) return 'action_items'
+  if (/summar/.test(m) && /redo|regenerate|rewrite|update|change|shorten|shorter|longer|make|improve|concise/.test(m)) return 'summarizer'
+  if (/calendar|follow.up time|reschedule/.test(m) && /redo|regenerate|suggest|change|update|set|move|shift|reschedule/.test(m)) return 'calendar_suggester'
+  if (/decision|decided|agreed/.test(m) && /redo|regenerate|update|change|add|remove|rewrite/.test(m)) return 'decisions'
+  if (/sentiment|tone|mood|emotion|tension/.test(m) && /redo|regenerate|reanalyze|rerun|check|analyze|update/.test(m)) return 'sentiment'
+  if (/health.?score|meeting quality/.test(m) && /redo|regenerate|reanalyze|rerun|recalculate|update/.test(m)) return 'health_score'
   return null
 }
 
@@ -30,7 +30,7 @@ function getChatHistory() {
         const msgs = JSON.parse(localStorage.getItem(k) || '[]')
         if (!msgs.length) return null
         const meeting = meetingHistory.find(m => m.id === id)
-        return { id, msgs, title: meeting?.title || 'Meeting', date: meeting?.date || null }
+        return { id, msgs, title: meeting?.title || 'Meeting', date: meeting?.date || null, transcript: meeting?.transcript || '' }
       })
       .filter(Boolean)
       .sort((a, b) => b.id - a.id)
@@ -43,6 +43,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [viewingSession, setViewingSession] = useState(null)
   const historyRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -69,11 +70,26 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
     const msg = (text || input).trim()
     if (!msg || loading) return
 
-    setMessages((prev) => [...prev, { role: 'user', content: msg }])
+    const activeTranscript = viewingSession ? viewingSession.transcript : transcript
+
+    const appendMsg = (newMsg) => {
+      if (viewingSession) {
+        setViewingSession(prev => {
+          const updated = { ...prev, msgs: [...prev.msgs, newMsg] }
+          localStorage.setItem(`chat-${prev.id}`, JSON.stringify(updated.msgs))
+          return updated
+        })
+      } else {
+        setMessages(prev => [...prev, newMsg])
+      }
+    }
+
+    appendMsg({ role: 'user', content: msg })
     setInput('')
     setLoading(true)
 
-    const agentIntent = result && transcript ? detectAgentIntent(msg) : null
+    // Disable agent re-run when viewing a historical session (no live result cards to update)
+    const agentIntent = !viewingSession && result && transcript ? detectAgentIntent(msg) : null
 
     try {
       if (agentIntent) {
@@ -109,14 +125,14 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         const res = await fetch(`${API}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, transcript }),
+          body: JSON.stringify({ message: msg, transcript: activeTranscript }),
         })
         if (!res.ok) throw new Error('Chat failed')
         const data = await res.json()
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.response }])
+        appendMsg({ role: 'assistant', content: data.response })
       }
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Sorry, something went wrong.' }])
+      appendMsg({ role: 'assistant', content: 'Sorry, something went wrong.' })
     } finally {
       setLoading(false)
     }
@@ -178,7 +194,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                       return (
                         <button
                           key={session.id}
-                          onClick={() => { setMessages(session.msgs); setShowHistory(false) }}
+                          onClick={() => { setViewingSession(session); setShowHistory(false) }}
                           className="w-full text-left px-3 py-2.5 hover:bg-white/5 transition-colors"
                           style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
                         >
@@ -213,9 +229,26 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         </div>
       </div>
 
+      {/* Viewing historical session banner */}
+      {viewingSession && (
+        <div className="px-4 py-2 flex items-center gap-2 flex-shrink-0"
+          style={{ background: 'rgba(14,165,233,0.07)', borderBottom: '1px solid rgba(14,165,233,0.12)' }}>
+          <button
+            onClick={() => setViewingSession(null)}
+            className="flex items-center gap-1.5 text-[11px] text-sky-400 hover:text-sky-300 transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to current chat
+          </button>
+          <span className="text-[10px] text-gray-600 ml-auto truncate max-w-[140px]">{viewingSession.title}</span>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {messages.length === 0 && (
+        {(viewingSession ? viewingSession.msgs : messages).length === 0 && (
           <div className="flex flex-col items-center gap-4 pt-4">
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
               style={{ background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.2)' }}>
@@ -236,7 +269,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
           </div>
         )}
 
-        {messages.map((msg, i) => (
+        {(viewingSession ? viewingSession.msgs : messages).map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
             {msg.role === 'assistant' && (
               <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mr-2 mt-0.5"
@@ -287,7 +320,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder={result ? 'Ask or say "redraft email more formally"...' : 'Ask a question...'}
+          placeholder={viewingSession ? `Ask about: ${viewingSession.title}` : result ? 'Ask or say "redraft email more formally"...' : 'Ask a question...'}
           className="flex-1 text-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600 transition-colors"
           style={{ background: 'rgba(0,0,0,0.3)' }}
         />
