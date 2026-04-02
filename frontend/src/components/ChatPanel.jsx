@@ -22,16 +22,19 @@ function detectAgentIntent(msg) {
 
 async function fetchChatHistory() {
   try {
-    const meetings = await fetch(`${API}/meetings`).then(r => r.json())
+    const [meetings, chats] = await Promise.all([
+      fetch(`${API}/meetings`).then(r => r.json()),
+      fetch(`${API}/chats`).then(r => r.json()),
+    ])
     if (!Array.isArray(meetings) || !meetings.length) return []
-    const results = await Promise.all(
-      meetings.slice(0, 8).map(async m => {
-        const chat = await fetch(`${API}/chats/${m.id}`).then(r => r.json()).catch(() => ({ messages: [] }))
-        if (!chat.messages?.length) return null
-        return { id: m.id, msgs: chat.messages, title: m.title || 'Meeting', date: m.date || null, transcript: m.transcript || '' }
+    return meetings
+      .slice(0, 8)
+      .map(m => {
+        const msgs = chats[String(m.id)]
+        if (!msgs?.length) return null
+        return { id: m.id, msgs, title: m.title || 'Meeting', date: m.date || null, transcript: m.transcript || '' }
       })
-    )
-    return results.filter(Boolean)
+      .filter(Boolean)
   } catch { return [] }
 }
 

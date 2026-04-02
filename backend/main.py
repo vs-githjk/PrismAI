@@ -123,6 +123,14 @@ class ChatEntry(BaseModel):
     messages: list
 
 
+@app.get("/chats")
+async def get_all_chats():
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    res = supabase.table("chats").select("meeting_id,messages").execute()
+    return {str(row["meeting_id"]): row["messages"] for row in res.data}
+
+
 @app.get("/chats/{meeting_id}")
 async def get_chat(meeting_id: int):
     if not supabase:
