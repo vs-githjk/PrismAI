@@ -10,7 +10,9 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 
 **Live URLs:**
 - Frontend: GitHub Pages (`https://vs-githjk.github.io/Agentic-Meeting-Copilot/`)
-- Backend: Render.com (`https://agentic-meeting-copilot.onrender.com`)
+- Backend: Render.com (`https://meeting-copilot-api.onrender.com`)
+
+> Note: The Render service is named `meeting-copilot-api` — this is the real URL. The display name in the Render dashboard was changed to `agentic-meeting-copilot` but the URL did not change (Render locks URLs to creation-time name).
 
 ---
 
@@ -22,9 +24,9 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | Backend | FastAPI + uvicorn (Python 3.11) |
 | AI | Groq API — LLaMA 3.3-70b (agents/chat) + Whisper large-v3 (transcription) |
 | Meeting Bot | Recall.ai (joins live calls, records, returns transcript) |
+| Database | Supabase (Postgres) — meetings + chats persistent storage |
 | Frontend Hosting | GitHub Pages via GitHub Actions |
 | Backend Hosting | Render.com free tier |
-| Storage | In-memory only (no DB) + localStorage for history |
 
 ---
 
@@ -43,24 +45,25 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │   ├── email_drafter.py
 │   │   ├── calendar_suggester.py
 │   │   └── health_score.py
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── .env.example               # Template: GROQ_API_KEY, RECALL_API_KEY, WEBHOOK_BASE_URL, SUPABASE_URL, SUPABASE_KEY
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                # Root: layout, input, result rendering, history
+│   │   ├── App.jsx                # Root: layout, input, result rendering, history, speaker modal, share
 │   │   ├── index.css              # Tailwind + custom animations
 │   │   └── components/
 │   │       ├── ChatPanel.jsx      # Chat interface + agent intent detection + chat history
 │   │       ├── AgentTags.jsx      # Badges showing which agents ran
 │   │       ├── HealthScoreCard.jsx
 │   │       ├── SummaryCard.jsx
-│   │       ├── ActionItemsCard.jsx
+│   │       ├── ActionItemsCard.jsx  # Checkboxes persist to Supabase via PATCH /meetings/{id}
 │   │       ├── DecisionsCard.jsx
 │   │       ├── SentimentCard.jsx
 │   │       ├── EmailCard.jsx
 │   │       └── CalendarCard.jsx
 │   └── vite.config.js             # base: '/Agentic-Meeting-Copilot/'
 ├── .github/workflows/deploy.yml   # Push to main → build frontend → GitHub Pages
-├── render.yaml                    # Render.com backend config
+├── render.yaml                    # Render.com backend config (service name: meeting-copilot-api)
 └── PRISM_AI_CONTEXT.md            # This file
 ```
 
@@ -71,43 +74,14 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | Color | Agent | Runs | Output Key | Shape |
 |---|---|---|---|---|
 | 🔴 Red | `summarizer` | Always | `summary` | `string` |
-| 🟠 Orange | `action_items` | Always | `action_items` | `[{ task, owner, due }]` |
+| 🟠 Orange | `action_items` | Always | `action_items` | `[{ task, owner, due, completed }]` |
 | 🟡 Yellow | `decisions` | Always | `decisions` | `[{ decision, owner, importance: 1-3 }]` |
 | 🟢 Green | `sentiment` | Only if tension/conflict | `sentiment` | `{ overall, score, arc, notes, speakers:[{name,tone,score}], tension_moments:[] }` |
 | 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` |
 | 🟣 Indigo | `calendar_suggester` | Only if follow-up discussed | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe }` |
 | 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, badges:[], breakdown:{clarity,action_orientation,engagement} }` |
 
-White = orchestrator/input (before the prism splits it).
-
-### DEFAULT_RESULT (in main.py)
-
-```python
-{
-  "summary": "",
-  "action_items": [],
-  "decisions": [],
-  "sentiment": { "overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": [] },
-  "follow_up_email": { "subject": "", "body": "" },
-  "calendar_suggestion": { "recommended": False, "reason": "", "suggested_timeframe": "" },
-  "health_score": { "score": 0, "verdict": "", "badges": [], "breakdown": { "clarity": 0, "action_orientation": 0, "engagement": 0 } },
-  "agents_run": []
-}
-```
-
-### Adding a New Agent — Checklist
-
-1. Create `backend/agents/yourname.py` — follow the same `_strip_fences` + `for attempt in range(2)` retry pattern
-2. Import it in `backend/main.py`
-3. Add to `AGENT_MAP` in `main.py`
-4. Add default value to `DEFAULT_RESULT` in `main.py`
-5. Add `elif agent_name == "yourname":` to **both** result-builder loops in `main.py` (lines ~88 and ~294)
-6. Add to `ALL_AGENTS` list in `orchestrator.py`
-7. Add guardrail in `orchestrator.py` if it should always run
-8. Add to `AGENTS_META` in `App.jsx` with icon + gradient
-9. Add to `AGENT_CONFIG` in `AgentTags.jsx` with ROYGBIV color
-10. Create `YournameCard.jsx` in `frontend/src/components/`
-11. Import and place card in `App.jsx` (both desktop and mobile layouts)
+Note: `action_items` now includes a `completed` boolean field that persists via PATCH /meetings/{id}.
 
 ---
 
@@ -116,83 +90,118 @@ White = orchestrator/input (before the prism splits it).
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Liveness probe |
-| POST | `/analyze` | `{ transcript }` → full result object |
+| POST | `/analyze` | `{ transcript, speakers? }` → full result object (non-streaming) |
+| POST | `/analyze-stream` | `{ transcript, speakers? }` → SSE stream, one event per agent as it completes |
 | POST | `/transcribe` | `multipart/form-data: file` → `{ transcript }` via Whisper |
 | POST | `/join-meeting` | `{ meeting_url }` → `{ bot_id, status }` |
 | GET | `/bot-status/{bot_id}` | Poll bot lifecycle status |
 | POST | `/recall-webhook` | Recall.ai sends bot events here |
 | POST | `/agent` | `{ agent, transcript, instruction }` → single agent output |
 | POST | `/chat` | `{ message, transcript }` → `{ response }` |
+| GET | `/meetings` | List meetings (optional `?q=` search by title) |
+| POST | `/meetings` | Save/upsert a meeting |
+| PATCH | `/meetings/{id}` | Update meeting result (used for action item checkbox state) |
+| DELETE | `/meetings/{id}` | Delete meeting (cascades to chats in DB) |
+| GET | `/share/{token}` | Public read-only meeting result by share token |
+| GET | `/chats` | All chats as `{ meeting_id: messages[] }` map (bulk, avoids N+1) |
+| GET | `/chats/{meeting_id}` | Single chat messages |
+| POST | `/chats/{meeting_id}` | Save/upsert chat messages |
+| DELETE | `/chats/{meeting_id}` | Delete chat for a meeting |
 
 ---
 
-## Data Flow
+## Supabase Schema
+
+```sql
+create table meetings (
+  id bigint primary key,           -- Date.now() from frontend
+  date text not null,
+  title text,
+  score int,
+  transcript text,
+  result jsonb,
+  share_token text unique,         -- 16-char hex, generated on save
+  created_at timestamptz default now()
+);
+
+create table chats (
+  id bigserial primary key,
+  meeting_id bigint references meetings(id) on delete cascade,
+  messages jsonb not null default '[]',
+  updated_at timestamptz default now()
+);
+```
+
+`on delete cascade` means deleting a meeting automatically deletes its chat — no extra frontend call needed.
+
+---
+
+## Speaker Identification
+
+Before analysis runs, `extractSpeakers()` in App.jsx scans the transcript for `Name:` patterns and pre-fills a modal. User assigns roles (e.g. "Engineering Lead"). On Analyze, the backend prepends:
 
 ```
-User input (transcript text / audio / live meeting)
-  ↓
-POST /analyze
-  ↓
-orchestrator.run_orchestrator(transcript)
-  → LLM decides agent list (always: summarizer, action_items, decisions, email_drafter, health_score)
-  ↓
-asyncio.gather(*all_selected_agents) — all run IN PARALLEL
-  ↓
-Merge into DEFAULT_RESULT
-  ↓
-Return JSON to frontend
-  ↓
-React renders cards (each card returns null if its data is empty/missing)
-  ↓
-Save to localStorage as meeting history entry
+Meeting participants:
+  - Sarah: Engineering Lead
+  - Mike: Product Manager
 ```
 
-### Bot Meeting Flow (Recall.ai)
+...to the transcript before any agent sees it. All 7 agents benefit automatically. If no names are detected, the modal is skipped entirely.
 
+---
+
+## Streaming Analysis
+
+The frontend calls `POST /analyze-stream` (not `/analyze`). The backend uses SSE + `asyncio.wait(FIRST_COMPLETED)` — each agent streams its result the moment it finishes. Frontend reads the stream chunk by chunk, calling `setResult(prev => ({ ...prev, ...chunk }))` so cards appear one by one. `saveToHistory` is called on `[DONE]`.
+
+SSE event format:
 ```
-POST /join-meeting → Recall.ai creates bot → returns bot_id
-  ↓
-Frontend polls GET /bot-status/{bot_id} every 4s
-  ↓
-Recall.ai sends webhook events → /recall-webhook updates bot_store
-  ↓
-On call_ended: _process_bot_transcript fires
-  → waits 5s, retries up to 5 times with backoff (Recall needs time to finish)
-  → fetches [{ speaker, words:[{text}] }], formats as "Speaker: text\n..."
-  → runs full agent pipeline
-  ↓
-Frontend detects status="done", loads result, clears transcript input
+data: {"agents_run": ["summarizer", "action_items", ...]}
+data: {"agent": "summarizer", "summary": "..."}
+data: {"agent": "action_items", "action_items": [...]}
+data: [DONE]
 ```
 
 ---
 
-## Chat & Agent Re-running
+## Shareable Links
+
+When a meeting is saved, a `share_token` (16-char hex via `crypto.randomUUID()`) is generated and stored with the meeting. A **Share** button appears in the results header — clicking it copies:
+
+```
+https://vs-githjk.github.io/Agentic-Meeting-Copilot/#share/{token}
+```
+
+On page load, App.jsx checks `window.location.hash` for `#share/{token}`. If matched, it fetches `GET /share/{token}` and renders a read-only view with all 7 cards. No router needed — hash-based routing works on GitHub Pages.
+
+---
+
+## Chat System
 
 `ChatPanel.jsx` has two modes:
 
 1. **Regular chat** → `POST /chat` with message + transcript → LLM answers
-2. **Agent intent** → detected via regex in `detectAgentIntent()`. If matched, calls `POST /agent` with the instruction appended to the transcript as `[User instruction: ...]`. The agent's system prompt tells it to honour this instruction.
+2. **Agent intent** → detected via regex in `detectAgentIntent()`. If matched, calls `POST /agent` with the instruction appended to the transcript.
 
-Agents that honour user instructions: `email_drafter`, `calendar_suggester` (others can be triggered but ignore tone/style changes unless their system prompt says otherwise).
+**History dropdown:** Shows past meeting chats. Clicking one enters "viewing mode" — a blue banner with "← Back to current chat". While viewing, input is enabled and uses that meeting's transcript. New messages are saved back to that session. Agent re-run intents are disabled in viewing mode (no live cards to update).
 
-Covered agents in intent detection:
-- "redraft/rewrite email" → `email_drafter`
-- "redo action items" → `action_items`
-- "rewrite summary" → `summarizer`
-- "change calendar/date" → `calendar_suggester`
-- "redo decisions" → `decisions`
-- "reanalyze sentiment/tone" → `sentiment`
-- "rerun health score" → `health_score`
+**Deleting a chat session** in the dropdown only removes the chat — the meeting is preserved.
+
+**Chat persistence:** Messages saved to `POST /chats/{meetingId}` on every state change.
 
 ---
 
 ## Persistent State
 
-| What | Where | Limit |
+| What | Where | Notes |
 |---|---|---|
-| Meeting history | `localStorage['meeting-history']` | 8 entries |
-| Chat per meeting | `localStorage['chat-{meetingId}']` | Unbounded |
-| Bot status during call | `bot_store: dict` (in-memory, lost on restart) | N/A |
+| Meeting history | Supabase `meetings` table | No cap, survives browser clears |
+| Chat per meeting | Supabase `chats` table | Cascade-deleted with meeting |
+| Action item completion | Inside `result` JSON in `meetings` table | Patched via PATCH /meetings/{id} |
+| Bot status during call | `bot_store: dict` (in-memory) | Lost on Render restart |
+| Share token | `meetings.share_token` column | Generated at save time |
+
+On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (transcript + result + chat).
 
 ---
 
@@ -203,7 +212,9 @@ Covered agents in intent detection:
 | `GROQ_API_KEY` | Yes | All LLM calls + Whisper transcription |
 | `RECALL_API_KEY` | Yes (bot feature only) | Recall.ai meeting bot |
 | `WEBHOOK_BASE_URL` | Yes (bot feature only) | Callback URL for Recall webhooks |
-| `VITE_API_URL` | Frontend build only | Points frontend at backend (set as GitHub secret) |
+| `SUPABASE_URL` | Yes | Supabase project URL |
+| `SUPABASE_KEY` | Yes | Supabase service_role key (bypasses RLS) |
+| `VITE_API_URL` | Frontend build only | Points frontend at backend (GitHub secret) |
 
 ---
 
@@ -214,62 +225,32 @@ Covered agents in intent detection:
 
 **Backend:** Render.com auto-deploys from `render.yaml` on push to `main`.
 - Free tier spins down after inactivity → cold start can take 30-60s
-- Known issue: first deploy attempt sometimes gets a port scan timeout (Render race condition) — a second push usually resolves it
-
----
-
-## UI Patterns
-
-- **Empty state:** Grid of 7 agent cards. Tap any card to reveal a description of what that agent does.
-- **Loading state:** `AgentPipelineLoader` — orchestrator icon (white) → "dispatching 7 agents" → animated 4-col agent grid
-- **Results:** Right panel. Desktop: cards in a 2-col grid. Mobile: stacked below input.
-- **Chat history:** Button in ChatPanel header. Dropdown shows past chats with meeting title, first message preview, date.
-- **New Meeting:** Clears transcript, result, and resets chat (via `sessionId` key on ChatPanel → remount)
-- All result cards guard with `if (!data || !data.length) return null` — safe to render even with DEFAULT_RESULT
+- `SUPABASE_URL` and `SUPABASE_KEY` must be set manually in Render dashboard (not in render.yaml)
 
 ---
 
 ## Known Issues / Watch Out For
 
 - **Render free tier sleeps** — first request after inactivity will be slow. Not a bug.
-- **Bot store is in-memory** — if Render restarts mid-meeting, `bot_store` is lost and the bot result won't be retrievable. Needs persistent storage to fix properly.
-- **Sentiment is conditional** — it won't appear for neutral/positive meetings by design. Don't treat its absence as a bug.
-- **`decisions` importance ranking** — importance 1 = critical, 2 = significant, 3 = minor. Sorted ascending (most important first) in `DecisionsCard.jsx`.
-- **VS Code shows red squiggles on `groq`/`fastapi` imports** — virtualenv not configured in VS Code. Works fine on Render. Safe to ignore.
+- **Bot store is in-memory** — if Render restarts mid-meeting, `bot_store` is lost. Needs persistent storage to fix properly.
+- **Sentiment is conditional** — won't appear for neutral/positive meetings by design.
+- **`decisions` importance ranking** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
+- **Share button only appears after analysis** — `shareToken` state is null until a meeting is saved. Loading from history restores the token.
+- **SSE and Render free tier** — streaming works but Render free tier may buffer SSE. `X-Accel-Buffering: no` header is set to mitigate.
 
 ---
 
-## Future Plans (Prioritised)
+## Remaining Roadmap (in order)
 
-### High Value / Relatively Quick
+### Next up
+**UI polish pass** — general visual improvements, mobile responsiveness, loading states for streaming.
 
-**1. Speaker identification**
-Before analysis, prompt "who was in this meeting?" Map names to roles. Feed the mapping to all agents so output says "Engineering Lead" not just "Mike". Improves every card's output quality.
+### Then
+**6. Recurring meeting comparison** — "How does this week's standup compare to last week's?" Track health score trends per meeting series. Requires a `series` concept on meetings.
 
-**2. Persistent history with search**
-localStorage caps at 8 entries and gets wiped on browser clear. Move meeting history + chat history to the backend (even a JSON file or SQLite on Render). Add a search endpoint so users can find past meetings by topic, speaker, or date.
+**7. Model fallback** — If Groq is rate-limited or down, fall back to a secondary provider (OpenAI or Anthropic) in each agent's `run()` function.
 
-**3. Shareable results link**
-Generate a read-only URL (`/share/{token}`) for a meeting analysis. Anyone with the link can view the cards but not edit. Huge for async teams — send the link instead of forwarding the email.
-
-### Differentiation Features
-
-**4. Recurring meeting comparison**
-"How does this week's standup compare to last week's?" Track health score trends over time per meeting series. Requires persistent storage + a meeting series concept.
-
-**5. Team dashboard**
-Aggregate health scores, decision velocity, action item completion rate across all meetings. Turns PrismAI from a per-meeting tool into an org intelligence layer. Needs auth + persistent storage.
-
-**6. Action item tracking**
-Action items are currently displayed and forgotten. Add: mark complete (already has checkboxes), persist state, send reminder email via `/agent email_drafter` with due date context.
-
-### Technical
-
-**7. Streaming analysis**
-Show result cards one-by-one as each agent finishes rather than all at once. Uses SSE or WebSocket. Makes the wait feel much shorter and makes the prism/parallel-agents metaphor more visual — you'd see each color appear.
-
-**8. Model fallback**
-If Groq is rate-limited or down, the whole app fails. Add a secondary provider (OpenAI, Anthropic) as fallback in each agent's `run()` function.
+**8. Team dashboard** — Aggregate health scores, decision velocity, action item completion across meetings. Needs auth.
 
 ---
 
@@ -317,3 +298,17 @@ async def run(transcript: str) -> dict:
                 raise HTTPException(status_code=500, detail="agentname: failed to parse JSON after retry")
     return {"key": default_value}
 ```
+
+### Adding a New Agent — Checklist
+
+1. Create `backend/agents/yourname.py` — follow the pattern above
+2. Import it in `backend/main.py`
+3. Add to `AGENT_MAP` and `AGENT_RESULT_KEY` in `main.py`
+4. Add default value to `DEFAULT_RESULT` in `main.py` (and mirror in `frontend/src/App.jsx`)
+5. Add to both result-builder loops in `main.py` (~lines 88 and ~294)
+6. Add to `ALL_AGENTS` list in `orchestrator.py`
+7. Add guardrail in `orchestrator.py` if it should always run
+8. Add to `AGENTS_META` in `App.jsx` with icon + gradient
+9. Add to `AGENT_CONFIG` in `AgentTags.jsx` with ROYGBIV color
+10. Create `YournameCard.jsx` in `frontend/src/components/`
+11. Import and place card in `App.jsx` (both desktop and mobile layouts)
