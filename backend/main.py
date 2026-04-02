@@ -83,6 +83,7 @@ class MeetingEntry(BaseModel):
     score: int = None
     transcript: str = ""
     result: dict = {}
+    share_token: str = ""
 
 
 @app.get("/meetings")
@@ -107,8 +108,19 @@ async def save_meeting(entry: MeetingEntry):
         "score": entry.score,
         "transcript": entry.transcript,
         "result": entry.result,
+        "share_token": entry.share_token or None,
     }).execute()
     return {"ok": True}
+
+
+@app.get("/share/{token}")
+async def get_shared_meeting(token: str):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    res = supabase.table("meetings").select("title,date,result,score").eq("share_token", token).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Share link not found")
+    return res.data[0]
 
 
 @app.delete("/meetings/{meeting_id}")

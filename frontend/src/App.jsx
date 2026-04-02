@@ -257,6 +257,20 @@ export default function App() {
 
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
+  const [shareToken, setShareToken] = useState(null)
+  const [shareMode, setShareMode] = useState(null) // { title, date, result, score } when viewing shared link
+  const [shareCopied, setShareCopied] = useState(false)
+
+  // Handle #share/{token} on load
+  useEffect(() => {
+    const hash = window.location.hash
+    const match = hash.match(/^#share\/([a-f0-9]+)$/)
+    if (!match) return
+    fetch(`${API}/share/${match[1]}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setShareMode(data) })
+      .catch(() => {})
+  }, [])
 
   const joinMeeting = async () => {
     if (!meetingUrl.trim()) return
@@ -307,6 +321,7 @@ export default function App() {
 
   const saveToHistory = (t, r) => {
     const id = Date.now()
+    const share_token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
     const entry = {
       id,
       date: new Date().toISOString(),
@@ -314,9 +329,11 @@ export default function App() {
       result: r,
       title: r.summary?.slice(0, 65) || 'Meeting',
       score: r.health_score?.score,
+      share_token,
     }
     setHistory(prev => [entry, ...prev])
     setMeetingId(id)
+    setShareToken(share_token)
     fetch(`${API}/meetings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -328,6 +345,7 @@ export default function App() {
     setTranscript(entry.transcript)
     setResult(entry.result)
     setMeetingId(entry.id)
+    setShareToken(entry.share_token || null)
     setSessionId(s => s + 1)
     setShowHistory(false)
     try {
@@ -469,6 +487,38 @@ export default function App() {
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [showHistory])
+
+  // Share mode — read-only view for shared links
+  if (shareMode) {
+    const r = shareMode.result || {}
+    return (
+      <div className="min-h-screen px-4 py-8 max-w-2xl mx-auto" style={{ background: '#07040f' }}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+            </svg>
+          </div>
+          <div>
+            <span className="text-sm font-bold gradient-text">PrismAI</span>
+            <span className="text-[10px] text-gray-600 ml-2">shared meeting</span>
+          </div>
+        </div>
+        <h1 className="text-lg font-semibold text-white mb-1">{shareMode.title || 'Meeting'}</h1>
+        <p className="text-xs text-gray-600 mb-6">{shareMode.date ? new Date(shareMode.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</p>
+        <div className="space-y-4">
+          <HealthScoreCard healthScore={r.health_score} />
+          <SummaryCard summary={r.summary} />
+          <ActionItemsCard actionItems={r.action_items} />
+          <DecisionsCard decisions={r.decisions} />
+          <SentimentCard sentiment={r.sentiment} />
+          <EmailCard email={r.follow_up_email} />
+          <CalendarCard suggestion={r.calendar_suggestion} />
+        </div>
+        <p className="text-center text-xs text-gray-700 mt-8">Shared via PrismAI · <a href={window.location.origin + window.location.pathname} className="text-sky-600 hover:text-sky-400">Analyze your own meeting</a></p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={BG_STYLE}>
@@ -907,14 +957,29 @@ export default function App() {
               {/* Top bar */}
               <div className="flex items-center justify-between">
                 <AgentTags agents={result.agents_run || []} />
-                <button onClick={exportMarkdown}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all flex-shrink-0 ml-3"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Export .md
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                  {shareToken && (
+                    <button onClick={() => {
+                      const url = `${window.location.origin}${window.location.pathname}#share/${shareToken}`
+                      navigator.clipboard.writeText(url).then(() => { setShareCopied(true); setTimeout(() => setShareCopied(false), 2000) })
+                    }}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                      style={{ background: shareCopied ? 'rgba(14,165,233,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${shareCopied ? 'rgba(14,165,233,0.4)' : 'rgba(255,255,255,0.1)'}`, color: shareCopied ? '#7dd3fc' : '#9ca3af' }}>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
+                      {shareCopied ? 'Copied!' : 'Share'}
+                    </button>
+                  )}
+                  <button onClick={exportMarkdown}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Export .md
+                  </button>
+                </div>
               </div>
 
               {/* Health score — full width, prominent */}
@@ -954,10 +1019,22 @@ export default function App() {
             <div className="px-4 pb-8 space-y-4">
               <div className="flex items-center justify-between pt-4">
                 <AgentTags agents={result.agents_run || []} />
-                <button onClick={exportMarkdown} className="text-xs px-3 py-1.5 rounded-lg text-gray-400 ml-2"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  Export .md
-                </button>
+                <div className="flex items-center gap-2 ml-2">
+                  {shareToken && (
+                    <button onClick={() => {
+                      const url = `${window.location.origin}${window.location.pathname}#share/${shareToken}`
+                      navigator.clipboard.writeText(url).then(() => { setShareCopied(true); setTimeout(() => setShareCopied(false), 2000) })
+                    }}
+                      className="text-xs px-3 py-1.5 rounded-lg transition-all"
+                      style={{ background: shareCopied ? 'rgba(14,165,233,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${shareCopied ? 'rgba(14,165,233,0.4)' : 'rgba(255,255,255,0.1)'}`, color: shareCopied ? '#7dd3fc' : '#9ca3af' }}>
+                      {shareCopied ? 'Copied!' : 'Share'}
+                    </button>
+                  )}
+                  <button onClick={exportMarkdown} className="text-xs px-3 py-1.5 rounded-lg text-gray-400"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    Export .md
+                  </button>
+                </div>
               </div>
               <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
               <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
