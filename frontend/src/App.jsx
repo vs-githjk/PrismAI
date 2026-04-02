@@ -251,7 +251,21 @@ export default function App() {
   useEffect(() => {
     fetch(`${API}/meetings`)
       .then(r => r.json())
-      .then(data => setHistory(Array.isArray(data) ? data : []))
+      .then(async data => {
+        if (!Array.isArray(data)) return
+        setHistory(data)
+        if (data.length > 0) {
+          const latest = data[0]
+          setTranscript(latest.transcript || '')
+          setResult(latest.result || null)
+          setMeetingId(latest.id)
+          setShareToken(latest.share_token || null)
+          try {
+            const chat = await fetch(`${API}/chats/${latest.id}`).then(r => r.json())
+            setInitialMessages(chat.messages || [])
+          } catch { /* no chat saved yet */ }
+        }
+      })
       .catch(() => {})
   }, [])
 
