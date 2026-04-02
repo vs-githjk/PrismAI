@@ -233,10 +233,16 @@ export default function App() {
   const [botError, setBotError] = useState(null)
   const pollRef = useRef(null)
 
-  const [history, setHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('meeting-history') || '[]') } catch { return [] }
-  })
+  const [history, setHistory] = useState([])
   const [showHistory, setShowHistory] = useState(false)
+  const [historySearch, setHistorySearch] = useState('')
+
+  useEffect(() => {
+    fetch(`${API}/meetings`)
+      .then(r => r.json())
+      .then(data => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
 
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
@@ -298,20 +304,28 @@ export default function App() {
       title: r.summary?.slice(0, 65) || 'Meeting',
       score: r.health_score?.score,
     }
-    const updated = [entry, ...history].slice(0, 8)
-    setHistory(updated)
-    localStorage.setItem('meeting-history', JSON.stringify(updated))
+    setHistory(prev => [entry, ...prev])
     setMeetingId(id)
+    fetch(`${API}/meetings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    }).catch(() => {})
   }
 
-  const loadFromHistory = (entry) => {
+  const loadFromHistory = async (entry) => {
     setTranscript(entry.transcript)
     setResult(entry.result)
     setMeetingId(entry.id)
-    const saved = localStorage.getItem(`chat-${entry.id}`)
-    setInitialMessages(saved ? JSON.parse(saved) : [])
     setSessionId(s => s + 1)
     setShowHistory(false)
+    try {
+      const res = await fetch(`${API}/chats/${entry.id}`)
+      const data = await res.json()
+      setInitialMessages(data.messages || [])
+    } catch {
+      setInitialMessages([])
+    }
   }
 
   const startRecording = () => {
@@ -512,8 +526,24 @@ export default function App() {
                   style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
                   <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                     <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
-                    <button onClick={() => { history.forEach(h => localStorage.removeItem(`chat-${h.id}`)); setHistory([]); localStorage.removeItem('meeting-history'); setShowHistory(false) }}
-                      className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
+                    <button onClick={async () => {
+                      await Promise.all(history.map(h => fetch(`${API}/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
+                      setHistory([])
+                      setShowHistory(false)
+                    }} className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
+                  </div>
+                  <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                    <input
+                      value={historySearch}
+                      onChange={async e => {
+                        setHistorySearch(e.target.value)
+                        const res = await fetch(`${API}/meetings?q=${encodeURIComponent(e.target.value)}`).catch(() => null)
+                        if (res?.ok) { const d = await res.json(); setHistory(Array.isArray(d) ? d : []) }
+                      }}
+                      placeholder="Search meetings..."
+                      className="w-full text-xs text-gray-300 rounded-lg px-3 py-1.5 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
+                      style={{ background: 'rgba(0,0,0,0.3)' }}
+                    />
                   </div>
                   <div className="max-h-72 overflow-y-auto">
                     {history.map((entry) => (
@@ -535,10 +565,8 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => {
-                            const updated = history.filter(h => h.id !== entry.id)
-                            setHistory(updated)
-                            localStorage.setItem('meeting-history', JSON.stringify(updated))
-                            localStorage.removeItem(`chat-${entry.id}`)
+                            setHistory(prev => prev.filter(h => h.id !== entry.id))
+                            fetch(`${API}/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
                           }}
                           className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

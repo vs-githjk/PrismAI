@@ -20,21 +20,18 @@ function detectAgentIntent(msg) {
   return null
 }
 
-function getChatHistory() {
+async function fetchChatHistory() {
   try {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('chat-'))
-    const meetingHistory = JSON.parse(localStorage.getItem('meeting-history') || '[]')
-    return keys
-      .map(k => {
-        const id = parseInt(k.replace('chat-', ''))
-        const msgs = JSON.parse(localStorage.getItem(k) || '[]')
-        if (!msgs.length) return null
-        const meeting = meetingHistory.find(m => m.id === id)
-        return { id, msgs, title: meeting?.title || 'Meeting', date: meeting?.date || null, transcript: meeting?.transcript || '' }
+    const meetings = await fetch(`${API}/meetings`).then(r => r.json())
+    if (!Array.isArray(meetings) || !meetings.length) return []
+    const results = await Promise.all(
+      meetings.slice(0, 8).map(async m => {
+        const chat = await fetch(`${API}/chats/${m.id}`).then(r => r.json()).catch(() => ({ messages: [] }))
+        if (!chat.messages?.length) return null
+        return { id: m.id, msgs: chat.messages, title: m.title || 'Meeting', date: m.date || null, transcript: m.transcript || '' }
       })
-      .filter(Boolean)
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 8)
+    )
+    return results.filter(Boolean)
   } catch { return [] }
 }
 
@@ -44,14 +41,18 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   const [loading, setLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
-  const [chatHistory, setChatHistory] = useState(() => getChatHistory())
+  const [chatHistory, setChatHistory] = useState([])
   const historyRef = useRef(null)
   const bottomRef = useRef(null)
 
-  // Persist messages whenever they change
+  // Persist messages to backend whenever they change
   useEffect(() => {
     if (meetingId && messages.length > 0) {
-      localStorage.setItem(`chat-${meetingId}`, JSON.stringify(messages))
+      fetch(`${API}/chats/${meetingId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+      }).catch(() => {})
     }
   }, [messages, meetingId])
 
@@ -61,7 +62,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
 
   // Refresh chat history when dropdown opens
   useEffect(() => {
-    if (showHistory) setChatHistory(getChatHistory())
+    if (showHistory) fetchChatHistory().then(setChatHistory)
   }, [showHistory])
 
   // Close history dropdown on outside click
@@ -82,7 +83,11 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
       if (viewingSession) {
         setViewingSession(prev => {
           const updated = { ...prev, msgs: [...prev.msgs, newMsg] }
-          localStorage.setItem(`chat-${prev.id}`, JSON.stringify(updated.msgs))
+          fetch(`${API}/chats/${prev.id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: updated.msgs }),
+          }).catch(() => {})
           return updated
         })
       } else {
@@ -221,7 +226,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                           </button>
                           <button
                             onClick={() => {
-                              localStorage.removeItem(`chat-${session.id}`)
+                              fetch(`${API}/chats/${session.id}`, { method: 'DELETE' }).catch(() => {})
                               setChatHistory(prev => prev.filter(s => s.id !== session.id))
                               if (viewingSession?.id === session.id) setViewingSession(null)
                             }}

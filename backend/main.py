@@ -5,10 +5,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import AsyncGroq
+from supabase import create_client, Client as SupabaseClient
 
 from agents import orchestrator, summarizer, action_items, decisions, sentiment, email_drafter, calendar_suggester, health_score
 
@@ -22,6 +23,10 @@ app.add_middleware(
 )
 
 groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+
+_sb_url = os.getenv("SUPABASE_URL", "")
+_sb_key = os.getenv("SUPABASE_KEY", "")
+supabase: SupabaseClient = create_client(_sb_url, _sb_key) if _sb_url and _sb_key else None
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
@@ -65,6 +70,87 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── Meeting history ────────────────────────────────────────────────
+
+class MeetingEntry(BaseModel):
+    id: int
+    date: str
+    title: str = ""
+    score: int = None
+    transcript: str = ""
+    result: dict = {}
+
+
+@app.get("/meetings")
+async def get_meetings(q: str = Query(default="")):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    query = supabase.table("meetings").select("id,date,title,score,transcript,result").order("id", desc=True).limit(50)
+    if q.strip():
+        query = query.ilike("title", f"%{q}%")
+    res = query.execute()
+    return res.data
+
+
+@app.post("/meetings")
+async def save_meeting(entry: MeetingEntry):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    supabase.table("meetings").upsert({
+        "id": entry.id,
+        "date": entry.date,
+        "title": entry.title,
+        "score": entry.score,
+        "transcript": entry.transcript,
+        "result": entry.result,
+    }).execute()
+    return {"ok": True}
+
+
+@app.delete("/meetings/{meeting_id}")
+async def delete_meeting(meeting_id: int):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    supabase.table("meetings").delete().eq("id", meeting_id).execute()
+    return {"ok": True}
+
+
+# ── Chat history ───────────────────────────────────────────────────
+
+class ChatEntry(BaseModel):
+    messages: list
+
+
+@app.get("/chats/{meeting_id}")
+async def get_chat(meeting_id: int):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    res = supabase.table("chats").select("messages").eq("meeting_id", meeting_id).limit(1).execute()
+    if res.data:
+        return {"messages": res.data[0]["messages"]}
+    return {"messages": []}
+
+
+@app.post("/chats/{meeting_id}")
+async def save_chat(meeting_id: int, entry: ChatEntry):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    existing = supabase.table("chats").select("id").eq("meeting_id", meeting_id).limit(1).execute()
+    if existing.data:
+        supabase.table("chats").update({"messages": entry.messages}).eq("meeting_id", meeting_id).execute()
+    else:
+        supabase.table("chats").insert({"meeting_id": meeting_id, "messages": entry.messages}).execute()
+    return {"ok": True}
+
+
+@app.delete("/chats/{meeting_id}")
+async def delete_chat(meeting_id: int):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    supabase.table("chats").delete().eq("meeting_id", meeting_id).execute()
+    return {"ok": True}
 
 
 @app.post("/analyze")
