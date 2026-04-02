@@ -52,6 +52,17 @@ const AGENTS_META = [
   { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
 ]
 
+const DEFAULT_RESULT = {
+  summary: '',
+  action_items: [],
+  decisions: [],
+  sentiment: { overall: 'neutral', score: 50, arc: 'stable', notes: '', speakers: [], tension_moments: [] },
+  follow_up_email: { subject: '', body: '' },
+  calendar_suggestion: { recommended: false, reason: '', suggested_timeframe: '' },
+  health_score: { score: 0, verdict: '', badges: [], breakdown: { clarity: 0, action_orientation: 0, engagement: 0 } },
+  agents_run: [],
+}
+
 function extractSpeakers(transcript) {
   const matches = transcript.match(/^([A-Z][a-zA-Z\s]{1,30}?):/gm) || []
   const names = [...new Set(matches.map(m => m.replace(/:$/, '').trim()))]
@@ -386,15 +397,38 @@ export default function App() {
     setResult(null)
     const validSpeakers = speakersParam.filter(s => s.name.trim())
     try {
-      const res = await fetch(`${API}/analyze`, {
+      const res = await fetch(`${API}/analyze-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript, speakers: validSpeakers }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Server error ${res.status}`)
-      const data = await res.json()
-      setResult(data)
-      saveToHistory(transcript, data)
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = { ...DEFAULT_RESULT }
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6).trim()
+          if (raw === '[DONE]') {
+            saveToHistory(transcript, accumulated)
+            break
+          }
+          try {
+            const chunk = JSON.parse(raw)
+            accumulated = { ...accumulated, ...chunk }
+            setResult({ ...accumulated })
+          } catch { /* malformed chunk, skip */ }
+        }
+      }
     } catch (e) {
       setError(e.message || 'Failed to analyze.')
     } finally {

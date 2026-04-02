@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from dotenv import load_dotenv
 
@@ -6,6 +7,7 @@ load_dotenv()
 
 import httpx
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import AsyncGroq
@@ -218,6 +220,63 @@ async def analyze(req: AnalyzeRequest):
             result["health_score"] = agent_result.get("health_score", DEFAULT_RESULT["health_score"])
 
     return result
+
+
+AGENT_RESULT_KEY = {
+    "summarizer": "summary",
+    "action_items": "action_items",
+    "decisions": "decisions",
+    "sentiment": "sentiment",
+    "email_drafter": "follow_up_email",
+    "calendar_suggester": "calendar_suggestion",
+    "health_score": "health_score",
+}
+
+
+@app.post("/analyze-stream")
+async def analyze_stream(req: AnalyzeRequest):
+    if not req.transcript.strip():
+        raise HTTPException(status_code=400, detail="Transcript cannot be empty")
+
+    transcript = req.transcript
+    if req.speakers:
+        lines = ["Meeting participants:"]
+        for s in req.speakers:
+            name = (s.get("name") or "").strip()
+            role = (s.get("role") or "").strip()
+            if name:
+                lines.append(f"  - {name}: {role}" if role else f"  - {name}")
+        transcript = "\n".join(lines) + "\n\n" + transcript
+
+    agents_to_run = await orchestrator.run_orchestrator(transcript)
+    valid_agents = [a for a in agents_to_run if a in AGENT_MAP]
+
+    async def event_stream():
+        # Send agents_run first so frontend knows what to expect
+        yield f"data: {json.dumps({'agents_run': valid_agents})}\n\n"
+
+        async def run_agent(name):
+            result = await AGENT_MAP[name](transcript)
+            return name, result
+
+        tasks = {asyncio.ensure_future(run_agent(name)): name for name in valid_agents}
+        pending = set(tasks.keys())
+
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                try:
+                    agent_name, agent_result = task.result()
+                    key = AGENT_RESULT_KEY.get(agent_name)
+                    if key and key in agent_result:
+                        payload = {"agent": agent_name, key: agent_result[key]}
+                        yield f"data: {json.dumps(payload)}\n\n"
+                except Exception:
+                    pass
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/transcribe")
