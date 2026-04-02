@@ -117,6 +117,18 @@ async def delete_meeting(meeting_id: int):
     return {"ok": True}
 
 
+class MeetingPatch(BaseModel):
+    result: dict
+
+
+@app.patch("/meetings/{meeting_id}")
+async def patch_meeting(meeting_id: int, patch: MeetingPatch):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    supabase.table("meetings").update({"result": patch.result}).eq("id", meeting_id).execute()
+    return {"ok": True}
+
+
 # ── Chat history ───────────────────────────────────────────────────
 
 class ChatEntry(BaseModel):

@@ -402,6 +402,21 @@ export default function App() {
     }
   }
 
+  const toggleActionItem = (index) => {
+    const updated = result.action_items.map((item, i) =>
+      i === index ? { ...item, completed: !item.completed } : item
+    )
+    const updatedResult = { ...result, action_items: updated }
+    setResult(updatedResult)
+    if (meetingId) {
+      fetch(`${API}/meetings/${meetingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ result: updatedResult }),
+      }).catch(() => {})
+    }
+  }
+
   const exportMarkdown = () => {
     if (!result) return
     const md = buildMarkdown(result)
@@ -881,7 +896,7 @@ export default function App() {
 
               {/* Action items + Decisions side by side */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} /></div>
+                <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
                 <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
               </div>
 
@@ -912,7 +927,7 @@ export default function App() {
               </div>
               <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
               <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
-              <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} /></div>
+              <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
               <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
               <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
               <div className="animate-fade-in-up card-delay-4"><EmailCard email={result.follow_up_email} /></div>

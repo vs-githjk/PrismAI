@@ -1,12 +1,8 @@
-import { useState } from 'react'
-
-export default function ActionItemsCard({ actionItems }) {
-  const [checked, setChecked] = useState({})
-
+export default function ActionItemsCard({ actionItems, onToggle }) {
   if (!actionItems || actionItems.length === 0) return null
 
-  const toggle = (i) => setChecked((prev) => ({ ...prev, [i]: !prev[i] }))
-  const doneCount = Object.values(checked).filter(Boolean).length
+  const toggle = (i) => onToggle?.(i)
+  const doneCount = actionItems.filter(item => item.completed).length
 
   return (
     <div className="rounded-2xl overflow-hidden card-glow-violet" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)' }}>
@@ -33,7 +29,7 @@ export default function ActionItemsCard({ actionItems }) {
             <li
               key={i}
               className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
-                checked[i]
+                item.completed
                   ? 'border-purple-500/15 bg-purple-500/5 opacity-50'
                   : 'border-white/5 bg-white/2 hover:bg-white/4'
               }`}
@@ -41,18 +37,18 @@ export default function ActionItemsCard({ actionItems }) {
               <button
                 onClick={() => toggle(i)}
                 className={`mt-0.5 w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                  checked[i]
+                  item.completed
                     ? 'bg-purple-500 border-purple-500 shadow-sm shadow-purple-500/40'
                     : 'border-gray-600 hover:border-purple-400'
                 }`}
               >
-                {checked[i] && (
+                {item.completed && (
                   <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
               </button>
-              <div className={`flex-1 min-w-0 ${checked[i] ? 'line-through' : ''}`}>
+              <div className={`flex-1 min-w-0 ${item.completed ? 'line-through' : ''}`}>
                 <p className="text-gray-200 text-sm">{item.task}</p>
                 <div className="flex flex-wrap gap-3 mt-1.5">
                   {item.owner && item.owner !== 'Unassigned' && (
