@@ -220,6 +220,12 @@ function EmptyState() {
   )
 }
 
+// Detect share token synchronously so first render already knows we're in share mode
+const INITIAL_SHARE_TOKEN = (() => {
+  const match = window.location.hash.match(/^#share\/([a-f0-9]+)$/)
+  return match ? match[1] : null
+})()
+
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [transcript, setTranscript] = useState('')
@@ -249,6 +255,7 @@ export default function App() {
   const [historySearch, setHistorySearch] = useState('')
 
   useEffect(() => {
+    if (INITIAL_SHARE_TOKEN) return // skip auto-load for shared links
     fetch(`${API}/meetings`)
       .then(r => r.json())
       .then(async data => {
@@ -272,18 +279,16 @@ export default function App() {
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
   const [shareToken, setShareToken] = useState(null)
-  const [shareMode, setShareMode] = useState(null) // { title, date, result, score } when viewing shared link
+  const [shareMode, setShareMode] = useState(INITIAL_SHARE_TOKEN ? 'loading' : null)
   const [shareCopied, setShareCopied] = useState(false)
 
   // Handle #share/{token} on load
   useEffect(() => {
-    const hash = window.location.hash
-    const match = hash.match(/^#share\/([a-f0-9]+)$/)
-    if (!match) return
-    fetch(`${API}/share/${match[1]}`)
+    if (!INITIAL_SHARE_TOKEN) return
+    fetch(`${API}/share/${INITIAL_SHARE_TOKEN}`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setShareMode(data) })
-      .catch(() => {})
+      .then(data => { setShareMode(data || null) })
+      .catch(() => { setShareMode(null) })
   }, [])
 
   const joinMeeting = async () => {
@@ -501,6 +506,22 @@ export default function App() {
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [showHistory])
+
+  // Share mode — loading state (token detected synchronously, waiting for fetch)
+  if (shareMode === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center animate-pulse" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+            </svg>
+          </div>
+          <p className="text-xs text-gray-500">Loading shared meeting…</p>
+        </div>
+      </div>
+    )
+  }
 
   // Share mode — read-only view for shared links
   if (shareMode) {
