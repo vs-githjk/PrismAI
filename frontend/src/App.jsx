@@ -374,7 +374,8 @@ export default function App() {
   const handleAnalyzeClick = () => {
     if (!transcript.trim()) return
     const detected = extractSpeakers(transcript)
-    setSpeakers(detected.length > 0 ? detected : [{ name: '', role: '' }])
+    if (detected.length === 0) { runAnalysis([]); return }
+    setSpeakers(detected)
     setShowSpeakerModal(true)
   }
 
