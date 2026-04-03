@@ -30,4 +30,3 @@ async def run(transcript: str) -> dict:
         except json.JSONDecodeError:
             if attempt == 1:
                 raise HTTPException(status_code=500, detail="calendar_suggester: failed to parse JSON after retry")
-    return {"calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": ""}}

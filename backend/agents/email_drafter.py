@@ -31,4 +31,3 @@ async def run(transcript: str) -> dict:
         except json.JSONDecodeError:
             if attempt == 1:
                 raise HTTPException(status_code=500, detail="email_drafter: failed to parse JSON after retry")
-    return {"follow_up_email": {"subject": "", "body": ""}}

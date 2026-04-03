@@ -777,7 +777,8 @@ export default function App() {
       let accumulated = { ...DEFAULT_RESULT }
       let buffer = ''
 
-      while (true) {
+      let streamDone = false
+      while (!streamDone) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
@@ -791,6 +792,7 @@ export default function App() {
             setAnalysisTime(parseFloat(elapsed))
             setMobileTab('results')
             if (!isDemo) saveToHistory(t, accumulated)
+            streamDone = true
             break
           }
           try {
