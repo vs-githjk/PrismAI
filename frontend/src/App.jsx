@@ -12,7 +12,9 @@ import SkeletonCard from './components/SkeletonCard'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-const SAMPLE_TRANSCRIPT = `Sarah: Alright everyone, let's get started. Today we need to finalize the Q2 roadmap and discuss the upcoming product launch.
+const DEMO_TRANSCRIPTS = [
+  // Q2 roadmap planning
+  `Sarah: Alright everyone, let's get started. Today we need to finalize the Q2 roadmap and discuss the upcoming product launch.
 
 Mike: Sure. I've reviewed the feature list and I think we're overcommitting again. We have three major features slated for Q2 but engineering only has bandwidth for two.
 
@@ -40,7 +42,105 @@ Sarah: Great. One more thing — the marketing team needs the feature specs by n
 
 Mike: I'll loop in David from engineering to finalize specs. We'll get that done.
 
-Sarah: Excellent. I think we're in good shape. Thanks everyone.`
+Sarah: Excellent. I think we're in good shape. Thanks everyone.`,
+
+  // Engineering incident postmortem
+  `Alex: Let's get through this postmortem on the payment outage from Tuesday. We had roughly 40 minutes of degraded checkout.
+
+Jordan: So the root cause was a Redis connection pool exhaustion. We had a config change go out Monday night that lowered the max connections from 100 to 10. That's it.
+
+Priya: Who approved that config change? I don't see it in the deploy log.
+
+Jordan: It was bundled into the infra cost-optimization PR. It was reviewed but nobody caught the connection pool value change.
+
+Alex: Okay. So we need a couple things here. First, we need to restore the connection pool config — Jordan, is that already done?
+
+Jordan: Done Tuesday afternoon. We're back to 100 and I added a 20% headroom buffer.
+
+Alex: Good. Priya, can you set up an alert that fires if connection pool utilization exceeds 70 percent?
+
+Priya: Yes, I'll have that in by end of week.
+
+Alex: We also need to add connection pool values to our change review checklist. Marcus, can you own that doc update?
+
+Marcus: I'll update the checklist and send it to the eng channel by Thursday.
+
+Alex: And we need a runbook for this class of failure. Priya, can you draft that?
+
+Priya: Sure. I'll model it after the database failover runbook, should be done by next Monday.
+
+Alex: This one stings because it was totally preventable. Going forward, any infra config change touching connection limits needs a second reviewer from the on-call rotation. Agreed?
+
+Jordan: Agreed.
+
+Marcus: Makes sense.
+
+Priya: Yes, I'll add that to the on-call policy doc as well.
+
+Alex: Good. I think we have clear owners on everything. Let's do a quick check-in Friday to make sure the alert is in and the checklist is updated.`,
+
+  // Sales strategy and pipeline review
+  `Diana: Okay team, Q1 closed yesterday. Let's look at where we landed and what we're doing differently in Q2.
+
+Carlos: We hit 87% of target. The mid-market segment was strong — 112% — but enterprise dragged us down. We lost three deals in the final stage that we thought were locked.
+
+Diana: What happened on those enterprise deals?
+
+Carlos: Two of them went to a competitor on pricing. We were 20% higher with no compelling differentiation in the demo. The third ghosted us after legal review took six weeks.
+
+Rachel: The legal review time is a real problem. I've flagged this before. We need a pre-approved contract template for deals under $50k ARR.
+
+Diana: I agree. Rachel, can you work with legal to get a standard template ready before end of April?
+
+Rachel: I'll get on their calendar this week. Should be doable.
+
+Diana: On the pricing issue — Carlos, I want you to build a competitive battle card for our top two competitors. Focus on where we win and where we need to match.
+
+Carlos: I can have a first draft by next Friday.
+
+Diana: Good. Also we're piloting a new discovery call framework in Q2. Everyone should complete the MEDDIC certification on the learning portal by April 30th.
+
+Carlos: I'll block time this week.
+
+Rachel: Same.
+
+Diana: Last thing — we're targeting 15 net-new enterprise logos in Q2. That means we need pipeline coverage of at least 3x, so 45 active enterprise opportunities. Let's review pipeline health every Monday at 9am. I'll send a recurring invite.
+
+Carlos: Works for me.
+
+Rachel: Sounds good.`,
+
+  // Design review and user research readout
+  `Morgan: Alright, let's go through the user research findings from the onboarding study and figure out what we're changing.
+
+Tyler: We ran 12 sessions. The biggest drop-off point is step 3 — connecting the first integration. 8 out of 12 users either abandoned or needed help. The instructions assume you have admin access, but most users doing onboarding are not admins.
+
+Morgan: That's a real problem. What's the fix?
+
+Tyler: Two things. One, we add an explicit check at that step — if the user doesn't have admin access, we show them a flow to invite their admin via email with a magic link. Two, we rewrite the copy to explain why admin access is needed.
+
+Sam: The magic link idea is good but that's at least two sprints of work. Can we do a short-term fix?
+
+Tyler: Short-term we can just surface a 'get help from your admin' tooltip with a pre-written email template they can copy. That's a one-day frontend change.
+
+Morgan: Let's do both. Sam, can you scope the magic link flow for the sprint after next?
+
+Sam: Yes, I'll have a spec ready by next Wednesday.
+
+Morgan: Tyler, can you write the tooltip copy and updated step 3 instructions by end of this week?
+
+Tyler: Done by Friday.
+
+Morgan: We also saw confusion around pricing during onboarding — 5 users asked when they'd be charged. We should add a one-line reassurance at the start: 'Free for 14 days, no credit card required.' Casey, can you add that to the hero text?
+
+Casey: Already have a mockup, I'll share it in Figma today.
+
+Morgan: Perfect. Let's retest with 5 users after the tooltip change goes live. I'll schedule that for two weeks out.`,
+]
+
+function getRandomDemoTranscript() {
+  return DEMO_TRANSCRIPTS[Math.floor(Math.random() * DEMO_TRANSCRIPTS.length)]
+}
 
 // ROYGBIV — white = transcript/orchestrator input, then splits into 7 agent colors
 const AGENTS_META = [
@@ -331,10 +431,7 @@ export default function App() {
     setLandingExiting(true)
     setTimeout(() => {
       setShowLanding(false)
-      if (demo) {
-        setIsDemoMode(true)
-        setTranscript(SAMPLE_TRANSCRIPT)
-      }
+      if (demo) startDemo()
     }, 370)
   }
 
@@ -532,7 +629,14 @@ export default function App() {
     setShowSpeakerModal(true)
   }
 
-  const runAnalysis = async (speakersParam, transcriptOverride) => {
+  const startDemo = () => {
+    const t = getRandomDemoTranscript()
+    setIsDemoMode(true)
+    setTranscript(t)
+    runAnalysis([], t, true)
+  }
+
+  const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
     setShowSpeakerModal(false)
     setLoading(true)
     setError(null)
@@ -567,7 +671,7 @@ export default function App() {
             const elapsed = ((Date.now() - analysisStartRef.current) / 1000).toFixed(1)
             setAnalysisTime(parseFloat(elapsed))
             setMobileTab('results')
-            saveToHistory(t, accumulated)
+            if (!isDemo) saveToHistory(t, accumulated)
             break
           }
           try {
@@ -617,12 +721,6 @@ export default function App() {
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [showHistory])
-
-  // Auto-run analysis when demo mode starts
-  useEffect(() => {
-    if (!isDemoMode) return
-    runAnalysis([], SAMPLE_TRANSCRIPT)
-  }, [isDemoMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Landing screen — shown to first-time visitors
   if (showLanding) {
@@ -748,7 +846,7 @@ export default function App() {
 
       {/* ── Header ── */}
       <header className="app-content flex-shrink-0 flex items-center justify-between px-6 py-3"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(7,4,15,0.7)', backdropFilter: 'blur(20px)' }}>
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(7,4,15,0.7)', backdropFilter: 'blur(20px)', position: 'relative', zIndex: 40 }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/30"
             style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
@@ -851,7 +949,7 @@ export default function App() {
           )}
 
           <button
-            onClick={() => { setIsDemoMode(true); setTranscript(SAMPLE_TRANSCRIPT); runAnalysis([], SAMPLE_TRANSCRIPT) }}
+            onClick={() => startDemo()}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-sky-400 transition-colors hover:text-sky-300"
             style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.15)' }}>
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -935,7 +1033,7 @@ export default function App() {
                 </svg>
               </div>
               {inputTab !== 'join' && (
-                <button onClick={() => setTranscript(SAMPLE_TRANSCRIPT)}
+                <button onClick={() => setTranscript(getRandomDemoTranscript())}
                   className="text-[11px] px-2.5 py-2 rounded-lg transition-colors flex-shrink-0"
                   style={{ background: 'rgba(14,165,233,0.08)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.15)' }}>
                   Load sample
@@ -1209,7 +1307,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <EmptyState onDemo={() => { setIsDemoMode(true); setTranscript(SAMPLE_TRANSCRIPT); runAnalysis([], SAMPLE_TRANSCRIPT) }} />
+            <EmptyState onDemo={() => startDemo()} />
           )}
         </div>
 
