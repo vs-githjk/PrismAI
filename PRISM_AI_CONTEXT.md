@@ -64,7 +64,10 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   └── vite.config.js             # base: '/Agentic-Meeting-Copilot/'
 ├── .github/workflows/deploy.yml   # Push to main → build frontend → GitHub Pages
 ├── render.yaml                    # Render.com backend config (service name: meeting-copilot-api)
-└── PRISM_AI_CONTEXT.md            # This file
+├── PRISM_AI_CONTEXT.md            # This file
+└── IMPROVEMENT_SPECS_DRAFT_1.md   # Prioritized improvement roadmap — read this alongside this file
+
+> **For incoming LLMs:** Read both docs first for orientation, then read the specific source files relevant to your task before writing any code. The docs give direction; the code gives the patterns to follow.
 ```
 
 ---
