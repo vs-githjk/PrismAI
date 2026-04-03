@@ -10,6 +10,7 @@ import CalendarCard from './components/CalendarCard'
 import ChatPanel from './components/ChatPanel'
 import SkeletonCard from './components/SkeletonCard'
 import ProactiveSuggestions from './components/ProactiveSuggestions'
+import ErrorCard from './components/ErrorCard'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -1163,15 +1164,7 @@ export default function App() {
           </div>
 
           {/* Error */}
-          {error && (
-            <div className="mx-6 mb-3 px-4 py-3 rounded-xl text-xs text-red-300 flex items-start gap-2 animate-fade-in-up"
-              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-              <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              {error}
-            </div>
-          )}
+          {error && <ErrorCard message={error} onRetry={() => runAnalysis([])} />}
 
           {/* Transcript card */}
           <div className="mx-6 mb-4 rounded-2xl overflow-hidden card-breathe" style={CARD_STYLE}>

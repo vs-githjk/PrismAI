@@ -1,3 +1,23 @@
+import { useState, useEffect } from 'react'
+
+function useCountUp(target, duration = 1000) {
+  const [display, setDisplay] = useState(0)
+  useEffect(() => {
+    if (target === undefined || target === null) return
+    let start = null
+    const step = (timestamp) => {
+      if (!start) start = timestamp
+      const progress = Math.min((timestamp - start) / duration, 1)
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setDisplay(Math.round(eased * target))
+      if (progress < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }, [target, duration])
+  return display
+}
+
 const SCORE_COLOR = (score) => {
   if (score >= 80) return { stroke: '#10b981', text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/25', accent: 'linear-gradient(90deg, #10b981, #34d399, transparent)', label: 'Excellent' }
   if (score >= 60) return { stroke: '#6366f1', text: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/25', accent: 'linear-gradient(90deg, #6366f1, #818cf8, transparent)', label: 'Good' }
@@ -10,7 +30,8 @@ const BADGE_POSITIVE = new Set(['Clear Decisions', 'Action-Oriented', 'Well-Faci
 function CircleGauge({ score, color }) {
   const radius = 46
   const circumference = 2 * Math.PI * radius
-  const offset = circumference - (score / 100) * circumference
+  const displayed = useCountUp(score, 1000)
+  const offset = circumference - (displayed / 100) * circumference
 
   return (
     <div className="relative w-28 h-28 flex-shrink-0">
@@ -26,11 +47,11 @@ function CircleGauge({ score, color }) {
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 1s ease-out', filter: `drop-shadow(0 0 6px ${color.stroke}80)` }}
+          style={{ filter: `drop-shadow(0 0 6px ${color.stroke}80)` }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-2xl font-bold ${color.text}`}>{score}</span>
+        <span className={`text-2xl font-bold ${color.text}`}>{displayed}</span>
         <span className="text-[10px] text-gray-500 font-medium">/100</span>
       </div>
     </div>
@@ -38,16 +59,17 @@ function CircleGauge({ score, color }) {
 }
 
 function BreakdownBar({ label, value, color }) {
+  const displayed = useCountUp(value, 1000)
   return (
     <div>
       <div className="flex justify-between mb-1">
         <span className="text-[11px] text-gray-500">{label}</span>
-        <span className="text-[11px] text-gray-400 font-medium">{value}</span>
+        <span className="text-[11px] text-gray-400 font-medium">{displayed}</span>
       </div>
       <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
         <div
-          className="h-1.5 rounded-full transition-all duration-1000"
-          style={{ width: `${value}%`, background: color.stroke }}
+          className="h-1.5 rounded-full"
+          style={{ width: `${displayed}%`, background: color.stroke, transition: 'width 16ms linear' }}
         ></div>
       </div>
     </div>
