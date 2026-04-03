@@ -61,6 +61,8 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │       ├── SentimentCard.jsx
 │   │       ├── EmailCard.jsx
 │   │       └── CalendarCard.jsx
+│   │       ├── ProactiveSuggestions.jsx # Post-analysis contextual action panel
+│   │       └── ErrorCard.jsx        # Designed error states with retry CTA
 │   └── vite.config.js             # base: '/Agentic-Meeting-Copilot/'
 ├── .github/workflows/deploy.yml   # Push to main → build frontend → GitHub Pages
 ├── render.yaml                    # Render.com backend config (service name: meeting-copilot-api)
@@ -101,6 +103,7 @@ Note: `action_items` now includes a `completed` boolean field that persists via 
 | POST | `/recall-webhook` | Recall.ai sends bot events here |
 | POST | `/agent` | `{ agent, transcript, instruction }` → single agent output |
 | POST | `/chat` | `{ message, transcript }` → `{ response }` |
+| POST | `/chat/global` | `{ message, limit? }` → `{ response }` — answers across all stored meetings |
 | GET | `/meetings` | List meetings (optional `?q=` search by title) |
 | POST | `/meetings` | Save/upsert a meeting |
 | PATCH | `/meetings/{id}` | Update meeting result (used for action item checkbox state) |
@@ -267,6 +270,81 @@ What is **already built** that the spec asks for (do not re-implement):
 
 ## Recent Changes (in order, most recent last)
 
+### UI polish sprint (current)
+- **Card hover states** — planned: subtle `translateY(-2px)` lift + glow on hover for all result cards
+- **Staggered card entrance** — planned: tighter per-card delay on `animate-fade-in-up` so cards arrive sequentially
+- **Mobile empty state** — planned: mirror desktop agent grid on the mobile results tab empty state
+- **Landing agent grid mobile** — planned: 2-col layout on small screens
+
+### Calendar suggestion done-state
+- Clicking "Open Calendar" in `ProactiveSuggestions` no longer dismisses the suggestion. Instead sets `done: true` on the item.
+- Done items remain visible at 50% opacity with a green checkmark replacing the accent dot and a strikethrough label — confirms the action was taken.
+- Action button is hidden on done items; dismiss X remains.
+
+### Mobile polish + share page overhaul + time saved banner
+**Mobile polish:**
+- `ChatPanel.jsx` — fixed `height: 360px` replaced with `minHeight: 300px / maxHeight: 40vh` — adapts to viewport, no cutoff on short screens.
+- Mobile tab bar — added `env(safe-area-inset-bottom, 0px)` padding — no longer overlaps content on notched iPhones.
+- Dead `getElementById('mobile-results')` call removed — "Analysis complete — tap to see results" button now calls `setMobileTab('results')` directly.
+
+**Share page overhaul (`shareMode` render in App.jsx):**
+- Sticky branded header bar with logo, "shared" badge, and "Analyze your own →" CTA in top-right.
+- Meeting title, full date, and `AgentTags` shown above cards.
+- Bottom CTA block: "Try PrismAI free →" gradient button.
+- OG meta tags (`og:title`, `og:description`, `og:type`, `twitter:card`, `twitter:title`, `twitter:description`) injected dynamically via DOM in the share `useEffect` — link previews now work on Slack/iMessage/Twitter.
+- `document.title` updated to meeting title on share load.
+
+**Time saved banner:**
+- `showTimeSaved` state, set true on `[DONE]`, cleared on new analysis start.
+- Renders above `ProactiveSuggestions` in both desktop and mobile results blocks.
+- Shows "~X minutes saved · analyzed in Ys" with emerald styling.
+- Share button copies pre-written tweet to clipboard: `"Just analyzed my meeting in Xs with PrismAI — saved ~Y minutes. Try it: [url]"`.
+- Dismiss X closes the banner.
+
+### Cross-meeting chat (`POST /chat/global`)
+**Backend (`main.py`):**
+- New `GlobalChatRequest` model: `{ message: str, limit: int = 10 }`.
+- `POST /chat/global` — fetches last N meetings from Supabase (`id, title, date, score, result`), builds compact context per meeting (~200 chars: summary + action items + decisions), hard cap at 12k chars total, drops oldest meetings first if exceeded.
+- System prompt positions LLM as a cross-meeting intelligence assistant that cites meeting titles/dates.
+- Returns `{ response: string }`.
+
+**Frontend (`ChatPanel.jsx`):**
+- New `detectGlobalIntent(msg)` function — matches patterns: "last N meetings", "across all meetings", "what did I commit", "which meetings", "past/previous meetings", "recurring", "trend", "over time", "last month/week/quarter", "all time", "history of", "meeting history".
+- `globalIntent` flag computed after `agentIntent` check — only fires if no agent intent matched.
+- Routes to `POST /chat/global` instead of `POST /chat` when flag is true.
+- `loadingGlobal` state: shows "Searching all meetings…" animated text in the loading bubble instead of the 3-dot bounce.
+- Global replies tagged with "⊕ searched all meetings" below the message content.
+- `setLoadingGlobal(false)` called in `finally` block — prevents stuck loading state on network errors.
+
+### ErrorCard + health score count-up animation
+**`frontend/src/components/ErrorCard.jsx` (new file):**
+- Props: `message`, `onRetry`.
+- Detects error type from message string: timeout → "Server is waking up"; 429/rate-limit → "Too many requests"; network failure → "Cannot reach the server"; generic fallback.
+- Each variant has a tailored title + detail sentence.
+- Retry button re-fires `runAnalysis([])`.
+- Replaces the raw red text div that was in App.jsx.
+
+**`HealthScoreCard.jsx` — count-up animation:**
+- New `useCountUp(target, duration)` hook using `requestAnimationFrame` with ease-out cubic easing.
+- `CircleGauge` uses `useCountUp` — both the displayed number and the arc offset animate from 0 → actual score over 1 second.
+- `BreakdownBar` uses `useCountUp` — both the label number and the bar width animate in sync.
+- CSS transition removed from arc (was `transition: stroke-dashoffset 1s ease-out`) — now driven by rAF directly.
+
+### Proactive Suggestions Panel (`ProactiveSuggestions.jsx`)
+New component placed above `HealthScoreCard` in both desktop and mobile results blocks. Renders after `health_score` is present (signals stream complete). Shows up to 3 contextual action cards based on `result`:
+
+| Trigger | Suggestion | Action |
+|---|---|---|
+| `calendar_suggestion.recommended` | "Follow-up meeting recommended" | Opens Google Calendar deep link |
+| `action_items.length >= 3` | "X action items — draft Slack update?" | `POST /chat` inline response |
+| Tension in sentiment | "Tension detected — facilitation tip?" | `POST /chat` inline response |
+| `health_score.score < 60` | "Low score — tips to improve?" | `POST /chat` inline response |
+
+- Per-suggestion state: `{ loading, response, error, dismissed, done }`.
+- Link-type suggestions use `done` state (crossed-out) instead of `dismissed` so completion is visible on return.
+- Chat-type suggestions expand inline; action button hides after response received.
+- Dismiss X per suggestion; panel hides when all dismissed/done.
+
 ### Share link flash fix
 `INITIAL_SHARE_TOKEN` is computed synchronously at module level (before first render). `shareMode` initializes as `'loading'` when a token is detected, so the full app UI never flashes. The meetings auto-load `useEffect` bails out for share links.
 
@@ -325,53 +403,37 @@ A full review of the codebase identified and fixed the following:
 
 ## Remaining Roadmap (priority order)
 
-### #1 — Proactive suggestions panel (closes the "agentic behavior" gap)
-After analysis completes, show a banner/panel with 2-3 contextual CTAs based on what was found. Examples:
-- "3 action items detected — draft a Slack update?" → calls email_drafter with a Slack-format prompt
-- "Follow-up meeting recommended for next week — add to calendar?" → deep link to Google Calendar with pre-filled subject/time
-- "Unresolved tension detected — want a coaching tip on facilitation?"
-Implementation: a `ProactiveSuggestions` component that reads `result` after `[DONE]` and renders relevant prompts. Each prompt fires `POST /agent` with a targeted instruction.
+### #1 — UI polish pass *(next up)*
+Cards are functional but static. Specific gaps:
+- **Card hover states** — no lift/glow on hover; result cards feel inert
+- **Staggered card entrance** — all cards animate in together; a tighter per-card stagger (60ms apart) makes results feel like they're arriving
+- **Mobile empty state** — "Analyze a meeting to see results" plain text; should mirror desktop agent grid
+- **Landing agent grid mobile** — currently 4-col on all screens; needs 2-col on small screens
 
-### #2 — Cross-meeting chat / multi-meeting intelligence
-Extend the chat interface to answer questions across all stored meetings:
-- "What did I commit to last month?"
-- "Which meetings had the lowest health scores?"
-- "Summarize the last 3 meetings about the mobile app"
-Backend: add a `POST /chat/global` endpoint that fetches relevant meetings from Supabase (simple text search on `title` + `result` JSON) and passes them as context to the LLM.
-Frontend: detect "cross-meeting" intent in `detectAgentIntent()` (e.g., "last 3 meetings", "across all meetings") and route to the new endpoint.
+### #2 — Health score trend chart
+Graph `meetings.score` over time. Data already in Supabase. Deferred until users have enough meeting history for it to be meaningful (aim for after first week of public use).
+- `recharts` library: `npm install recharts`
+- `ScoreTrendChart.jsx` with `AreaChart`, color-coded by score range
+- Placement: above meeting history list, collapsed by default with "Show trend" toggle
+- Minimum 2 meetings required to render
 
-### #3 — Export options
-Copy to Notion, download as PDF, send to Slack. The output is only as good as where it lands. Priority: PDF download + copy-as-markdown (markdown export already exists via `exportMarkdown()`). Slack/Notion need OAuth which blocks on auth (#6).
+### #3 — Auth (Google SSO via Supabase)
+`supabase.auth.signInWithOAuth({ provider: 'google' })`. This is the unlock for all team features. Until auth lands, all data is browser-anonymous.
+- Frontend: auth context + protected routes
+- Backend: JWT validation middleware on protected endpoints
+- Supabase: enable Google OAuth in dashboard
 
-### #4 — Meeting health trend chart
-Graph health scores over time across meetings. Data is already in Supabase (`meetings.score`). Needs a chart library (recommend `recharts` — already React-friendly) and a new view/modal. This creates habit/retention — users start optimizing their score.
+### #4 — Team workspace *(blocked on #3)*
+Add `user_id` to `meetings` and `chats` tables. Scope all queries by `user_id`. Shared workspaces require a `workspaces` table + membership model.
 
-### #5 — Better share page
-Right now the share page is just a card dump at `/share/{token}`. Needs:
-- Branded header with PrismAI logo + "Shared by" context
-- CTA: "Analyze your own meeting →" more prominent
-- OG meta tags for link previews (requires SSR or a meta-tag injection hack for GitHub Pages)
+### #5 — Model fallback
+Each agent catches Groq errors and retries with OpenAI (`gpt-4o-mini`) or Anthropic (`claude-haiku-4-5`). Agent pattern is identical — swap client + model name. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars.
 
-### #6 — Auth (Google SSO)
-Use Supabase Auth (already in the stack — just needs `supabase.auth.signInWithOAuth`). This is the unlock for team features. Until this lands, all data is browser-anonymous. Add to both backend (JWT validation middleware) and frontend (auth context + protected routes).
+### #6 — Bot store persistence
+`bot_store` dict in `main.py` is in-memory — lost on Render restart. Move to a `bots` Supabase table: `id`, `status`, `result`, `error`, `transcript`, `created_at`.
 
-### #7 — Team workspace
-After auth: meetings scoped to `user_id`, shared workspaces, team history. Requires schema migration: add `user_id` column to `meetings` and `chats` tables.
-
-### #8 — Model fallback
-Each agent's `run()` catches Groq errors and retries with OpenAI (`gpt-4o-mini`) or Anthropic (`claude-haiku-4-5`). Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to env vars. The agent pattern is identical — just swap the client and model name.
-
-### #9 — Bot store persistence
-`bot_store` dict in `main.py` is in-memory — lost on Render restart. Move to a `bots` table in Supabase: `id`, `status`, `result`, `error`, `transcript`, `created_at`.
-
-### #10 — Mobile polish
-Tab bar is in place. Still needed: transcript textarea height on mobile, chat panel sizing, share page mobile layout.
-
-### #11 — Friendly error states
-Groq 429s, empty transcripts, network failures — currently surface as raw error strings. Need designed error cards with retry CTAs.
-
-### #12 — "Time saved" social sharing
-After analysis: show a shareable image/card with the time saved stat. People screenshot and share this — it's a growth loop.
+### #7 — Slack / Google Docs integration *(blocked on #3)*
+Full OAuth flows. The proactive suggestions calendar deep link covers the calendar case without auth for now.
 
 ---
 
