@@ -40,7 +40,7 @@ export default function DecisionsCard({ decisions }) {
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border ${imp.classes}`}>
                       {imp.label}
                     </span>
-                    {item.owner && item.owner !== 'Team' && (
+                    {item.owner && (
                       <span className="flex items-center gap-1 text-xs text-gray-500">
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />

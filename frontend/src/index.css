@@ -84,6 +84,7 @@
 
 /* ── Ocean prism gradient text ───────────────────────────────── */
 .gradient-text {
+  color: #38bdf8; /* Firefox fallback — visible if clip isn't supported */
   background: linear-gradient(120deg, #38bdf8 0%, #06b6d4 40%, #0d9488 100%);
   background-size: 200% 200%;
   animation: spectrum-shift 6s ease-in-out infinite;
@@ -116,6 +117,7 @@ html, body {
     radial-gradient(ellipse 60% 50% at 80% 95%, rgba(20,184,166,0.25) 0%, transparent 55%),
     radial-gradient(ellipse 45% 45% at 5%  90%, rgba(56,189,248,0.22) 0%, transparent 50%);
   animation: bg-breathe 10s ease-in-out infinite;
+  will-change: background-image;
   min-height: 100vh;
 }
 

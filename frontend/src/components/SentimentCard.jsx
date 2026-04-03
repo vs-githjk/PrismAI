@@ -125,7 +125,9 @@ export default function SentimentCard({ sentiment }) {
             <ul className="space-y-1.5">
               {tensions.map((t, i) => (
                 <li key={i} className="flex items-start gap-2 text-xs text-gray-400">
-                  <span className="mt-0.5 text-red-400 shrink-0">⚡</span>
+                  <svg className="mt-0.5 w-3 h-3 text-red-400 shrink-0 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
                   <span>{t}</span>
                 </li>
               ))}

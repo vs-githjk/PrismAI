@@ -240,6 +240,28 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 
 ---
 
+## Product Vision (from improvement spec)
+
+The stated goal is to evolve PrismAI from a **static AI demo** into an **Agentic Meeting Operating System** — a system that understands meetings deeply, maintains memory across sessions, and takes actions on behalf of the user. The key gaps identified:
+
+1. **No agentic behavior** — the app analyzes passively but never acts. It surfaces "Mike owns the roadmap update by Thursday" but doesn't offer to do anything about it.
+2. **No cross-meeting memory** — meetings are isolated; no ability to ask "what did I commit to last month?" or see trends.
+3. **No proactive suggestions** — after analysis, no nudges like "3 action items detected — generate a Slack summary?" appear.
+4. **No external tool integrations** — Slack, Google Docs, Calendar all blocked on auth (see #6).
+5. **Highlight-based interaction** — select transcript text → ask AI a contextual question. Not yet built.
+6. **Friendly error states** — Groq 429s and failures surface as raw strings.
+
+What is **already built** that the spec asks for (do not re-implement):
+- Streaming responses, skeleton cards, step-by-step card appearance ✓
+- All 7 analysis cards ✓
+- AI chat with agent intent detection ✓
+- Persistent storage (Supabase) ✓
+- Meeting history + search ✓
+- Audio upload + live recording ✓
+- Export (Markdown, PDF, copy) ✓
+
+---
+
 ## Recent Changes (in order, most recent last)
 
 ### Share link flash fix
@@ -255,6 +277,29 @@ Key details:
 - `runAnalysis` takes an optional `transcriptOverride` param so demo can fire before React state updates
 - Share links skip the landing entirely
 
+### Bug fixes and code quality pass
+
+A full review of the codebase identified and fixed the following:
+
+**Frontend fixes:**
+- `HealthScoreCard` — `!healthScore.score` guard hid the card when score was 0 (valid for a terrible meeting). Fixed to check `score === undefined || score === null`.
+- `CalendarCard` — only rendered if `recommended === true`. If the model returns content but omits the boolean, card was silently hidden. Now renders if `recommended` is true OR `reason` is present.
+- `DecisionsCard` — filtered out owners named `'Team'` assuming it was a placeholder. Removed — the model's output should be trusted.
+- `SentimentCard` — tension moment bullet used `⚡` emoji (won't render on some systems). Replaced with an SVG bolt icon.
+- `App.jsx` — "New Meeting" button didn't clear `initialMessages`, so old chat bled into new sessions. Added `setInitialMessages([])`.
+- `App.jsx` — history search fired a fetch on every keystroke. Added 300ms debounce via `historySearchDebounceRef`.
+- `App.jsx` — SSE stream reader had no timeout; frontend could hang forever if Render stalled. Added `AbortController` with 120s timeout and user-facing "Analysis timed out" error message.
+- `App.jsx` — `exportPDF` used deprecated `document.write()`. Replaced with Blob URL approach.
+- `App.jsx` — `toggleActionItem` silently diverged on persist failure. Now reverts the optimistic update if the PATCH fails.
+- `ChatPanel.jsx` — chat persistence `.catch(() => {})` fully swallowed errors. Now logs `console.warn` so failures are diagnosable.
+- `index.css` — `.gradient-text` had no fallback for Firefox (text went invisible). Added `color: #38bdf8` fallback.
+- `index.css` — `bg-breathe` animation on `html,body` had no `will-change` hint. Added `will-change: background-image`.
+
+**Backend fixes:**
+- All 7 agents + orchestrator had an identical copy of `_strip_fences()`. Extracted to `backend/agents/utils.py` as `strip_fences()`. All agents now `from .utils import strip_fences`.
+- `render.yaml` — `WEBHOOK_BASE_URL` pointed to the wrong URL (`agentic-meeting-copilot.onrender.com`). Fixed to `meeting-copilot-api.onrender.com`.
+- `requirements.txt` — no version constraints. Added `>=` floor pins to prevent breaking upgrades.
+
 ### UI overhaul
 - **2-col grid** for results: Health (full width) → Summary+Sentiment → Actions+Decisions → Email+Calendar
 - **Skeleton shimmer cards** shown while agents are streaming (replaces blank waiting)
@@ -267,6 +312,21 @@ Key details:
 ---
 
 ## Remaining Roadmap (priority order)
+
+### #1 — Proactive suggestions panel (closes the "agentic behavior" gap)
+After analysis completes, show a banner/panel with 2-3 contextual CTAs based on what was found. Examples:
+- "3 action items detected — draft a Slack update?" → calls email_drafter with a Slack-format prompt
+- "Follow-up meeting recommended for next week — add to calendar?" → deep link to Google Calendar with pre-filled subject/time
+- "Unresolved tension detected — want a coaching tip on facilitation?"
+Implementation: a `ProactiveSuggestions` component that reads `result` after `[DONE]` and renders relevant prompts. Each prompt fires `POST /agent` with a targeted instruction.
+
+### #2 — Cross-meeting chat / multi-meeting intelligence
+Extend the chat interface to answer questions across all stored meetings:
+- "What did I commit to last month?"
+- "Which meetings had the lowest health scores?"
+- "Summarize the last 3 meetings about the mobile app"
+Backend: add a `POST /chat/global` endpoint that fetches relevant meetings from Supabase (simple text search on `title` + `result` JSON) and passes them as context to the LLM.
+Frontend: detect "cross-meeting" intent in `detectAgentIntent()` (e.g., "last 3 meetings", "across all meetings") and route to the new endpoint.
 
 ### #3 — Export options
 Copy to Notion, download as PDF, send to Slack. The output is only as good as where it lands. Priority: PDF download + copy-as-markdown (markdown export already exists via `exportMarkdown()`). Slack/Notion need OAuth which blocks on auth (#6).
@@ -305,12 +365,13 @@ After analysis: show a shareable image/card with the time saved stat. People scr
 
 ## Agent Code Pattern (for reference)
 
-Every agent follows this exact structure:
+`_strip_fences` is now a shared utility in `backend/agents/utils.py`. Import it instead of defining it locally:
 
 ```python
 import json, os
 from groq import AsyncGroq
 from fastapi import HTTPException
+from .utils import strip_fences
 
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -319,15 +380,6 @@ SYSTEM_PROMPT = (
     'Return ONLY valid JSON: { "key": ... }. '
     "If the transcript contains a [User instruction: ...] line, follow it exactly."  # only if re-runnable via chat
 )
-
-def _strip_fences(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        lines = lines[1:] if lines[0].startswith("```") else lines
-        lines = lines[:-1] if lines and lines[-1].strip() == "```" else lines
-        text = "\n".join(lines).strip()
-    return text
 
 async def run(transcript: str) -> dict:
     for attempt in range(2):
@@ -341,7 +393,7 @@ async def run(transcript: str) -> dict:
         )
         raw = response.choices[0].message.content
         try:
-            return json.loads(_strip_fences(raw))
+            return json.loads(strip_fences(raw))
         except json.JSONDecodeError:
             if attempt == 1:
                 raise HTTPException(status_code=500, detail="agentname: failed to parse JSON after retry")

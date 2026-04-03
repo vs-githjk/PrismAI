@@ -1,5 +1,5 @@
 export default function CalendarCard({ suggestion }) {
-  if (!suggestion || !suggestion.recommended) return null
+  if (!suggestion || (!suggestion.recommended && !suggestion.reason)) return null
 
   return (
     <div className="rounded-2xl overflow-hidden card-glow-pink" style={{ background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.22)' }}>

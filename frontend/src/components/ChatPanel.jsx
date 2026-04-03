@@ -62,7 +62,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages }),
-      }).catch(() => {})
+      }).catch((err) => console.warn('[ChatPanel] Failed to persist chat:', err))
     }
   }, [messages, meetingId])
 
@@ -97,7 +97,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: updated.msgs }),
-          }).catch(() => {})
+          }).catch((err) => console.warn('[ChatPanel] Failed to persist viewed session chat:', err))
           return updated
         })
       } else {

@@ -1,8 +1,8 @@
-fastapi
-uvicorn[standard]
-groq
-python-dotenv
-httpx
-pydantic
-python-multipart
-supabase
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+groq>=0.9.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+pydantic>=2.0.0
+python-multipart>=0.0.9
+supabase>=2.0.0

@@ -1,6 +1,7 @@
 import json
 import os
 from groq import AsyncGroq
+from .utils import strip_fences
 
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -15,17 +16,6 @@ SYSTEM_PROMPT = (
 ALL_AGENTS = ["summarizer", "action_items", "decisions", "sentiment", "email_drafter", "calendar_suggester", "health_score"]
 
 
-def _strip_fences(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        # remove first and last fence lines
-        lines = lines[1:] if lines[0].startswith("```") else lines
-        lines = lines[:-1] if lines and lines[-1].strip() == "```" else lines
-        text = "\n".join(lines).strip()
-    return text
-
-
 async def run_orchestrator(transcript: str) -> list[str]:
     try:
         response = await client.chat.completions.create(
@@ -37,7 +27,7 @@ async def run_orchestrator(transcript: str) -> list[str]:
             ],
         )
         raw = response.choices[0].message.content
-        cleaned = _strip_fences(raw)
+        cleaned = strip_fences(raw)
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError:
@@ -51,7 +41,7 @@ async def run_orchestrator(transcript: str) -> list[str]:
                 ],
             )
             raw2 = response2.choices[0].message.content
-            data = json.loads(_strip_fences(raw2))
+            data = json.loads(strip_fences(raw2))
 
         agents = data.get("agents", ALL_AGENTS)
         # Always ensure core agents are included

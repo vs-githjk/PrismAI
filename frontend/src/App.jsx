@@ -571,6 +571,7 @@ export default function App() {
   const [historySearch, setHistorySearch] = useState('')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [mdCopied, setMdCopied] = useState(false)
+  const historySearchDebounceRef = useRef(null)
 
   useEffect(() => {
     if (INITIAL_SHARE_TOKEN) return // skip auto-load for shared links
@@ -761,11 +762,14 @@ export default function App() {
     analysisStartRef.current = Date.now()
     const t = transcriptOverride ?? transcript
     const validSpeakers = speakersParam.filter(s => s.name.trim())
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120_000)
     try {
       const res = await fetch(`${API}/analyze-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript: t, speakers: validSpeakers }),
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Server error ${res.status}`)
 
@@ -798,8 +802,13 @@ export default function App() {
         }
       }
     } catch (e) {
-      setError(e.message || 'Failed to analyze.')
+      if (e.name === 'AbortError') {
+        setError('Analysis timed out. The server may be starting up — please try again.')
+      } else {
+        setError(e.message || 'Failed to analyze.')
+      }
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }
@@ -815,7 +824,10 @@ export default function App() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result: updatedResult }),
-      }).catch(() => {})
+      }).catch(() => {
+        // Revert optimistic update if persist fails
+        setResult(result)
+      })
     }
   }
 
@@ -841,11 +853,12 @@ export default function App() {
 
   const exportPDF = () => {
     if (!result) return
-    const w = window.open('', '_blank')
-    w.document.write(buildPrintHTML(result))
-    w.document.close()
-    w.focus()
-    setTimeout(() => { w.print(); w.close() }, 300)
+    const html = buildPrintHTML(result)
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const w = window.open(url, '_blank')
+    w?.focus()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
   useEffect(() => {
@@ -1032,10 +1045,14 @@ export default function App() {
                   <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                     <input
                       value={historySearch}
-                      onChange={async e => {
-                        setHistorySearch(e.target.value)
-                        const res = await fetch(`${API}/meetings?q=${encodeURIComponent(e.target.value)}`).catch(() => null)
-                        if (res?.ok) { const d = await res.json(); setHistory(Array.isArray(d) ? d : []) }
+                      onChange={e => {
+                        const q = e.target.value
+                        setHistorySearch(q)
+                        clearTimeout(historySearchDebounceRef.current)
+                        historySearchDebounceRef.current = setTimeout(async () => {
+                          const res = await fetch(`${API}/meetings?q=${encodeURIComponent(q)}`).catch(() => null)
+                          if (res?.ok) { const d = await res.json(); setHistory(Array.isArray(d) ? d : []) }
+                        }, 300)
                       }}
                       placeholder="Search meetings..."
                       className="w-full text-xs text-gray-300 rounded-lg px-3 py-1.5 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
@@ -1080,7 +1097,7 @@ export default function App() {
 
           {result && (
             <button
-              onClick={() => { setTranscript(''); setResult(null); setError(null); setSessionId(s => s + 1) }}
+              onClick={() => { setTranscript(''); setResult(null); setError(null); setInitialMessages([]); setSessionId(s => s + 1) }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

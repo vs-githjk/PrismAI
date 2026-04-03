@@ -55,7 +55,7 @@ function BreakdownBar({ label, value, color }) {
 }
 
 export default function HealthScoreCard({ healthScore }) {
-  if (!healthScore || !healthScore.score) return null
+  if (!healthScore || healthScore.score === undefined || healthScore.score === null) return null
 
   const { score, verdict, badges = [], breakdown = {} } = healthScore
   const color = SCORE_COLOR(score)
