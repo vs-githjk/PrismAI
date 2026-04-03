@@ -108,6 +108,9 @@
 .card-glow-emerald { box-shadow: 0 0 0 1px rgba(16,185,129,0.25),  0 8px 32px rgba(16,185,129,0.08); }
 .card-glow-amber   { box-shadow: 0 0 0 1px rgba(245,158,11,0.25),  0 8px 32px rgba(245,158,11,0.08); }
 .card-glow-blue    { box-shadow: 0 0 0 1px rgba(59,130,246,0.25),  0 8px 32px rgba(59,130,246,0.08); }
+.card-glow-indigo  { box-shadow: 0 0 0 1px rgba(99,102,241,0.25),  0 8px 32px rgba(99,102,241,0.08); }
+.card-glow-violet  { box-shadow: 0 0 0 1px rgba(139,92,246,0.25),  0 8px 32px rgba(139,92,246,0.08); }
+.card-glow-pink    { box-shadow: 0 0 0 1px rgba(236,72,153,0.25),  0 8px 32px rgba(236,72,153,0.08); }
 
 /* ── Page background with slow breathing gradient pulse ─────── */
 html, body {
