@@ -9,6 +9,7 @@ import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
 import ChatPanel from './components/ChatPanel'
 import SkeletonCard from './components/SkeletonCard'
+import ProactiveSuggestions from './components/ProactiveSuggestions'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -1467,6 +1468,9 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Proactive suggestions */}
+              <ProactiveSuggestions result={result} transcript={transcript} />
+
               {/* Health score — full width, prominent */}
               <div className="animate-fade-in-up card-delay-0">
                 <HealthScoreCard healthScore={result.health_score} />
@@ -1575,6 +1579,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              <ProactiveSuggestions result={result} transcript={transcript} />
               <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
               <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
               <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
