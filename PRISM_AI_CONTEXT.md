@@ -303,6 +303,15 @@ A full review of the codebase identified and fixed the following:
 - `render.yaml` — `WEBHOOK_BASE_URL` pointed to the wrong URL (`agentic-meeting-copilot.onrender.com`). Fixed to `meeting-copilot-api.onrender.com`.
 - `requirements.txt` — no version constraints. Added `>=` floor pins to prevent breaking upgrades.
 
+### Landing page always shown + docs update
+- `LandingScreen` now shows on every visit (not just first-time). Removed `localStorage.getItem('prism_visited')` gate from `showLanding` init and removed the `localStorage.setItem` call in `exitLanding`. Share links still bypass it via `!INITIAL_SHARE_TOKEN`.
+- Added `IMPROVEMENT_SPECS_DRAFT_1.md` — prioritized 10-item roadmap with implementation details and UI bug table.
+- Updated `PRISM_AI_CONTEXT.md` file structure to reference the improvement spec, with a note for incoming LLMs to read both docs before touching code.
+
+### Bug fixes (second pass)
+- `App.jsx` — SSE while loop didn't exit on `[DONE]`; `break` only escaped the inner `for` loop, leaving the reader spinning. Added `streamDone` flag to break the outer `while` loop.
+- All 6 standard agents (`summarizer`, `action_items`, `decisions`, `sentiment`, `email_drafter`, `calendar_suggester`) — removed unreachable `return` fallback after the `for` loop. The `raise HTTPException` path always fires first on double failure, making the fallback dead code.
+
 ### UI overhaul
 - **2-col grid** for results: Health (full width) → Summary+Sentiment → Actions+Decisions → Email+Calendar
 - **Skeleton shimmer cards** shown while agents are streaming (replaces blank waiting)
