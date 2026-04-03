@@ -847,7 +847,8 @@ export default function App() {
       {/* ── Header ── */}
       <header className="app-content flex-shrink-0 flex items-center justify-between px-6 py-3"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(7,4,15,0.7)', backdropFilter: 'blur(20px)', position: 'relative', zIndex: 40 }}>
-        <div className="flex items-center gap-3">
+        <button className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          onClick={() => { setShowLanding(true); setLandingExiting(false) }}>
           <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/30"
             style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -859,7 +860,7 @@ export default function App() {
             <span className="text-sm font-bold gradient-text">PrismAI</span>
             <span className="hidden sm:inline text-[10px] text-gray-600 ml-2">meeting intelligence</span>
           </div>
-        </div>
+        </button>
 
         <div className="flex items-center gap-2">
           {/* History */}
@@ -885,6 +886,7 @@ export default function App() {
                       await Promise.all(history.map(h => fetch(`${API}/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
                       setHistory([])
                       setShowHistory(false)
+                      setTranscript(''); setResult(null); setError(null); setSessionId(s => s + 1)
                     }} className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
                   </div>
                   <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
