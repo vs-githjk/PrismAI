@@ -110,6 +110,75 @@ Carlos: Works for me.
 
 Rachel: Sounds good.`,
 
+  // Dysfunctional budget meeting — low health, tense sentiment
+  `Greg: Okay so I called this meeting because we need to talk about the Q3 budget. I sent around a spreadsheet last week. Did everyone look at it?
+
+Kevin: I glanced at it yeah.
+
+Tara: I didn't get it.
+
+Greg: I sent it to the whole team.
+
+Tara: I'm not on that distribution list. This keeps happening.
+
+Greg: Okay well, the point is we're over budget. Marketing is 40% over and I need to understand why.
+
+Kevin: That's not entirely fair. We ran two campaigns that weren't in the original plan because leadership asked us to.
+
+Greg: Leadership asked for the campaigns, not for 40% overspend.
+
+Kevin: The budget wasn't adjusted when the scope changed. I flagged this in June.
+
+Greg: I don't have any record of that.
+
+Kevin: I sent an email. I can forward it to you.
+
+Greg: Fine, forward it. But we still need to figure out how to get back on track.
+
+Tara: Can someone explain what the actual number is? The spreadsheet Greg mentioned had three different totals on different tabs and I don't know which one is right.
+
+Greg: The one on the summary tab.
+
+Tara: The summary tab has a formula error. It says REF.
+
+Greg: What? That can't be right. I just updated it.
+
+Kevin: Yeah it does say REF. I noticed that too but I assumed it was intentional for some reason.
+
+Greg: It's not intentional. Okay. I'll fix the spreadsheet. Can we just... can we move on?
+
+Tara: Move on to what? We don't know what the actual number is.
+
+Greg: We're roughly 40% over on marketing, maybe 15% over overall. I'm estimating.
+
+Kevin: And what do you want us to do about it?
+
+Greg: I want us to come up with a plan.
+
+Kevin: Okay what kind of plan? Cut spend? Move budget from another team?
+
+Greg: I don't know, that's why I called the meeting.
+
+Tara: So there's no agenda?
+
+Greg: The agenda is figuring out the budget.
+
+Tara: Right, but like, do you want ideas? Do you want someone to own a proposal? I'm not clear on what we're deciding today.
+
+Greg: I just want to get aligned.
+
+Kevin: I have a hard stop at 3. Are we going to actually decide anything?
+
+Greg: Let's just say everyone reviews their team spend this week and we reconvene.
+
+Tara: Reconvene when?
+
+Greg: I'll send something.
+
+Kevin: Okay. I have to drop.
+
+Greg: Fine, we'll figure it out async.`,
+
   // Design review and user research readout
   `Morgan: Alright, let's go through the user research findings from the onboarding study and figure out what we're changing.
 
