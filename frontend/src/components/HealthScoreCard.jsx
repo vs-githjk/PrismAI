@@ -83,7 +83,7 @@ export default function HealthScoreCard({ healthScore }) {
   const color = SCORE_COLOR(score)
 
   return (
-    <div className={`rounded-2xl border ${color.border} overflow-hidden`} style={{ background: 'rgba(255,255,255,0.03)' }}>
+    <div className={`rounded-2xl border ${color.border} overflow-hidden transition-transform duration-200 hover:-translate-y-0.5`} style={{ background: 'rgba(255,255,255,0.03)' }}>
       <div className="h-0.5 w-full" style={{ background: color.accent }}></div>
       <div className="p-5">
         {/* Header */}

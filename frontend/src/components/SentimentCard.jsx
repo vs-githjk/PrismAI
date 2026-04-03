@@ -53,7 +53,7 @@ export default function SentimentCard({ sentiment }) {
   const tensions = sentiment.tension_moments || []
 
   return (
-    <div className="rounded-2xl overflow-hidden card-glow-amber" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+    <div className="rounded-2xl overflow-hidden card-glow-amber transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
       <div className="h-0.5 w-full" style={{ background: config.accent }}></div>
       <div className="p-5">
 

@@ -373,7 +373,7 @@ function AgentPipelineLoader() {
         <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)' }}></div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 animate-fade-in-up card-delay-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up card-delay-2">
         {AGENTS_META.map((a, i) => (
           <div key={a.id} className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl animate-pulse"
             style={{ animationDelay: `${i * 0.18}s`, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -417,7 +417,7 @@ function EmptyState({ onDemo }) {
           See it in action
         </button>
       </div>
-      <div ref={gridRef} className="grid grid-cols-4 gap-3 w-full max-w-2xl">
+      <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-2xl">
         {AGENTS_META.map((a) => {
           const isActive = active === a.id
           return (
@@ -1265,7 +1265,7 @@ export default function App() {
                   onChange={(e) => setTranscript(e.target.value)}
                   placeholder="Paste your meeting transcript here..."
                   rows={8}
-                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700"
+                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 max-h-[30vh] lg:max-h-none overflow-y-auto"
                   style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
                 />
                 <div className="flex items-center justify-between mt-3">
@@ -1573,13 +1573,13 @@ export default function App() {
               {/* Action items + Decisions */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
-                <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
+                <div className="animate-fade-in-up card-delay-4"><DecisionsCard decisions={result.decisions} /></div>
               </div>
 
               {/* Email + Calendar */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="animate-fade-in-up card-delay-4"><EmailCard email={result.follow_up_email} /></div>
-                <div className="animate-fade-in-up card-delay-5"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+                <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
+                <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
               </div>
             </div>
           ) : (
@@ -1703,13 +1703,11 @@ export default function App() {
               <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
               <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
               <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
-              <div className="animate-fade-in-up card-delay-4"><EmailCard email={result.follow_up_email} /></div>
-              <div className="animate-fade-in-up card-delay-5"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+              <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
+              <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-64 text-gray-600 text-sm">
-              Analyze a meeting to see results
-            </div>
+            <EmptyState onDemo={() => startDemo()} />
           )}
         </div>
 

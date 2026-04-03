@@ -10,7 +10,7 @@ export default function DecisionsCard({ decisions }) {
   const sorted = [...decisions].sort((a, b) => (a.importance ?? 3) - (b.importance ?? 3))
 
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.2)' }}>
+    <div className="rounded-2xl overflow-hidden transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.2)' }}>
       <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #06b6d4, #0ea5e9, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center gap-2 mb-4">

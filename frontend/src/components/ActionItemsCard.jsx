@@ -5,7 +5,7 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
   const doneCount = actionItems.filter(item => item.completed).length
 
   return (
-    <div className="rounded-2xl overflow-hidden card-glow-violet" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)' }}>
+    <div className="rounded-2xl overflow-hidden card-glow-violet transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)' }}>
       <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #8b5cf6, #db2777, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">

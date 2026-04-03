@@ -2,7 +2,7 @@ export default function CalendarCard({ suggestion }) {
   if (!suggestion || (!suggestion.recommended && !suggestion.reason)) return null
 
   return (
-    <div className="rounded-2xl overflow-hidden card-glow-pink" style={{ background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.22)' }}>
+    <div className="rounded-2xl overflow-hidden card-glow-pink transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.22)' }}>
       <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #ec4899, #a855f7, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center gap-2 mb-4">

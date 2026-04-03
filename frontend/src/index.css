@@ -76,11 +76,12 @@
 .animate-bar-grow    { animation: bar-grow 1s ease-out both; }
 
 .card-delay-0 { animation-delay: 0s; }
-.card-delay-1 { animation-delay: 0.07s; }
-.card-delay-2 { animation-delay: 0.14s; }
-.card-delay-3 { animation-delay: 0.21s; }
-.card-delay-4 { animation-delay: 0.28s; }
-.card-delay-5 { animation-delay: 0.35s; }
+.card-delay-1 { animation-delay: 0.06s; }
+.card-delay-2 { animation-delay: 0.12s; }
+.card-delay-3 { animation-delay: 0.18s; }
+.card-delay-4 { animation-delay: 0.24s; }
+.card-delay-5 { animation-delay: 0.30s; }
+.card-delay-6 { animation-delay: 0.36s; }
 
 /* ── Ocean prism gradient text ───────────────────────────────── */
 .gradient-text {

@@ -2,7 +2,7 @@ export default function SummaryCard({ summary }) {
   if (!summary) return null
 
   return (
-    <div className="rounded-2xl overflow-hidden card-glow-indigo" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
+    <div className="rounded-2xl overflow-hidden card-glow-indigo transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
       <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #6366f1, #38bdf8, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center gap-2 mb-4">

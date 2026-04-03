@@ -14,7 +14,7 @@ export default function EmailCard({ email }) {
   }
 
   return (
-    <div className="rounded-2xl overflow-hidden card-glow-emerald" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
+    <div className="rounded-2xl overflow-hidden card-glow-emerald transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
       <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #10b981, #06b6d4, transparent)' }}></div>
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
