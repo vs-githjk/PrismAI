@@ -8,6 +8,26 @@ const SUGGESTED_QUESTIONS = [
   "What's the timeline?",
 ]
 
+function detectGlobalIntent(msg) {
+  const m = msg.toLowerCase()
+  return (
+    /last \d+ meetings?/.test(m) ||
+    /across all meetings?/.test(m) ||
+    /all (my )?meetings?/.test(m) ||
+    /past meetings?/.test(m) ||
+    /meeting history/.test(m) ||
+    /what did (i|we) commit/.test(m) ||
+    /which meetings?/.test(m) ||
+    /recurring (action|task|item|issue)/.test(m) ||
+    /(last|past) (week|month|quarter|year)/.test(m) ||
+    /over time/.test(m) ||
+    /trend/.test(m) ||
+    /all time/.test(m) ||
+    /history of/.test(m) ||
+    /previous meetings?/.test(m)
+  )
+}
+
 function detectAgentIntent(msg) {
   const m = msg.toLowerCase()
   if (/undo|revert|restore|back to (the )?(original|old|previous|last|before)|reset (the )?(card|email|summary|action|decision)/.test(m)) return 'undo'
@@ -43,6 +63,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   const [messages, setMessages] = useState(initialMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingGlobal, setLoadingGlobal] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
   const [chatHistory, setChatHistory] = useState([])
@@ -111,6 +132,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
 
     // Disable agent re-run when viewing a historical session (no live result cards to update)
     const agentIntent = !viewingSession && result && transcript ? detectAgentIntent(msg) : null
+    const globalIntent = !agentIntent && detectGlobalIntent(msg)
 
     try {
       if (agentIntent === 'undo') {
@@ -151,6 +173,17 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         } else {
           throw new Error('No result')
         }
+      } else if (globalIntent) {
+        setLoadingGlobal(true)
+        const res = await fetch(`${API}/chat/global`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg }),
+        })
+        setLoadingGlobal(false)
+        if (!res.ok) throw new Error('Global chat failed')
+        const data = await res.json()
+        appendMsg({ role: 'assistant', content: data.response, globalSearch: true })
       } else {
         const res = await fetch(`${API}/chat`, {
           method: 'POST',
@@ -331,6 +364,9 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
               {msg.agentUpdated && (
                 <span className="block mt-1 text-[10px] text-sky-400 opacity-70">↑ card updated</span>
               )}
+              {msg.globalSearch && (
+                <span className="block mt-1 text-[10px] text-violet-400 opacity-70">⊕ searched all meetings</span>
+              )}
             </div>
           </div>
         ))}
@@ -344,11 +380,15 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
               </svg>
             </div>
             <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-sm border border-white/8" style={{ background: 'rgba(255,255,255,0.05)' }}>
-              <div className="flex gap-1.5 items-center h-4">
-                <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-              </div>
+              {loadingGlobal ? (
+                <span className="text-[11px] text-sky-400 animate-pulse">Searching all meetings…</span>
+              ) : (
+                <div className="flex gap-1.5 items-center h-4">
+                  <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </div>
+              )}
             </div>
           </div>
         )}
