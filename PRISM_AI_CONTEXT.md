@@ -240,17 +240,66 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 
 ---
 
-## Remaining Roadmap (in order)
+## Recent Changes (in order, most recent last)
 
-### Next up
-**UI polish pass** — general visual improvements, mobile responsiveness, loading states for streaming.
+### Share link flash fix
+`INITIAL_SHARE_TOKEN` is computed synchronously at module level (before first render). `shareMode` initializes as `'loading'` when a token is detected, so the full app UI never flashes. The meetings auto-load `useEffect` bails out for share links.
 
-### Then
-**6. Recurring meeting comparison** — "How does this week's standup compare to last week's?" Track health score trends per meeting series. Requires a `series` concept on meetings.
+### Landing hero screen
+`LandingScreen` component shown to first-time visitors only (gated by `localStorage.getItem('prism_visited')`). Two CTAs:
+- **"See it in action"** → fade-out → app mounts → `isDemoMode = true` → `runAnalysis` fires automatically on `SAMPLE_TRANSCRIPT` → blue demo banner appears with "Use my own transcript →" dismiss
+- **"Use my own transcript"** → fade-out → normal empty app
 
-**7. Model fallback** — If Groq is rate-limited or down, fall back to a secondary provider (OpenAI or Anthropic) in each agent's `run()` function.
+Key details:
+- `exitLanding(demo)` sets `prism_visited` in localStorage, starts a 370ms CSS fade, then unmounts the landing
+- `runAnalysis` takes an optional `transcriptOverride` param so demo can fire before React state updates
+- Share links skip the landing entirely
 
-**8. Team dashboard** — Aggregate health scores, decision velocity, action item completion across meetings. Needs auth.
+### UI overhaul
+- **2-col grid** for results: Health (full width) → Summary+Sentiment → Actions+Decisions → Email+Calendar
+- **Skeleton shimmer cards** shown while agents are streaming (replaces blank waiting)
+- **Results header** shows `Xs · ~Ym saved` time stat after `[DONE]`  — `analysisStartRef` tracks start time, elapsed stored in `analysisTime` state
+- **Mobile bottom tab bar** — `mobileTab` state (`'input'` | `'results'`), fixed bottom nav, auto-switches to results tab on `[DONE]`
+- **Typography** — card titles changed from `uppercase tracking-widest text-xs` to `text-sm font-semibold`; summary body to `text-[15px]`; health verdict bolder
+- **Email card** — `<pre>` monospace replaced with styled `<div>` for readable body text
+- **SkeletonCard** fully restyled to match dark theme with shimmer accent line
+
+---
+
+## Remaining Roadmap (priority order)
+
+### #3 — Export options
+Copy to Notion, download as PDF, send to Slack. The output is only as good as where it lands. Priority: PDF download + copy-as-markdown (markdown export already exists via `exportMarkdown()`). Slack/Notion need OAuth which blocks on auth (#6).
+
+### #4 — Meeting health trend chart
+Graph health scores over time across meetings. Data is already in Supabase (`meetings.score`). Needs a chart library (recommend `recharts` — already React-friendly) and a new view/modal. This creates habit/retention — users start optimizing their score.
+
+### #5 — Better share page
+Right now the share page is just a card dump at `/share/{token}`. Needs:
+- Branded header with PrismAI logo + "Shared by" context
+- CTA: "Analyze your own meeting →" more prominent
+- OG meta tags for link previews (requires SSR or a meta-tag injection hack for GitHub Pages)
+
+### #6 — Auth (Google SSO)
+Use Supabase Auth (already in the stack — just needs `supabase.auth.signInWithOAuth`). This is the unlock for team features. Until this lands, all data is browser-anonymous. Add to both backend (JWT validation middleware) and frontend (auth context + protected routes).
+
+### #7 — Team workspace
+After auth: meetings scoped to `user_id`, shared workspaces, team history. Requires schema migration: add `user_id` column to `meetings` and `chats` tables.
+
+### #8 — Model fallback
+Each agent's `run()` catches Groq errors and retries with OpenAI (`gpt-4o-mini`) or Anthropic (`claude-haiku-4-5`). Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to env vars. The agent pattern is identical — just swap the client and model name.
+
+### #9 — Bot store persistence
+`bot_store` dict in `main.py` is in-memory — lost on Render restart. Move to a `bots` table in Supabase: `id`, `status`, `result`, `error`, `transcript`, `created_at`.
+
+### #10 — Mobile polish
+Tab bar is in place. Still needed: transcript textarea height on mobile, chat panel sizing, share page mobile layout.
+
+### #11 — Friendly error states
+Groq 429s, empty transcripts, network failures — currently surface as raw error strings. Need designed error cards with retry CTAs.
+
+### #12 — "Time saved" social sharing
+After analysis: show a shareable image/card with the time saved stat. People screenshot and share this — it's a growth loop.
 
 ---
 
