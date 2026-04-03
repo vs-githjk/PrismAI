@@ -226,12 +226,105 @@ const INITIAL_SHARE_TOKEN = (() => {
   return match ? match[1] : null
 })()
 
+// ── Landing / Hero screen ────────────────────────────────────────
+function LandingScreen({ onDemo, onSkip, exiting }) {
+  return (
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-6 py-16"
+      style={{
+        background: '#07040f',
+        opacity: exiting ? 0 : 1,
+        transform: exiting ? 'scale(0.97)' : 'scale(1)',
+        transition: 'opacity 0.35s ease, transform 0.35s ease',
+      }}
+    >
+      {/* Logo */}
+      <div className="flex items-center gap-3 mb-12 animate-fade-in-up" style={{ animationDelay: '0s' }}>
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+          style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 40px rgba(2,132,199,0.5)' }}>
+          <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+          </svg>
+        </div>
+        <div>
+          <span className="text-3xl font-bold gradient-text">PrismAI</span>
+          <p className="text-xs text-gray-600 mt-0.5">meeting intelligence</p>
+        </div>
+      </div>
+
+      {/* Headline */}
+      <div className="text-center mb-4 animate-fade-in-up" style={{ animationDelay: '0.08s' }}>
+        <h1 className="text-4xl sm:text-5xl font-bold text-white leading-tight mb-5">
+          Your meeting, analyzed<br />
+          <span className="gradient-text">in 7 dimensions.</span>
+        </h1>
+        <p className="text-gray-400 max-w-lg mx-auto leading-relaxed text-sm sm:text-base">
+          Paste any transcript and 7 parallel AI agents instantly produce a summary, action items, decisions, sentiment, a ready-to-send follow-up email, calendar suggestion, and a meeting health score.
+        </p>
+      </div>
+
+      {/* Buttons */}
+      <div className="flex flex-col sm:flex-row gap-3 mt-10 mb-14 animate-fade-in-up" style={{ animationDelay: '0.16s' }}>
+        <button onClick={onDemo}
+          className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98]"
+          style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          See it in action
+        </button>
+        <button onClick={onSkip}
+          className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-medium text-gray-300 transition-all hover:text-white hover:scale-[1.02]"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
+          Use my own transcript
+        </button>
+      </div>
+
+      {/* Agent grid — decorative preview */}
+      <div className="grid grid-cols-7 gap-2 animate-fade-in-up" style={{ animationDelay: '0.24s' }}>
+        {AGENTS_META.map((a, i) => (
+          <div key={a.id}
+            className="flex flex-col items-center gap-2 px-3 py-3 rounded-2xl"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              animationDelay: `${0.24 + i * 0.04}s`,
+            }}>
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-lg shadow-lg`}>{a.icon}</div>
+            <span className="text-[10px] text-gray-600 text-center leading-tight">{a.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [transcript, setTranscript] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+
+  // Show landing only to first-time visitors (not returning users, not share links)
+  const [showLanding, setShowLanding] = useState(
+    () => !INITIAL_SHARE_TOKEN && !localStorage.getItem('prism_visited')
+  )
+  const [landingExiting, setLandingExiting] = useState(false)
+  const [isDemoMode, setIsDemoMode] = useState(false)
+
+  const exitLanding = (demo = false) => {
+    localStorage.setItem('prism_visited', '1')
+    setLandingExiting(true)
+    setTimeout(() => {
+      setShowLanding(false)
+      if (demo) {
+        setIsDemoMode(true)
+        setTranscript(SAMPLE_TRANSCRIPT)
+      }
+    }, 370)
+  }
 
   const [sessionId, setSessionId] = useState(0)
   const [meetingId, setMeetingId] = useState(null)
@@ -427,17 +520,18 @@ export default function App() {
     setShowSpeakerModal(true)
   }
 
-  const runAnalysis = async (speakersParam) => {
+  const runAnalysis = async (speakersParam, transcriptOverride) => {
     setShowSpeakerModal(false)
     setLoading(true)
     setError(null)
     setResult(null)
+    const t = transcriptOverride ?? transcript
     const validSpeakers = speakersParam.filter(s => s.name.trim())
     try {
       const res = await fetch(`${API}/analyze-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, speakers: validSpeakers }),
+        body: JSON.stringify({ transcript: t, speakers: validSpeakers }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Server error ${res.status}`)
 
@@ -456,7 +550,7 @@ export default function App() {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6).trim()
           if (raw === '[DONE]') {
-            saveToHistory(transcript, accumulated)
+            saveToHistory(t, accumulated)
             break
           }
           try {
@@ -506,6 +600,17 @@ export default function App() {
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [showHistory])
+
+  // Auto-run analysis when demo mode starts
+  useEffect(() => {
+    if (!isDemoMode) return
+    runAnalysis([], SAMPLE_TRANSCRIPT)
+  }, [isDemoMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Landing screen — shown to first-time visitors
+  if (showLanding) {
+    return <LandingScreen onDemo={() => exitLanding(true)} onSkip={() => exitLanding(false)} exiting={landingExiting} />
+  }
 
   // Share mode — loading state (token detected synchronously, waiting for fetch)
   if (shareMode === 'loading') {
@@ -739,6 +844,21 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* ── Demo banner ── */}
+      {isDemoMode && (
+        <div className="flex-shrink-0 flex items-center justify-between px-6 py-2 text-xs"
+          style={{ background: 'rgba(2,132,199,0.1)', borderBottom: '1px solid rgba(14,165,233,0.2)' }}>
+          <span className="text-sky-300">
+            <span className="font-semibold">Demo mode</span> — this is a sample transcript. See how PrismAI analyzes your meetings.
+          </span>
+          <button
+            onClick={() => { setIsDemoMode(false); setTranscript(''); setResult(null); setError(null); setSessionId(s => s + 1) }}
+            className="text-sky-500 hover:text-sky-300 transition-colors ml-4 flex-shrink-0">
+            Use my own transcript →
+          </button>
+        </div>
+      )}
 
       {/* ── Main two-pane layout ── */}
       <div className="app-content flex flex-1 overflow-hidden">
