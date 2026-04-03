@@ -10,7 +10,8 @@ const SUGGESTED_QUESTIONS = [
 
 function detectAgentIntent(msg) {
   const m = msg.toLowerCase()
-  if (/email/.test(m) && /redraft|rewrite|redo|revise|make|formal|casual|shorter|longer|concise|tone|style/.test(m)) return 'email_drafter'
+  if (/undo|revert|restore|back to (the )?(original|old|previous|last|before)|reset (the )?(card|email|summary|action|decision)/.test(m)) return 'undo'
+  if (/email/.test(m) && /redraft|rewrite|redo|revise|make|formal|casual|shorter|longer|concise|tone|style|angry|angrier|polite|friendl|professional/.test(m)) return 'email_drafter'
   if (/action item|task|todo/.test(m) && /redo|regenerate|update|add|remove|change|rewrite/.test(m)) return 'action_items'
   if (/summar/.test(m) && /redo|regenerate|rewrite|update|change|shorten|shorter|longer|make|improve|concise/.test(m)) return 'summarizer'
   if (/calendar|follow.up time|reschedule/.test(m) && /redo|regenerate|suggest|change|update|set|move|shift|reschedule/.test(m)) return 'calendar_suggester'
@@ -45,8 +46,14 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
   const [chatHistory, setChatHistory] = useState([])
+  const prevResultRef = useRef(null)
   const historyRef = useRef(null)
   const bottomRef = useRef(null)
+
+  // Load chat history on mount so the button visibility is correct
+  useEffect(() => {
+    fetchChatHistory().then(setChatHistory)
+  }, [])
 
   // Persist messages to backend whenever they change
   useEffect(() => {
@@ -106,7 +113,15 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
     const agentIntent = !viewingSession && result && transcript ? detectAgentIntent(msg) : null
 
     try {
-      if (agentIntent) {
+      if (agentIntent === 'undo') {
+        if (prevResultRef.current) {
+          onResultUpdate(prevResultRef.current)
+          prevResultRef.current = null
+          setMessages(prev => [...prev, { role: 'assistant', content: 'Restored the previous version.' }])
+        } else {
+          setMessages(prev => [...prev, { role: 'assistant', content: 'Nothing to undo — no changes have been made yet.' }])
+        }
+      } else if (agentIntent) {
         const res = await fetch(`${API}/agent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -126,6 +141,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         }[agentIntent]
 
         if (agentKey && data[agentKey] !== undefined) {
+          prevResultRef.current = { [agentKey]: result[agentKey] }
           onResultUpdate({ [agentKey]: data[agentKey] })
           setMessages((prev) => [...prev, {
             role: 'assistant',
