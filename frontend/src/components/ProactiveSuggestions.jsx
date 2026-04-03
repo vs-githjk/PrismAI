@@ -71,12 +71,13 @@ export default function ProactiveSuggestions({ result, transcript }) {
 
   const suggestions = computeSuggestions(result)
   const visible = suggestions.filter(s => !state[s.id]?.dismissed)
-  if (!visible.length) return null
+  const allVisible = suggestions.filter(s => !state[s.id]?.dismissed || state[s.id]?.done)
+  if (!allVisible.length) return null
 
   async function handleAction(s) {
     if (s.actionType === 'link') {
       window.open(s.href, '_blank', 'noopener,noreferrer')
-      setState(prev => ({ ...prev, [s.id]: { ...prev[s.id], dismissed: true } }))
+      setState(prev => ({ ...prev, [s.id]: { ...prev[s.id], done: true } }))
       return
     }
 
@@ -118,25 +119,36 @@ export default function ProactiveSuggestions({ result, transcript }) {
           </div>
           <span className="text-xs font-semibold text-gray-300">Suggested Actions</span>
           <span className="ml-auto text-[10px] text-gray-600">
-            {visible.length} suggestion{visible.length !== 1 ? 's' : ''}
+            {allVisible.length} suggestion{allVisible.length !== 1 ? 's' : ''}
           </span>
         </div>
 
         {/* Suggestion rows */}
         <div className="space-y-2">
-          {visible.map(s => {
+          {allVisible.map(s => {
             const st = state[s.id] || {}
+            const isDone = st.done
             return (
-              <div key={s.id} className="rounded-xl p-3 flex items-start gap-3"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div key={s.id} className="rounded-xl p-3 flex items-start gap-3 transition-opacity"
+                style={{
+                  background: isDone ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${isDone ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.07)'}`,
+                  opacity: isDone ? 0.5 : 1,
+                }}>
 
-                {/* Accent dot */}
-                <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
-                  style={{ background: s.accentColor, boxShadow: `0 0 6px ${s.accentColor}80` }} />
+                {/* Accent dot or checkmark */}
+                {isDone ? (
+                  <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
+                    style={{ background: s.accentColor, boxShadow: `0 0 6px ${s.accentColor}80` }} />
+                )}
 
                 {/* Label + response */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-gray-300 leading-relaxed">{s.label}</p>
+                  <p className={`text-xs leading-relaxed ${isDone ? 'line-through text-gray-600' : 'text-gray-300'}`}>{s.label}</p>
 
                   {st.response && (
                     <div className="mt-2 p-2.5 rounded-lg text-xs text-gray-300 leading-relaxed whitespace-pre-wrap"
@@ -152,7 +164,7 @@ export default function ProactiveSuggestions({ result, transcript }) {
 
                 {/* Action button + dismiss */}
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {!st.response && (
+                  {!st.response && !isDone && (
                     <button
                       onClick={() => handleAction(s)}
                       disabled={st.loading}
