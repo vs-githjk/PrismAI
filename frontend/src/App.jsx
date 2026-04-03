@@ -176,7 +176,7 @@ function AgentPipelineLoader() {
 }
 
 // ── Empty state for right panel ──────────────────────────────────
-function EmptyState() {
+function EmptyState({ onDemo }) {
   const [active, setActive] = useState(null)
   const gridRef = useRef(null)
 
@@ -192,6 +192,14 @@ function EmptyState() {
       <div className="text-center">
         <h2 className="text-2xl font-bold gradient-text mb-2">Ready to analyze</h2>
         <p className="text-gray-500 text-sm max-w-sm">Paste a transcript, record live audio, or upload an audio file — then hit Analyze Meeting.</p>
+        <button onClick={onDemo}
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-sky-400 transition-all hover:text-sky-300 hover:scale-[1.02]"
+          style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)' }}>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          See it in action
+        </button>
       </div>
       <div ref={gridRef} className="grid grid-cols-4 gap-3 w-full max-w-2xl">
         {AGENTS_META.map((a) => {
@@ -842,6 +850,16 @@ export default function App() {
             </button>
           )}
 
+          <button
+            onClick={() => { setIsDemoMode(true); setTranscript(SAMPLE_TRANSCRIPT); runAnalysis([], SAMPLE_TRANSCRIPT) }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-sky-400 transition-colors hover:text-sky-300"
+            style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.15)' }}>
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Demo
+          </button>
+
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] text-gray-400"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -1191,7 +1209,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <EmptyState />
+            <EmptyState onDemo={() => { setIsDemoMode(true); setTranscript(SAMPLE_TRANSCRIPT); runAnalysis([], SAMPLE_TRANSCRIPT) }} />
           )}
         </div>
 
