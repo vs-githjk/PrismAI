@@ -74,6 +74,19 @@ class GlobalChatRequest(BaseModel):
     limit: int = 10
 
 
+class NotionExportRequest(BaseModel):
+    token: str
+    parent_page_id: str
+    title: str
+    result: dict
+
+
+class SlackExportRequest(BaseModel):
+    webhook_url: str
+    title: str
+    result: dict
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -633,3 +646,181 @@ async def chat_global(req: GlobalChatRequest):
         ],
     )
     return {"response": response.choices[0].message.content}
+
+
+# ── Notion export ────────────────────────────────────────────────────
+
+def _notion_rich_text(content: str) -> list:
+    """Split long text into Notion rich_text chunks (max 2000 chars each)."""
+    chunks = []
+    for i in range(0, len(content), 2000):
+        chunks.append({"type": "text", "text": {"content": content[i:i+2000]}})
+    return chunks or [{"type": "text", "text": {"content": ""}}]
+
+
+def _h2(text: str) -> dict:
+    return {"object": "block", "type": "heading_2", "heading_2": {"rich_text": _notion_rich_text(text)}}
+
+
+def _para(text: str) -> dict:
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _notion_rich_text(text)}}
+
+
+def _divider() -> dict:
+    return {"object": "block", "type": "divider", "divider": {}}
+
+
+def _todo(text: str, checked: bool = False) -> dict:
+    return {"object": "block", "type": "to_do", "to_do": {"rich_text": _notion_rich_text(text), "checked": checked}}
+
+
+def _bullet(text: str) -> dict:
+    return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _notion_rich_text(text)}}
+
+
+def _build_notion_blocks(result: dict) -> list:
+    blocks = []
+    h = result.get("health_score") or {}
+    if h.get("score") is not None:
+        blocks.append(_h2(f"Meeting Health: {h['score']}/100"))
+        if h.get("verdict"):
+            blocks.append(_para(h["verdict"]))
+        if h.get("badges"):
+            blocks.append(_para("Badges: " + ", ".join(h["badges"])))
+        blocks.append(_divider())
+
+    if result.get("summary"):
+        blocks.append(_h2("Summary"))
+        blocks.append(_para(result["summary"]))
+        blocks.append(_divider())
+
+    items = result.get("action_items") or []
+    if items:
+        blocks.append(_h2(f"Action Items ({len(items)})"))
+        for item in items:
+            label = item.get("task", "")
+            if item.get("owner") and item["owner"] != "Unassigned":
+                label += f" — {item['owner']}"
+            if item.get("due") and item["due"] != "TBD":
+                label += f" (due {item['due']})"
+            blocks.append(_todo(label, checked=bool(item.get("completed"))))
+        blocks.append(_divider())
+
+    decisions = result.get("decisions") or []
+    if decisions:
+        blocks.append(_h2("Decisions"))
+        imp_map = {1: "Critical", 2: "Significant", 3: "Minor"}
+        for d in sorted(decisions, key=lambda x: x.get("importance", 3)):
+            label = d.get("decision", "")
+            imp = imp_map.get(d.get("importance"), "")
+            if imp:
+                label += f" [{imp}]"
+            if d.get("owner"):
+                label += f" — {d['owner']}"
+            blocks.append(_bullet(label))
+        blocks.append(_divider())
+
+    email = result.get("follow_up_email") or {}
+    if email.get("subject") or email.get("body"):
+        blocks.append(_h2("Follow-up Email"))
+        if email.get("subject"):
+            blocks.append(_para(f"Subject: {email['subject']}"))
+        if email.get("body"):
+            blocks.append(_para(email["body"]))
+        blocks.append(_divider())
+
+    cal = result.get("calendar_suggestion") or {}
+    if cal.get("reason"):
+        blocks.append(_h2("Calendar Suggestion"))
+        blocks.append(_para(cal["reason"]))
+        if cal.get("suggested_timeframe"):
+            blocks.append(_para(f"Suggested timeframe: {cal['suggested_timeframe']}"))
+
+    return blocks
+
+
+@app.post("/export/notion")
+async def export_to_notion(req: NotionExportRequest):
+    parent_id = req.parent_page_id.strip()
+    # Accept full Notion URLs — extract the ID part
+    if "/" in parent_id:
+        parent_id = parent_id.rstrip("/").split("/")[-1].split("?")[0]
+    # Strip hyphens and reformat as UUID
+    parent_id = parent_id.replace("-", "")
+    if len(parent_id) == 32:
+        parent_id = f"{parent_id[:8]}-{parent_id[8:12]}-{parent_id[12:16]}-{parent_id[16:20]}-{parent_id[20:]}"
+
+    blocks = _build_notion_blocks(req.result)
+    blocks = blocks[:100]  # Notion API limit per request
+
+    payload = {
+        "parent": {"page_id": parent_id},
+        "properties": {
+            "title": {"title": [{"type": "text", "text": {"content": req.title or "Meeting Analysis"}}]}
+        },
+        "children": blocks,
+    }
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/pages",
+            headers={
+                "Authorization": f"Bearer {req.token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=20.0,
+        )
+
+    if resp.status_code not in (200, 201):
+        detail = resp.json().get("message", "Notion API error") if resp.content else "Notion API error"
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+
+    page = resp.json()
+    return {"url": page.get("url", ""), "page_id": page.get("id", "")}
+
+
+# ── Slack export ─────────────────────────────────────────────────────
+
+@app.post("/export/slack")
+async def export_to_slack(req: SlackExportRequest):
+    result = req.result
+    h = result.get("health_score") or {}
+    items = result.get("action_items") or []
+    decisions = result.get("decisions") or []
+
+    score_str = f"{h['score']}/100" if h.get("score") is not None else "N/A"
+    verdict = h.get("verdict", "")
+
+    lines = [f"*{req.title}* — PrismAI Analysis"]
+    lines.append(f"*Health Score:* {score_str}{(' — ' + verdict) if verdict else ''}")
+
+    if result.get("summary"):
+        lines.append(f"\n*Summary*\n{result['summary']}")
+
+    if items:
+        lines.append(f"\n*Action Items ({len(items)})*")
+        for item in items[:8]:
+            owner = f" ({item['owner']})" if item.get("owner") and item["owner"] != "Unassigned" else ""
+            due = f" — due {item['due']}" if item.get("due") and item["due"] != "TBD" else ""
+            lines.append(f"• {item.get('task', '')}{owner}{due}")
+
+    if decisions:
+        lines.append(f"\n*Key Decisions*")
+        for d in decisions[:5]:
+            lines.append(f"• {d.get('decision', '')}")
+
+    message = "\n".join(lines)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            req.webhook_url,
+            json={"text": message},
+            timeout=10.0,
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Slack webhook failed")
+
+    return {"ok": True}

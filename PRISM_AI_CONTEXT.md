@@ -270,11 +270,17 @@ What is **already built** that the spec asks for (do not re-implement):
 
 ## Recent Changes (in order, most recent last)
 
-### UI polish sprint (current)
-- **Card hover states** — planned: subtle `translateY(-2px)` lift + glow on hover for all result cards
-- **Staggered card entrance** — planned: tighter per-card delay on `animate-fade-in-up` so cards arrive sequentially
-- **Mobile empty state** — planned: mirror desktop agent grid on the mobile results tab empty state
-- **Landing agent grid mobile** — planned: 2-col layout on small screens
+### Integrations + UI polish sprint (current)
+- **Landing grid mobile fix** — `grid-cols-7` → `grid-cols-2 sm:grid-cols-4 lg:grid-cols-7` ✓
+- **Health score trend chart** — `ScoreTrendChart.jsx` using recharts; collapsed by default above transcript card; click data points to load meeting; shows avg + trend delta ✓
+- **Slack integration** — `IntegrationsModal.jsx` (Slack tab: webhook URL + test button); `POST /export/slack` backend endpoint; "Send to Slack" in both export menus ✓
+- **Notion integration** — Notion tab in IntegrationsModal (token + parent page ID); `POST /export/notion` backend endpoint builds full structured page (health, summary, to-do action items, decisions, email); "Export to Notion" in both export menus ✓
+- **Integrations button** — link icon in header opens IntegrationsModal; toast feedback after export success/failure ✓
+- **Card hover states, staggered entrance, mobile empty state** — already shipped in prior sprint ✓
+
+> **TODO: Landing page needs a visual makeover** — currently static and boring. Needs animation, more visual interest, better hierarchy. Do not just tweak copy — redesign the `LandingScreen` component in App.jsx.
+
+> **TODO: User needs to set up Notion + Slack** — tokens/webhooks are not yet configured. Notion requires: (1) create integration at notion.so/my-integrations, (2) copy secret token, (3) share a parent page with the integration, (4) paste token + page URL in Integrations modal. Slack requires: (1) create Slack app with incoming webhook, (2) paste webhook URL in Integrations modal → test button confirms connection.
 
 ### Calendar suggestion done-state
 - Clicking "Open Calendar" in `ProactiveSuggestions` no longer dismisses the suggestion. Instead sets `done: true` on the item.

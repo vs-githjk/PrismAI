@@ -11,6 +11,8 @@ import ChatPanel from './components/ChatPanel'
 import SkeletonCard from './components/SkeletonCard'
 import ProactiveSuggestions from './components/ProactiveSuggestions'
 import ErrorCard from './components/ErrorCard'
+import ScoreTrendChart from './components/ScoreTrendChart'
+import IntegrationsModal from './components/IntegrationsModal'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -507,7 +509,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Agent grid — decorative preview */}
-      <div className="grid grid-cols-7 gap-2 animate-fade-in-up" style={{ animationDelay: '0.24s' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up" style={{ animationDelay: '0.24s' }}>
         {AGENTS_META.map((a, i) => (
           <div key={a.id}
             className="flex flex-col items-center gap-2 px-3 py-3 rounded-2xl"
@@ -602,6 +604,68 @@ export default function App() {
   const [shareToken, setShareToken] = useState(null)
   const [shareMode, setShareMode] = useState(INITIAL_SHARE_TOKEN ? 'loading' : null)
   const [shareCopied, setShareCopied] = useState(false)
+
+  // Integrations
+  const [showIntegrations, setShowIntegrations] = useState(false)
+  const [integrations, setIntegrations] = useState(() => ({
+    slack_webhook: localStorage.getItem('prism_slack_webhook') || '',
+    notion_token: localStorage.getItem('prism_notion_token') || '',
+    notion_page_id: localStorage.getItem('prism_notion_page_id') || '',
+  }))
+  const [exportingSlack, setExportingSlack] = useState(false)
+  const [exportingNotion, setExportingNotion] = useState(false)
+  const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
+
+  async function exportToSlack() {
+    if (!integrations.slack_webhook) { setShowIntegrations(true); return }
+    setExportingSlack(true)
+    try {
+      const res = await fetch(`${API}/export/slack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhook_url: integrations.slack_webhook,
+          title: history.find(h => h.id === meetingId)?.title || 'Meeting',
+          result,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setIntegrationToast({ type: 'ok', msg: 'Sent to Slack!' })
+    } catch {
+      setIntegrationToast({ type: 'err', msg: 'Slack export failed' })
+    } finally {
+      setExportingSlack(false)
+      setTimeout(() => setIntegrationToast(null), 3000)
+    }
+  }
+
+  async function exportToNotion() {
+    if (!integrations.notion_token || !integrations.notion_page_id) { setShowIntegrations(true); return }
+    setExportingNotion(true)
+    try {
+      const res = await fetch(`${API}/export/notion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: integrations.notion_token,
+          parent_page_id: integrations.notion_page_id,
+          title: history.find(h => h.id === meetingId)?.title || 'Meeting Analysis',
+          result,
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || 'Failed')
+      }
+      const data = await res.json()
+      setIntegrationToast({ type: 'ok', msg: 'Exported to Notion!', url: data.url })
+    } catch (e) {
+      setIntegrationToast({ type: 'err', msg: e.message || 'Notion export failed' })
+    } finally {
+      setExportingNotion(false)
+      setTimeout(() => setIntegrationToast(null), 5000)
+    }
+  }
 
   // Handle #share/{token} on load
   useEffect(() => {
@@ -1191,6 +1255,19 @@ export default function App() {
             style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.2), rgba(6,182,212,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
             7 agents
           </div>
+
+          {/* Integrations button */}
+          <button
+            onClick={() => setShowIntegrations(true)}
+            title="Integrations"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-gray-400 hover:text-white transition-colors"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <span className="hidden sm:inline">Integrations</span>
+          </button>
         </div>
       </header>
 
@@ -1224,6 +1301,9 @@ export default function App() {
               Orchestrator routes your transcript to 7 parallel AI agents in real time.
             </p>
           </div>
+
+          {/* Health trend chart — visible when 2+ meetings in history */}
+          <ScoreTrendChart history={history} onSelect={loadFromHistory} />
 
           {/* Error */}
           {error && <ErrorCard message={error} onRetry={() => runAnalysis([])} />}
@@ -1517,6 +1597,20 @@ export default function App() {
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                           Download PDF
                         </button>
+                        <button onClick={() => { exportToSlack(); setShowExportMenu(false) }}
+                          disabled={exportingSlack}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
+                          {exportingSlack ? 'Sending...' : integrations.slack_webhook ? 'Send to Slack' : 'Connect Slack →'}
+                        </button>
+                        <button onClick={() => { exportToNotion(); setShowExportMenu(false) }}
+                          disabled={exportingNotion}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/></svg>
+                          {exportingNotion ? 'Exporting...' : integrations.notion_token ? 'Export to Notion' : 'Connect Notion →'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1662,6 +1756,20 @@ export default function App() {
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                           Download PDF
                         </button>
+                        <button onClick={() => { exportToSlack(); setShowExportMenu(false) }}
+                          disabled={exportingSlack}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
+                          {exportingSlack ? 'Sending...' : integrations.slack_webhook ? 'Send to Slack' : 'Connect Slack →'}
+                        </button>
+                        <button onClick={() => { exportToNotion(); setShowExportMenu(false) }}
+                          disabled={exportingNotion}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/></svg>
+                          {exportingNotion ? 'Exporting...' : integrations.notion_token ? 'Export to Notion' : 'Connect Notion →'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1715,6 +1823,44 @@ export default function App() {
         <div className={`lg:hidden ${mobileTab === 'input' ? 'block' : 'hidden'}`} />
 
       </div>
+
+      {/* Integrations modal */}
+      {showIntegrations && (
+        <IntegrationsModal
+          integrations={integrations}
+          onSave={setIntegrations}
+          onClose={() => setShowIntegrations(false)}
+        />
+      )}
+
+      {/* Integration export toast */}
+      {integrationToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl animate-fade-in-up"
+          style={{
+            background: integrationToast.type === 'ok' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+            border: `1px solid ${integrationToast.type === 'ok' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            backdropFilter: 'blur(16px)',
+          }}>
+          {integrationToast.type === 'ok' ? (
+            <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          )}
+          <span className={`text-xs font-medium ${integrationToast.type === 'ok' ? 'text-emerald-300' : 'text-red-300'}`}>
+            {integrationToast.msg}
+          </span>
+          {integrationToast.url && (
+            <a href={integrationToast.url} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-sky-400 hover:text-sky-300 underline ml-1">
+              Open →
+            </a>
+          )}
+        </div>
+      )}
     </div>
   )
 }
