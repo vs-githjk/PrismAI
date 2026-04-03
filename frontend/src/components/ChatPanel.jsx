@@ -207,7 +207,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
 
 
   return (
-    <div className="rounded-2xl border border-white/8 overflow-hidden flex flex-col" style={{ background: 'rgba(255,255,255,0.03)', height: '360px' }}>
+    <div className="rounded-2xl border border-white/8 overflow-hidden flex flex-col" style={{ background: 'rgba(255,255,255,0.03)', minHeight: '300px', maxHeight: '40vh' }}>
       {/* Header */}
       <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2 flex-shrink-0">
         <div className="w-6 h-6 rounded-lg flex items-center justify-center"

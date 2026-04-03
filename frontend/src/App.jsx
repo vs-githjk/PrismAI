@@ -532,6 +532,7 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [analysisTime, setAnalysisTime] = useState(null) // seconds elapsed
+  const [showTimeSaved, setShowTimeSaved] = useState(false)
   const analysisStartRef = useRef(null)
   const [mobileTab, setMobileTab] = useState('input') // 'input' | 'results'
 
@@ -607,7 +608,28 @@ export default function App() {
     if (!INITIAL_SHARE_TOKEN) return
     fetch(`${API}/share/${INITIAL_SHARE_TOKEN}`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => { setShareMode(data || null) })
+      .then(data => {
+        setShareMode(data || null)
+        if (data) {
+          const title = `${data.title || 'Meeting'} — PrismAI`
+          const desc = data.result?.summary
+            ? data.result.summary.slice(0, 150) + '…'
+            : 'Meeting analysis shared via PrismAI — 7 AI agents in parallel.'
+          document.title = title
+          const setMeta = (prop, val, attr = 'name') => {
+            let el = document.querySelector(`meta[${attr}="${prop}"]`)
+            if (!el) { el = document.createElement('meta'); el.setAttribute(attr, prop); document.head.appendChild(el) }
+            el.setAttribute('content', val)
+          }
+          setMeta('description', desc)
+          setMeta('og:title', title, 'property')
+          setMeta('og:description', desc, 'property')
+          setMeta('og:type', 'website', 'property')
+          setMeta('twitter:card', 'summary')
+          setMeta('twitter:title', title)
+          setMeta('twitter:description', desc)
+        }
+      })
       .catch(() => { setShareMode(null) })
   }, [])
 
@@ -760,6 +782,7 @@ export default function App() {
     setError(null)
     setResult(null)
     setAnalysisTime(null)
+    setShowTimeSaved(false)
     analysisStartRef.current = Date.now()
     const t = transcriptOverride ?? transcript
     const validSpeakers = speakersParam.filter(s => s.name.trim())
@@ -792,6 +815,7 @@ export default function App() {
           if (raw === '[DONE]') {
             const elapsed = ((Date.now() - analysisStartRef.current) / 1000).toFixed(1)
             setAnalysisTime(parseFloat(elapsed))
+            setShowTimeSaved(true)
             setMobileTab('results')
             if (!isDemo) saveToHistory(t, accumulated)
             streamDone = true
@@ -902,22 +926,47 @@ export default function App() {
   // Share mode — read-only view for shared links
   if (shareMode) {
     const r = shareMode.result || {}
+    const appUrl = window.location.origin + window.location.pathname
     return (
-      <div className="min-h-screen px-4 py-8 max-w-2xl mx-auto" style={{ background: '#07040f' }}>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-            </svg>
-          </div>
-          <div>
+      <div className="min-h-screen" style={{ background: '#07040f' }}>
+        {/* Header bar */}
+        <div className="sticky top-0 z-10 px-4 py-3 flex items-center justify-between"
+          style={{ background: 'rgba(7,4,15,0.92)', borderBottom: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(16px)' }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 16px rgba(2,132,199,0.4)' }}>
+              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+              </svg>
+            </div>
             <span className="text-sm font-bold gradient-text">PrismAI</span>
-            <span className="text-[10px] text-gray-600 ml-2">shared meeting</span>
+            <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              shared
+            </span>
           </div>
+          <a href={appUrl}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-105"
+            style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.2), rgba(13,148,136,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
+            Analyze your own →
+          </a>
         </div>
-        <h1 className="text-lg font-semibold text-white mb-1">{shareMode.title || 'Meeting'}</h1>
-        <p className="text-xs text-gray-600 mb-6">{shareMode.date ? new Date(shareMode.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</p>
-        <div className="space-y-4">
+
+        {/* Meeting title + date */}
+        <div className="px-4 pt-6 pb-4 max-w-2xl mx-auto">
+          <h1 className="text-xl font-bold text-white leading-tight">{shareMode.title || 'Meeting'}</h1>
+          {shareMode.date && (
+            <p className="text-xs text-gray-500 mt-1">
+              {new Date(shareMode.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            </p>
+          )}
+          {r.agents_run?.length > 0 && (
+            <div className="mt-3"><AgentTags agents={r.agents_run} /></div>
+          )}
+        </div>
+
+        {/* Cards */}
+        <div className="px-4 pb-8 max-w-2xl mx-auto space-y-4">
           <HealthScoreCard healthScore={r.health_score} />
           <SummaryCard summary={r.summary} />
           <ActionItemsCard actionItems={r.action_items} />
@@ -926,7 +975,20 @@ export default function App() {
           <EmailCard email={r.follow_up_email} />
           <CalendarCard suggestion={r.calendar_suggestion} />
         </div>
-        <p className="text-center text-xs text-gray-700 mt-8">Shared via PrismAI · <a href={window.location.origin + window.location.pathname} className="text-sky-600 hover:text-sky-400">Analyze your own meeting</a></p>
+
+        {/* Bottom CTA */}
+        <div className="px-4 pb-12 max-w-2xl mx-auto text-center">
+          <div className="rounded-2xl p-6"
+            style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}>
+            <p className="text-sm font-semibold text-white mb-1">Analyze your own meetings</p>
+            <p className="text-xs text-gray-400 mb-4">Paste any transcript — 7 AI agents produce a full analysis in seconds.</p>
+            <a href={appUrl}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
+              style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
+              Try PrismAI free →
+            </a>
+          </div>
+        </div>
       </div>
     )
   }
@@ -1337,7 +1399,7 @@ export default function App() {
 
                 {botStatus === 'done' && (
                   <button
-                    onClick={() => document.getElementById('mobile-results')?.scrollIntoView({ behavior: 'smooth' })}
+                    onClick={() => setMobileTab('results')}
                     className="mt-3 w-full px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up cursor-pointer hover:bg-emerald-500/10 transition-colors"
                     style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
                     <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1461,6 +1523,39 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Time saved banner */}
+              {showTimeSaved && analysisTime && (() => {
+                const mins = Math.round(analysisTime * 1.8 + 20)
+                const tweetText = `Just analyzed my meeting in ${analysisTime}s with PrismAI — saved ~${mins} minutes of manual work. Try it: https://vs-githjk.github.io/Agentic-Meeting-Copilot/`
+                return (
+                  <div className="rounded-2xl px-4 py-3 flex items-center gap-3 animate-fade-in-up"
+                    style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.2)' }}>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.25)' }}>
+                      <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="flex-1 text-xs text-emerald-300">
+                      <span className="font-semibold">~{mins} minutes saved</span>
+                      <span className="text-emerald-500 ml-1">— analyzed in {analysisTime}s</span>
+                    </p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(tweetText)}
+                      className="text-[11px] px-2.5 py-1.5 rounded-lg font-medium transition-all hover:scale-105 flex-shrink-0"
+                      style={{ background: 'rgba(52,211,153,0.12)', color: '#6ee7b7', border: '1px solid rgba(52,211,153,0.25)' }}>
+                      Share
+                    </button>
+                    <button onClick={() => setShowTimeSaved(false)}
+                      className="text-gray-700 hover:text-gray-400 transition-colors flex-shrink-0 p-0.5">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )
+              })()}
+
               {/* Proactive suggestions */}
               <ProactiveSuggestions result={result} transcript={transcript} />
 
@@ -1494,7 +1589,7 @@ export default function App() {
 
         {/* Mobile tab bar */}
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex"
-          style={{ background: 'rgba(7,4,15,0.95)', borderTop: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)' }}>
+          style={{ background: 'rgba(7,4,15,0.95)', borderTop: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           <button
             onClick={() => setMobileTab('input')}
             className={`flex-1 py-3 text-xs font-medium transition-colors ${mobileTab === 'input' ? 'text-sky-400' : 'text-gray-600'}`}>
@@ -1572,6 +1667,36 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              {showTimeSaved && analysisTime && (() => {
+                const mins = Math.round(analysisTime * 1.8 + 20)
+                const tweetText = `Just analyzed my meeting in ${analysisTime}s with PrismAI — saved ~${mins} minutes of manual work. Try it: https://vs-githjk.github.io/Agentic-Meeting-Copilot/`
+                return (
+                  <div className="rounded-2xl px-4 py-3 flex items-center gap-3 animate-fade-in-up"
+                    style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.2)' }}>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.25)' }}>
+                      <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="flex-1 text-xs text-emerald-300">
+                      <span className="font-semibold">~{mins} minutes saved</span>
+                      <span className="text-emerald-500 ml-1">· analyzed in {analysisTime}s</span>
+                    </p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(tweetText)}
+                      className="text-[11px] px-2.5 py-1.5 rounded-lg font-medium flex-shrink-0"
+                      style={{ background: 'rgba(52,211,153,0.12)', color: '#6ee7b7', border: '1px solid rgba(52,211,153,0.25)' }}>
+                      Share
+                    </button>
+                    <button onClick={() => setShowTimeSaved(false)} className="text-gray-700 hover:text-gray-400 transition-colors flex-shrink-0 p-0.5">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )
+              })()}
               <ProactiveSuggestions result={result} transcript={transcript} />
               <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
               <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
