@@ -226,6 +226,51 @@ function buildMarkdown(result) {
   return md
 }
 
+function buildPrintHTML(result) {
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const h = result.health_score
+  let body = `<h1>Meeting Summary — ${date}</h1>`
+  if (h?.score) {
+    body += `<h2>Meeting Health: ${h.score}/100 — ${h.verdict}</h2>`
+    if (h.badges?.length) body += `<p>${h.badges.map(b => `<code>${b}</code>`).join(' ')}</p>`
+    if (h.breakdown) body += `<ul><li>Clarity: ${h.breakdown.clarity}/100</li><li>Action Orientation: ${h.breakdown.action_orientation}/100</li><li>Engagement: ${h.breakdown.engagement}/100</li></ul>`
+  }
+  if (result.summary) body += `<h2>Summary</h2><p>${result.summary}</p>`
+  if (result.action_items?.length) {
+    body += `<h2>Action Items</h2><ul>`
+    result.action_items.forEach(i => {
+      body += `<li>${i.task}${i.owner && i.owner !== 'Unassigned' ? ` <em>(${i.owner})</em>` : ''}${i.due && i.due !== 'TBD' ? ` — due ${i.due}` : ''}</li>`
+    })
+    body += `</ul>`
+  }
+  if (result.decisions?.length) {
+    body += `<h2>Decisions</h2><ul>`
+    result.decisions.forEach(d => {
+      const imp = d.importance === 1 ? 'Critical' : d.importance === 2 ? 'Significant' : 'Minor'
+      body += `<li><strong>${d.decision}</strong>${d.owner && d.owner !== 'Team' ? ` <em>(${d.owner})</em>` : ''} — ${imp}</li>`
+    })
+    body += `</ul>`
+  }
+  if (result.sentiment?.overall) {
+    body += `<h2>Sentiment: ${result.sentiment.overall} (${result.sentiment.score ?? 50}/100)</h2>`
+    if (result.sentiment.notes) body += `<p>${result.sentiment.notes}</p>`
+  }
+  if (result.follow_up_email?.subject) {
+    body += `<h2>Follow-up Email</h2><p><strong>Subject:</strong> ${result.follow_up_email.subject}</p><p style="white-space:pre-wrap">${result.follow_up_email.body}</p>`
+  }
+  if (result.calendar_suggestion?.recommended) {
+    body += `<h2>Calendar</h2><p>${result.calendar_suggestion.reason}${result.calendar_suggestion.suggested_timeframe ? ` — ${result.calendar_suggestion.suggested_timeframe}` : ''}</p>`
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Meeting Summary — ${date}</title><style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:40px auto;color:#111;line-height:1.6}
+    h1{font-size:1.5rem;margin-bottom:.5rem}
+    h2{font-size:1.1rem;margin-top:1.5rem;margin-bottom:.5rem;border-bottom:1px solid #eee;padding-bottom:.25rem}
+    ul{padding-left:1.25rem}li{margin-bottom:.25rem}
+    code{background:#f0f0f0;padding:2px 6px;border-radius:3px;font-size:.85em}
+    p{margin:.5rem 0}
+  </style></head><body>${body}</body></html>`
+}
+
 // ── Prism background ─────────────────────────────────────────────
 // ── Agent pipeline loader ────────────────────────────────────────
 function AgentPipelineLoader() {
@@ -455,6 +500,8 @@ export default function App() {
   const [history, setHistory] = useState([])
   const [showHistory, setShowHistory] = useState(false)
   const [historySearch, setHistorySearch] = useState('')
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [mdCopied, setMdCopied] = useState(false)
 
   useEffect(() => {
     if (INITIAL_SHARE_TOKEN) return // skip auto-load for shared links
@@ -715,12 +762,36 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
+  const copyMarkdown = () => {
+    if (!result) return
+    navigator.clipboard.writeText(buildMarkdown(result)).then(() => {
+      setMdCopied(true)
+      setTimeout(() => setMdCopied(false), 2000)
+    })
+  }
+
+  const exportPDF = () => {
+    if (!result) return
+    const w = window.open('', '_blank')
+    w.document.write(buildPrintHTML(result))
+    w.document.close()
+    w.focus()
+    setTimeout(() => { w.print(); w.close() }, 300)
+  }
+
   useEffect(() => {
     if (!showHistory) return
     const h = (e) => { if (!e.target.closest('[data-history-panel]')) setShowHistory(false) }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [showHistory])
+
+  useEffect(() => {
+    if (!showExportMenu) return
+    const h = (e) => { if (!e.target.closest('[data-export-menu]')) setShowExportMenu(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [showExportMenu])
 
   // Landing screen — shown to first-time visitors
   if (showLanding) {
@@ -1274,14 +1345,38 @@ export default function App() {
                       {shareCopied ? 'Copied!' : 'Share'}
                     </button>
                   )}
-                  <button onClick={exportMarkdown}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Export .md
-                  </button>
+                  <div className="relative" data-export-menu>
+                    <button onClick={() => setShowExportMenu(v => !v)}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af' }}>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Export
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute right-0 top-9 w-44 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
+                        style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <button onClick={() => { copyMarkdown(); setShowExportMenu(false) }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                          {mdCopied ? 'Copied!' : 'Copy Markdown'}
+                        </button>
+                        <button onClick={() => { exportMarkdown(); setShowExportMenu(false) }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          Download .md
+                        </button>
+                        <button onClick={() => { exportPDF(); setShowExportMenu(false) }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                          Download PDF
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1362,10 +1457,35 @@ export default function App() {
                       {shareCopied ? 'Copied!' : 'Share'}
                     </button>
                   )}
-                  <button onClick={exportMarkdown} className="text-xs px-3 py-1.5 rounded-lg text-gray-400"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    Export
-                  </button>
+                  <div className="relative" data-export-menu>
+                    <button onClick={() => setShowExportMenu(v => !v)}
+                      className="text-xs px-3 py-1.5 rounded-lg text-gray-400"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      Export
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute right-0 top-9 w-44 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
+                        style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <button onClick={() => { copyMarkdown(); setShowExportMenu(false) }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                          {mdCopied ? 'Copied!' : 'Copy Markdown'}
+                        </button>
+                        <button onClick={() => { exportMarkdown(); setShowExportMenu(false) }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          Download .md
+                        </button>
+                        <button onClick={() => { exportPDF(); setShowExportMenu(false) }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+                          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                          Download PDF
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
