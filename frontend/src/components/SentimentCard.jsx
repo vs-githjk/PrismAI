@@ -64,7 +64,7 @@ export default function SentimentCard({ sentiment }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h3 className="text-xs font-semibold text-yellow-400 uppercase tracking-widest">Sentiment Analysis</h3>
+          <h3 className="text-sm font-semibold text-yellow-400">Sentiment</h3>
         </div>
 
         {/* Overall score + arc */}

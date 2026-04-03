@@ -71,7 +71,7 @@ export default function HealthScoreCard({ healthScore }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
-          <h3 className={`text-xs font-semibold uppercase tracking-widest ${color.text}`}>Meeting Health Score</h3>
+          <h3 className={`text-sm font-semibold ${color.text}`}>Meeting Health</h3>
           <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${color.bg} border ${color.border} ${color.text}`}>
             {color.label}
           </span>
@@ -81,7 +81,7 @@ export default function HealthScoreCard({ healthScore }) {
         <div className="flex items-start gap-5">
           <CircleGauge score={score} color={color} />
           <div className="flex-1 min-w-0">
-            <p className="text-gray-200 text-sm leading-relaxed mb-4">{verdict}</p>
+            <p className="text-gray-100 text-[15px] font-medium leading-relaxed mb-4">{verdict}</p>
             <div className="space-y-2.5">
               {breakdown.clarity !== undefined && (
                 <BreakdownBar label="Clarity" value={breakdown.clarity} color={color} />

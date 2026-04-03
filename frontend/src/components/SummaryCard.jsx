@@ -11,9 +11,9 @@ export default function SummaryCard({ summary }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-widest">Summary</h3>
+          <h3 className="text-sm font-semibold text-indigo-400">Summary</h3>
         </div>
-        <p className="text-gray-200 leading-relaxed text-sm">{summary}</p>
+        <p className="text-gray-200 leading-relaxed text-[15px]">{summary}</p>
       </div>
     </div>
   )

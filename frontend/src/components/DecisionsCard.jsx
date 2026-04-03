@@ -19,7 +19,7 @@ export default function DecisionsCard({ decisions }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h3 className="text-xs font-semibold text-cyan-400 uppercase tracking-widest">Decisions Log</h3>
+          <h3 className="text-sm font-semibold text-cyan-400">Decisions</h3>
           <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/25 text-cyan-300">
             {sorted.length} decision{sorted.length !== 1 ? 's' : ''}
           </span>

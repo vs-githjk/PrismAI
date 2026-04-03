@@ -8,6 +8,7 @@ import SentimentCard from './components/SentimentCard'
 import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
 import ChatPanel from './components/ChatPanel'
+import SkeletonCard from './components/SkeletonCard'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -306,6 +307,9 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [analysisTime, setAnalysisTime] = useState(null) // seconds elapsed
+  const analysisStartRef = useRef(null)
+  const [mobileTab, setMobileTab] = useState('input') // 'input' | 'results'
 
   // Show landing only to first-time visitors (not returning users, not share links)
   const [showLanding, setShowLanding] = useState(
@@ -525,6 +529,8 @@ export default function App() {
     setLoading(true)
     setError(null)
     setResult(null)
+    setAnalysisTime(null)
+    analysisStartRef.current = Date.now()
     const t = transcriptOverride ?? transcript
     const validSpeakers = speakersParam.filter(s => s.name.trim())
     try {
@@ -550,6 +556,9 @@ export default function App() {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6).trim()
           if (raw === '[DONE]') {
+            const elapsed = ((Date.now() - analysisStartRef.current) / 1000).toFixed(1)
+            setAnalysisTime(parseFloat(elapsed))
+            setMobileTab('results')
             saveToHistory(t, accumulated)
             break
           }
@@ -864,7 +873,7 @@ export default function App() {
       <div className="app-content flex flex-1 overflow-hidden">
 
         {/* LEFT PANEL — Input */}
-        <div className="flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto" style={PANEL_STYLE}>
+        <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-16 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
 
           {/* Hero blurb */}
           <div className="px-6 pt-6 pb-4">
@@ -1106,12 +1115,33 @@ export default function App() {
         {/* RIGHT PANEL — Results */}
         <div className="hidden lg:flex flex-1 flex-col overflow-y-auto">
           {loading ? (
-            <AgentPipelineLoader />
+            <div className="p-6 space-y-4">
+              <AgentPipelineLoader />
+              {/* Skeleton cards while streaming */}
+              <div className="space-y-4 opacity-40">
+                <SkeletonCard lines={2} />
+                <div className="grid grid-cols-2 gap-4">
+                  <SkeletonCard lines={3} />
+                  <SkeletonCard lines={3} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <SkeletonCard lines={4} />
+                  <SkeletonCard lines={3} />
+                </div>
+              </div>
+            </div>
           ) : result ? (
             <div className="p-6 space-y-4">
-              {/* Top bar */}
+              {/* Results header strip */}
               <div className="flex items-center justify-between">
-                <AgentTags agents={result.agents_run || []} />
+                <div className="flex items-center gap-3">
+                  <AgentTags agents={result.agents_run || []} />
+                  {analysisTime && (
+                    <span className="text-[11px] text-gray-600">
+                      {analysisTime}s · ~{Math.round(analysisTime * 1.8 + 20)} min saved
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-3">
                   {shareToken && (
                     <button onClick={() => {
@@ -1142,19 +1172,19 @@ export default function App() {
                 <HealthScoreCard healthScore={result.health_score} />
               </div>
 
-              {/* 2-col row: summary + sentiment */}
+              {/* Summary + Sentiment */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
                 <div className="animate-fade-in-up card-delay-2"><SentimentCard sentiment={result.sentiment} /></div>
               </div>
 
-              {/* Action items + Decisions side by side */}
+              {/* Action items + Decisions */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
                 <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
               </div>
 
-              {/* Email + Calendar side by side */}
+              {/* Email + Calendar */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="animate-fade-in-up card-delay-4"><EmailCard email={result.follow_up_email} /></div>
                 <div className="animate-fade-in-up card-delay-5"><CalendarCard suggestion={result.calendar_suggestion} /></div>
@@ -1165,16 +1195,45 @@ export default function App() {
           )}
         </div>
 
-        {/* Mobile results (below input) */}
-        <div id="mobile-results" className="lg:hidden w-full overflow-y-auto">
-          {loading && (
-            <div className="h-80"><AgentPipelineLoader /></div>
-          )}
-          {result && !loading && (
-            <div className="px-4 pb-8 space-y-4">
+        {/* Mobile tab bar */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex"
+          style={{ background: 'rgba(7,4,15,0.95)', borderTop: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)' }}>
+          <button
+            onClick={() => setMobileTab('input')}
+            className={`flex-1 py-3 text-xs font-medium transition-colors ${mobileTab === 'input' ? 'text-sky-400' : 'text-gray-600'}`}>
+            Input
+          </button>
+          <button
+            onClick={() => setMobileTab('results')}
+            className={`flex-1 py-3 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${mobileTab === 'results' ? 'text-sky-400' : 'text-gray-600'}`}>
+            Results
+            {(loading || result) && (
+              <span className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400'}`} />
+            )}
+          </button>
+        </div>
+
+        {/* Mobile results panel */}
+        <div className={`lg:hidden w-full overflow-y-auto pb-16 ${mobileTab === 'results' ? 'block' : 'hidden'}`}>
+          {loading ? (
+            <div className="px-4 pt-4 space-y-4">
+              <AgentPipelineLoader />
+              <div className="space-y-4 opacity-40">
+                <SkeletonCard lines={2} />
+                <SkeletonCard lines={3} />
+                <SkeletonCard lines={4} />
+              </div>
+            </div>
+          ) : result ? (
+            <div className="px-4 pb-4 space-y-4">
               <div className="flex items-center justify-between pt-4">
-                <AgentTags agents={result.agents_run || []} />
-                <div className="flex items-center gap-2 ml-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <AgentTags agents={result.agents_run || []} />
+                  {analysisTime && (
+                    <span className="text-[11px] text-gray-600">{analysisTime}s · ~{Math.round(analysisTime * 1.8 + 20)} min saved</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 ml-2 flex-shrink-0">
                   {shareToken && (
                     <button onClick={() => {
                       const url = `${window.location.origin}${window.location.pathname}#share/${shareToken}`
@@ -1187,7 +1246,7 @@ export default function App() {
                   )}
                   <button onClick={exportMarkdown} className="text-xs px-3 py-1.5 rounded-lg text-gray-400"
                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    Export .md
+                    Export
                   </button>
                 </div>
               </div>
@@ -1199,8 +1258,15 @@ export default function App() {
               <div className="animate-fade-in-up card-delay-4"><EmailCard email={result.follow_up_email} /></div>
               <div className="animate-fade-in-up card-delay-5"><CalendarCard suggestion={result.calendar_suggestion} /></div>
             </div>
+          ) : (
+            <div className="flex items-center justify-center h-64 text-gray-600 text-sm">
+              Analyze a meeting to see results
+            </div>
           )}
         </div>
+
+        {/* Mobile input panel — hide when on results tab */}
+        <div className={`lg:hidden ${mobileTab === 'input' ? 'block' : 'hidden'}`} />
 
       </div>
     </div>

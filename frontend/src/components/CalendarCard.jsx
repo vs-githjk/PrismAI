@@ -12,7 +12,7 @@ export default function CalendarCard({ suggestion }) {
                 d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
-          <h3 className="text-xs font-semibold text-pink-400 uppercase tracking-widest">Calendar Suggestion</h3>
+          <h3 className="text-sm font-semibold text-pink-400">Follow-up Meeting</h3>
         </div>
 
         <div className="flex items-start gap-4">
