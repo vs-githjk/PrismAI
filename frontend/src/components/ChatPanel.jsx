@@ -198,6 +198,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
       appendMsg({ role: 'assistant', content: 'Sorry, something went wrong.' })
     } finally {
       setLoading(false)
+      setLoadingGlobal(false)
     }
   }
 
