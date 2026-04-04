@@ -1213,6 +1213,10 @@ export default function App() {
                           onClick={() => {
                             setHistory(prev => prev.filter(h => h.id !== entry.id))
                             fetch(`${API}/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+                            if (entry.id === meetingId) {
+                              sessionStorage.setItem('prism_new_meeting', '1')
+                              setTranscript(''); setResult(null); setError(null); setMeetingId(null); setShareToken(null); setInitialMessages([]); setSessionId(s => s + 1)
+                            }
                           }}
                           className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
