@@ -540,12 +540,13 @@ export default function App() {
 
   // Show landing only to first-time visitors (not returning users, not share links)
   const [showLanding, setShowLanding] = useState(
-    () => !INITIAL_SHARE_TOKEN
+    () => !INITIAL_SHARE_TOKEN && !localStorage.getItem('prism_visited')
   )
   const [landingExiting, setLandingExiting] = useState(false)
   const [isDemoMode, setIsDemoMode] = useState(false)
 
   const exitLanding = (demo = false) => {
+    localStorage.setItem('prism_visited', '1')
     setLandingExiting(true)
     setTimeout(() => {
       setShowLanding(false)
