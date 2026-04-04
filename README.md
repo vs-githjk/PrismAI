@@ -4,7 +4,7 @@ One transcript. Seven AI agents. Instant clarity.
 
 PrismAI transforms any meeting transcript into structured intelligence — summaries, action items, sentiment analysis, follow-up emails, calendar suggestions, and a meeting health score — powered by a multi-agent pipeline on Groq + LLaMA 3.3 70B.
 
-**[Live Demo](https://vs-githjk.github.io/Agentic-Meeting-Copilot/)**
+Frontend is ready for deployment on Vercel. The backend remains on Render.
 
 ---
 
@@ -37,7 +37,7 @@ Plus a **Chat** interface to ask questions about any meeting in natural language
 | Frontend | React + Vite + Tailwind CSS |
 | Backend | FastAPI (Python) |
 | AI | Groq API — LLaMA 3.3 70B + Whisper large-v3 |
-| Hosting | GitHub Pages (frontend) + Render (backend) |
+| Hosting | Vercel (frontend) + Render (backend) |
 
 ## Run locally
 
@@ -51,3 +51,12 @@ cd frontend && npm install && npm run dev
 ```
 
 Get a free Groq API key at https://console.groq.com
+
+## Deploy frontend to Vercel
+
+1. Import this repo into Vercel.
+2. Keep the project root at the repo root so `vercel.json` is used.
+3. Add `VITE_API_URL` and point it at your Render backend, for example `https://meeting-copilot-api.onrender.com`.
+4. Deploy.
+
+The frontend no longer depends on a GitHub Pages base path, so it works cleanly on a root Vercel domain.

@@ -41,6 +41,7 @@ class ErrorBoundary extends Component {
 }
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
 
 const DEMO_TRANSCRIPTS = [
   // Q2 roadmap planning
@@ -2021,7 +2022,7 @@ export default function App() {
               {/* Time saved banner */}
               {showTimeSaved && analysisTime && (() => {
                 const mins = Math.round(analysisTime * 1.8 + 20)
-                const tweetText = `Just analyzed my meeting in ${analysisTime}s with PrismAI — saved ~${mins} minutes of manual work. Try it: https://vs-githjk.github.io/Agentic-Meeting-Copilot/`
+                const tweetText = `Just analyzed my meeting in ${analysisTime}s with PrismAI — saved ~${mins} minutes of manual work. Try it: ${APP_URL}`
                 return (
                   <div className="rounded-2xl px-4 py-3 flex items-center gap-3 animate-fade-in-up"
                     style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.2)' }}>
@@ -2187,7 +2188,7 @@ export default function App() {
               </div>
               {showTimeSaved && analysisTime && (() => {
                 const mins = Math.round(analysisTime * 1.8 + 20)
-                const tweetText = `Just analyzed my meeting in ${analysisTime}s with PrismAI — saved ~${mins} minutes of manual work. Try it: https://vs-githjk.github.io/Agentic-Meeting-Copilot/`
+                const tweetText = `Just analyzed my meeting in ${analysisTime}s with PrismAI — saved ~${mins} minutes of manual work. Try it: ${APP_URL}`
                 return (
                   <div className="rounded-2xl px-4 py-3 flex items-center gap-3 animate-fade-in-up"
                     style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.2)' }}>
