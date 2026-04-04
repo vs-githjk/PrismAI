@@ -108,7 +108,7 @@ class MeetingEntry(BaseModel):
 async def get_meetings(q: str = Query(default="")):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    query = supabase.table("meetings").select("id,date,title,score,transcript,result").order("id", desc=True).limit(50)
+    query = supabase.table("meetings").select("id,date,title,score,transcript,result,share_token").order("id", desc=True).limit(50)
     if q.strip():
         query = query.ilike("title", f"%{q}%")
     res = query.execute()
@@ -291,6 +291,7 @@ async def analyze_stream(req: AnalyzeRequest):
 
         tasks = {asyncio.ensure_future(run_agent(name)): name for name in valid_agents}
         pending = set(tasks.keys())
+        succeeded_agents = []
 
         while pending:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -301,9 +302,12 @@ async def analyze_stream(req: AnalyzeRequest):
                     if key and key in agent_result:
                         payload = {"agent": agent_name, key: agent_result[key]}
                         yield f"data: {json.dumps(payload)}\n\n"
+                        succeeded_agents.append(agent_name)
                 except Exception:
                     pass
 
+        # Correct agents_run to only include agents that actually succeeded
+        yield f"data: {json.dumps({'agents_run': succeeded_agents})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -431,8 +435,9 @@ async def recall_webhook(request: Request):
     elif event in ("bot.in_call_recording", "in_call_recording"):
         bot_store[bot_id]["status"] = "recording"
     elif event in ("bot.call_ended", "call_ended", "bot.done", "done"):
-        bot_store[bot_id]["status"] = "processing"
-        asyncio.create_task(_process_bot_transcript(bot_id))
+        if bot_store[bot_id].get("status") not in ("processing", "done"):
+            bot_store[bot_id]["status"] = "processing"
+            asyncio.create_task(_process_bot_transcript(bot_id))
     elif event in ("bot.fatal_error", "fatal_error"):
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = "Bot encountered a fatal error"

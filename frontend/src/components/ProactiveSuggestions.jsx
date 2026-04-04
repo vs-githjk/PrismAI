@@ -70,8 +70,7 @@ export default function ProactiveSuggestions({ result, transcript }) {
   if (!result?.health_score?.score && result?.health_score?.score !== 0) return null
 
   const suggestions = computeSuggestions(result)
-  const visible = suggestions.filter(s => !state[s.id]?.dismissed)
-  const allVisible = suggestions.filter(s => !state[s.id]?.dismissed || state[s.id]?.done)
+  const allVisible = suggestions.filter(s => !state[s.id]?.dismissed)
   if (!allVisible.length) return null
 
   async function handleAction(s) {

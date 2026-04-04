@@ -976,10 +976,11 @@ export default function App() {
   }
 
   const toggleActionItem = (index) => {
-    const updated = result.action_items.map((item, i) =>
+    const snapshot = result
+    const updated = snapshot.action_items.map((item, i) =>
       i === index ? { ...item, completed: !item.completed } : item
     )
-    const updatedResult = { ...result, action_items: updated }
+    const updatedResult = { ...snapshot, action_items: updated }
     setResult(updatedResult)
     if (meetingId) {
       fetch(`${API}/meetings/${meetingId}`, {
@@ -988,7 +989,7 @@ export default function App() {
         body: JSON.stringify({ result: updatedResult }),
       }).catch(() => {
         // Revert optimistic update if persist fails
-        setResult(result)
+        setResult(snapshot)
       })
     }
   }
