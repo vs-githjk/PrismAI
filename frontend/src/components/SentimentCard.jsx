@@ -139,6 +139,15 @@ export default function SentimentCard({ sentiment }) {
         {sentiment.notes && (
           <p className="text-gray-400 text-sm leading-relaxed border-t border-white/5 pt-3">{sentiment.notes}</p>
         )}
+
+        <div className="mt-4 pt-4 border-t border-white/5 flex items-start gap-2">
+          <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Sentiment is inferred from language patterns in the transcript and may miss nuance, sarcasm, or offline context.
+          </p>
+        </div>
       </div>
     </div>
   )

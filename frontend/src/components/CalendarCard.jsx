@@ -15,6 +15,21 @@ export default function CalendarCard({ suggestion }) {
           <h3 className="text-sm font-semibold text-pink-400">Follow-up Meeting</h3>
         </div>
 
+        <div className="flex flex-wrap gap-2 mb-4">
+          <span className={`text-[11px] px-2.5 py-1 rounded-full border ${
+            suggestion.recommended
+              ? 'bg-pink-500/10 border-pink-500/25 text-pink-300'
+              : 'bg-white/5 border-white/8 text-gray-400'
+          }`}>
+            {suggestion.recommended ? 'Recommended' : 'Optional'}
+          </span>
+          {suggestion.suggested_timeframe && (
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+              {suggestion.suggested_timeframe}
+            </span>
+          )}
+        </div>
+
         <div className="flex items-start gap-4">
           {suggestion.suggested_timeframe && (
             <div className="flex-shrink-0 px-3 py-2.5 rounded-xl bg-pink-500/10 border border-pink-500/25 text-center min-w-[80px]">
@@ -25,6 +40,15 @@ export default function CalendarCard({ suggestion }) {
           <div>
             <p className="text-gray-200 text-sm leading-relaxed">{suggestion.reason}</p>
           </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-white/5 flex items-start gap-2">
+          <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            This is a scheduling suggestion inferred from context, not a calendar commitment. Adjust based on urgency, attendees, and team rhythm.
+          </p>
         </div>
       </div>
     </div>

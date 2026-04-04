@@ -122,6 +122,10 @@ export default function ProactiveSuggestions({ result, transcript }) {
           </span>
         </div>
 
+        <p className="text-[11px] text-gray-500 leading-relaxed mb-3">
+          PrismAI is suggesting the fastest next move based on what happened in this meeting.
+        </p>
+
         {/* Suggestion rows */}
         <div className="space-y-2">
           {allVisible.map(s => {

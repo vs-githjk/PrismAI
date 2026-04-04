@@ -3,6 +3,8 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
 
   const toggle = (i) => onToggle?.(i)
   const doneCount = actionItems.filter(item => item.completed).length
+  const assignedCount = actionItems.filter(item => item.owner && item.owner !== 'Unassigned').length
+  const datedCount = actionItems.filter(item => item.due && item.due !== 'TBD').length
 
   return (
     <div className="rounded-2xl overflow-hidden card-glow-violet transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)' }}>
@@ -22,6 +24,21 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
               {doneCount}/{actionItems.length} done
             </span>
           )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-600">Total</p>
+            <p className="text-sm font-semibold text-white mt-1">{actionItems.length}</p>
+          </div>
+          <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-600">Assigned</p>
+            <p className="text-sm font-semibold text-white mt-1">{assignedCount}</p>
+          </div>
+          <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-600">Dated</p>
+            <p className="text-sm font-semibold text-white mt-1">{datedCount}</p>
+          </div>
         </div>
 
         <ul className="space-y-2.5">
@@ -72,6 +89,15 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
             </li>
           ))}
         </ul>
+
+        <div className="mt-4 pt-4 border-t border-white/5 flex items-start gap-2">
+          <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Best for turning a meeting into accountability. Review any unassigned owner or missing due date before sending this outside your team.
+          </p>
+        </div>
       </div>
     </div>
   )

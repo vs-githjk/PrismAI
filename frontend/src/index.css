@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --font-display: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "Manrope", "Inter", "Segoe UI", sans-serif;
+}
+
 /* ── Core animations ─────────────────────────────────────────── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(16px); }
@@ -67,6 +72,34 @@
   50%       { background-position: 100% 50%; }
 }
 
+@keyframes prism-scan {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  20%  { opacity: 0.7; }
+  80%  { opacity: 0.35; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+@keyframes loader-pan {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@keyframes beam-throb {
+  0%, 100% { opacity: 0.5; transform: scaleY(0.96); }
+  50%      { opacity: 1; transform: scaleY(1.04); }
+}
+
+@keyframes spectrum-flow {
+  0%   { background-position: 0% 50%; transform: translateX(-4px); }
+  50%  { background-position: 100% 50%; transform: translateX(4px); }
+  100% { background-position: 0% 50%; transform: translateX(-4px); }
+}
+
+@keyframes output-glow {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50%      { opacity: 0.7; transform: scale(1.04); }
+}
+
 /* ── Animation utility classes ───────────────────────────────── */
 .animate-fade-in-up  { animation: fadeInUp 0.45s ease-out both; }
 .animate-glow-pulse  { animation: glow-pulse 2.5s ease-in-out infinite; }
@@ -123,11 +156,121 @@ html, body {
   animation: bg-breathe 10s ease-in-out infinite;
   will-change: background-image;
   min-height: 100vh;
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
 }
 
 /* ── Card glow breathing ─────────────────────────────────────── */
 .card-breathe {
   animation: card-breathe 4s ease-in-out infinite;
+}
+
+.prism-spectrum-bar {
+  background: linear-gradient(90deg, #f97316 0%, #eab308 14%, #22c55e 28%, #06b6d4 42%, #3b82f6 58%, #8b5cf6 75%, #ec4899 100%);
+  background-size: 200% 200%;
+  animation: spectrum-shift 8s ease-in-out infinite;
+}
+
+.prism-loader-shell {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(56,189,248,0.12), transparent 35%),
+    radial-gradient(circle at bottom right, rgba(168,85,247,0.10), transparent 35%),
+    linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+  border: 1px solid rgba(125,211,252,0.12);
+  box-shadow: 0 26px 70px rgba(2,132,199,0.10);
+}
+
+.prism-loader-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.09) 48%, transparent 100%);
+  transform: translateX(-120%);
+  animation: prism-scan 3.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.app-content {
+  position: relative;
+}
+
+.app-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(56,189,248,0.10), transparent 18%),
+    radial-gradient(circle at 90% 10%, rgba(16,185,129,0.08), transparent 16%),
+    radial-gradient(circle at 78% 88%, rgba(168,85,247,0.10), transparent 16%);
+}
+
+.prism-scene-panel {
+  background:
+    radial-gradient(circle at top right, rgba(56,189,248,0.08), transparent 32%),
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.prism-beam-shell {
+  position: relative;
+  width: 80px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prism-beam-core,
+.prism-beam-spectrum {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+
+.prism-beam-core {
+  width: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.75), rgba(255,255,255,0.12));
+  filter: blur(0.5px);
+  animation: beam-throb 2.6s ease-in-out infinite;
+}
+
+.prism-beam-spectrum {
+  background: linear-gradient(180deg, rgba(248,113,113,0.05) 0%, rgba(251,146,60,0.18) 15%, rgba(250,204,21,0.2) 30%, rgba(34,197,94,0.18) 45%, rgba(6,182,212,0.18) 60%, rgba(59,130,246,0.18) 75%, rgba(168,85,247,0.22) 100%);
+  background-size: 100% 180%;
+  filter: blur(18px);
+  opacity: 0.6;
+}
+
+.prism-beam-shell.is-active .prism-beam-spectrum {
+  animation: spectrum-flow 3.8s ease-in-out infinite;
+}
+
+.prism-beam-shell.is-resting .prism-beam-spectrum {
+  opacity: 0.45;
+}
+
+.prism-output-glow {
+  position: absolute;
+  top: 8%;
+  right: -2%;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(168,85,247,0.16) 0%, rgba(56,189,248,0.08) 34%, transparent 70%);
+  filter: blur(18px);
+}
+
+.prism-output-glow.is-active {
+  animation: output-glow 4s ease-in-out infinite;
 }
 
 

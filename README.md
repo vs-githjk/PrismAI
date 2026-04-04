@@ -1,6 +1,6 @@
 # PrismAI — Meeting Intelligence
 
-One transcript. Six AI agents. Instant clarity.
+One transcript. Seven AI agents. Instant clarity.
 
 PrismAI transforms any meeting transcript into structured intelligence — summaries, action items, sentiment analysis, follow-up emails, calendar suggestions, and a meeting health score — powered by a multi-agent pipeline on Groq + LLaMA 3.3 70B.
 
@@ -16,6 +16,7 @@ An orchestrator LLM reads your transcript and dynamically routes it to the right
 |---|---|
 | Summarizer | Concise 2-3 sentence TL;DR |
 | Action Items | Who owns what, with due dates |
+| Decisions | What was actually agreed or resolved |
 | Sentiment | Tone score + conflict detection |
 | Email Drafter | Ready-to-send follow-up email |
 | Calendar Suggester | Follow-up meeting recommendation |

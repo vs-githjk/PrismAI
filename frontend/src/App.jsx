@@ -273,17 +273,204 @@ function extractSpeakers(transcript) {
 }
 
 const BG_STYLE = {
-  background: 'transparent',
+  background: 'linear-gradient(180deg, rgba(3,7,18,0.15) 0%, rgba(3,7,18,0.42) 100%)',
 }
 
 const PANEL_STYLE = {
-  background: 'rgba(255,255,255,0.02)',
-  borderRight: '1px solid rgba(14,165,233,0.1)',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)',
+  borderRight: '1px solid rgba(125,211,252,0.1)',
+  backdropFilter: 'blur(22px)',
 }
 
 const CARD_STYLE = {
-  background: 'rgba(255,255,255,0.03)',
-  border: '1px solid rgba(14,165,233,0.1)',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.025) 100%)',
+  border: '1px solid rgba(125,211,252,0.1)',
+  boxShadow: '0 22px 60px rgba(2,132,199,0.08)',
+}
+
+function getTranscriptStats(text = '') {
+  const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0
+  const lines = text.trim() ? text.trim().split('\n').filter(Boolean).length : 0
+  return { words, lines }
+}
+
+function countNamedSpeakers(text = '') {
+  const matches = text.match(/^([A-Z][a-zA-Z\s]{1,30}?):/gm) || []
+  return [...new Set(matches.map((m) => m.replace(/:$/, '').trim()))].length
+}
+
+function PrismStoryPanel({ transcript, result, loading, analysisTime }) {
+  const stats = getTranscriptStats(transcript)
+  const speakers = countNamedSpeakers(transcript)
+  const score = result?.health_score?.score
+  const decisionCount = result?.decisions?.length || 0
+  const actionCount = result?.action_items?.length || 0
+  const ranAgents = result?.agents_run?.length || 0
+
+  return (
+    <div className="rounded-[28px] overflow-hidden animate-fade-in-up"
+      style={{
+        background: 'linear-gradient(135deg, rgba(8,15,33,0.92) 0%, rgba(10,25,38,0.78) 55%, rgba(20,19,48,0.82) 100%)',
+        border: '1px solid rgba(125,211,252,0.14)',
+        boxShadow: '0 28px 80px rgba(2,132,199,0.14)',
+      }}>
+      <div className="h-[2px] w-full prism-spectrum-bar" />
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold text-cyan-200 mb-3"
+              style={{ background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.18)' }}>
+              <span className={`w-2 h-2 rounded-full ${loading ? 'bg-cyan-400 animate-pulse' : 'bg-emerald-400'}`} />
+              {loading ? 'Prism is splitting your meeting into structured intelligence' : 'Structured intelligence extracted from the transcript'}
+            </div>
+
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight">
+              {loading ? 'Raw conversation is becoming a complete operational picture.' : 'Your meeting is no longer just notes. It is a system of record.'}
+            </h2>
+
+            <p className="text-sm text-slate-300/85 leading-relaxed mt-2 max-w-xl">
+              {loading
+                ? 'The orchestrator is routing the transcript to specialized agents for clarity, decisions, ownership, follow-up, and meeting quality.'
+                : 'PrismAI turned the transcript into accountable outputs you can review, share, and act on. AI-generated fields should be verified before sending externally.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 lg:w-[360px]">
+            {[
+              { label: 'Words', value: stats.words || '0' },
+              { label: 'Speakers', value: speakers || '1' },
+              { label: loading ? 'Agents' : 'Agents Ran', value: ranAgents || (loading ? '7' : '0') },
+              { label: loading ? 'Status' : 'Health', value: loading ? 'Live' : (score ?? '—') },
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl px-3 py-3"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                <p className="text-lg font-semibold text-white mt-1">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {!loading && result && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-4">
+            <div className="rounded-2xl px-4 py-3" style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.18)' }}>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-300/70">Actionable</p>
+              <p className="text-sm text-white mt-1">{actionCount} action item{actionCount !== 1 ? 's' : ''} with tracked ownership and completion state.</p>
+            </div>
+            <div className="rounded-2xl px-4 py-3" style={{ background: 'rgba(56,189,248,0.07)', border: '1px solid rgba(56,189,248,0.18)' }}>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-sky-300/70">Decisions</p>
+              <p className="text-sm text-white mt-1">{decisionCount} decision{decisionCount !== 1 ? 's' : ''} surfaced from the transcript and ranked by importance.</p>
+            </div>
+            <div className="rounded-2xl px-4 py-3" style={{ background: 'rgba(168,85,247,0.07)', border: '1px solid rgba(168,85,247,0.18)' }}>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-violet-300/70">Reviewable</p>
+              <p className="text-sm text-white mt-1">{analysisTime ? `Generated in ${analysisTime}s.` : 'Generated live.'} Use this as a high-trust draft, then verify sensitive details.</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PrismSignatureScene({ transcript, result, loading }) {
+  const stats = getTranscriptStats(transcript)
+  const speakerCount = countNamedSpeakers(transcript)
+  const outputs = [
+    { label: 'Summary', value: result?.summary ? 'Ready' : loading ? 'Streaming' : 'Pending', color: '#f87171' },
+    { label: 'Actions', value: result?.action_items?.length ? `${result.action_items.length}` : loading ? '...' : '0', color: '#fb923c' },
+    { label: 'Decisions', value: result?.decisions?.length ? `${result.decisions.length}` : loading ? '...' : '0', color: '#facc15' },
+    { label: 'Health', value: result?.health_score?.score ?? (loading ? '...' : '—'), color: '#a78bfa' },
+  ]
+
+  return (
+    <div className="rounded-[30px] overflow-hidden animate-fade-in-up"
+      style={{
+        background: 'linear-gradient(135deg, rgba(8,10,24,0.92) 0%, rgba(5,18,34,0.86) 45%, rgba(24,16,44,0.82) 100%)',
+        border: '1px solid rgba(125,211,252,0.14)',
+        boxShadow: '0 30px 90px rgba(2,132,199,0.12)',
+      }}>
+      <div className="h-[2px] w-full prism-spectrum-bar" />
+      <div className="px-5 py-5 sm:px-6 sm:py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_80px_1.3fr] gap-4 items-center">
+          <div className="rounded-[24px] p-4 prism-scene-panel">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Input</p>
+                <h3 className="text-sm font-semibold text-white mt-1">Meeting transcript</h3>
+              </div>
+              <span className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400">
+                {speakerCount} speaker{speakerCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="rounded-2xl px-3.5 py-3.5 border border-white/8 bg-black/20">
+              <p className="text-sm text-slate-200 leading-relaxed">
+                {transcript?.trim()
+                  ? transcript.trim().slice(0, 180) + (transcript.trim().length > 180 ? '…' : '')
+                  : 'Paste, upload, record, or capture a live meeting to begin.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">{stats.words} words</span>
+              <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">{stats.lines} lines</span>
+              <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">{loading ? 'Live analysis' : 'Stored intelligence'}</span>
+            </div>
+          </div>
+
+          <div className="hidden lg:flex items-center justify-center h-full relative">
+            <div className={`prism-beam-shell ${loading ? 'is-active' : 'is-resting'}`}>
+              <div className="prism-beam-core" />
+              <div className="prism-beam-spectrum" />
+            </div>
+          </div>
+
+          <div className="rounded-[24px] p-4 prism-scene-panel relative overflow-hidden">
+            <div className="absolute inset-0 pointer-events-none opacity-80">
+              <div className={`prism-output-glow ${loading ? 'is-active' : ''}`} />
+            </div>
+            <div className="relative">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Prism Output</p>
+                  <h3 className="text-sm font-semibold text-white mt-1">Structured meeting intelligence</h3>
+                </div>
+                <span className={`text-[11px] px-2.5 py-1 rounded-full border ${
+                  loading
+                    ? 'border-cyan-400/25 bg-cyan-400/10 text-cyan-200'
+                    : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200'
+                }`}>
+                  {loading ? 'Transforming' : 'Ready to use'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                {outputs.map((item, i) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl px-3.5 py-3 border border-white/8 bg-white/[0.03] animate-fade-in-up"
+                    style={{ animationDelay: `${i * 0.05}s` }}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 rounded-full" style={{ background: item.color, boxShadow: `0 0 12px ${item.color}` }} />
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
+                    </div>
+                    <p className="text-base font-semibold text-white">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 rounded-2xl px-3.5 py-3 border border-white/8 bg-black/20">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {loading
+                    ? 'The prism is extracting operational clarity from conversational ambiguity in real time.'
+                    : 'This layer is built for daily use: review, share, export, and act without digging back through the transcript.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Generate markdown ───────────────────────────────────────────
@@ -374,7 +561,7 @@ function buildPrintHTML(result) {
 // ── Agent pipeline loader ────────────────────────────────────────
 function AgentPipelineLoader() {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-8 py-16 px-8">
+    <div className="flex flex-col items-center justify-center h-full gap-8 py-16 px-8 rounded-[28px] prism-loader-shell">
       <div className="flex flex-col items-center gap-3 animate-fade-in-up card-delay-0">
         <div className="relative">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-glow-pulse"
@@ -396,7 +583,7 @@ function AgentPipelineLoader() {
       <div className="flex flex-col items-center gap-2 animate-fade-in-up card-delay-1">
         <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.4), rgba(255,255,255,0.15))' }}></div>
         <div className="text-xs text-gray-400 px-4 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)' }}>
-          dispatching 7 agents in parallel
+          refracting the meeting into 7 live intelligence streams
         </div>
         <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)' }}></div>
       </div>
@@ -412,9 +599,18 @@ function AgentPipelineLoader() {
         ))}
       </div>
 
-      <p className="text-xs text-gray-600 animate-fade-in-up card-delay-3 text-center">
-        Analyzing your meeting across 7 dimensions...
-      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full max-w-3xl animate-fade-in-up card-delay-3">
+        {[
+          'Capturing decisions, ownership, and follow-up',
+          'Scoring meeting quality and emotional temperature',
+          'Streaming structured cards as soon as each agent finishes',
+        ].map((line) => (
+          <div key={line} className="rounded-2xl px-4 py-3 text-[11px] text-gray-400 text-center"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {line}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -694,6 +890,8 @@ export default function App() {
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
+  const transcriptStats = getTranscriptStats(transcript)
+  const transcriptSpeakerCount = countNamedSpeakers(transcript)
 
   async function exportToSlack() {
     if (!integrations.slack_webhook) { setShowIntegrations(true); return }
@@ -1390,7 +1588,7 @@ export default function App() {
               <span className="gradient-text">PrismAI</span> — one transcript,<br />seven dimensions of clarity.
             </h1>
             <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-              Orchestrator routes your transcript to 7 parallel AI agents in real time.
+              PrismAI turns raw meetings into structured accountability: decisions, owners, follow-up, sentiment, and meeting quality in one place.
             </p>
           </div>
 
@@ -1429,6 +1627,27 @@ export default function App() {
               )}
             </div>
 
+            <div className="px-4 pb-3">
+              <div className="rounded-2xl px-3.5 py-3 flex flex-wrap gap-2.5"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-gray-600">Input Quality</p>
+                  <p className="text-xs text-gray-300 mt-1">Clear speaker labels produce stronger ownership, decision, and sentiment outputs.</p>
+                </div>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                    {transcriptStats.words} words
+                  </span>
+                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                    {transcriptStats.lines} lines
+                  </span>
+                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                    {transcriptSpeakerCount} named speaker{transcriptSpeakerCount !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Paste Transcript */}
             {inputTab === 'paste' && (
               <div className="px-4 pb-4">
@@ -1442,7 +1661,7 @@ export default function App() {
                 />
                 <div className="flex items-center justify-between mt-3">
                   <span className="text-[11px] text-gray-600">
-                    {transcript.length > 0 ? `${transcript.split(/\s+/).filter(Boolean).length} words` : 'No transcript'}
+                    {transcript.length > 0 ? `${transcriptStats.words} words · ${transcriptSpeakerCount || 0} named speakers` : 'No transcript'}
                   </span>
                   <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
@@ -1473,7 +1692,7 @@ export default function App() {
                       className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed max-h-[30vh] lg:max-h-none overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center mt-3">
-                      <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
+                      <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
                       <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
                         style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
@@ -1507,7 +1726,7 @@ export default function App() {
                       className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed max-h-[30vh] lg:max-h-none overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center mt-3">
-                      <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
+                      <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
                       <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
                         style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
@@ -1619,6 +1838,8 @@ export default function App() {
         <div className="hidden lg:flex flex-1 flex-col overflow-y-auto">
           {loading ? (
             <div className="p-6 space-y-4">
+              <PrismStoryPanel transcript={transcript} loading={true} result={result} analysisTime={analysisTime} />
+              <PrismSignatureScene transcript={transcript} result={result} loading={true} />
               <AgentPipelineLoader />
               {/* Skeleton cards while streaming */}
               <div className="space-y-4 opacity-40">
@@ -1635,6 +1856,8 @@ export default function App() {
             </div>
           ) : result ? (
             <div className="p-6 space-y-4">
+              <PrismStoryPanel transcript={transcript} result={result} loading={false} analysisTime={analysisTime} />
+              <PrismSignatureScene transcript={transcript} result={result} loading={false} />
               {/* Results header strip */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -1806,6 +2029,12 @@ export default function App() {
             </div>
           ) : result ? (
             <div className="px-4 pb-4 space-y-4">
+              <div className="pt-4">
+                <PrismStoryPanel transcript={transcript} result={result} loading={false} analysisTime={analysisTime} />
+                <div className="mt-4">
+                  <PrismSignatureScene transcript={transcript} result={result} loading={false} />
+                </div>
+              </div>
               <div className="flex items-center justify-between pt-4">
                 <div className="flex items-center gap-2 flex-wrap">
                   <AgentTags agents={result.agents_run || []} />
