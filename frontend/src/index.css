@@ -403,7 +403,8 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 3.5rem;
+    font-size: 3.15rem;
+    line-height: 0.96;
     margin-bottom: 0.35rem;
   }
 
@@ -451,7 +452,8 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 3rem;
+    font-size: 2.7rem;
+    line-height: 0.95;
   }
 
   .landing-headline p {

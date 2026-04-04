@@ -37,6 +37,21 @@ WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
 # In-memory store: bot_id → { status, result, error, transcript }
 bot_store: dict = {}
 
+
+def _extract_recall_error(resp: httpx.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail") or payload.get("message") or payload.get("error")
+        if isinstance(detail, str) and detail.strip():
+            return detail
+
+    text = (resp.text or "").strip()
+    return text or f"Recall.ai request failed with status {resp.status_code}"
+
 AGENT_MAP = {
     "summarizer": summarizer.run,
     "action_items": action_items.run,
@@ -357,7 +372,7 @@ async def join_meeting(req: JoinMeetingRequest):
         )
 
     if resp.status_code not in (200, 201):
-        detail = resp.json().get("detail") or resp.text
+        detail = _extract_recall_error(resp)
         raise HTTPException(status_code=resp.status_code, detail=f"Recall.ai error: {detail}")
 
     data = resp.json()
@@ -372,6 +387,9 @@ async def join_meeting(req: JoinMeetingRequest):
 
 @app.get("/bot-status/{bot_id}")
 async def bot_status(bot_id: str):
+    if not RECALL_API_KEY:
+        raise HTTPException(status_code=500, detail="Recall.ai API key not configured")
+
     # Always check Recall.ai directly for live status
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -380,8 +398,11 @@ async def bot_status(bot_id: str):
             timeout=10,
         )
 
-    if resp.status_code != 200:
+    if resp.status_code == 404:
         raise HTTPException(status_code=404, detail="Bot not found")
+    if resp.status_code != 200:
+        detail = _extract_recall_error(resp)
+        raise HTTPException(status_code=resp.status_code, detail=f"Recall.ai status check failed: {detail}")
 
     recall_data = resp.json()
     recall_status = recall_data.get("status_changes", [{}])[-1].get("code", "") if recall_data.get("status_changes") else ""
