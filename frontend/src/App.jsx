@@ -1201,7 +1201,7 @@ export default function App() {
       <header className="app-content flex-shrink-0 flex items-center justify-between px-6 py-3"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(7,4,15,0.7)', backdropFilter: 'blur(20px)', position: 'relative', zIndex: 40 }}>
         <button className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-          onClick={() => { setShowLanding(true); setLandingExiting(false) }}>
+          onClick={() => { sessionStorage.removeItem('prism_visited'); setShowLanding(true); setLandingExiting(false) }}>
           <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/30"
             style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
