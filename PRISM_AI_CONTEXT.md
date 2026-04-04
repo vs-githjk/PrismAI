@@ -387,12 +387,14 @@ A full review of the codebase identified and fixed the following:
 - `render.yaml` — `WEBHOOK_BASE_URL` pointed to the wrong URL (`agentic-meeting-copilot.onrender.com`). Fixed to `meeting-copilot-api.onrender.com`.
 - `requirements.txt` — no version constraints. Added `>=` floor pins to prevent breaking upgrades.
 
-### Landing page navigation
+### Landing page navigation + session state fixes
 - Uses `sessionStorage` (not `localStorage`) for the visited gate — new tab/window shows landing, hard refresh stays in the app
 - PrismAI logo in the header clicks back to landing (`onClick={() => setShowLanding(true); setLandingExiting(false)}`)
 - Share links still bypass landing via `!INITIAL_SHARE_TOKEN`
 - Slack test button routes through backend (`POST /export/slack`) to avoid CORS — was previously calling Slack directly from the browser
 - Notion page ID extraction fixed — regex finds the 32-char hex ID regardless of title prefix in the URL (e.g. `PrismAI-Meetings-338ede0d...`)
+- **New Meeting** sets `sessionStorage.prism_new_meeting` flag — refresh after clicking New Meeting stays blank instead of reloading the last meeting. Flag is cleared when a meeting is saved or loaded from history.
+- **Delete active meeting** — now clears the current view immediately if the deleted meeting is the one being displayed. Previously only removed it from the history list.
 - Added `IMPROVEMENT_SPECS_DRAFT_1.md` — prioritized 10-item roadmap with implementation details and UI bug table.
 - Updated `PRISM_AI_CONTEXT.md` file structure to reference the improvement spec, with a note for incoming LLMs to read both docs before touching code.
 
