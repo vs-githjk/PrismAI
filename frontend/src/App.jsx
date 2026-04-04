@@ -885,6 +885,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [transcript, setTranscript] = useState('')
+  const [transcriptDrafts, setTranscriptDrafts] = useState({ paste: '', record: '', upload: '' })
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -950,6 +951,7 @@ export default function App() {
         if (data.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
           const latest = data[0]
           setTranscript(latest.transcript || '')
+          setTranscriptDrafts((prev) => ({ ...prev, paste: latest.transcript || '' }))
           setResult(latest.result || null)
           setMeetingId(latest.id)
           setShareToken(latest.share_token || null)
@@ -981,6 +983,24 @@ export default function App() {
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
+
+  const setTranscriptForTab = (value, tab = inputTab) => {
+    setTranscript(value)
+    if (['paste', 'record', 'upload'].includes(tab)) {
+      setTranscriptDrafts((prev) => ({ ...prev, [tab]: value }))
+    }
+  }
+
+  const resetTranscriptWorkspaces = () => {
+    setTranscript('')
+    setTranscriptDrafts({ paste: '', record: '', upload: '' })
+  }
+
+  useEffect(() => {
+    if (['paste', 'record', 'upload'].includes(inputTab)) {
+      setTranscript(transcriptDrafts[inputTab] || '')
+    }
+  }, [inputTab, transcriptDrafts])
 
   async function exportToSlack() {
     if (!integrations.slack_webhook) { setShowIntegrations(true); return }
@@ -1094,7 +1114,7 @@ export default function App() {
         setBotStatus(data.status)
         if (data.status === 'done') {
           clearInterval(pollRef.current)
-          setTranscript(data.transcript || '')
+          setTranscriptForTab(data.transcript || '', 'paste')
           setSessionId(s => s + 1)
           if (data.result) {
             setResult(data.result)
@@ -1142,6 +1162,7 @@ export default function App() {
   const loadFromHistory = async (entry) => {
     sessionStorage.removeItem('prism_new_meeting')
     setTranscript(entry.transcript)
+    setTranscriptDrafts((prev) => ({ ...prev, paste: entry.transcript || '' }))
     setResult(entry.result)
     setMeetingId(entry.id)
     setShareToken(entry.share_token || null)
@@ -1165,7 +1186,11 @@ export default function App() {
     r.lang = 'en-US'
     r.onresult = (e) => {
       const text = Array.from(e.results).map(r => r[0].transcript).join(' ')
-      setTranscript(prev => prev ? prev + '\n' + text : text)
+      setTranscriptDrafts((prev) => {
+        const next = prev.record ? `${prev.record}\n${text}` : text
+        setTranscript(next)
+        return { ...prev, record: next }
+      })
     }
     r.onerror = () => setRecording(false)
     r.onend = () => setRecording(false)
@@ -1190,7 +1215,7 @@ export default function App() {
       const res = await fetch(`${API}/transcribe`, { method: 'POST', body: formData })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Transcription failed')
       const data = await res.json()
-      setTranscript(data.transcript)
+      setTranscriptForTab(data.transcript, 'upload')
     } catch (e) {
       setError(e.message)
     } finally {
@@ -1210,7 +1235,8 @@ export default function App() {
   const startDemo = () => {
     const t = getRandomDemoTranscript()
     setIsDemoMode(true)
-    setTranscript(t)
+    setInputTab('paste')
+    setTranscriptForTab(t, 'paste')
     setMobileTab('input')
     runAnalysis([], t, true)
   }
@@ -1592,7 +1618,7 @@ export default function App() {
                             fetch(`${API}/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
                             if (entry.id === meetingId) {
                               sessionStorage.setItem('prism_new_meeting', '1')
-                              setTranscript(''); setResult(null); setError(null); setMeetingId(null); setShareToken(null); setInitialMessages([]); setSessionId(s => s + 1)
+                              resetTranscriptWorkspaces(); setResult(null); setError(null); setMeetingId(null); setShareToken(null); setInitialMessages([]); setSessionId(s => s + 1)
                             }
                           }}
                           aria-label="Delete meeting"
@@ -1611,7 +1637,7 @@ export default function App() {
 
           {result && (
             <button
-              onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); setTranscript(''); setResult(null); setError(null); setInitialMessages([]); setSessionId(s => s + 1) }}
+              onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); resetTranscriptWorkspaces(); setResult(null); setError(null); setInitialMessages([]); setSessionId(s => s + 1) }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1665,7 +1691,7 @@ export default function App() {
             <span className="font-semibold">Demo mode</span> — this is a sample transcript. See how PrismAI analyzes your meetings.
           </span>
           <button
-            onClick={() => { setIsDemoMode(false); setTranscript(''); setResult(null); setError(null); setSessionId(s => s + 1) }}
+            onClick={() => { setIsDemoMode(false); resetTranscriptWorkspaces(); setResult(null); setError(null); setSessionId(s => s + 1) }}
             className="text-sky-500 hover:text-sky-300 transition-colors ml-4 flex-shrink-0">
             Use my own transcript →
           </button>
@@ -1715,10 +1741,18 @@ export default function App() {
                 </svg>
               </div>
               {inputTab !== 'join' && (
-                <button onClick={() => setTranscript(getRandomDemoTranscript())}
+                <button onClick={() => setTranscriptForTab(getRandomDemoTranscript())}
                   className="text-[11px] px-2.5 py-2 rounded-lg transition-colors flex-shrink-0"
                   style={{ background: 'rgba(14,165,233,0.08)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.15)' }}>
                   Load sample
+                </button>
+              )}
+              {inputTab !== 'join' && transcript.trim() && (
+                <button
+                  onClick={() => setTranscriptForTab('')}
+                  className="text-[11px] px-2.5 py-2 rounded-lg transition-colors flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  Clear
                 </button>
               )}
             </div>
@@ -1749,7 +1783,7 @@ export default function App() {
               <div className="px-4 pb-4">
                 <textarea
                   value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
+                  onChange={(e) => setTranscriptForTab(e.target.value, 'paste')}
                   placeholder="Paste your meeting transcript here..."
                   rows={7}
                   className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[180px] max-h-[24vh] lg:max-h-[28vh] overflow-y-auto"
@@ -1785,7 +1819,7 @@ export default function App() {
                 </button>
                 {transcript ? (
                   <>
-                    <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
+                    <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'record')} rows={5}
                       className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[160px] max-h-[22vh] lg:max-h-[26vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-3">
@@ -1819,7 +1853,7 @@ export default function App() {
                 <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" className="hidden" onChange={handleAudioUpload} />
                 {transcript ? (
                   <>
-                    <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
+                    <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'upload')} rows={5}
                       className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[160px] max-h-[22vh] lg:max-h-[26vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-3">
