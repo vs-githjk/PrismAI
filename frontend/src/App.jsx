@@ -694,10 +694,10 @@ function LandingPrismHero() {
   ]
 
   return (
-    <div className="relative w-full max-w-6xl mx-auto mt-4 mb-10 px-2">
-      <div className="grid lg:grid-cols-[1.1fr_120px_1.1fr] gap-4 items-center">
-        <div className="landing-glass-panel rounded-[32px] p-5 sm:p-6 animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
-          <div className="flex items-center justify-between gap-3 mb-4">
+    <div className="relative w-full max-w-6xl mx-auto mt-3 mb-7 px-2 landing-prism-hero">
+      <div className="grid lg:grid-cols-[1.1fr_100px_1.1fr] gap-3 lg:gap-4 items-center">
+        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
+          <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Raw meeting input</p>
               <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Transcript enters the prism</h3>
@@ -709,7 +709,7 @@ function LandingPrismHero() {
             {transcriptLines.map((line, i) => (
               <div
                 key={line}
-                className="rounded-2xl px-4 py-3 border border-white/8 bg-black/20 animate-fade-in-up"
+                className="rounded-2xl px-4 py-2.5 border border-white/8 bg-black/20 animate-fade-in-up"
                 style={{ animationDelay: `${0.25 + i * 0.06}s` }}
               >
                 <p className="text-sm text-slate-200">{line}</p>
@@ -717,13 +717,13 @@ function LandingPrismHero() {
             ))}
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Multiple speakers</span>
             <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions buried in conversation</span>
           </div>
         </div>
 
-        <div className="hidden lg:flex items-center justify-center relative h-[360px] animate-fade-in-up" style={{ animationDelay: '0.26s' }}>
+        <div className="hidden lg:flex items-center justify-center relative h-[300px] landing-prism-center animate-fade-in-up" style={{ animationDelay: '0.26s' }}>
           <div className="landing-prism-column">
             <div className="landing-prism-beam landing-prism-beam-in" />
             <div className="landing-prism-core">
@@ -733,8 +733,8 @@ function LandingPrismHero() {
           </div>
         </div>
 
-        <div className="landing-glass-panel rounded-[32px] p-5 sm:p-6 animate-fade-in-up" style={{ animationDelay: '0.34s' }}>
-          <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up" style={{ animationDelay: '0.34s' }}>
+          <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Structured intelligence</p>
               <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Accountable outputs stream back live</h3>
@@ -742,11 +742,11 @@ function LandingPrismHero() {
             <span className="text-[11px] px-2.5 py-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">Streaming</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {outputs.map((item, i) => (
               <div
                 key={item.label}
-                className="rounded-2xl px-4 py-4 border border-white/8 bg-white/[0.03] animate-fade-in-up landing-output-card"
+                className="rounded-2xl px-4 py-3 border border-white/8 bg-white/[0.03] animate-fade-in-up landing-output-card"
                 style={{ animationDelay: `${0.38 + i * 0.07}s` }}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -768,7 +768,7 @@ function LandingPrismHero() {
 function LandingScreen({ onDemo, onSkip, exiting }) {
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-6 py-16 relative overflow-hidden"
+      className="min-h-screen flex flex-col items-center justify-center px-6 py-10 lg:py-8 relative overflow-hidden landing-screen"
       style={{
         background: '#07040f',
         opacity: exiting ? 0 : 1,
@@ -787,7 +787,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Logo */}
-      <div className="flex items-center gap-3 mb-8 animate-fade-in-up relative" style={{ animationDelay: '0s' }}>
+      <div className="flex items-center gap-3 mb-5 animate-fade-in-up relative landing-logo-lockup" style={{ animationDelay: '0s' }}>
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 40px rgba(2,132,199,0.5)' }}>
           <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -802,7 +802,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Badge */}
-      <div className="mb-6 animate-fade-in-up relative" style={{ animationDelay: '0.06s' }}>
+      <div className="mb-4 animate-fade-in-up relative" style={{ animationDelay: '0.06s' }}>
         <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[11px] font-medium text-sky-400"
           style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)' }}>
           <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse flex-shrink-0" />
@@ -811,8 +811,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Headline */}
-      <div className="text-center mb-4 animate-fade-in-up relative" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold text-white leading-[0.95] mb-4 tracking-tight">
+      <div className="text-center mb-3 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
+        <h1 className="text-4xl sm:text-6xl lg:text-[5.5rem] font-bold text-white leading-[0.95] mb-3 tracking-tight">
           Meetings in.<br />
           <span className="gradient-text">Clarity out.</span>
         </h1>
@@ -822,7 +822,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Output pills — ROYGBIV */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mb-6 animate-fade-in-up relative" style={{ animationDelay: '0.18s' }}>
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-4 animate-fade-in-up relative landing-feature-pills" style={{ animationDelay: '0.18s' }}>
         {[
           { label: 'Summary',        bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.28)',   text: '#fca5a5' },
           { label: 'Action Items',   bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.28)',  text: '#fdba74' },
@@ -842,7 +842,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       <LandingPrismHero />
 
       {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-14 animate-fade-in-up relative z-10" style={{ animationDelay: '0.24s' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-8 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
           className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98] landing-primary-cta"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
@@ -859,7 +859,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Agent grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl" style={{ animationDelay: '0.3s' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl landing-agent-grid" style={{ animationDelay: '0.3s' }}>
         {AGENTS_META.map((a, i) => (
           <div key={a.id}
             className="flex flex-col items-center gap-2 px-3 py-4 rounded-2xl transition-all duration-200 hover:-translate-y-1 landing-agent-tile"
@@ -875,7 +875,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Bottom tagline */}
-      <p className="mt-8 text-[11px] text-gray-700 animate-fade-in-up relative" style={{ animationDelay: '0.54s' }}>
+      <p className="mt-5 text-[11px] text-gray-700 animate-fade-in-up relative landing-footnote" style={{ animationDelay: '0.54s' }}>
         No login required · results stream in under 10 seconds
       </p>
     </div>

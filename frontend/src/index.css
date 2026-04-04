@@ -388,6 +388,85 @@ h1, h2, h3, .font-display {
     0 14px 30px rgba(56,189,248,0.08);
 }
 
+@media (max-height: 920px) and (min-width: 1024px) {
+  .landing-screen {
+    justify-content: flex-start;
+  }
+
+  .landing-logo-lockup {
+    margin-bottom: 0.9rem;
+  }
+
+  .landing-headline h1 {
+    font-size: 4.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .landing-headline p {
+    font-size: 1rem;
+    max-width: 52rem;
+  }
+
+  .landing-feature-pills {
+    margin-bottom: 0.75rem;
+  }
+
+  .landing-prism-hero {
+    margin-top: 0.4rem;
+    margin-bottom: 1.1rem;
+  }
+
+  .landing-prism-center {
+    height: 250px;
+  }
+
+  .landing-prism-column {
+    transform: scale(0.88);
+  }
+
+  .landing-cta-row {
+    margin-bottom: 1.1rem;
+  }
+
+  .landing-agent-grid {
+    gap: 0.45rem;
+  }
+
+  .landing-agent-grid > div {
+    padding: 0.8rem 0.65rem;
+  }
+
+  .landing-footnote {
+    margin-top: 0.8rem;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 1024px) {
+  .landing-screen {
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .landing-headline h1 {
+    font-size: 3.9rem;
+  }
+
+  .landing-headline p {
+    font-size: 0.95rem;
+  }
+
+  .landing-prism-hero {
+    transform: scale(0.9);
+    transform-origin: top center;
+    margin-bottom: -0.2rem;
+  }
+
+  .landing-cta-row button {
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
+  }
+}
+
 
 /* ── Scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar       { width: 4px; height: 4px; }
