@@ -280,7 +280,7 @@ What is **already built** that the spec asks for (do not re-implement):
 
 > **TODO: Landing page needs a visual makeover** — currently static and boring. Needs animation, more visual interest, better hierarchy. Do not just tweak copy — redesign the `LandingScreen` component in App.jsx.
 
-> **TODO: User needs to set up Notion + Slack** — tokens/webhooks are not yet configured. Notion requires: (1) create integration at notion.so/my-integrations, (2) copy secret token, (3) share a parent page with the integration, (4) paste token + page URL in Integrations modal. Slack requires: (1) create Slack app with incoming webhook, (2) paste webhook URL in Integrations modal → test button confirms connection.
+> **Notion + Slack are configured and working.** User has set up both integrations. Export to Slack and Export to Notion both confirmed working in production.
 
 ### Calendar suggestion done-state
 - Clicking "Open Calendar" in `ProactiveSuggestions` no longer dismisses the suggestion. Instead sets `done: true` on the item.
@@ -387,8 +387,12 @@ A full review of the codebase identified and fixed the following:
 - `render.yaml` — `WEBHOOK_BASE_URL` pointed to the wrong URL (`agentic-meeting-copilot.onrender.com`). Fixed to `meeting-copilot-api.onrender.com`.
 - `requirements.txt` — no version constraints. Added `>=` floor pins to prevent breaking upgrades.
 
-### Landing page always shown + docs update
-- `LandingScreen` now shows on every visit (not just first-time). Removed `localStorage.getItem('prism_visited')` gate from `showLanding` init and removed the `localStorage.setItem` call in `exitLanding`. Share links still bypass it via `!INITIAL_SHARE_TOKEN`.
+### Landing page navigation
+- Uses `sessionStorage` (not `localStorage`) for the visited gate — new tab/window shows landing, hard refresh stays in the app
+- PrismAI logo in the header clicks back to landing (`onClick={() => setShowLanding(true); setLandingExiting(false)}`)
+- Share links still bypass landing via `!INITIAL_SHARE_TOKEN`
+- Slack test button routes through backend (`POST /export/slack`) to avoid CORS — was previously calling Slack directly from the browser
+- Notion page ID extraction fixed — regex finds the 32-char hex ID regardless of title prefix in the URL (e.g. `PrismAI-Meetings-338ede0d...`)
 - Added `IMPROVEMENT_SPECS_DRAFT_1.md` — prioritized 10-item roadmap with implementation details and UI bug table.
 - Updated `PRISM_AI_CONTEXT.md` file structure to reference the improvement spec, with a note for incoming LLMs to read both docs before touching code.
 
