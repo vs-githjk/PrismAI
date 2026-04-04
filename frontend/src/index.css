@@ -393,39 +393,46 @@ h1, h2, h3, .font-display {
     justify-content: flex-start;
   }
 
+  .landing-screen {
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+  }
+
   .landing-logo-lockup {
-    margin-bottom: 0.9rem;
+    margin-bottom: 0.5rem;
   }
 
   .landing-headline h1 {
-    font-size: 4rem;
-    margin-bottom: 0.45rem;
+    font-size: 3.5rem;
+    margin-bottom: 0.35rem;
   }
 
   .landing-headline p {
-    font-size: 0.95rem;
-    max-width: 48rem;
+    font-size: 0.88rem;
+    max-width: 44rem;
   }
 
   .landing-feature-pills {
-    margin-bottom: 0.45rem;
+    margin-bottom: 0.3rem;
   }
 
   .landing-prism-hero {
-    margin-top: 0.2rem;
-    margin-bottom: 0.8rem;
+    transform: scale(0.84);
+    transform-origin: top center;
+    margin-top: -0.2rem;
+    margin-bottom: -1.2rem;
   }
 
   .landing-prism-center {
-    height: 220px;
+    height: 190px;
   }
 
   .landing-prism-column {
-    transform: scale(0.78);
+    transform: scale(0.72);
   }
 
   .landing-cta-row {
-    margin-bottom: 0.85rem;
+    margin-bottom: 0.35rem;
   }
 
   .landing-agent-grid {
@@ -439,22 +446,22 @@ h1, h2, h3, .font-display {
 
 @media (max-height: 760px) and (min-width: 1024px) {
   .landing-screen {
-    padding-top: 0.9rem;
-    padding-bottom: 0.9rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
   }
 
   .landing-headline h1 {
-    font-size: 3.4rem;
+    font-size: 3rem;
   }
 
   .landing-headline p {
-    font-size: 0.88rem;
+    font-size: 0.82rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.82);
+    transform: scale(0.74);
     transform-origin: top center;
-    margin-bottom: -1.2rem;
+    margin-bottom: -2.6rem;
   }
 
   .landing-cta-row button {
