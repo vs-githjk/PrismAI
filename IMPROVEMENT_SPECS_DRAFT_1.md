@@ -15,51 +15,41 @@
 | Share Page Overhaul | Sticky branded header, meeting title/date/AgentTags, bottom CTA block. OG + Twitter meta tags injected on share load. `document.title` updated. |
 | Time Saved Banner | Dismissible emerald banner after `[DONE]`. Shows "~X min saved · analyzed in Ys". Share button copies pre-written tweet. |
 | Health Score Count-Up | `useCountUp` hook with rAF + ease-out cubic. Drives circle arc, number display, and all 3 breakdown bars simultaneously. |
+| Workspace Visual Pass | Premium glass surfaces, ambient backgrounds, richer result presentation, `PrismStoryPanel`, `PrismSignatureScene`, stronger motion language, and trust framing across cards. |
+| Landing Page Redesign | More cinematic prism metaphor, stronger hero composition, animated transcript-to-intelligence transformation, livelier CTA treatment, and laptop-height fit improvements. |
+| Landing Refresh Persistence | User now stays on landing when refreshing from landing, and stays in-app when refreshing after entering the workspace. |
+| Join Meeting Completion UX | Bot flow now preserves the transcript on completion and gives a clearer next action (`view results` or `analyze now`). |
+| Vercel Frontend Migration | Frontend is now configured for Vercel deployment with `frontend/` as root and `VITE_API_URL` as the key frontend env var. |
 
 ---
 
 ## Build Now
 
-### #1 — UI Polish Pass
+### #1 — Final Frontend Fit & UX Sweep
 
-**What:** Make the results section feel alive and premium instead of static.
+**What:** Finish the remaining rough edges in the frontend so the product feels consistent and fully intentional across real laptop/mobile usage.
 
 **Specific changes (in order of impact):**
 
-**1a. Card hover states**
-All 7 result cards currently have zero hover feedback — they're completely inert on desktop. Add to each card's outer div:
-```jsx
-className="... transition-all duration-200 hover:-translate-y-0.5"
-style={{ ..., cursor: 'default' }}
-// On hover, also intensify the border slightly:
-// border: '1px solid rgba(255,255,255,0.13)' on hover vs 0.07 at rest
-```
-The subtlest possible lift — not a card flip, just enough to feel interactive. Do NOT add `hover:scale` — at card size it looks jumpy.
+**1a. Landing page must truly fit above the fold**
+- On shorter laptop heights, the redesigned landing page can still push low-priority decorative elements below the fold.
+- Keep the hero’s core story visible first: logo, headline, supporting copy, prism scene, and primary CTAs.
+- Decorative agent grid should stay hidden or collapse into a compact strip on short desktop heights if needed.
 
-**1b. Staggered card entrance**
-Cards currently all have `animate-fade-in-up` but fire within the same ~100ms window since they stream in. The visual effect is lost. Apply explicit delays so each card in the 2-col grid arrives 60ms after the previous:
-```jsx
-// Health: delay-0
-// Summary: delay-[60ms], Sentiment: delay-[120ms]
-// ActionItems: delay-[180ms], Decisions: delay-[240ms]
-// Email: delay-[300ms], Calendar: delay-[360ms]
-// ProactiveSuggestions: delay-[420ms]
-```
-These are after the card first renders, not from page load — Tailwind's `animation-delay` inline style works here.
+**1b. Left input panel adaptive height**
+- The analyze action is more visible than before, but the panel still needs a proper height strategy across common laptop sizes.
+- Keep the primary action visible without relying on lucky viewport dimensions.
 
-**1c. Mobile empty state**
-The mobile results tab empty state is:
-```jsx
-<div className="flex items-center justify-center h-64 text-gray-600 text-sm">
-  Analyze a meeting to see results
-</div>
-```
-Replace with the same `<EmptyState onDemo={() => startDemo()} />` component used on desktop. It already exists — just needs to be rendered in the mobile empty branch.
+**1c. Join meeting flow needs one final polish**
+- After Recall.ai meetings end, the path from “meeting finished” to “results are here” should be frictionless and obvious.
+- Ideal behavior: auto-show results when available, or present a single dominant CTA when only the transcript is ready.
 
-**1d. Landing agent grid — 2-col on mobile**
-The decorative agent grid on `LandingScreen` uses `grid-cols-4` at all breakpoints. Change to `grid-cols-2 sm:grid-cols-4` so it's readable on phones.
+**1d. Accessibility and interaction pass**
+- Finish `aria-label` coverage.
+- Ensure icon-only buttons and secondary actions are consistently accessible.
+- Check keyboard flow, focus visibility, and mobile tap targets.
 
-**No backend changes needed for any of 1a–1d.**
+**No backend changes needed for most of 1a–1d.**
 
 ---
 
@@ -91,7 +81,7 @@ The decorative agent grid on `LandingScreen` uses `grid-cols-4` at all breakpoin
 **Why now:** Data is currently browser-anonymous. Every user shares the same Supabase namespace — any user can see all meetings. This is a security issue for public launch beyond friends/testing.
 
 **Implementation:**
-- Supabase dashboard: enable Google OAuth, set redirect URL to `https://vs-githjk.github.io/Agentic-Meeting-Copilot/`
+- Supabase dashboard: enable Google OAuth, set redirect URL to the Vercel frontend URL
 - Frontend: `AuthContext` wrapping App — `supabase.auth.getSession()` on load, `signInWithOAuth` / `signOut` actions
 - `LandingScreen`: add "Sign in with Google" as a third CTA or replace "Use my own transcript" — TBD
 - Backend: `Authorization: Bearer <token>` middleware, validate JWT via Supabase's public key
@@ -118,6 +108,7 @@ Add `workspace_id` to schema. Invite flow. Shared meeting history. Out of scope 
 - **Bot store persistence** — Move `bot_store` dict in `main.py` to a `bots` Supabase table. Only matters if Recall.ai bot feature is actively used.
 - **Slack / Notion integration** — Blocked on auth (#3). Calendar is covered by deep link in ProactiveSuggestions.
 - **Export to Notion** — Blocked on OAuth.
+- **Bundle splitting / performance** — Frontend JS bundle is still large; add code splitting and trim non-critical upfront payload.
 
 ---
 
@@ -125,7 +116,7 @@ Add `workspace_id` to schema. Invite flow. Shared meeting history. Out of scope 
 
 | Bug | File | Fix |
 |---|---|---|
-| Join Meeting error shown as raw text, no retry | `App.jsx` | Replace with `ErrorCard` + re-fire join request |
 | All icon-only buttons missing `aria-label` | Multiple | Add `aria-label` to export, share, history, delete buttons |
-| No error boundary — one card crash brings down the whole app | `App.jsx` | Wrap results section in React `ErrorBoundary` |
-| Transcript textarea height doesn't adapt on mobile | `App.jsx` | Set `max-h-[30vh]` on the textarea on mobile breakpoint |
+| Landing page still overflows on some laptop heights | `App.jsx`, `index.css` | Continue height-aware compression and hide decorative content sooner |
+| Left panel still feels cramped on some desktop sizes | `App.jsx` | Refine transcript/chat vertical allocation and sticky action placement |
+| Vercel URL / docs branding still inconsistent in places | Docs + marketing copy | Replace legacy GitHub Pages references and unify public URL messaging |

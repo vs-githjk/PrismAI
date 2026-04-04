@@ -9,7 +9,7 @@
 A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 7 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
 
 **Live URLs:**
-- Frontend: GitHub Pages (`https://vs-githjk.github.io/Agentic-Meeting-Copilot/`)
+- Frontend: Vercel (`https://agentic-meeting-copilot.vercel.app/`)
 - Backend: Render.com (`https://meeting-copilot-api.onrender.com`)
 
 > Note: The Render service is named `meeting-copilot-api` — this is the real URL. The display name in the Render dashboard was changed to `agentic-meeting-copilot` but the URL did not change (Render locks URLs to creation-time name).
@@ -25,7 +25,7 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | AI | Groq API — LLaMA 3.3-70b (agents/chat) + Whisper large-v3 (transcription) |
 | Meeting Bot | Recall.ai (joins live calls, records, returns transcript) |
 | Database | Supabase (Postgres) — meetings + chats persistent storage |
-| Frontend Hosting | GitHub Pages via GitHub Actions |
+| Frontend Hosting | Vercel |
 | Backend Hosting | Render.com free tier |
 
 ---
@@ -63,8 +63,8 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │       └── CalendarCard.jsx
 │   │       ├── ProactiveSuggestions.jsx # Post-analysis contextual action panel
 │   │       └── ErrorCard.jsx        # Designed error states with retry CTA
-│   └── vite.config.js             # base: '/Agentic-Meeting-Copilot/'
-├── .github/workflows/deploy.yml   # Push to main → build frontend → GitHub Pages
+│   └── vite.config.js             # Standard Vite config, no GitHub Pages base path
+├── .github/workflows/deploy.yml   # Legacy GitHub Pages deploy workflow (no longer primary frontend host)
 ├── render.yaml                    # Render.com backend config (service name: meeting-copilot-api)
 ├── PRISM_AI_CONTEXT.md            # This file
 └── IMPROVEMENT_SPECS_DRAFT_1.md   # Prioritized improvement roadmap — read this alongside this file
@@ -175,10 +175,10 @@ data: [DONE]
 When a meeting is saved, a `share_token` (16-char hex via `crypto.randomUUID()`) is generated and stored with the meeting. A **Share** button appears in the results header — clicking it copies:
 
 ```
-https://vs-githjk.github.io/Agentic-Meeting-Copilot/#share/{token}
+https://agentic-meeting-copilot.vercel.app/#share/{token}
 ```
 
-On page load, App.jsx checks `window.location.hash` for `#share/{token}`. If matched, it fetches `GET /share/{token}` and renders a read-only view with all 7 cards. No router needed — hash-based routing works on GitHub Pages.
+On page load, App.jsx checks `window.location.hash` for `#share/{token}`. If matched, it fetches `GET /share/{token}` and renders a read-only view with all 7 cards. No router needed — hash-based routing still works cleanly on Vercel.
 
 ---
 
@@ -207,7 +207,7 @@ On page load, App.jsx checks `window.location.hash` for `#share/{token}`. If mat
 | Bot status during call | `bot_store: dict` (in-memory) | Lost on Render restart |
 | Share token | `meetings.share_token` column | Generated at save time |
 
-On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (transcript + result + chat).
+On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (transcript + result + chat). The app now also persists whether the user is on the landing screen or inside the main workspace, so refreshing keeps them on the same screen.
 
 ---
 
@@ -220,18 +220,23 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 | `WEBHOOK_BASE_URL` | Yes (bot feature only) | Callback URL for Recall webhooks |
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_KEY` | Yes | Supabase service_role key (bypasses RLS) |
-| `VITE_API_URL` | Frontend build only | Points frontend at backend (GitHub secret) |
+| `VITE_API_URL` | Frontend build only | Points frontend at backend (set in Vercel) |
 
 ---
 
 ## Deployment
 
-**Frontend:** Any push to `main` triggers `.github/workflows/deploy.yml`:
-- `npm ci` → `npm run build` (with `VITE_API_URL` secret) → upload to GitHub Pages
+**Frontend:** Vercel deploys the `frontend/` app.
+- Root directory: `frontend`
+- Install command: `npm install`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Required env var: `VITE_API_URL=https://meeting-copilot-api.onrender.com`
 
 **Backend:** Render.com auto-deploys from `render.yaml` on push to `main`.
 - Free tier spins down after inactivity → cold start can take 30-60s
 - `SUPABASE_URL` and `SUPABASE_KEY` must be set manually in Render dashboard (not in render.yaml)
+- Recall.ai features also require `RECALL_API_KEY` and `WEBHOOK_BASE_URL` to be set in Render
 
 ---
 
@@ -243,6 +248,20 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 - **`decisions` importance ranking** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
 - **Share button only appears after analysis** — `shareToken` state is null until a meeting is saved. Loading from history restores the token.
 - **SSE and Render free tier** — streaming works but Render free tier may buffer SSE. `X-Accel-Buffering: no` header is set to mitigate.
+- **Landing page is still being tuned for shorter laptop heights** — the hero now compresses more aggressively and hides decorative agent tiles on short desktop viewports, but this is still an active fit-and-finish area.
+- **Bot completion UX was improved** — when a meeting bot finishes, the frontend now keeps the returned transcript in the paste input and gives a clearer next step (`view results` if results exist, `analyze now` if only the transcript is available).
+
+---
+
+## Major UX / Product Work Recently Shipped
+
+- **Frontend hosting migrated to Vercel** — GitHub Pages is no longer the primary frontend host.
+- **Landing page redesigned** — more cinematic prism metaphor, animated transformation from raw transcript to structured intelligence, stronger headline and CTA treatment.
+- **Workspace visual system upgraded** — glass surfaces, stronger gradients, more motion, richer result headers, and a signature `PrismStoryPanel` / `PrismSignatureScene`.
+- **Result cards upgraded** — clearer hierarchy, quick-glance metadata, trust framing, and more polished card internals.
+- **Input quality guidance added** — transcript stats and named-speaker cues now appear in the input panel.
+- **Analyze action visibility improved** — transcript areas are shorter and the paste flow keeps the primary analyze action visible more reliably.
+- **Bot completion flow improved** — live meeting completion now leads to a clearer next action instead of a dead-end status message.
 
 ---
 

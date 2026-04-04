@@ -398,72 +398,72 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 4.5rem;
-    margin-bottom: 0.6rem;
+    font-size: 4rem;
+    margin-bottom: 0.45rem;
   }
 
   .landing-headline p {
-    font-size: 1rem;
-    max-width: 52rem;
+    font-size: 0.95rem;
+    max-width: 48rem;
   }
 
   .landing-feature-pills {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.45rem;
   }
 
   .landing-prism-hero {
-    margin-top: 0.4rem;
-    margin-bottom: 1.1rem;
+    margin-top: 0.2rem;
+    margin-bottom: 0.8rem;
   }
 
   .landing-prism-center {
-    height: 250px;
+    height: 220px;
   }
 
   .landing-prism-column {
-    transform: scale(0.88);
+    transform: scale(0.78);
   }
 
   .landing-cta-row {
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.85rem;
   }
 
   .landing-agent-grid {
-    gap: 0.45rem;
-  }
-
-  .landing-agent-grid > div {
-    padding: 0.8rem 0.65rem;
+    display: none;
   }
 
   .landing-footnote {
-    margin-top: 0.8rem;
+    margin-top: 0.4rem;
   }
 }
 
 @media (max-height: 760px) and (min-width: 1024px) {
   .landing-screen {
-    padding-top: 1.25rem;
-    padding-bottom: 1.25rem;
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
   }
 
   .landing-headline h1 {
-    font-size: 3.9rem;
+    font-size: 3.4rem;
   }
 
   .landing-headline p {
-    font-size: 0.95rem;
+    font-size: 0.88rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.9);
+    transform: scale(0.82);
     transform-origin: top center;
-    margin-bottom: -0.2rem;
+    margin-bottom: -1.2rem;
   }
 
   .landing-cta-row button {
-    padding-top: 0.9rem;
-    padding-bottom: 0.9rem;
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+  }
+
+  .landing-footnote {
+    display: none;
   }
 }
 
