@@ -585,7 +585,7 @@ export default function App() {
       .then(async data => {
         if (!Array.isArray(data)) return
         setHistory(data)
-        if (data.length > 0) {
+        if (data.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
           const latest = data[0]
           setTranscript(latest.transcript || '')
           setResult(latest.result || null)
@@ -746,6 +746,7 @@ export default function App() {
   useEffect(() => () => clearInterval(pollRef.current), [])
 
   const saveToHistory = (t, r) => {
+    sessionStorage.removeItem('prism_new_meeting')
     const id = Date.now()
     const share_token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
     const entry = {
@@ -768,6 +769,7 @@ export default function App() {
   }
 
   const loadFromHistory = async (entry) => {
+    sessionStorage.removeItem('prism_new_meeting')
     setTranscript(entry.transcript)
     setResult(entry.result)
     setMeetingId(entry.id)
@@ -1227,7 +1229,7 @@ export default function App() {
 
           {result && (
             <button
-              onClick={() => { setTranscript(''); setResult(null); setError(null); setInitialMessages([]); setSessionId(s => s + 1) }}
+              onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); setTranscript(''); setResult(null); setError(null); setInitialMessages([]); setSessionId(s => s + 1) }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
