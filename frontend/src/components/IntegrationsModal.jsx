@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const TABS = ['Slack', 'Notion']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint }) {
@@ -41,10 +42,14 @@ export default function IntegrationsModal({ integrations, onSave, onClose }) {
     setTestingSlack(true)
     setSlackTestResult(null)
     try {
-      const res = await fetch(slackWebhook, {
+      const res = await fetch(`${API}/export/slack`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: '✅ PrismAI connected successfully!' }),
+        body: JSON.stringify({
+          webhook_url: slackWebhook,
+          title: 'PrismAI test',
+          result: { health_score: { score: null }, summary: '✅ PrismAI connected successfully!', action_items: [], decisions: [] },
+        }),
       })
       setSlackTestResult(res.ok ? 'ok' : 'err')
     } catch {
