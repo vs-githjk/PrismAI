@@ -678,6 +678,91 @@ const INITIAL_SHARE_TOKEN = (() => {
 const UI_SCREEN_KEY = 'prism_ui_screen'
 const VISITED_KEY = 'prism_visited'
 
+function LandingPrismHero() {
+  const transcriptLines = [
+    'Sarah: We need cleaner ownership before launch.',
+    'Mike: Let’s move analytics to Q3.',
+    'Lisa: I’ll send the client update by Wednesday.',
+  ]
+
+  const outputs = [
+    { label: 'Decision', value: 'Analytics moves to Q3', text: '#fde047' },
+    { label: 'Owner', value: 'Lisa owns client update', text: '#86efac' },
+    { label: 'Health', value: '82 / 100', text: '#d8b4fe' },
+    { label: 'Follow-up', value: 'Schedule in 2 weeks', text: '#7dd3fc' },
+  ]
+
+  return (
+    <div className="relative w-full max-w-6xl mx-auto mt-4 mb-10 px-2">
+      <div className="grid lg:grid-cols-[1.1fr_120px_1.1fr] gap-4 items-center">
+        <div className="landing-glass-panel rounded-[32px] p-5 sm:p-6 animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Raw meeting input</p>
+              <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Transcript enters the prism</h3>
+            </div>
+            <span className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400">Unstructured</span>
+          </div>
+
+          <div className="space-y-2">
+            {transcriptLines.map((line, i) => (
+              <div
+                key={line}
+                className="rounded-2xl px-4 py-3 border border-white/8 bg-black/20 animate-fade-in-up"
+                style={{ animationDelay: `${0.25 + i * 0.06}s` }}
+              >
+                <p className="text-sm text-slate-200">{line}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Multiple speakers</span>
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions buried in conversation</span>
+          </div>
+        </div>
+
+        <div className="hidden lg:flex items-center justify-center relative h-[360px] animate-fade-in-up" style={{ animationDelay: '0.26s' }}>
+          <div className="landing-prism-column">
+            <div className="landing-prism-beam landing-prism-beam-in" />
+            <div className="landing-prism-core">
+              <div className="landing-prism-facet" />
+            </div>
+            <div className="landing-prism-beam landing-prism-beam-out" />
+          </div>
+        </div>
+
+        <div className="landing-glass-panel rounded-[32px] p-5 sm:p-6 animate-fade-in-up" style={{ animationDelay: '0.34s' }}>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Structured intelligence</p>
+              <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Accountable outputs stream back live</h3>
+            </div>
+            <span className="text-[11px] px-2.5 py-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">Streaming</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {outputs.map((item, i) => (
+              <div
+                key={item.label}
+                className="rounded-2xl px-4 py-4 border border-white/8 bg-white/[0.03] animate-fade-in-up landing-output-card"
+                style={{ animationDelay: `${0.38 + i * 0.07}s` }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 rounded-full" style={{ background: item.text, boxShadow: `0 0 14px ${item.text}` }} />
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                </div>
+                <p className="text-sm font-semibold leading-snug" style={{ color: item.text }}>{item.value}</p>
+                <div className="mt-3 h-1 rounded-full" style={{ background: `${item.text}33` }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Landing / Hero screen ────────────────────────────────────────
 function LandingScreen({ onDemo, onSkip, exiting }) {
   return (
@@ -725,18 +810,18 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Headline */}
-      <div className="text-center mb-6 animate-fade-in-up relative" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-4xl sm:text-6xl font-bold text-white leading-tight mb-4 tracking-tight">
-          Your meeting,<br />
-          <span className="gradient-text">seen in 7 dimensions.</span>
+      <div className="text-center mb-4 animate-fade-in-up relative" style={{ animationDelay: '0.12s' }}>
+        <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold text-white leading-[0.95] mb-4 tracking-tight">
+          Meetings in.<br />
+          <span className="gradient-text">Clarity out.</span>
         </h1>
-        <p className="text-gray-400 max-w-xl mx-auto leading-relaxed text-sm sm:text-base">
-          Paste a transcript and 7 parallel AI agents stream back a complete picture — summary, action items, decisions, sentiment, follow-up email, calendar suggestion, and a health score.
+        <p className="text-gray-400 max-w-2xl mx-auto leading-relaxed text-sm sm:text-lg">
+          PrismAI refracts one messy conversation into seven live reads of what actually matters: decisions, owners, sentiment, follow-up, and meeting quality.
         </p>
       </div>
 
       {/* Output pills — ROYGBIV */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mb-10 animate-fade-in-up relative" style={{ animationDelay: '0.18s' }}>
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-6 animate-fade-in-up relative" style={{ animationDelay: '0.18s' }}>
         {[
           { label: 'Summary',        bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.28)',   text: '#fca5a5' },
           { label: 'Action Items',   bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.28)',  text: '#fdba74' },
@@ -753,10 +838,12 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         ))}
       </div>
 
+      <LandingPrismHero />
+
       {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-14 animate-fade-in-up relative" style={{ animationDelay: '0.24s' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-14 animate-fade-in-up relative z-10" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
-          className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98]"
+          className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98] landing-primary-cta"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -771,13 +858,13 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Agent grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-2xl" style={{ animationDelay: '0.3s' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl" style={{ animationDelay: '0.3s' }}>
         {AGENTS_META.map((a, i) => (
           <div key={a.id}
-            className="flex flex-col items-center gap-2 px-3 py-4 rounded-2xl transition-all duration-200 hover:-translate-y-0.5"
+            className="flex flex-col items-center gap-2 px-3 py-4 rounded-2xl transition-all duration-200 hover:-translate-y-1 landing-agent-tile"
             style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.07)',
+              background: 'rgba(255,255,255,0.035)',
+              border: '1px solid rgba(255,255,255,0.08)',
               animationDelay: `${0.3 + i * 0.04}s`,
             }}>
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-lg shadow-lg`}>{a.icon}</div>

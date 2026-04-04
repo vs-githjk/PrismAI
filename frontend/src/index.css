@@ -100,6 +100,31 @@
   50%      { opacity: 0.7; transform: scale(1.04); }
 }
 
+@keyframes landing-beam-in {
+  0%, 100% { opacity: 0.4; transform: translateY(-8px) scaleY(0.96); }
+  50%      { opacity: 0.95; transform: translateY(0) scaleY(1.04); }
+}
+
+@keyframes landing-beam-out {
+  0%, 100% { opacity: 0.65; background-position: 0% 50%; transform: translateY(6px) scaleY(0.98); }
+  50%      { opacity: 1; background-position: 100% 50%; transform: translateY(0) scaleY(1.06); }
+}
+
+@keyframes landing-prism-spin {
+  0%, 100% { transform: rotate(45deg) scale(1); }
+  50%      { transform: rotate(45deg) scale(1.06); }
+}
+
+@keyframes landing-card-float {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-6px); }
+}
+
+@keyframes cta-pulse {
+  0%, 100% { box-shadow: 0 10px 34px rgba(2,132,199,0.42); }
+  50%      { box-shadow: 0 16px 44px rgba(6,182,212,0.55), 0 0 30px rgba(34,211,238,0.18); }
+}
+
 /* ── Animation utility classes ───────────────────────────────── */
 .animate-fade-in-up  { animation: fadeInUp 0.45s ease-out both; }
 .animate-glow-pulse  { animation: glow-pulse 2.5s ease-in-out infinite; }
@@ -271,6 +296,96 @@ h1, h2, h3, .font-display {
 
 .prism-output-glow.is-active {
   animation: output-glow 4s ease-in-out infinite;
+}
+
+.landing-glass-panel {
+  background:
+    radial-gradient(circle at top right, rgba(56,189,248,0.08), transparent 30%),
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.028));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 20px 60px rgba(2,132,199,0.08);
+  backdrop-filter: blur(18px);
+}
+
+.landing-prism-column {
+  position: relative;
+  width: 120px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing-prism-core {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing-prism-facet {
+  width: 54px;
+  height: 54px;
+  transform: rotate(45deg);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.72), rgba(125,211,252,0.35) 45%, rgba(168,85,247,0.28));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 0 35px rgba(56,189,248,0.22);
+  animation: landing-prism-spin 3.6s ease-in-out infinite;
+}
+
+.landing-prism-beam {
+  width: 14px;
+  border-radius: 999px;
+  filter: blur(0.2px);
+}
+
+.landing-prism-beam-in {
+  height: 120px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.78), rgba(255,255,255,0.05));
+  box-shadow: 0 0 28px rgba(255,255,255,0.18);
+  animation: landing-beam-in 2.6s ease-in-out infinite;
+}
+
+.landing-prism-beam-out {
+  height: 140px;
+  margin-top: 10px;
+  width: 32px;
+  background: linear-gradient(180deg, #f97316 0%, #eab308 15%, #22c55e 32%, #06b6d4 48%, #3b82f6 66%, #8b5cf6 84%, #ec4899 100%);
+  background-size: 100% 180%;
+  box-shadow:
+    0 0 36px rgba(56,189,248,0.18),
+    0 0 40px rgba(168,85,247,0.12);
+  animation: landing-beam-out 3.2s ease-in-out infinite;
+}
+
+.landing-output-card {
+  animation-name: fadeInUp, landing-card-float;
+  animation-duration: 0.45s, 4.2s;
+  animation-timing-function: ease-out, ease-in-out;
+  animation-fill-mode: both, both;
+  animation-iteration-count: 1, infinite;
+}
+
+.landing-primary-cta {
+  animation: cta-pulse 3.2s ease-in-out infinite;
+}
+
+.landing-agent-tile {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.landing-agent-tile:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 14px 30px rgba(56,189,248,0.08);
 }
 
 
