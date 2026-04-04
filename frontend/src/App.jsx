@@ -978,6 +978,7 @@ export default function App() {
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
+  const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
 
@@ -1065,6 +1066,7 @@ export default function App() {
   const joinMeeting = async () => {
     if (!meetingUrl.trim()) return
     setBotError(null)
+    setBotTranscriptReady(false)
     setBotStatus('joining')
     try {
       const res = await fetch(`${API}/join-meeting`, {
@@ -1092,11 +1094,16 @@ export default function App() {
         setBotStatus(data.status)
         if (data.status === 'done') {
           clearInterval(pollRef.current)
-          setTranscript('')
+          setTranscript(data.transcript || '')
           setSessionId(s => s + 1)
           if (data.result) {
             setResult(data.result)
             saveToHistory(data.transcript || '', data.result)
+            setBotTranscriptReady(false)
+            setMobileTab('results')
+          } else {
+            setBotTranscriptReady(Boolean(data.transcript))
+            setInputTab('paste')
           }
         } else if (data.status === 'error') {
           clearInterval(pollRef.current)
@@ -1204,6 +1211,7 @@ export default function App() {
     const t = getRandomDemoTranscript()
     setIsDemoMode(true)
     setTranscript(t)
+    setMobileTab('input')
     runAnalysis([], t, true)
   }
 
@@ -1743,16 +1751,17 @@ export default function App() {
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
                   placeholder="Paste your meeting transcript here..."
-                  rows={8}
-                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 max-h-[30vh] lg:max-h-none overflow-y-auto"
+                  rows={7}
+                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[180px] max-h-[24vh] lg:max-h-[28vh] overflow-y-auto"
                   style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
                 />
-                <div className="flex items-center justify-between mt-3">
+                <div className="flex items-center justify-between gap-3 mt-3 sticky bottom-0 pt-3"
+                  style={{ background: 'linear-gradient(180deg, rgba(7,4,15,0), rgba(7,4,15,0.88) 28%, rgba(7,4,15,0.96) 100%)' }}>
                   <span className="text-[11px] text-gray-600">
                     {transcript.length > 0 ? `${transcriptStats.words} words · ${transcriptSpeakerCount || 0} named speakers` : 'No transcript'}
                   </span>
                   <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
                     style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
                     {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                   </button>
@@ -1777,12 +1786,12 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed max-h-[30vh] lg:max-h-none overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[160px] max-h-[22vh] lg:max-h-[26vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
-                    <div className="flex justify-between items-center mt-3">
+                    <div className="flex justify-between items-center gap-3 mt-3">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
                       <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
                         style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
                         {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                       </button>
@@ -1811,12 +1820,12 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed max-h-[30vh] lg:max-h-none overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[160px] max-h-[22vh] lg:max-h-[26vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
-                    <div className="flex justify-between items-center mt-3">
+                    <div className="flex justify-between items-center gap-3 mt-3">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
                       <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98]"
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
                         style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
                         {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                       </button>
@@ -1876,18 +1885,40 @@ export default function App() {
                 )}
 
                 {botStatus === 'done' && (
-                  <button
-                    onClick={() => setMobileTab('results')}
-                    className="mt-3 w-full px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up cursor-pointer hover:bg-emerald-500/10 transition-colors"
-                    style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
-                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Analysis complete — tap to see results
-                    <svg className="w-3 h-3 ml-auto flex-shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
+                  <div className="mt-3 space-y-2">
+                    {result ? (
+                      <button
+                        onClick={() => setMobileTab('results')}
+                        className="w-full px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up cursor-pointer hover:bg-emerald-500/10 transition-colors"
+                        style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Analysis complete — view results
+                        <svg className="w-3 h-3 ml-auto flex-shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    ) : botTranscriptReady ? (
+                      <button
+                        onClick={() => { setInputTab('paste'); handleAnalyzeClick() }}
+                        className="w-full px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up cursor-pointer hover:bg-emerald-500/10 transition-colors"
+                        style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Transcript ready — analyze now
+                      </button>
+                    ) : (
+                      <div className="w-full px-3 py-2.5 rounded-xl text-[11px] text-emerald-300 flex items-center gap-2 animate-fade-in-up"
+                        style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)' }}>
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Meeting finished successfully
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <button
