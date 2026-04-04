@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, Component } from 'react'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -13,6 +13,32 @@ import ProactiveSuggestions from './components/ProactiveSuggestions'
 import ErrorCard from './components/ErrorCard'
 import ScoreTrendChart from './components/ScoreTrendChart'
 import IntegrationsModal from './components/IntegrationsModal'
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-2xl px-5 py-6 text-center animate-fade-in-up"
+          style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
+          <p className="text-sm font-semibold text-red-300 mb-1">Something went wrong rendering results</p>
+          <p className="text-xs text-gray-500 mb-4">{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })}
+            className="text-[11px] px-4 py-2 rounded-lg font-medium transition-all hover:scale-105"
+            style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}>
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -457,7 +483,7 @@ const INITIAL_SHARE_TOKEN = (() => {
 function LandingScreen({ onDemo, onSkip, exiting }) {
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-6 py-16"
+      className="min-h-screen flex flex-col items-center justify-center px-6 py-16 relative overflow-hidden"
       style={{
         background: '#07040f',
         opacity: exiting ? 0 : 1,
@@ -465,8 +491,18 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         transition: 'opacity 0.35s ease, transform 0.35s ease',
       }}
     >
+      {/* Animated background orbs */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-15%] left-[-8%] w-[550px] h-[550px] rounded-full blur-3xl animate-orb-drift"
+          style={{ background: 'radial-gradient(circle, rgba(2,132,199,0.22) 0%, transparent 70%)' }} />
+        <div className="absolute bottom-[-10%] right-[-8%] w-[480px] h-[480px] rounded-full blur-3xl animate-orb-drift"
+          style={{ background: 'radial-gradient(circle, rgba(13,148,136,0.18) 0%, transparent 70%)', animationDelay: '3s' }} />
+        <div className="absolute top-[35%] right-[15%] w-[300px] h-[300px] rounded-full blur-3xl animate-orb-drift"
+          style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)', animationDelay: '6s' }} />
+      </div>
+
       {/* Logo */}
-      <div className="flex items-center gap-3 mb-12 animate-fade-in-up" style={{ animationDelay: '0s' }}>
+      <div className="flex items-center gap-3 mb-8 animate-fade-in-up relative" style={{ animationDelay: '0s' }}>
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 40px rgba(2,132,199,0.5)' }}>
           <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -480,19 +516,46 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </div>
       </div>
 
+      {/* Badge */}
+      <div className="mb-6 animate-fade-in-up relative" style={{ animationDelay: '0.06s' }}>
+        <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[11px] font-medium text-sky-400"
+          style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)' }}>
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse flex-shrink-0" />
+          7 parallel AI agents · live streaming results · free
+        </span>
+      </div>
+
       {/* Headline */}
-      <div className="text-center mb-4 animate-fade-in-up" style={{ animationDelay: '0.08s' }}>
-        <h1 className="text-4xl sm:text-5xl font-bold text-white leading-tight mb-5">
-          Your meeting, analyzed<br />
-          <span className="gradient-text">in 7 dimensions.</span>
+      <div className="text-center mb-6 animate-fade-in-up relative" style={{ animationDelay: '0.12s' }}>
+        <h1 className="text-4xl sm:text-6xl font-bold text-white leading-tight mb-4 tracking-tight">
+          Your meeting,<br />
+          <span className="gradient-text">seen in 7 dimensions.</span>
         </h1>
-        <p className="text-gray-400 max-w-lg mx-auto leading-relaxed text-sm sm:text-base">
-          Paste any transcript and 7 parallel AI agents instantly produce a summary, action items, decisions, sentiment, a ready-to-send follow-up email, calendar suggestion, and a meeting health score.
+        <p className="text-gray-400 max-w-xl mx-auto leading-relaxed text-sm sm:text-base">
+          Paste a transcript and 7 parallel AI agents stream back a complete picture — summary, action items, decisions, sentiment, follow-up email, calendar suggestion, and a health score.
         </p>
       </div>
 
-      {/* Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 mt-10 mb-14 animate-fade-in-up" style={{ animationDelay: '0.16s' }}>
+      {/* Output pills — ROYGBIV */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-10 animate-fade-in-up relative" style={{ animationDelay: '0.18s' }}>
+        {[
+          { label: 'Summary',        bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.28)',   text: '#fca5a5' },
+          { label: 'Action Items',   bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.28)',  text: '#fdba74' },
+          { label: 'Decisions',      bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.28)',   text: '#fde047' },
+          { label: 'Sentiment',      bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.28)',   text: '#86efac' },
+          { label: 'Follow-up Email',bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.28)',  text: '#93c5fd' },
+          { label: 'Calendar',       bg: 'rgba(99,102,241,0.12)',  border: 'rgba(99,102,241,0.28)',  text: '#a5b4fc' },
+          { label: 'Health Score',   bg: 'rgba(168,85,247,0.12)',  border: 'rgba(168,85,247,0.28)',  text: '#d8b4fe' },
+        ].map(p => (
+          <span key={p.label} className="px-2.5 py-1 rounded-full text-[11px] font-medium"
+            style={{ background: p.bg, border: `1px solid ${p.border}`, color: p.text }}>
+            {p.label}
+          </span>
+        ))}
+      </div>
+
+      {/* CTAs */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-14 animate-fade-in-up relative" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
           className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98]"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
@@ -508,21 +571,26 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </button>
       </div>
 
-      {/* Agent grid — decorative preview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up" style={{ animationDelay: '0.24s' }}>
+      {/* Agent grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-2xl" style={{ animationDelay: '0.3s' }}>
         {AGENTS_META.map((a, i) => (
           <div key={a.id}
-            className="flex flex-col items-center gap-2 px-3 py-3 rounded-2xl"
+            className="flex flex-col items-center gap-2 px-3 py-4 rounded-2xl transition-all duration-200 hover:-translate-y-0.5"
             style={{
               background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.07)',
-              animationDelay: `${0.24 + i * 0.04}s`,
+              animationDelay: `${0.3 + i * 0.04}s`,
             }}>
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-lg shadow-lg`}>{a.icon}</div>
-            <span className="text-[10px] text-gray-600 text-center leading-tight">{a.label}</span>
+            <span className="text-[10px] text-gray-500 text-center leading-tight">{a.label}</span>
           </div>
         ))}
       </div>
+
+      {/* Bottom tagline */}
+      <p className="mt-8 text-[11px] text-gray-700 animate-fade-in-up relative" style={{ animationDelay: '0.54s' }}>
+        No login required · results stream in under 10 seconds
+      </p>
     </div>
   )
 }
@@ -1218,6 +1286,7 @@ export default function App() {
                               setTranscript(''); setResult(null); setError(null); setMeetingId(null); setShareToken(null); setInitialMessages([]); setSessionId(s => s + 1)
                             }
                           }}
+                          aria-label="Delete meeting"
                           className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1267,6 +1336,7 @@ export default function App() {
           <button
             onClick={() => setShowIntegrations(true)}
             title="Integrations"
+            aria-label="Integrations"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-gray-400 hover:text-white transition-colors"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1385,7 +1455,7 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed max-h-[30vh] lg:max-h-none overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center mt-3">
                       <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
@@ -1419,7 +1489,7 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed max-h-[30vh] lg:max-h-none overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center mt-3">
                       <span className="text-[11px] text-gray-600">{transcript.split(/\s+/).filter(Boolean).length} words</span>
@@ -1478,9 +1548,8 @@ export default function App() {
                 )}
 
                 {botStatus === 'error' && botError && (
-                  <div className="mt-3 px-3 py-2.5 rounded-xl text-[11px] text-red-300 animate-fade-in-up"
-                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}>
-                    {botError}
+                  <div className="mt-3">
+                    <ErrorCard message={botError} onRetry={joinMeeting} />
                   </div>
                 )}
 
@@ -1648,6 +1717,7 @@ export default function App() {
                       Share
                     </button>
                     <button onClick={() => setShowTimeSaved(false)}
+                      aria-label="Dismiss"
                       className="text-gray-700 hover:text-gray-400 transition-colors flex-shrink-0 p-0.5">
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1657,31 +1727,33 @@ export default function App() {
                 )
               })()}
 
-              {/* Proactive suggestions */}
-              <ProactiveSuggestions result={result} transcript={transcript} />
+              <ErrorBoundary>
+                {/* Proactive suggestions */}
+                <ProactiveSuggestions result={result} transcript={transcript} />
 
-              {/* Health score — full width, prominent */}
-              <div className="animate-fade-in-up card-delay-0">
-                <HealthScoreCard healthScore={result.health_score} />
-              </div>
+                {/* Health score — full width, prominent */}
+                <div className="animate-fade-in-up card-delay-0">
+                  <HealthScoreCard healthScore={result.health_score} />
+                </div>
 
-              {/* Summary + Sentiment */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
-                <div className="animate-fade-in-up card-delay-2"><SentimentCard sentiment={result.sentiment} /></div>
-              </div>
+                {/* Summary + Sentiment */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
+                  <div className="animate-fade-in-up card-delay-2"><SentimentCard sentiment={result.sentiment} /></div>
+                </div>
 
-              {/* Action items + Decisions */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
-                <div className="animate-fade-in-up card-delay-4"><DecisionsCard decisions={result.decisions} /></div>
-              </div>
+                {/* Action items + Decisions */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="animate-fade-in-up card-delay-3"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
+                  <div className="animate-fade-in-up card-delay-4"><DecisionsCard decisions={result.decisions} /></div>
+                </div>
 
-              {/* Email + Calendar */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
-                <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
-              </div>
+                {/* Email + Calendar */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
+                  <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+                </div>
+              </ErrorBoundary>
             </div>
           ) : (
             <EmptyState onDemo={() => startDemo()} />
@@ -1804,7 +1876,7 @@ export default function App() {
                       style={{ background: 'rgba(52,211,153,0.12)', color: '#6ee7b7', border: '1px solid rgba(52,211,153,0.25)' }}>
                       Share
                     </button>
-                    <button onClick={() => setShowTimeSaved(false)} className="text-gray-700 hover:text-gray-400 transition-colors flex-shrink-0 p-0.5">
+                    <button onClick={() => setShowTimeSaved(false)} aria-label="Dismiss" className="text-gray-700 hover:text-gray-400 transition-colors flex-shrink-0 p-0.5">
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
@@ -1812,14 +1884,16 @@ export default function App() {
                   </div>
                 )
               })()}
-              <ProactiveSuggestions result={result} transcript={transcript} />
-              <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
-              <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
-              <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
-              <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
-              <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
-              <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
-              <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+              <ErrorBoundary>
+                <ProactiveSuggestions result={result} transcript={transcript} />
+                <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
+                <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
+                <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
+                <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
+                <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
+                <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
+                <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+              </ErrorBoundary>
             </div>
           ) : (
             <EmptyState onDemo={() => startDemo()} />
