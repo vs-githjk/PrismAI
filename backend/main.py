@@ -741,14 +741,14 @@ def _build_notion_blocks(result: dict) -> list:
 
 @app.post("/export/notion")
 async def export_to_notion(req: NotionExportRequest):
+    import re
     parent_id = req.parent_page_id.strip()
-    # Accept full Notion URLs — extract the ID part
-    if "/" in parent_id:
-        parent_id = parent_id.rstrip("/").split("/")[-1].split("?")[0]
-    # Strip hyphens and reformat as UUID
-    parent_id = parent_id.replace("-", "")
-    if len(parent_id) == 32:
-        parent_id = f"{parent_id[:8]}-{parent_id[8:12]}-{parent_id[12:16]}-{parent_id[16:20]}-{parent_id[20:]}"
+    # Extract 32-char hex ID from URL (Notion URLs end in Title-{id} or just {id})
+    match = re.search(r'([0-9a-f]{32})(?:[?#]|$)', parent_id.replace("-", ""), re.IGNORECASE)
+    if not match:
+        raise HTTPException(status_code=400, detail="Could not extract a valid Notion page ID from the URL")
+    raw = match.group(1)
+    parent_id = f"{raw[:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
 
     blocks = _build_notion_blocks(req.result)
     blocks = blocks[:100]  # Notion API limit per request
