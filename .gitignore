@@ -1,4 +1,10 @@
+# Environment — never commit real credentials
 .env
+.env.local
+.env.production
+backend/.env
+frontend/.env
+
 __pycache__/
 node_modules/
 .DS_Store
