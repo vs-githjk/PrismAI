@@ -1027,6 +1027,7 @@ export default function App() {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [mdCopied, setMdCopied] = useState(false)
   const historySearchDebounceRef = useRef(null)
+  const user = authSession?.user || null
 
   useEffect(() => {
     if (INITIAL_SHARE_TOKEN || !authReady) return // skip auto-load for shared links
@@ -1075,7 +1076,6 @@ export default function App() {
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
-  const user = authSession?.user || null
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
   const inputModeMeta = INPUT_MODE_META[inputTab] || INPUT_MODE_META.paste
