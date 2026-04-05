@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+import { apiFetch } from '../lib/api'
 
 const SUGGESTED_QUESTIONS = [
   'What were the key decisions?',
@@ -41,11 +40,12 @@ function detectAgentIntent(msg) {
   return null
 }
 
-async function fetchChatHistory() {
+async function fetchChatHistory(isSignedIn) {
+  if (!isSignedIn) return []
   try {
     const [meetings, chats] = await Promise.all([
-      fetch(`${API}/meetings`).then(r => r.json()),
-      fetch(`${API}/chats`).then(r => r.json()),
+      apiFetch('/meetings').then(r => (r.ok ? r.json() : [])),
+      apiFetch('/chats').then(r => (r.ok ? r.json() : {})),
     ])
     if (!Array.isArray(meetings) || !meetings.length) return []
     return meetings
@@ -59,7 +59,7 @@ async function fetchChatHistory() {
   } catch { return [] }
 }
 
-export default function ChatPanel({ meetingId, initialMessages = [], transcript, result, onResultUpdate }) {
+export default function ChatPanel({ meetingId, initialMessages = [], transcript, result, onResultUpdate, isSignedIn = false }) {
   const [messages, setMessages] = useState(initialMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -73,13 +73,13 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
 
   // Load chat history on mount so the button visibility is correct
   useEffect(() => {
-    fetchChatHistory().then(setChatHistory)
-  }, [])
+    fetchChatHistory(isSignedIn).then(setChatHistory)
+  }, [isSignedIn])
 
   // Persist messages to backend whenever they change
   useEffect(() => {
     if (meetingId && messages.length > 0) {
-      fetch(`${API}/chats/${meetingId}`, {
+      apiFetch(`/chats/${meetingId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages }),
@@ -93,8 +93,8 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
 
   // Refresh chat history when dropdown opens
   useEffect(() => {
-    if (showHistory) fetchChatHistory().then(setChatHistory)
-  }, [showHistory])
+    if (showHistory) fetchChatHistory(isSignedIn).then(setChatHistory)
+  }, [showHistory, isSignedIn])
 
   // Close history dropdown on outside click
   useEffect(() => {
@@ -114,7 +114,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
       if (viewingSession) {
         setViewingSession(prev => {
           const updated = { ...prev, msgs: [...prev.msgs, newMsg] }
-          fetch(`${API}/chats/${prev.id}`, {
+          apiFetch(`/chats/${prev.id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: updated.msgs }),
@@ -144,7 +144,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
           setMessages(prev => [...prev, { role: 'assistant', content: 'Nothing to undo — no changes have been made yet.' }])
         }
       } else if (agentIntent) {
-        const res = await fetch(`${API}/agent`, {
+        const res = await apiFetch('/agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ agent: agentIntent, transcript, instruction: msg }),
@@ -174,8 +174,12 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
           throw new Error('No result')
         }
       } else if (globalIntent) {
+        if (!isSignedIn) {
+          appendMsg({ role: 'assistant', content: 'Sign in to search across your saved meeting history.' })
+          return
+        }
         setLoadingGlobal(true)
-        const res = await fetch(`${API}/chat/global`, {
+        const res = await apiFetch('/chat/global', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: msg }),
@@ -185,7 +189,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         const data = await res.json()
         appendMsg({ role: 'assistant', content: data.response, globalSearch: true })
       } else {
-        const res = await fetch(`${API}/chat`, {
+        const res = await apiFetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: msg, transcript: activeTranscript }),
@@ -227,7 +231,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
 
         <div className="ml-auto flex items-center gap-2">
           {/* Chat history button */}
-          {chatHistory.length > 0 && (
+          {isSignedIn && chatHistory.length > 0 && (
             <div className="relative" ref={historyRef}>
               <button
                 onClick={() => setShowHistory(v => !v)}
@@ -279,7 +283,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                           </button>
                           <button
                             onClick={() => {
-                              fetch(`${API}/chats/${session.id}`, { method: 'DELETE' }).catch(() => {})
+                              apiFetch(`/chats/${session.id}`, { method: 'DELETE' }).catch(() => {})
                               setChatHistory(prev => prev.filter(s => s.id !== session.id))
                               if (viewingSession?.id === session.id) setViewingSession(null)
                             }}

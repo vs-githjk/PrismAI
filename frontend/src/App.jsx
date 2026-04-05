@@ -13,6 +13,8 @@ import ProactiveSuggestions from './components/ProactiveSuggestions'
 import ErrorCard from './components/ErrorCard'
 import ScoreTrendChart from './components/ScoreTrendChart'
 import IntegrationsModal from './components/IntegrationsModal'
+import { supabase } from './lib/supabase'
+import { apiFetch } from './lib/api'
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -40,7 +42,6 @@ class ErrorBoundary extends Component {
   }
 }
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
 
 const DEMO_TRANSCRIPTS = [
@@ -966,6 +967,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
+  const [authReady, setAuthReady] = useState(() => !supabase)
+  const [authSession, setAuthSession] = useState(null)
   const [transcript, setTranscript] = useState('')
   const [transcriptDrafts, setTranscriptDrafts] = useState({ paste: '', record: '', upload: '' })
   const [loading, setLoading] = useState(false)
@@ -1026,9 +1029,15 @@ export default function App() {
   const historySearchDebounceRef = useRef(null)
 
   useEffect(() => {
-    if (INITIAL_SHARE_TOKEN) return // skip auto-load for shared links
-    fetch(`${API}/meetings`)
-      .then(r => r.json())
+    if (INITIAL_SHARE_TOKEN || !authReady) return // skip auto-load for shared links
+    if (!user) {
+      setHistory([])
+      setInitialMessages([])
+      setShareToken(null)
+      return
+    }
+    apiFetch('/meetings')
+      .then(r => (r.ok ? r.json() : []))
       .then(async data => {
         if (!Array.isArray(data)) return
         setHistory(data)
@@ -1040,13 +1049,14 @@ export default function App() {
           setMeetingId(latest.id)
           setShareToken(latest.share_token || null)
           try {
-            const chat = await fetch(`${API}/chats/${latest.id}`).then(r => r.json())
+            const chatRes = await apiFetch(`/chats/${latest.id}`)
+            const chat = chatRes.ok ? await chatRes.json() : { messages: [] }
             setInitialMessages(chat.messages || [])
           } catch { /* no chat saved yet */ }
         }
       })
       .catch(() => {})
-  }, [])
+  }, [authReady, user])
 
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
@@ -1065,9 +1075,43 @@ export default function App() {
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
+  const user = authSession?.user || null
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
   const inputModeMeta = INPUT_MODE_META[inputTab] || INPUT_MODE_META.paste
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthReady(true)
+      return
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthSession(data.session || null)
+      setAuthReady(true)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthSession(session || null)
+      setAuthReady(true)
+    })
+
+    return () => data.subscription.unsubscribe()
+  }, [])
+
+  const signInWithGoogle = async () => {
+    if (!supabase) {
+      setError('Supabase auth is not configured yet.')
+      return
+    }
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}${window.location.pathname}`,
+      },
+    })
+    if (authError) setError(authError.message)
+  }
 
   const setTranscriptForTab = (value, tab = inputTab) => {
     setTranscript(value)
@@ -1091,7 +1135,7 @@ export default function App() {
     if (!integrations.slack_webhook) { setShowIntegrations(true); return }
     setExportingSlack(true)
     try {
-      const res = await fetch(`${API}/export/slack`, {
+      const res = await apiFetch('/export/slack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1114,7 +1158,7 @@ export default function App() {
     if (!integrations.notion_token || !integrations.notion_page_id) { setShowIntegrations(true); return }
     setExportingNotion(true)
     try {
-      const res = await fetch(`${API}/export/notion`, {
+      const res = await apiFetch('/export/notion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1141,7 +1185,7 @@ export default function App() {
   // Handle #share/{token} on load
   useEffect(() => {
     if (!INITIAL_SHARE_TOKEN) return
-    fetch(`${API}/share/${INITIAL_SHARE_TOKEN}`)
+    apiFetch(`/share/${INITIAL_SHARE_TOKEN}`, { skipAuth: true })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         setShareMode(data || null)
@@ -1174,7 +1218,7 @@ export default function App() {
     setBotTranscriptReady(false)
     setBotStatus('joining')
     try {
-      const res = await fetch(`${API}/join-meeting`, {
+      const res = await apiFetch('/join-meeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ meeting_url: meetingUrl }),
@@ -1193,7 +1237,7 @@ export default function App() {
     clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`${API}/bot-status/${id}`)
+        const res = await apiFetch(`/bot-status/${id}`)
         if (!res.ok) return
         const data = await res.json()
         setBotStatus(data.status)
@@ -1222,6 +1266,11 @@ export default function App() {
   useEffect(() => () => clearInterval(pollRef.current), [])
 
   const saveToHistory = (t, r) => {
+    if (!user) {
+      setMeetingId(null)
+      setShareToken(null)
+      return
+    }
     sessionStorage.removeItem('prism_new_meeting')
     const id = Date.now()
     const share_token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
@@ -1237,7 +1286,7 @@ export default function App() {
     setHistory(prev => [entry, ...prev])
     setMeetingId(id)
     setShareToken(share_token)
-    fetch(`${API}/meetings`, {
+    apiFetch('/meetings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entry),
@@ -1255,7 +1304,7 @@ export default function App() {
     setSessionId(s => s + 1)
     setShowHistory(false)
     try {
-      const res = await fetch(`${API}/chats/${entry.id}`)
+      const res = await apiFetch(`/chats/${entry.id}`)
       const data = await res.json()
       setInitialMessages(data.messages || [])
     } catch {
@@ -1298,7 +1347,7 @@ export default function App() {
     const formData = new FormData()
     formData.append('file', file)
     try {
-      const res = await fetch(`${API}/transcribe`, { method: 'POST', body: formData })
+      const res = await apiFetch('/transcribe', { method: 'POST', body: formData })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Transcription failed')
       const data = await res.json()
       setTranscriptForTab(data.transcript, 'upload')
@@ -1348,6 +1397,12 @@ export default function App() {
     setSessionId(s => s + 1)
   }
 
+  const signOut = async () => {
+    clearWorkspaceState()
+    setHistory([])
+    if (supabase) await supabase.auth.signOut()
+  }
+
   const exitDemoMode = () => {
     setIsDemoMode(false)
     setInputTab('paste')
@@ -1370,7 +1425,7 @@ export default function App() {
     analysisAbortRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), 120_000)
     try {
-      const res = await fetch(`${API}/analyze-stream`, {
+      const res = await apiFetch('/analyze-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript: t, speakers: validSpeakers }),
@@ -1447,7 +1502,7 @@ export default function App() {
     const updatedResult = { ...snapshot, action_items: updated }
     setResult(updatedResult)
     if (meetingId) {
-      fetch(`${API}/meetings/${meetingId}`, {
+      apiFetch(`/meetings/${meetingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result: updatedResult }),
@@ -1685,8 +1740,27 @@ export default function App() {
         </button>
 
         <div className="flex items-center gap-2">
+          {authReady && (
+            user ? (
+              <button
+                onClick={signOut}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-gray-300 hover:text-white transition-colors"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span className="hidden sm:inline max-w-[160px] truncate">{user.email}</span>
+                <span>Sign out</span>
+              </button>
+            ) : (
+              <button
+                onClick={signInWithGoogle}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-sky-300 hover:text-white transition-colors"
+                style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)' }}>
+                Sign in
+              </button>
+            )
+          )}
+
           {/* History */}
-          {history.length > 0 && (
+          {user && history.length > 0 && (
             <div className="relative" data-history-panel>
               <button onClick={() => setShowHistory(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 transition-colors"
@@ -1706,7 +1780,7 @@ export default function App() {
                     <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
                     <button onClick={async () => {
                       cancelActiveAnalysis()
-                      await Promise.all(history.map(h => fetch(`${API}/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
+                      await Promise.all(history.map(h => apiFetch(`/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
                       setHistory([])
                       setShowHistory(false)
                       clearWorkspaceState()
@@ -1720,7 +1794,7 @@ export default function App() {
                         setHistorySearch(q)
                         clearTimeout(historySearchDebounceRef.current)
                         historySearchDebounceRef.current = setTimeout(async () => {
-                          const res = await fetch(`${API}/meetings?q=${encodeURIComponent(q)}`).catch(() => null)
+                          const res = await apiFetch(`/meetings?q=${encodeURIComponent(q)}`).catch(() => null)
                           if (res?.ok) { const d = await res.json(); setHistory(Array.isArray(d) ? d : []) }
                         }, 300)
                       }}
@@ -1750,7 +1824,7 @@ export default function App() {
                         <button
                           onClick={() => {
                             setHistory(prev => prev.filter(h => h.id !== entry.id))
-                            fetch(`${API}/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+                            apiFetch(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
                             if (entry.id === meetingId) {
                               sessionStorage.setItem('prism_new_meeting', '1')
                               clearWorkspaceState()
@@ -1893,6 +1967,9 @@ export default function App() {
                     Your own meeting flow
                   </span>
                 )}
+                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                  {user ? 'Signed in · sync enabled' : 'Sign in to sync history'}
+                </span>
               </div>
             </div>
           </div>
@@ -2167,7 +2244,7 @@ export default function App() {
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
             </div>
             {result ? (
-              <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
+              <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} isSignedIn={Boolean(user)} />
             ) : (
               <div className="rounded-[24px] px-5 py-5"
                 style={{

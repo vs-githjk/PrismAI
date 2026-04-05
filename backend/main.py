@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Query, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -51,6 +51,39 @@ def _extract_recall_error(resp: httpx.Response) -> str:
 
     text = (resp.text or "").strip()
     return text or f"Recall.ai request failed with status {resp.status_code}"
+
+
+async def require_user_id(request: Request) -> str:
+    if not _sb_url or not _sb_key:
+        raise HTTPException(status_code=503, detail="Auth is not configured")
+
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{_sb_url}/auth/v1/user",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "apikey": _sb_key,
+            },
+            timeout=10,
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    user = resp.json()
+    user_id = user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    return user_id
 
 AGENT_MAP = {
     "summarizer": summarizer.run,
@@ -120,10 +153,16 @@ class MeetingEntry(BaseModel):
 
 
 @app.get("/meetings")
-async def get_meetings(q: str = Query(default="")):
+async def get_meetings(q: str = Query(default=""), user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    query = supabase.table("meetings").select("id,date,title,score,transcript,result,share_token").order("id", desc=True).limit(50)
+    query = (
+        supabase.table("meetings")
+        .select("id,date,title,score,transcript,result,share_token")
+        .eq("user_id", user_id)
+        .order("id", desc=True)
+        .limit(50)
+    )
     if q.strip():
         query = query.ilike("title", f"%{q}%")
     res = query.execute()
@@ -131,11 +170,12 @@ async def get_meetings(q: str = Query(default="")):
 
 
 @app.post("/meetings")
-async def save_meeting(entry: MeetingEntry):
+async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
     supabase.table("meetings").upsert({
         "id": entry.id,
+        "user_id": user_id,
         "date": entry.date,
         "title": entry.title,
         "score": entry.score,
@@ -157,10 +197,10 @@ async def get_shared_meeting(token: str):
 
 
 @app.delete("/meetings/{meeting_id}")
-async def delete_meeting(meeting_id: int):
+async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("meetings").delete().eq("id", meeting_id).execute()
+    supabase.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 
@@ -169,10 +209,10 @@ class MeetingPatch(BaseModel):
 
 
 @app.patch("/meetings/{meeting_id}")
-async def patch_meeting(meeting_id: int, patch: MeetingPatch):
+async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("meetings").update({"result": patch.result}).eq("id", meeting_id).execute()
+    supabase.table("meetings").update({"result": patch.result}).eq("id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 
@@ -183,40 +223,40 @@ class ChatEntry(BaseModel):
 
 
 @app.get("/chats")
-async def get_all_chats():
+async def get_all_chats(user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    res = supabase.table("chats").select("meeting_id,messages").execute()
+    res = supabase.table("chats").select("meeting_id,messages").eq("user_id", user_id).execute()
     return {str(row["meeting_id"]): row["messages"] for row in res.data}
 
 
 @app.get("/chats/{meeting_id}")
-async def get_chat(meeting_id: int):
+async def get_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    res = supabase.table("chats").select("messages").eq("meeting_id", meeting_id).limit(1).execute()
+    res = supabase.table("chats").select("messages").eq("meeting_id", meeting_id).eq("user_id", user_id).limit(1).execute()
     if res.data:
         return {"messages": res.data[0]["messages"]}
     return {"messages": []}
 
 
 @app.post("/chats/{meeting_id}")
-async def save_chat(meeting_id: int, entry: ChatEntry):
+async def save_chat(meeting_id: int, entry: ChatEntry, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    existing = supabase.table("chats").select("id").eq("meeting_id", meeting_id).limit(1).execute()
+    existing = supabase.table("chats").select("id").eq("meeting_id", meeting_id).eq("user_id", user_id).limit(1).execute()
     if existing.data:
-        supabase.table("chats").update({"messages": entry.messages}).eq("meeting_id", meeting_id).execute()
+        supabase.table("chats").update({"messages": entry.messages}).eq("meeting_id", meeting_id).eq("user_id", user_id).execute()
     else:
-        supabase.table("chats").insert({"meeting_id": meeting_id, "messages": entry.messages}).execute()
+        supabase.table("chats").insert({"meeting_id": meeting_id, "user_id": user_id, "messages": entry.messages}).execute()
     return {"ok": True}
 
 
 @app.delete("/chats/{meeting_id}")
-async def delete_chat(meeting_id: int):
+async def delete_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("chats").delete().eq("meeting_id", meeting_id).execute()
+    supabase.table("chats").delete().eq("meeting_id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 
@@ -600,7 +640,7 @@ async def chat(req: ChatRequest):
 
 
 @app.post("/chat/global")
-async def chat_global(req: GlobalChatRequest):
+async def chat_global(req: GlobalChatRequest, user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -608,6 +648,7 @@ async def chat_global(req: GlobalChatRequest):
     rows = (
         supabase.table("meetings")
         .select("id,title,date,score,result")
+        .eq("user_id", user_id)
         .order("created_at", desc=True)
         .limit(limit)
         .execute()
