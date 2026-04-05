@@ -388,52 +388,49 @@ h1, h2, h3, .font-display {
     0 14px 30px rgba(56,189,248,0.08);
 }
 
-@media (max-height: 920px) and (min-width: 1024px) {
+@media (max-height: 1000px) and (min-width: 1024px) {
   .landing-screen {
     justify-content: flex-start;
-  }
-
-  .landing-screen {
-    padding-top: 0.8rem;
-    padding-bottom: 0.8rem;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
   }
 
   .landing-logo-lockup {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
   }
 
   .landing-headline h1 {
-    font-size: 3.15rem;
+    font-size: 2.9rem;
     line-height: 0.96;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.3rem;
   }
 
   .landing-headline p {
-    font-size: 0.88rem;
+    font-size: 0.85rem;
     max-width: 44rem;
   }
 
   .landing-feature-pills {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.25rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.84);
+    transform: scale(0.78);
     transform-origin: top center;
-    margin-top: -0.2rem;
-    margin-bottom: -1.2rem;
+    margin-top: -0.5rem;
+    margin-bottom: -2.2rem;
   }
 
   .landing-prism-center {
-    height: 190px;
+    height: 180px;
   }
 
   .landing-prism-column {
-    transform: scale(0.72);
+    transform: scale(0.68);
   }
 
   .landing-cta-row {
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.25rem;
   }
 
   .landing-agent-grid {
@@ -441,34 +438,35 @@ h1, h2, h3, .font-display {
   }
 
   .landing-footnote {
-    margin-top: 0.4rem;
+    margin-top: 0.3rem;
   }
 }
 
-@media (max-height: 760px) and (min-width: 1024px) {
+@media (max-height: 800px) and (min-width: 1024px) {
   .landing-screen {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
   }
 
   .landing-headline h1 {
-    font-size: 2.7rem;
+    font-size: 2.5rem;
     line-height: 0.95;
   }
 
   .landing-headline p {
-    font-size: 0.82rem;
+    font-size: 0.8rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.74);
+    transform: scale(0.70);
     transform-origin: top center;
-    margin-bottom: -2.6rem;
+    margin-top: -0.8rem;
+    margin-bottom: -3.2rem;
   }
 
   .landing-cta-row button {
-    padding-top: 0.8rem;
-    padding-bottom: 0.8rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
   }
 
   .landing-footnote {

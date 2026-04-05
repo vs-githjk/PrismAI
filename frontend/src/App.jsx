@@ -694,7 +694,7 @@ function LandingPrismHero() {
   ]
 
   return (
-    <div className="relative w-full max-w-6xl mx-auto mt-3 mb-7 px-2 landing-prism-hero">
+    <div className="relative w-full max-w-6xl mx-auto mt-2 mb-5 px-2 landing-prism-hero">
       <div className="grid lg:grid-cols-[1.1fr_100px_1.1fr] gap-3 lg:gap-4 items-center">
         <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
           <div className="flex items-center justify-between gap-3 mb-3">
