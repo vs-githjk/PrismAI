@@ -253,6 +253,41 @@ const AGENTS_META = [
   { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
 ]
 
+const INPUT_MODE_META = {
+  paste: {
+    label: 'Paste Transcript',
+    eyebrow: 'Transcript workspace',
+    description: 'Best for pasted notes, copied transcripts, and quick edits before analysis.',
+    accent: 'rgba(56,189,248,0.16)',
+    border: 'rgba(56,189,248,0.24)',
+    text: '#7dd3fc',
+  },
+  record: {
+    label: 'Record Audio',
+    eyebrow: 'Live capture',
+    description: 'Use your microphone to turn a live conversation into a transcript draft in real time.',
+    accent: 'rgba(16,185,129,0.14)',
+    border: 'rgba(16,185,129,0.22)',
+    text: '#6ee7b7',
+  },
+  upload: {
+    label: 'Upload Audio',
+    eyebrow: 'File transcription',
+    description: 'Drop in recorded audio and let PrismAI transcribe it before the agent pipeline runs.',
+    accent: 'rgba(168,85,247,0.14)',
+    border: 'rgba(168,85,247,0.22)',
+    text: '#d8b4fe',
+  },
+  join: {
+    label: 'Join Meeting',
+    eyebrow: 'Live meeting bot',
+    description: 'PrismAI joins the call, captures the conversation, and returns with structured outputs.',
+    accent: 'rgba(249,115,22,0.14)',
+    border: 'rgba(249,115,22,0.22)',
+    text: '#fdba74',
+  },
+}
+
 const DEFAULT_RESULT = {
   summary: '',
   action_items: [],
@@ -617,7 +652,7 @@ function AgentPipelineLoader() {
 }
 
 // ── Empty state for right panel ──────────────────────────────────
-function EmptyState({ onDemo }) {
+function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) {
   const [active, setActive] = useState(null)
   const gridRef = useRef(null)
 
@@ -629,19 +664,66 @@ function EmptyState({ onDemo }) {
   }, [active])
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-8 px-10 py-16">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold gradient-text mb-2">Ready to analyze</h2>
-        <p className="text-gray-500 text-sm max-w-sm">Paste a transcript, record live audio, or upload an audio file — then hit Analyze Meeting.</p>
-        <button onClick={onDemo}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-sky-400 transition-all hover:text-sky-300 hover:scale-[1.02]"
-          style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)' }}>
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          See it in action
-        </button>
+    <div className="flex flex-col items-center justify-center h-full gap-8 px-8 py-12">
+      <div className="w-full max-w-4xl rounded-[30px] overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, rgba(8,15,33,0.9) 0%, rgba(9,23,36,0.78) 52%, rgba(22,16,42,0.82) 100%)',
+          border: '1px solid rgba(125,211,252,0.14)',
+          boxShadow: '0 30px 90px rgba(2,132,199,0.12)',
+        }}>
+        <div className="h-[2px] w-full prism-spectrum-bar" />
+        <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-4 px-6 py-6">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold text-cyan-200 mb-4"
+              style={{ background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.18)' }}>
+              <span className={`w-2 h-2 rounded-full ${isDemoMode ? 'bg-emerald-400' : 'bg-cyan-400 animate-pulse'}`} />
+              {isDemoMode ? 'Demo workspace active' : `${inputModeLabel || 'Transcript'} workspace ready`}
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-tight">
+              {isDemoMode ? 'You are looking at a polished sample run.' : 'The workspace is ready for a real meeting.'}
+            </h2>
+            <p className="text-sm text-slate-300/85 leading-relaxed mt-3 max-w-xl">
+              {isDemoMode
+                ? 'Use the sample to understand how PrismAI thinks, then switch into your own transcript workspace when you want to run a real meeting.'
+                : 'Paste a transcript, record live audio, upload a file, or send the meeting bot in. The right side becomes a live intelligence briefing once analysis starts.'}
+            </p>
+            <div className="flex flex-wrap gap-3 mt-5">
+              <button onClick={onDemo}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold text-sky-300 transition-all hover:text-sky-200 hover:scale-[1.02]"
+                style={{ background: 'rgba(14,165,233,0.09)', border: '1px solid rgba(14,165,233,0.2)' }}>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                See it in action
+              </button>
+              {isDemoMode && onUseOwnTranscript && (
+                <button onClick={onUseOwnTranscript}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium text-gray-200 transition-all hover:text-white hover:scale-[1.02]"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  Use my own transcript
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              { label: 'Input modes', value: '4', note: 'Paste, record, upload, or join live' },
+              { label: 'Agent outputs', value: '7', note: 'Structured cards stream back live' },
+              { label: 'Workflow', value: isDemoMode ? 'Sample' : 'Ready', note: isDemoMode ? 'Swap to your own transcript any time' : 'Analyze as soon as your draft is ready' },
+              { label: 'Trust model', value: 'Review', note: 'Verify owners, decisions, and send-ready drafts' },
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl px-4 py-3"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                <p className="text-xl font-semibold text-white mt-1">{item.value}</p>
+                <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">{item.note}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
       <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-2xl">
         {AGENTS_META.map((a) => {
           const isActive = active === a.id
@@ -983,6 +1065,7 @@ export default function App() {
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
+  const inputModeMeta = INPUT_MODE_META[inputTab] || INPUT_MODE_META.paste
 
   const setTranscriptForTab = (value, tab = inputTab) => {
     setTranscript(value)
@@ -1239,6 +1322,19 @@ export default function App() {
     setTranscriptForTab(t, 'paste')
     setMobileTab('input')
     runAnalysis([], t, true)
+  }
+
+  const exitDemoMode = () => {
+    setIsDemoMode(false)
+    setInputTab('paste')
+    resetTranscriptWorkspaces()
+    setResult(null)
+    setError(null)
+    setShowTimeSaved(false)
+    setAnalysisTime(null)
+    setMobileTab('input')
+    setInitialMessages([])
+    setSessionId(s => s + 1)
   }
 
   const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
@@ -1685,16 +1781,36 @@ export default function App() {
 
       {/* ── Demo banner ── */}
       {isDemoMode && (
-        <div className="flex-shrink-0 flex items-center justify-between px-6 py-2 text-xs"
-          style={{ background: 'rgba(2,132,199,0.1)', borderBottom: '1px solid rgba(14,165,233,0.2)' }}>
-          <span className="text-sky-300">
-            <span className="font-semibold">Demo mode</span> — this is a sample transcript. See how PrismAI analyzes your meetings.
-          </span>
-          <button
-            onClick={() => { setIsDemoMode(false); resetTranscriptWorkspaces(); setResult(null); setError(null); setSessionId(s => s + 1) }}
-            className="text-sky-500 hover:text-sky-300 transition-colors ml-4 flex-shrink-0">
-            Use my own transcript →
-          </button>
+        <div className="flex-shrink-0 px-6 py-3"
+          style={{ background: 'linear-gradient(90deg, rgba(2,132,199,0.12), rgba(13,148,136,0.08))', borderBottom: '1px solid rgba(14,165,233,0.16)' }}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between rounded-2xl px-4 py-3"
+            style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.24)' }}>
+                <svg className="w-4 h-4 text-sky-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-sky-400/80">Demo mode</p>
+                <p className="text-sm text-slate-200 mt-1">
+                  You are viewing a sample meeting run. Explore the outputs, then switch into your own transcript workspace when you are ready.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400">
+                Sample transcript loaded
+              </span>
+              <button
+                onClick={exitDemoMode}
+                className="text-[11px] px-3.5 py-2 rounded-xl text-sky-300 hover:text-sky-200 transition-colors flex-shrink-0"
+                style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)' }}>
+                Use my own transcript
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1706,12 +1822,39 @@ export default function App() {
 
           {/* Hero blurb */}
           <div className="px-6 pt-6 pb-4">
-            <h1 className="text-xl font-bold text-white leading-snug">
-              <span className="gradient-text">PrismAI</span> — one transcript,<br />seven dimensions of clarity.
-            </h1>
-            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-              PrismAI turns raw meetings into structured accountability: decisions, owners, follow-up, sentiment, and meeting quality in one place.
-            </p>
+            <div className="rounded-[26px] px-4 py-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(8,15,33,0.86) 0%, rgba(10,24,37,0.72) 55%, rgba(18,18,42,0.78) 100%)',
+                border: '1px solid rgba(125,211,252,0.12)',
+                boxShadow: '0 18px 50px rgba(2,132,199,0.08)',
+              }}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-gray-600">{inputModeMeta.eyebrow}</p>
+                  <h1 className="text-xl font-bold text-white leading-snug mt-1">
+                    <span className="gradient-text">{inputModeMeta.label}</span> with PrismAI.
+                  </h1>
+                </div>
+                <span className="text-[11px] px-2.5 py-1 rounded-full"
+                  style={{ background: inputModeMeta.accent, border: `1px solid ${inputModeMeta.border}`, color: inputModeMeta.text }}>
+                  {isDemoMode ? 'Demo' : 'Live workspace'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                {inputModeMeta.description}
+              </p>
+              <div className="flex flex-wrap gap-2 mt-4">
+                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                  {transcriptStats.words} words in workspace
+                </span>
+                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                  {result ? 'Results loaded' : loading ? 'Analysis running' : 'Ready to analyze'}
+                </span>
+                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                  {isDemoMode ? 'Sample transcript' : 'Your own meeting flow'}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Health trend chart — visible when 2+ meetings in history */}
@@ -2147,7 +2290,12 @@ export default function App() {
               </ErrorBoundary>
             </div>
           ) : (
-            <EmptyState onDemo={() => startDemo()} />
+            <EmptyState
+              onDemo={() => startDemo()}
+              isDemoMode={isDemoMode}
+              onUseOwnTranscript={isDemoMode ? exitDemoMode : undefined}
+              inputModeLabel={inputModeMeta.label}
+            />
           )}
         </div>
 
@@ -2293,7 +2441,12 @@ export default function App() {
               </ErrorBoundary>
             </div>
           ) : (
-            <EmptyState onDemo={() => startDemo()} />
+            <EmptyState
+              onDemo={() => startDemo()}
+              isDemoMode={isDemoMode}
+              onUseOwnTranscript={isDemoMode ? exitDemoMode : undefined}
+              inputModeLabel={inputModeMeta.label}
+            />
           )}
         </div>
 
