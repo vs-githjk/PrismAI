@@ -1245,6 +1245,7 @@ export default function App() {
   }
 
   const loadFromHistory = async (entry) => {
+    cancelActiveAnalysis()
     sessionStorage.removeItem('prism_new_meeting')
     setTranscript(entry.transcript)
     setTranscriptDrafts((prev) => ({ ...prev, paste: entry.transcript || '' }))
@@ -1333,18 +1334,24 @@ export default function App() {
     setLoading(false)
   }
 
-  const exitDemoMode = () => {
+  const clearWorkspaceState = () => {
     cancelActiveAnalysis()
-    setIsDemoMode(false)
-    setInputTab('paste')
     resetTranscriptWorkspaces()
     setResult(null)
     setError(null)
     setShowTimeSaved(false)
     setAnalysisTime(null)
-    setMobileTab('input')
+    setMeetingId(null)
+    setShareToken(null)
     setInitialMessages([])
+    setMobileTab('input')
     setSessionId(s => s + 1)
+  }
+
+  const exitDemoMode = () => {
+    setIsDemoMode(false)
+    setInputTab('paste')
+    clearWorkspaceState()
   }
 
   const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
@@ -1698,10 +1705,11 @@ export default function App() {
                   <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                     <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
                     <button onClick={async () => {
+                      cancelActiveAnalysis()
                       await Promise.all(history.map(h => fetch(`${API}/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
                       setHistory([])
                       setShowHistory(false)
-                      setTranscript(''); setResult(null); setError(null); setSessionId(s => s + 1)
+                      clearWorkspaceState()
                     }} className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
                   </div>
                   <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
@@ -1745,7 +1753,7 @@ export default function App() {
                             fetch(`${API}/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
                             if (entry.id === meetingId) {
                               sessionStorage.setItem('prism_new_meeting', '1')
-                              resetTranscriptWorkspaces(); setResult(null); setError(null); setMeetingId(null); setShareToken(null); setInitialMessages([]); setSessionId(s => s + 1)
+                              clearWorkspaceState()
                             }
                           }}
                           aria-label="Delete meeting"
@@ -1764,7 +1772,7 @@ export default function App() {
 
           {result && (
             <button
-              onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); resetTranscriptWorkspaces(); setResult(null); setError(null); setInitialMessages([]); setSessionId(s => s + 1) }}
+              onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); clearWorkspaceState() }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
