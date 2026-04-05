@@ -974,6 +974,8 @@ export default function App() {
   const [analysisTime, setAnalysisTime] = useState(null) // seconds elapsed
   const [showTimeSaved, setShowTimeSaved] = useState(false)
   const analysisStartRef = useRef(null)
+  const analysisAbortRef = useRef(null)
+  const analysisRunIdRef = useRef(0)
   const [mobileTab, setMobileTab] = useState('input') // 'input' | 'results'
 
   // Show landing only to first-time visitors (not returning users, not share links)
@@ -1324,7 +1326,15 @@ export default function App() {
     runAnalysis([], t, true)
   }
 
+  const cancelActiveAnalysis = () => {
+    analysisRunIdRef.current += 1
+    analysisAbortRef.current?.abort()
+    analysisAbortRef.current = null
+    setLoading(false)
+  }
+
   const exitDemoMode = () => {
+    cancelActiveAnalysis()
     setIsDemoMode(false)
     setInputTab('paste')
     resetTranscriptWorkspaces()
@@ -1338,6 +1348,7 @@ export default function App() {
   }
 
   const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
+    cancelActiveAnalysis()
     setShowSpeakerModal(false)
     setLoading(true)
     setError(null)
@@ -1345,9 +1356,11 @@ export default function App() {
     setAnalysisTime(null)
     setShowTimeSaved(false)
     analysisStartRef.current = Date.now()
+    const runId = analysisRunIdRef.current
     const t = transcriptOverride ?? transcript
     const validSpeakers = speakersParam.filter(s => s.name.trim())
     const controller = new AbortController()
+    analysisAbortRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), 120_000)
     try {
       const res = await fetch(`${API}/analyze-stream`, {
@@ -1371,9 +1384,17 @@ export default function App() {
         const lines = buffer.split('\n')
         buffer = lines.pop()
         for (const line of lines) {
+          if (runId !== analysisRunIdRef.current) {
+            streamDone = true
+            break
+          }
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6).trim()
           if (raw === '[DONE]') {
+            if (runId !== analysisRunIdRef.current) {
+              streamDone = true
+              break
+            }
             const elapsed = ((Date.now() - analysisStartRef.current) / 1000).toFixed(1)
             setAnalysisTime(parseFloat(elapsed))
             setShowTimeSaved(true)
@@ -1385,11 +1406,16 @@ export default function App() {
           try {
             const chunk = JSON.parse(raw)
             accumulated = { ...accumulated, ...chunk }
-            setResult({ ...accumulated })
+            if (runId === analysisRunIdRef.current) {
+              setResult({ ...accumulated })
+            }
           } catch { /* malformed chunk, skip */ }
         }
       }
     } catch (e) {
+      if (runId !== analysisRunIdRef.current) {
+        return
+      }
       if (e.name === 'AbortError') {
         setError('Analysis timed out. The server may be starting up — please try again.')
       } else {
@@ -1397,7 +1423,12 @@ export default function App() {
       }
     } finally {
       clearTimeout(timeoutId)
-      setLoading(false)
+      if (analysisAbortRef.current === controller) {
+        analysisAbortRef.current = null
+      }
+      if (runId === analysisRunIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
