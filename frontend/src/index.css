@@ -388,49 +388,49 @@ h1, h2, h3, .font-display {
     0 14px 30px rgba(56,189,248,0.08);
 }
 
-@media (max-height: 1000px) and (min-width: 1024px) {
+@media (max-height: 920px) and (min-width: 1024px) {
   .landing-screen {
     justify-content: flex-start;
-    padding-top: 0.6rem;
-    padding-bottom: 0.6rem;
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
   }
 
   .landing-logo-lockup {
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.5rem;
   }
 
   .landing-headline h1 {
-    font-size: 2.9rem;
+    font-size: 3.35rem;
     line-height: 0.96;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.35rem;
   }
 
   .landing-headline p {
-    font-size: 0.85rem;
+    font-size: 0.88rem;
     max-width: 44rem;
   }
 
   .landing-feature-pills {
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.3rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.78);
+    transform: scale(0.82);
     transform-origin: top center;
-    margin-top: -0.5rem;
-    margin-bottom: -2.2rem;
+    margin-top: -0.2rem;
+    margin-bottom: -1.5rem;
   }
 
   .landing-prism-center {
-    height: 180px;
+    height: 190px;
   }
 
   .landing-prism-column {
-    transform: scale(0.68);
+    transform: scale(0.72);
   }
 
   .landing-cta-row {
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.35rem;
   }
 
   .landing-agent-grid {
@@ -442,26 +442,25 @@ h1, h2, h3, .font-display {
   }
 }
 
-@media (max-height: 800px) and (min-width: 1024px) {
+@media (max-height: 760px) and (min-width: 1024px) {
   .landing-screen {
-    padding-top: 0.4rem;
-    padding-bottom: 0.4rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
   }
 
   .landing-headline h1 {
-    font-size: 2.5rem;
+    font-size: 2.9rem;
     line-height: 0.95;
   }
 
   .landing-headline p {
-    font-size: 0.8rem;
+    font-size: 0.82rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.70);
+    transform: scale(0.74);
     transform-origin: top center;
-    margin-top: -0.8rem;
-    margin-bottom: -3.2rem;
+    margin-bottom: -2.6rem;
   }
 
   .landing-cta-row button {
