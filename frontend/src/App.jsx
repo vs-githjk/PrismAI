@@ -664,7 +664,7 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
   }, [active])
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-8 px-8 py-12">
+    <div className="flex flex-col items-center justify-center h-full gap-6 px-8 py-10">
       <div className="w-full max-w-4xl rounded-[30px] overflow-hidden"
         style={{
           background: 'linear-gradient(135deg, rgba(8,15,33,0.9) 0%, rgba(9,23,36,0.78) 52%, rgba(22,16,42,0.82) 100%)',
@@ -672,22 +672,22 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
           boxShadow: '0 30px 90px rgba(2,132,199,0.12)',
         }}>
         <div className="h-[2px] w-full prism-spectrum-bar" />
-        <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-4 px-6 py-6">
+        <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-4 px-6 py-5">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold text-cyan-200 mb-4"
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold text-cyan-200 mb-3"
               style={{ background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.18)' }}>
               <span className={`w-2 h-2 rounded-full ${isDemoMode ? 'bg-emerald-400' : 'bg-cyan-400 animate-pulse'}`} />
               {isDemoMode ? 'Demo workspace active' : `${inputModeLabel || 'Transcript'} workspace ready`}
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-tight">
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight">
               {isDemoMode ? 'You are looking at a polished sample run.' : 'The workspace is ready for a real meeting.'}
             </h2>
-            <p className="text-sm text-slate-300/85 leading-relaxed mt-3 max-w-xl">
+            <p className="text-sm text-slate-300/85 leading-relaxed mt-2 max-w-xl">
               {isDemoMode
                 ? 'Use the sample to understand how PrismAI thinks, then switch into your own transcript workspace when you want to run a real meeting.'
                 : 'Paste a transcript, record live audio, upload a file, or send the meeting bot in. The right side becomes a live intelligence briefing once analysis starts.'}
             </p>
-            <div className="flex flex-wrap gap-3 mt-5">
+            <div className="flex flex-wrap gap-3 mt-4">
               <button onClick={onDemo}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold text-sky-300 transition-all hover:text-sky-200 hover:scale-[1.02]"
                 style={{ background: 'rgba(14,165,233,0.09)', border: '1px solid rgba(14,165,233,0.2)' }}>
@@ -706,7 +706,7 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { label: 'Input modes', value: '4', note: 'Paste, record, upload, or join live' },
               { label: 'Agent outputs', value: '7', note: 'Structured cards stream back live' },
@@ -716,8 +716,8 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
               <div key={item.label} className="rounded-2xl px-4 py-3"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                <p className="text-xl font-semibold text-white mt-1">{item.value}</p>
-                <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">{item.note}</p>
+                <p className="text-lg font-semibold text-white mt-1">{item.value}</p>
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">{item.note}</p>
               </div>
             ))}
           </div>
@@ -1821,17 +1821,17 @@ export default function App() {
         <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-16 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
 
           {/* Hero blurb */}
-          <div className="px-6 pt-6 pb-4">
-            <div className="rounded-[26px] px-4 py-4"
+          <div className="px-6 pt-5 pb-3">
+            <div className="rounded-[22px] px-4 py-3"
               style={{
                 background: 'linear-gradient(135deg, rgba(8,15,33,0.86) 0%, rgba(10,24,37,0.72) 55%, rgba(18,18,42,0.78) 100%)',
                 border: '1px solid rgba(125,211,252,0.12)',
-                boxShadow: '0 18px 50px rgba(2,132,199,0.08)',
+                boxShadow: '0 16px 40px rgba(2,132,199,0.07)',
               }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-gray-600">{inputModeMeta.eyebrow}</p>
-                  <h1 className="text-xl font-bold text-white leading-snug mt-1">
+                  <h1 className="text-lg font-bold text-white leading-snug mt-1">
                     <span className="gradient-text">{inputModeMeta.label}</span> with PrismAI.
                   </h1>
                 </div>
@@ -1840,10 +1840,10 @@ export default function App() {
                   {isDemoMode ? 'Demo' : 'Live workspace'}
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+              <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
                 {inputModeMeta.description}
               </p>
-              <div className="flex flex-wrap gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-3">
                 <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
                   {transcriptStats.words} words in workspace
                 </span>
@@ -1901,11 +1901,11 @@ export default function App() {
             </div>
 
             <div className="px-4 pb-3">
-              <div className="rounded-2xl px-3.5 py-3 flex flex-wrap gap-2.5"
+              <div className="rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center gap-2"
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.16em] text-gray-600">Input Quality</p>
-                  <p className="text-xs text-gray-300 mt-1">Clear speaker labels produce stronger ownership, decision, and sentiment outputs.</p>
+                  <p className="text-[11px] text-gray-400 mt-1">Speaker labels improve ownership, decision, and sentiment accuracy.</p>
                 </div>
                 <div className="ml-auto flex flex-wrap gap-2">
                   <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
@@ -1928,8 +1928,8 @@ export default function App() {
                   value={transcript}
                   onChange={(e) => setTranscriptForTab(e.target.value, 'paste')}
                   placeholder="Paste your meeting transcript here..."
-                  rows={7}
-                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[180px] max-h-[24vh] lg:max-h-[28vh] overflow-y-auto"
+                  rows={6}
+                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[150px] max-h-[18vh] lg:max-h-[22vh] overflow-y-auto"
                   style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
                 />
                 <div className="flex items-center justify-between gap-3 mt-3 sticky bottom-0 pt-3"
@@ -1963,7 +1963,7 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'record')} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[160px] max-h-[22vh] lg:max-h-[26vh] overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[150px] max-h-[18vh] lg:max-h-[22vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-3">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
@@ -1997,7 +1997,7 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'upload')} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[160px] max-h-[22vh] lg:max-h-[26vh] overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[150px] max-h-[18vh] lg:max-h-[22vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-3">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
@@ -2126,7 +2126,40 @@ export default function App() {
               </div>
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
             </div>
-            <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
+            {result ? (
+              <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} />
+            ) : (
+              <div className="rounded-[24px] px-5 py-5"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.02) 100%)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  boxShadow: '0 16px 34px rgba(2,132,199,0.05)',
+                }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.22)' }}>
+                    <svg className="w-4 h-4 text-sky-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Chat unlocks after analysis</p>
+                    <p className="text-[11px] text-gray-400 mt-1 max-w-sm leading-relaxed">
+                      Analyze the meeting first, then ask follow-up questions about decisions, owners, blockers, and timing.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {['What were the key decisions?', 'Who owns what?', 'What is the timeline?'].map((prompt) => (
+                    <span key={prompt}
+                      className="text-[11px] px-3 py-1.5 rounded-full text-gray-500"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      {prompt}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
