@@ -248,8 +248,9 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 - **`decisions` importance ranking** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
 - **Share button only appears after analysis** — `shareToken` state is null until a meeting is saved. Loading from history restores the token.
 - **SSE and Render free tier** — streaming works but Render free tier may buffer SSE. `X-Accel-Buffering: no` header is set to mitigate.
-- **Landing page is still being tuned for shorter laptop heights** — the hero now compresses more aggressively and hides decorative agent tiles on short desktop viewports, but this is still an active fit-and-finish area.
+- **Frontend is now functionally stable, but not fully hardened** — recent demo/workspace race conditions were fixed, but there are still no automated tests.
 - **Bot completion UX was improved** — when a meeting bot finishes, the frontend now keeps the returned transcript in the paste input and gives a clearer next step (`view results` if results exist, `analyze now` if only the transcript is available).
+- **Bundle size is still large** — Vite production build passes, but the main JS bundle is still >500kB after minification. Code splitting remains a next-step performance task.
 
 ---
 
@@ -262,6 +263,12 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 - **Input quality guidance added** — transcript stats and named-speaker cues now appear in the input panel.
 - **Analyze action visibility improved** — transcript areas are shorter and the paste flow keeps the primary analyze action visible more reliably.
 - **Bot completion flow improved** — live meeting completion now leads to a clearer next action instead of a dead-end status message.
+- **Per-input drafts added** — paste, record, and upload now preserve separate transcript drafts, while `Clear` wipes only the current mode.
+- **In-app workspace polished** — demo mode, empty states, and transcript workspace UI now feel more intentional and less hacky.
+- **Left-panel usability improved** — workspace header and pre-analysis chat were compressed so the transcript and `Analyze Meeting` action stay visible more reliably.
+- **Stale analysis races fixed** — exiting demo mode or resetting the workspace now cancels in-flight analysis so old results cannot repaint the app after the user has moved on.
+- **Recall error handling hardened** — backend now surfaces Recall status-check failures accurately instead of masking them as `404 Bot not found`.
+- **Render config improved** — `render.yaml` now includes `SUPABASE_URL` and `SUPABASE_KEY` placeholders so fresh Render provisioning is less error-prone.
 
 ---
 
@@ -288,6 +295,16 @@ What is **already built** that the spec asks for (do not re-implement):
 ---
 
 ## Recent Changes (in order, most recent last)
+
+### Frontend stabilization + final polish before backend phase (latest)
+- **Landing page fit fixes** — headline sizing and height-based compression were rebalanced so standard laptop viewports no longer look overly squashed.
+- **Workspace polish** — demo banner, empty state, workspace header, and results briefing were refined to feel more product-like and less like placeholders.
+- **Per-mode transcript drafts** — switching between Paste / Record / Upload now starts clean per mode, while preserving what was previously entered in each mode.
+- **Clear button added** — users can clear the current transcript mode without manual deletion.
+- **Pre-analysis layout tightened** — transcript workspace is more dominant, pre-analysis chat is reduced, and `Analyze Meeting` stays visible more reliably.
+- **Demo exit race fixed** — if the user clicks demo, then exits to "Use my own transcript" while analysis is still loading, stale demo results are now canceled and ignored.
+- **Workspace reset race fixed** — the same stale-analysis guard now applies to `New Meeting`, `Clear all`, deleting the active meeting, and other workspace reset flows.
+- **Codebase sanity pass completed** — frontend production build and backend Python compilation both pass after the above fixes.
 
 ### Integrations + UI polish sprint (current)
 - **Landing grid mobile fix** — `grid-cols-7` → `grid-cols-2 sm:grid-cols-4 lg:grid-cols-7` ✓
@@ -434,36 +451,42 @@ A full review of the codebase identified and fixed the following:
 
 ## Remaining Roadmap (priority order)
 
-### #1 — UI polish pass *(next up)*
-Cards are functional but static. Specific gaps:
-- **Card hover states** — no lift/glow on hover; result cards feel inert
-- **Staggered card entrance** — all cards animate in together; a tighter per-card stagger (60ms apart) makes results feel like they're arriving
-- **Mobile empty state** — "Analyze a meeting to see results" plain text; should mirror desktop agent grid
-- **Landing agent grid mobile** — currently 4-col on all screens; needs 2-col on small screens
+### #1 — Auth + user data isolation *(next up)*
+This is now the most important gap between "beautiful app" and "real daily-use product."
+- Add Google SSO via Supabase
+- Associate `meetings` and `chats` rows with a `user_id`
+- Scope all fetch/save/delete operations by authenticated user
+- Keep share links explicitly public only when a `share_token` is created
+- Update frontend app boot flow so signed-in state feels native
 
-### #2 — Health score trend chart
+### #2 — Backend cleanup + reliability
+- Split `backend/main.py` into clearer route/service modules
+- Add basic tests around analysis, meeting storage, and bot lifecycle
+- Keep improving Recall bot lifecycle handling and failure messaging
+- Move closer to a backend that is maintainable under real usage
+
+### #3 — Performance pass
+- Code-split the frontend to reduce the large Vite bundle
+- Defer heavier UI regions where possible
+- Keep the premium UI while improving first load and responsiveness
+
+### #4 — Health score trend chart
 Graph `meetings.score` over time. Data already in Supabase. Deferred until users have enough meeting history for it to be meaningful (aim for after first week of public use).
 - `recharts` library: `npm install recharts`
 - `ScoreTrendChart.jsx` with `AreaChart`, color-coded by score range
 - Placement: above meeting history list, collapsed by default with "Show trend" toggle
 - Minimum 2 meetings required to render
 
-### #3 — Auth (Google SSO via Supabase)
-`supabase.auth.signInWithOAuth({ provider: 'google' })`. This is the unlock for all team features. Until auth lands, all data is browser-anonymous.
-- Frontend: auth context + protected routes
-- Backend: JWT validation middleware on protected endpoints
-- Supabase: enable Google OAuth in dashboard
-
-### #4 — Team workspace *(blocked on #3)*
+### #5 — Team workspace *(blocked on #1)*
 Add `user_id` to `meetings` and `chats` tables. Scope all queries by `user_id`. Shared workspaces require a `workspaces` table + membership model.
 
-### #5 — Model fallback
+### #6 — Model fallback
 Each agent catches Groq errors and retries with OpenAI (`gpt-4o-mini`) or Anthropic (`claude-haiku-4-5`). Agent pattern is identical — swap client + model name. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars.
 
-### #6 — Bot store persistence
+### #7 — Bot store persistence
 `bot_store` dict in `main.py` is in-memory — lost on Render restart. Move to a `bots` Supabase table: `id`, `status`, `result`, `error`, `transcript`, `created_at`.
 
-### #7 — Slack / Google Docs integration *(blocked on #3)*
+### #8 — Slack / Google Docs integration *(blocked on #1)*
 Full OAuth flows. The proactive suggestions calendar deep link covers the calendar case without auth for now.
 
 ---
