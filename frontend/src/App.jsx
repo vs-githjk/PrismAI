@@ -1781,9 +1781,9 @@ export default function App() {
 
       {/* ── Demo banner ── */}
       {isDemoMode && (
-        <div className="flex-shrink-0 px-6 py-3"
+        <div className="flex-shrink-0 px-6 py-2.5"
           style={{ background: 'linear-gradient(90deg, rgba(2,132,199,0.12), rgba(13,148,136,0.08))', borderBottom: '1px solid rgba(14,165,233,0.16)' }}>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between rounded-2xl px-4 py-3"
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between rounded-2xl px-4 py-2.5"
             style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -1795,14 +1795,11 @@ export default function App() {
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-sky-400/80">Demo mode</p>
                 <p className="text-sm text-slate-200 mt-1">
-                  You are viewing a sample meeting run. Explore the outputs, then switch into your own transcript workspace when you are ready.
+                  Explore the sample run, then switch into your own transcript workspace when you are ready.
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400">
-                Sample transcript loaded
-              </span>
               <button
                 onClick={exitDemoMode}
                 className="text-[11px] px-3.5 py-2 rounded-xl text-sky-300 hover:text-sky-200 transition-colors flex-shrink-0"
@@ -1841,7 +1838,9 @@ export default function App() {
                 </span>
               </div>
               <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
-                {inputModeMeta.description}
+                {isDemoMode
+                  ? 'Use the sample transcript as a reference point, then switch into your own meeting flow when you are ready.'
+                  : inputModeMeta.description}
               </p>
               <div className="flex flex-wrap gap-2 mt-3">
                 <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
@@ -1850,9 +1849,11 @@ export default function App() {
                 <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
                   {result ? 'Results loaded' : loading ? 'Analysis running' : 'Ready to analyze'}
                 </span>
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                  {isDemoMode ? 'Sample transcript' : 'Your own meeting flow'}
-                </span>
+                {!isDemoMode && (
+                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+                    Your own meeting flow
+                  </span>
+                )}
               </div>
             </div>
           </div>
