@@ -35,9 +35,23 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 ```
 /
 ├── backend/
-│   ├── main.py                    # FastAPI app — all endpoints, AGENT_MAP, DEFAULT_RESULT
+│   ├── main.py                    # FastAPI app shell: middleware + router wiring
+│   ├── auth.py                    # Supabase token validation + shared Supabase client
+│   ├── analysis_service.py        # Shared analysis pipeline helpers
+│   ├── analysis_routes.py         # /analyze, /analyze-stream, /transcribe
+│   ├── storage_routes.py          # meetings, chats, share routes
+│   ├── recall_routes.py           # Recall bot join/status/webhook routes
+│   ├── chat_routes.py             # /chat, /chat/global, /agent
+│   ├── export_routes.py           # Notion + Slack export endpoints
+│   ├── tests/
+│   │   ├── test_auth.py
+│   │   ├── test_storage_routes.py
+│   │   ├── test_recall_routes.py
+│   │   ├── test_main_routes.py
+│   │   └── test_chat_export_routes.py
 │   ├── agents/
 │   │   ├── orchestrator.py        # Decides which agents to run
+│   │   ├── utils.py               # shared strip_fences helper
 │   │   ├── summarizer.py
 │   │   ├── action_items.py
 │   │   ├── decisions.py
@@ -49,8 +63,11 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   └── .env.example               # Template: GROQ_API_KEY, RECALL_API_KEY, WEBHOOK_BASE_URL, SUPABASE_URL, SUPABASE_KEY
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                # Root: layout, input, result rendering, history, speaker modal, share
+│   │   ├── App.jsx                # Root: layout, auth state, input, results, history, speaker modal, share
 │   │   ├── index.css              # Tailwind + custom animations
+│   │   ├── lib/
+│   │   │   ├── supabase.js        # Supabase browser client
+│   │   │   └── api.js             # auth-aware fetch helper
 │   │   └── components/
 │   │       ├── ChatPanel.jsx      # Chat interface + agent intent detection + chat history
 │   │       ├── AgentTags.jsx      # Badges showing which agents ran
@@ -63,9 +80,11 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │       └── CalendarCard.jsx
 │   │       ├── ProactiveSuggestions.jsx # Post-analysis contextual action panel
 │   │       └── ErrorCard.jsx        # Designed error states with retry CTA
-│   └── vite.config.js             # Standard Vite config, no GitHub Pages base path
+│   └── vite.config.js             # Vite config + manual chunking for vendor splits
 ├── .github/workflows/deploy.yml   # Legacy GitHub Pages deploy workflow (no longer primary frontend host)
 ├── render.yaml                    # Render.com backend config (service name: meeting-copilot-api)
+├── supabase/
+│   └── auth_migration.sql         # Adds user_id columns + indexes for auth-scoped data
 ├── PRISM_AI_CONTEXT.md            # This file
 └── IMPROVEMENT_SPECS_DRAFT_1.md   # Prioritized improvement roadmap — read this alongside this file
 
@@ -127,18 +146,25 @@ create table meetings (
   transcript text,
   result jsonb,
   share_token text unique,         -- 16-char hex, generated on save
+  user_id uuid references auth.users(id) on delete cascade,
   created_at timestamptz default now()
 );
 
 create table chats (
   id bigserial primary key,
   meeting_id bigint references meetings(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
   messages jsonb not null default '[]',
   updated_at timestamptz default now()
 );
 ```
 
 `on delete cascade` means deleting a meeting automatically deletes its chat — no extra frontend call needed.
+
+Additional indexes created by `supabase/auth_migration.sql`:
+- `meetings_user_id_idx`
+- `chats_user_id_idx`
+- `chats_user_id_meeting_id_idx` (unique per user + meeting)
 
 ---
 
@@ -221,6 +247,13 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_KEY` | Yes | Supabase service_role key (bypasses RLS) |
 | `VITE_API_URL` | Frontend build only | Points frontend at backend (set in Vercel) |
+| `VITE_SUPABASE_URL` | Frontend build only | Supabase project URL for browser auth |
+| `VITE_SUPABASE_ANON_KEY` | Frontend build only | Supabase anon key for browser auth |
+
+**Important split:**
+- Render/backend uses `SUPABASE_KEY` = service role key
+- Vercel/frontend uses `VITE_SUPABASE_ANON_KEY` = anon key
+- No separate JWT secret is required in the current implementation because backend auth validates Supabase access tokens through `GET /auth/v1/user`
 
 ---
 
@@ -231,12 +264,16 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 - Install command: `npm install`
 - Build command: `npm run build`
 - Output directory: `dist`
-- Required env var: `VITE_API_URL=https://meeting-copilot-api.onrender.com`
+- Required env vars:
+  - `VITE_API_URL=https://meeting-copilot-api.onrender.com`
+  - `VITE_SUPABASE_URL=https://qttzotttqqjkpuaepxoj.supabase.co`
+  - `VITE_SUPABASE_ANON_KEY=<anon key>`
 
 **Backend:** Render.com auto-deploys from `render.yaml` on push to `main`.
 - Free tier spins down after inactivity → cold start can take 30-60s
 - `SUPABASE_URL` and `SUPABASE_KEY` must be set manually in Render dashboard (not in render.yaml)
 - Recall.ai features also require `RECALL_API_KEY` and `WEBHOOK_BASE_URL` to be set in Render
+- Current auth setup uses Supabase Google sign-in via Supabase Auth; Google OAuth redirect goes through `https://qttzotttqqjkpuaepxoj.supabase.co/auth/v1/callback`
 
 ---
 
@@ -248,9 +285,12 @@ On startup, App.jsx fetches `/meetings` and auto-loads the most recent meeting (
 - **`decisions` importance ranking** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
 - **Share button only appears after analysis** — `shareToken` state is null until a meeting is saved. Loading from history restores the token.
 - **SSE and Render free tier** — streaming works but Render free tier may buffer SSE. `X-Accel-Buffering: no` header is set to mitigate.
-- **Frontend is now functionally stable, but not fully hardened** — recent demo/workspace race conditions were fixed, but there are still no automated tests.
+- **Frontend is now functionally stable** — recent demo/workspace race conditions were fixed and auth is in, but there are still no frontend automated tests.
 - **Bot completion UX was improved** — when a meeting bot finishes, the frontend now keeps the returned transcript in the paste input and gives a clearer next step (`view results` if results exist, `analyze now` if only the transcript is available).
-- **Bundle size is still large** — Vite production build passes, but the main JS bundle is still >500kB after minification. Code splitting remains a next-step performance task.
+- **Frontend build is much healthier now** — lazy loading + manual chunking reduced the initial app shell significantly, but `recharts` still lives in a large deferred `charts` chunk.
+- **Auth verification currently calls Supabase on each protected request** — reliable and simple, but not the lowest-latency design. Local JWT verification via JWKS could be a future optimization.
+- **Share links remain intentionally public** — only explicitly shared meetings are public; all normal meetings/chats/history are user-scoped.
+- **Backend test suite exists now** — 22 tests currently pass across auth, storage, Recall, analysis shell, chat, and export flows.
 
 ---
 
@@ -296,7 +336,20 @@ What is **already built** that the spec asks for (do not re-implement):
 
 ## Recent Changes (in order, most recent last)
 
-### Frontend stabilization + final polish before backend phase (latest)
+### Auth + backend architecture + performance phase (latest)
+- **Supabase Auth foundation shipped** — browser sign-in/sign-out state now uses Supabase Auth with Google provider. Frontend sends the Supabase access token to the backend; backend validates it via Supabase and derives `user_id`.
+- **Per-user data isolation shipped** — `meetings` and `chats` are now scoped by `user_id`; signed-in users only see their own history and chats. Share links remain public by token only.
+- **Supabase migration added** — `supabase/auth_migration.sql` adds `user_id` columns and indexes for `meetings` + `chats`.
+- **Signed-in / signed-out UX tightened** — the app now distinguishes synced workspaces from local-only ones more clearly, offers direct sign-in prompts in local-only states, and clears persisted state more explicitly when auth drops.
+- **Backend modularization completed** — the giant backend file was split into `auth.py`, `analysis_service.py`, `analysis_routes.py`, `storage_routes.py`, `recall_routes.py`, `chat_routes.py`, and `export_routes.py`. `backend/main.py` is now a thin app shell.
+- **Backend reliability tests added** — there are now 22 passing backend tests covering auth failures, storage scoping, Recall bot flows, analysis shell routes, chat/global chat, and export edge cases.
+- **Auth hardening completed** — backend auth now handles Supabase outages gracefully and returns clean 503 / 401 responses instead of brittle failures.
+- **Export hardening completed** — Notion export now handles non-JSON failure bodies safely instead of crashing while parsing errors.
+- **Frontend lazy-loading shipped** — `ChatPanel`, `ProactiveSuggestions`, `ScoreTrendChart`, and `IntegrationsModal` now load on demand.
+- **Frontend chunk splitting shipped** — Vite manual chunking now separates `react`, `supabase`, and `recharts` vendor chunks so the initial app shell loads much faster.
+- **Current frontend bundle shape** — main app shell is now ~149 kB, React vendor ~146 kB, Supabase ~194 kB, charts ~333 kB (deferred), instead of one giant initial bundle.
+
+### Frontend stabilization + final polish before backend phase
 - **Landing page fit fixes** — headline sizing and height-based compression were rebalanced so standard laptop viewports no longer look overly squashed.
 - **Workspace polish** — demo banner, empty state, workspace header, and results briefing were refined to feel more product-like and less like placeholders.
 - **Per-mode transcript drafts** — switching between Paste / Record / Upload now starts clean per mode, while preserving what was previously entered in each mode.
@@ -451,24 +504,23 @@ A full review of the codebase identified and fixed the following:
 
 ## Remaining Roadmap (priority order)
 
-### #1 — Auth + user data isolation *(next up)*
-This is now the most important gap between "beautiful app" and "real daily-use product."
-- Add Google SSO via Supabase
-- Associate `meetings` and `chats` rows with a `user_id`
-- Scope all fetch/save/delete operations by authenticated user
-- Keep share links explicitly public only when a `share_token` is created
-- Update frontend app boot flow so signed-in state feels native
+### #1 — Final product polish sweep
+This is now the best leverage area because the foundations are finally strong.
+- continue smoothing cramped or repetitive states in the workspace
+- improve small-screen/mobile transitions and edge cases
+- tighten copy consistency and visual hierarchy across demo vs real-workspace states
+- add frontend tests if possible for the highest-risk state flows
 
-### #2 — Backend cleanup + reliability
-- Split `backend/main.py` into clearer route/service modules
-- Add basic tests around analysis, meeting storage, and bot lifecycle
-- Keep improving Recall bot lifecycle handling and failure messaging
-- Move closer to a backend that is maintainable under real usage
+### #2 — Backend reliability expansion
+- add more tests for share-link edge cases, export variants, and auth failure states
+- keep tightening signed-in vs signed-out persistence rules
+- continue improving Recall bot lifecycle handling and recoverability
+- move `bot_store` persistence out of memory eventually
 
-### #3 — Performance pass
-- Code-split the frontend to reduce the large Vite bundle
-- Defer heavier UI regions where possible
-- Keep the premium UI while improving first load and responsiveness
+### #3 — Frontend performance follow-through
+- keep trimming non-critical initial work
+- consider more targeted chart optimization or alternative lighter charting if needed
+- profile expensive rerenders inside `App.jsx` and the results workspace
 
 ### #4 — Health score trend chart
 Graph `meetings.score` over time. Data already in Supabase. Deferred until users have enough meeting history for it to be meaningful (aim for after first week of public use).
@@ -477,8 +529,12 @@ Graph `meetings.score` over time. Data already in Supabase. Deferred until users
 - Placement: above meeting history list, collapsed by default with "Show trend" toggle
 - Minimum 2 meetings required to render
 
-### #5 — Team workspace *(blocked on #1)*
-Add `user_id` to `meetings` and `chats` tables. Scope all queries by `user_id`. Shared workspaces require a `workspaces` table + membership model.
+### #5 — Team workspace / collaboration
+Single-user auth and per-user scoping now exist. The next collaboration layer would require:
+- a `workspaces` table
+- workspace membership / roles
+- meetings and chats associated with both `workspace_id` and `user_id`
+- share permissions beyond simple public token links
 
 ### #6 — Model fallback
 Each agent catches Groq errors and retries with OpenAI (`gpt-4o-mini`) or Anthropic (`claude-haiku-4-5`). Agent pattern is identical — swap client + model name. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars.
