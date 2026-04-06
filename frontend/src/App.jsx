@@ -1931,8 +1931,8 @@ export default function App() {
         <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-16 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
 
           {/* Hero blurb */}
-          <div className="px-6 pt-5 pb-3">
-            <div className="rounded-[22px] px-4 py-3"
+          <div className="px-6 pt-4 pb-2">
+            <div className="rounded-[22px] px-4 py-2.5"
               style={{
                 background: 'linear-gradient(135deg, rgba(8,15,33,0.86) 0%, rgba(10,24,37,0.72) 55%, rgba(18,18,42,0.78) 100%)',
                 border: '1px solid rgba(125,211,252,0.12)',
@@ -1941,7 +1941,7 @@ export default function App() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-gray-600">{inputModeMeta.eyebrow}</p>
-                  <h1 className="text-lg font-bold text-white leading-snug mt-1">
+                  <h1 className="text-[1.05rem] font-bold text-white leading-snug mt-1">
                     <span className="gradient-text">{inputModeMeta.label}</span> with PrismAI.
                   </h1>
                 </div>
@@ -1950,12 +1950,12 @@ export default function App() {
                   {isDemoMode ? 'Demo' : 'Live workspace'}
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+              <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
                 {isDemoMode
                   ? 'Use the sample transcript as a reference point, then switch into your own meeting flow when you are ready.'
                   : inputModeMeta.description}
               </p>
-              <div className="flex flex-wrap gap-2 mt-3">
+              <div className="flex flex-wrap gap-2 mt-2.5">
                 <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
                   {transcriptStats.words} words in workspace
                 </span>
@@ -1981,7 +1981,7 @@ export default function App() {
           {error && <ErrorCard message={error} onRetry={() => runAnalysis([])} />}
 
           {/* Transcript card */}
-          <div className="mx-6 mb-4 rounded-2xl overflow-hidden card-breathe" style={CARD_STYLE}>
+          <div className="mx-6 mb-3 rounded-2xl overflow-hidden card-breathe" style={CARD_STYLE}>
 
             {/* Input method dropdown */}
             <div className="px-4 pt-3 pb-2 flex items-center gap-2">
@@ -2017,12 +2017,12 @@ export default function App() {
               )}
             </div>
 
-            <div className="px-4 pb-3">
-              <div className="rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center gap-2"
+            <div className="px-4 pb-2.5">
+              <div className="rounded-2xl px-3.5 py-2 flex flex-wrap items-center gap-2"
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.16em] text-gray-600">Input Quality</p>
-                  <p className="text-[11px] text-gray-400 mt-1">Speaker labels improve ownership, decision, and sentiment accuracy.</p>
+                  <p className="text-[10px] text-gray-400 mt-1">Speaker labels improve ownership, decision, and sentiment accuracy.</p>
                 </div>
                 <div className="ml-auto flex flex-wrap gap-2">
                   <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
@@ -2040,16 +2040,16 @@ export default function App() {
 
             {/* Paste Transcript */}
             {inputTab === 'paste' && (
-              <div className="px-4 pb-4">
+              <div className="px-4 pb-3">
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscriptForTab(e.target.value, 'paste')}
                   placeholder="Paste your meeting transcript here..."
                   rows={6}
-                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[150px] max-h-[18vh] lg:max-h-[22vh] overflow-y-auto"
+                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
                   style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
                 />
-                <div className="flex items-center justify-between gap-3 mt-3 sticky bottom-0 pt-3"
+                <div className="flex items-center justify-between gap-3 mt-2.5 sticky bottom-0 pt-2.5"
                   style={{ background: 'linear-gradient(180deg, rgba(7,4,15,0), rgba(7,4,15,0.88) 28%, rgba(7,4,15,0.96) 100%)' }}>
                   <span className="text-[11px] text-gray-600">
                     {transcript.length > 0 ? `${transcriptStats.words} words · ${transcriptSpeakerCount || 0} named speakers` : 'No transcript'}
@@ -2065,7 +2065,7 @@ export default function App() {
 
             {/* Record Audio */}
             {inputTab === 'record' && (
-              <div className="px-4 pb-4">
+              <div className="px-4 pb-3">
                 <p className="text-[11px] text-gray-500 mb-3">Speak and your words will appear in the transcript below. Hit Analyze when done.</p>
                 <button onClick={recording ? stopRecording : startRecording}
                   className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all mb-3 ${recording ? 'animate-pulse' : ''}`}
@@ -2080,9 +2080,9 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'record')} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[150px] max-h-[18vh] lg:max-h-[22vh] overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
-                    <div className="flex justify-between items-center gap-3 mt-3">
+                    <div className="flex justify-between items-center gap-3 mt-2.5">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
                       <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
@@ -2099,7 +2099,7 @@ export default function App() {
 
             {/* Upload Audio */}
             {inputTab === 'upload' && (
-              <div className="px-4 pb-4">
+              <div className="px-4 pb-3">
                 <p className="text-[11px] text-gray-500 mb-3">Upload an audio file and Whisper will transcribe it automatically. Supports mp3, wav, m4a, ogg, webm — max 25MB.</p>
                 <button onClick={() => fileInputRef.current?.click()} disabled={transcribing}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 mb-3 hover:scale-[1.02] active:scale-[0.98]"
@@ -2114,9 +2114,9 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'upload')} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[150px] max-h-[18vh] lg:max-h-[22vh] overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
-                    <div className="flex justify-between items-center gap-3 mt-3">
+                    <div className="flex justify-between items-center gap-3 mt-2.5">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
                       <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
@@ -2233,7 +2233,7 @@ export default function App() {
           </div>
 
           {/* Chat panel */}
-          <div className="mx-6 mb-6 flex-1">
+          <div className="mx-6 mb-4 flex-1 min-h-0">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-5 h-5 rounded-lg flex items-center justify-center"
                 style={{ background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.25)' }}>
@@ -2244,7 +2244,7 @@ export default function App() {
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
             </div>
             {result ? (
-              <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} isSignedIn={Boolean(user)} />
+              <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} isSignedIn={Boolean(user)} compact />
             ) : (
               <div className="rounded-[24px] px-5 py-5"
                 style={{
