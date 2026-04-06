@@ -929,7 +929,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
           <span className="gradient-text">Clarity out.</span>
         </h1>
         <p className="text-gray-400 max-w-2xl mx-auto leading-relaxed text-sm sm:text-lg">
-          PrismAI refracts one messy conversation into seven live reads of what actually matters: decisions, owners, sentiment, follow-up, and meeting quality.
+          PrismAI refracts one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, and recurring themes.
         </p>
       </div>
 
@@ -952,6 +952,58 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       <LandingPrismHero />
+
+      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-7 animate-fade-in-up relative z-10" style={{ animationDelay: '0.21s' }}>
+        {[
+          {
+            title: 'Sign in and sync',
+            body: 'Keep private meeting history, saved chats, and account-scoped intelligence attached to your workspace.',
+            accent: 'rgba(14,165,233,0.16)',
+            border: 'rgba(14,165,233,0.28)',
+            text: '#7dd3fc',
+          },
+          {
+            title: 'Join live meetings',
+            body: 'Send the PrismAI bot into Zoom, Meet, or Teams, then auto-analyze the transcript when the call ends.',
+            accent: 'rgba(16,185,129,0.15)',
+            border: 'rgba(16,185,129,0.26)',
+            text: '#86efac',
+          },
+          {
+            title: 'Cross-meeting memory',
+            body: 'Catch recurring blockers, resurfacing decisions, and ownership drift instead of rediscovering them every week.',
+            accent: 'rgba(168,85,247,0.15)',
+            border: 'rgba(168,85,247,0.26)',
+            text: '#d8b4fe',
+          },
+          {
+            title: 'Export and share',
+            body: 'Turn meetings into follow-up drafts, calendar suggestions, share links, Slack updates, and Notion-ready notes.',
+            accent: 'rgba(249,115,22,0.15)',
+            border: 'rgba(249,115,22,0.26)',
+            text: '#fdba74',
+          },
+        ].map((item) => (
+          <div
+            key={item.title}
+            className="rounded-3xl px-4 py-4"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 18px 42px rgba(2,132,199,0.05)',
+            }}
+          >
+            <span
+              className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.16em]"
+              style={{ background: item.accent, border: `1px solid ${item.border}`, color: item.text }}
+            >
+              Feature
+            </span>
+            <h3 className="text-sm font-semibold text-white mt-3">{item.title}</h3>
+            <p className="text-[11px] text-gray-500 leading-relaxed mt-1.5">{item.body}</p>
+          </div>
+        ))}
+      </div>
 
       {/* CTAs */}
       <div className="flex flex-col sm:flex-row gap-3 mb-8 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
@@ -1822,180 +1874,193 @@ export default function App() {
       )}
 
       {/* ── Header ── */}
-      <header className="app-content flex-shrink-0 flex items-center justify-between px-6 py-3"
+      <header className="app-content flex-shrink-0 px-4 sm:px-6 py-3"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(7,4,15,0.7)', backdropFilter: 'blur(20px)', position: 'relative', zIndex: 40 }}>
-        <button className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-          onClick={() => {
-            sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
-            setShowLanding(true)
-            setLandingExiting(false)
-          }}>
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/30"
-            style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-            </svg>
-          </div>
-          <div>
-            <span className="text-sm font-bold gradient-text">PrismAI</span>
-            <span className="hidden sm:inline text-[10px] text-gray-600 ml-2">meeting intelligence</span>
-          </div>
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between gap-3">
+            <button className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0"
+              onClick={() => {
+                sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
+                setShowLanding(true)
+                setLandingExiting(false)
+              }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/30 flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <span className="text-sm font-bold gradient-text">PrismAI</span>
+                <span className="hidden sm:inline text-[10px] text-gray-600 ml-2">meeting intelligence</span>
+              </div>
+            </button>
 
-        <div className="flex items-center gap-2">
-          {authReady && (
-            user ? (
+            {authReady && (
+              user ? (
+                <button
+                  onClick={signOut}
+                  className="sm:hidden flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-gray-300 hover:text-white transition-colors flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  Sign out
+                </button>
+              ) : (
+                <button
+                  onClick={signInWithGoogle}
+                  className="sm:hidden flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-sky-300 hover:text-white transition-colors flex-shrink-0"
+                  style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)' }}>
+                  Sign in
+                </button>
+              )
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 no-scrollbar">
+            {authReady && user && (
               <button
                 onClick={signOut}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-gray-300 hover:text-white transition-colors"
+                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-gray-300 hover:text-white transition-colors flex-shrink-0"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span className="hidden sm:inline max-w-[160px] truncate">{user.email}</span>
                 <span>Sign out</span>
               </button>
-            ) : (
-              <button
-                onClick={signInWithGoogle}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-sky-300 hover:text-white transition-colors"
-                style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)' }}>
-                Sign in
-              </button>
-            )
-          )}
+            )}
 
-          {/* History */}
-          {user && history.length > 0 && (
-            <div className="relative" data-history-panel>
-              <button onClick={() => setShowHistory(v => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 transition-colors"
+            {/* History */}
+            {user && history.length > 0 && (
+              <div className="relative flex-shrink-0" data-history-panel>
+                <button onClick={() => setShowHistory(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 transition-colors whitespace-nowrap"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  History
+                  <span className="w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center"
+                    style={{ background: 'rgba(14,165,233,0.25)', color: '#7dd3fc' }}>{history.length}</span>
+                </button>
+
+                {showHistory && (
+                  <div className="fixed right-4 top-14 w-[min(20rem,calc(100vw-2rem))] rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
+                    style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                      <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
+                      <button onClick={async () => {
+                        cancelActiveAnalysis()
+                        await Promise.all(history.map(h => apiFetch(`/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
+                        setHistory([])
+                        setShowHistory(false)
+                        clearWorkspaceState()
+                      }} className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
+                    </div>
+                    <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                      <input
+                        value={historySearch}
+                        onChange={e => {
+                          const q = e.target.value
+                          setHistorySearch(q)
+                          clearTimeout(historySearchDebounceRef.current)
+                          historySearchDebounceRef.current = setTimeout(async () => {
+                            const res = await apiFetch(`/meetings?q=${encodeURIComponent(q)}`).catch(() => null)
+                            if (res?.ok) {
+                              const d = await res.json()
+                              setHistory(Array.isArray(d) ? d.filter((entry) => hasMeaningfulResult(entry?.result)) : [])
+                            }
+                          }, 300)
+                        }}
+                        placeholder="Search meetings..."
+                        className="w-full text-xs text-gray-300 rounded-lg px-3 py-1.5 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
+                        style={{ background: 'rgba(0,0,0,0.3)' }}
+                      />
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      {history.map((entry) => (
+                        <div key={entry.id} className="flex items-center group"
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <button onClick={() => loadFromHistory(entry)}
+                            className="flex-1 text-left px-4 py-3 hover:bg-white/5 transition-colors">
+                            <div className="flex items-start gap-2">
+                              <p className="text-xs text-gray-300 group-hover:text-white flex-1 line-clamp-2">{entry.title}</p>
+                              {entry.score !== undefined && (
+                                <span className={`text-[11px] font-bold flex-shrink-0 ${entry.score >= 80 ? 'text-emerald-400' : entry.score >= 60 ? 'text-cyan-400' : entry.score >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                                  {entry.score}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-600 mt-1">
+                              {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setHistory(prev => prev.filter(h => h.id !== entry.id))
+                              apiFetch(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+                              if (entry.id === meetingId) {
+                                sessionStorage.setItem('prism_new_meeting', '1')
+                                clearWorkspaceState()
+                              }
+                            }}
+                            aria-label="Delete meeting"
+                            className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {result && (
+              <button
+                onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); clearWorkspaceState() }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors flex-shrink-0 whitespace-nowrap"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                History
-                <span className="w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center"
-                  style={{ background: 'rgba(14,165,233,0.25)', color: '#7dd3fc' }}>{history.length}</span>
+                New Meeting
               </button>
+            )}
 
-              {showHistory && (
-                <div className="fixed right-4 top-14 w-80 rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
-                  style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                    <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
-                    <button onClick={async () => {
-                      cancelActiveAnalysis()
-                      await Promise.all(history.map(h => apiFetch(`/meetings/${h.id}`, { method: 'DELETE' }).catch(() => {})))
-                      setHistory([])
-                      setShowHistory(false)
-                      clearWorkspaceState()
-                    }} className="text-[11px] text-gray-600 hover:text-red-400 transition-colors">Clear all</button>
-                  </div>
-                  <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                    <input
-                      value={historySearch}
-                      onChange={e => {
-                        const q = e.target.value
-                      setHistorySearch(q)
-                      clearTimeout(historySearchDebounceRef.current)
-                      historySearchDebounceRef.current = setTimeout(async () => {
-                          const res = await apiFetch(`/meetings?q=${encodeURIComponent(q)}`).catch(() => null)
-                          if (res?.ok) {
-                            const d = await res.json()
-                            setHistory(Array.isArray(d) ? d.filter((entry) => hasMeaningfulResult(entry?.result)) : [])
-                          }
-                        }, 300)
-                      }}
-                      placeholder="Search meetings..."
-                      className="w-full text-xs text-gray-300 rounded-lg px-3 py-1.5 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
-                      style={{ background: 'rgba(0,0,0,0.3)' }}
-                    />
-                  </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {history.map((entry) => (
-                      <div key={entry.id} className="flex items-center group"
-                        style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <button onClick={() => loadFromHistory(entry)}
-                          className="flex-1 text-left px-4 py-3 hover:bg-white/5 transition-colors">
-                          <div className="flex items-start gap-2">
-                            <p className="text-xs text-gray-300 group-hover:text-white flex-1 line-clamp-2">{entry.title}</p>
-                            {entry.score !== undefined && (
-                              <span className={`text-[11px] font-bold flex-shrink-0 ${entry.score >= 80 ? 'text-emerald-400' : entry.score >= 60 ? 'text-cyan-400' : entry.score >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
-                                {entry.score}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-gray-600 mt-1">
-                            {new Date(entry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setHistory(prev => prev.filter(h => h.id !== entry.id))
-                            apiFetch(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
-                            if (entry.id === meetingId) {
-                              sessionStorage.setItem('prism_new_meeting', '1')
-                              clearWorkspaceState()
-                            }
-                          }}
-                          aria-label="Delete meeting"
-                          className="px-3 py-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {result && (
             <button
-              onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); clearWorkspaceState() }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              onClick={() => startDemo()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-sky-400 transition-colors hover:text-sky-300 flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.15)' }}>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              New Meeting
+              Demo
             </button>
-          )}
 
-          <button
-            onClick={() => startDemo()}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-sky-400 transition-colors hover:text-sky-300"
-            style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.15)' }}>
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Demo
-          </button>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] text-gray-400 flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              llama-3.3-70b
+            </div>
+            <div className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.2), rgba(6,182,212,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
+              7 agents
+            </div>
 
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] text-gray-400"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            llama-3.3-70b
+            {/* Integrations button */}
+            <button
+              onClick={() => setShowIntegrations(true)}
+              title="Integrations"
+              aria-label="Integrations"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-gray-400 hover:text-white transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <span>Integrations</span>
+            </button>
           </div>
-          <div className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold"
-            style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.2), rgba(6,182,212,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
-            7 agents
-          </div>
-
-          {/* Integrations button */}
-          <button
-            onClick={() => setShowIntegrations(true)}
-            title="Integrations"
-            aria-label="Integrations"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-gray-400 hover:text-white transition-colors"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            <span className="hidden sm:inline">Integrations</span>
-          </button>
         </div>
       </header>
 
@@ -2035,7 +2100,7 @@ export default function App() {
       <div className="app-content flex flex-1 overflow-hidden">
 
         {/* LEFT PANEL — Input */}
-        <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-16 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
+        <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-32 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
 
           {/* Hero blurb */}
           <div className="px-6 pt-4 pb-2">
@@ -2632,8 +2697,8 @@ export default function App() {
           )}
         </div>
 
-        {/* Mobile tab bar */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex"
+      {/* Mobile tab bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex"
           style={{ background: 'rgba(7,4,15,0.95)', borderTop: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           <button
             onClick={() => setMobileTab('input')}
@@ -2650,6 +2715,34 @@ export default function App() {
             )}
           </button>
         </div>
+
+        {mobileTab === 'input' && inputTab !== 'join' && (
+          <div className="lg:hidden fixed left-4 right-4 z-30" style={{ bottom: 'calc(3.25rem + env(safe-area-inset-bottom, 0px))' }}>
+            <button
+              onClick={handleAnalyzeClick}
+              disabled={!transcript.trim() || loading}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-2xl"
+              style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 30px rgba(2,132,199,0.35)' }}
+            >
+              {loading ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Analyze Meeting
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Mobile results panel */}
         <div className={`lg:hidden w-full overflow-y-auto pb-16 ${mobileTab === 'results' ? 'block' : 'hidden'}`}>
