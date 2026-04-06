@@ -15,6 +15,7 @@ import { apiFetch } from './lib/api'
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
 const ProactiveSuggestions = lazy(() => import('./components/ProactiveSuggestions'))
 const ScoreTrendChart = lazy(() => import('./components/ScoreTrendChart'))
+const CrossMeetingInsights = lazy(() => import('./components/CrossMeetingInsights'))
 const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -2047,9 +2048,14 @@ export default function App() {
 
           {/* Health trend chart — visible when 2+ meetings in history */}
           {user && history.length > 1 && (
-            <Suspense fallback={null}>
-              <ScoreTrendChart history={history} onSelect={loadFromHistory} />
-            </Suspense>
+            <>
+              <Suspense fallback={null}>
+                <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+              </Suspense>
+              <Suspense fallback={null}>
+                <CrossMeetingInsights history={history} onSelect={loadFromHistory} />
+              </Suspense>
+            </>
           )}
 
           {/* Error */}
