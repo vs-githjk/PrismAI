@@ -378,6 +378,13 @@ h1, h2, h3, .font-display {
   animation: cta-pulse 3.2s ease-in-out infinite;
 }
 
+.landing-capability-card {
+  backdrop-filter: blur(16px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 16px 40px rgba(2,132,199,0.05);
+}
+
 .landing-agent-tile {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
 }
@@ -400,37 +407,47 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 3.35rem;
+    font-size: 3.2rem;
     line-height: 0.96;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.25rem;
   }
 
   .landing-headline p {
-    font-size: 0.88rem;
-    max-width: 44rem;
+    font-size: 0.84rem;
+    max-width: 40rem;
   }
 
   .landing-feature-pills {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.2rem;
   }
 
   .landing-prism-hero {
-    transform: scale(0.82);
+    transform: scale(0.8);
     transform-origin: top center;
-    margin-top: -0.2rem;
-    margin-bottom: -1.5rem;
+    margin-top: -0.25rem;
+    margin-bottom: -1.75rem;
   }
 
   .landing-prism-center {
-    height: 190px;
+    height: 178px;
   }
 
   .landing-prism-column {
-    transform: scale(0.72);
+    transform: scale(0.7);
   }
 
   .landing-cta-row {
+    margin-bottom: 0.25rem;
+  }
+
+  .landing-capability-rail {
+    gap: 0.55rem;
     margin-bottom: 0.35rem;
+  }
+
+  .landing-capability-card {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
   }
 
   .landing-agent-grid {
@@ -442,6 +459,22 @@ h1, h2, h3, .font-display {
   }
 }
 
+@media (max-height: 980px) and (min-width: 1024px) {
+  .landing-agent-grid {
+    display: none;
+  }
+}
+
+@media (max-height: 900px) and (min-width: 1024px) {
+  .landing-capability-rail {
+    margin-bottom: 0.2rem;
+  }
+
+  .landing-capability-card p {
+    display: none;
+  }
+}
+
 @media (max-height: 760px) and (min-width: 1024px) {
   .landing-screen {
     padding-top: 0.5rem;
@@ -449,7 +482,7 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 2.9rem;
+    font-size: 2.85rem;
     line-height: 0.95;
   }
 
@@ -458,9 +491,13 @@ h1, h2, h3, .font-display {
   }
 
   .landing-prism-hero {
-    transform: scale(0.74);
+    transform: scale(0.72);
     transform-origin: top center;
-    margin-bottom: -2.6rem;
+    margin-bottom: -2.8rem;
+  }
+
+  .landing-capability-rail {
+    display: none;
   }
 
   .landing-cta-row button {

@@ -806,7 +806,7 @@ function LandingPrismHero() {
   ]
 
   return (
-    <div className="relative w-full max-w-6xl mx-auto mt-2 mb-5 px-2 landing-prism-hero">
+    <div className="relative w-full max-w-6xl mx-auto mt-1 mb-4 px-2 landing-prism-hero">
       <div className="grid lg:grid-cols-[1.1fr_100px_1.1fr] gap-3 lg:gap-4 items-center">
         <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
           <div className="flex items-center justify-between gap-3 mb-3">
@@ -880,7 +880,7 @@ function LandingPrismHero() {
 function LandingScreen({ onDemo, onSkip, exiting }) {
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-6 py-10 lg:py-8 relative overflow-hidden landing-screen"
+      className="min-h-screen flex flex-col items-center justify-center px-6 py-8 lg:py-6 relative overflow-hidden landing-screen"
       style={{
         background: '#07040f',
         opacity: exiting ? 0 : 1,
@@ -899,7 +899,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Logo */}
-      <div className="flex items-center gap-3 mb-5 animate-fade-in-up relative landing-logo-lockup" style={{ animationDelay: '0s' }}>
+      <div className="flex items-center gap-3 mb-4 animate-fade-in-up relative landing-logo-lockup" style={{ animationDelay: '0s' }}>
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 40px rgba(2,132,199,0.5)' }}>
           <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -914,7 +914,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Badge */}
-      <div className="mb-4 animate-fade-in-up relative" style={{ animationDelay: '0.06s' }}>
+      <div className="mb-3 animate-fade-in-up relative" style={{ animationDelay: '0.06s' }}>
         <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[11px] font-medium text-sky-400"
           style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)' }}>
           <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse flex-shrink-0" />
@@ -923,18 +923,18 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       </div>
 
       {/* Headline */}
-      <div className="text-center mb-3 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-4xl sm:text-6xl lg:text-[5.5rem] font-bold text-white leading-[0.95] mb-3 tracking-tight">
+      <div className="text-center mb-2 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
+        <h1 className="text-[3.35rem] sm:text-[4.6rem] lg:text-[5.1rem] xl:text-[5.35rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
           Meetings in.<br />
           <span className="gradient-text">Clarity out.</span>
         </h1>
-        <p className="text-gray-400 max-w-2xl mx-auto leading-relaxed text-sm sm:text-lg">
-          PrismAI refracts one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, and recurring themes.
+        <p className="text-gray-400 max-w-3xl mx-auto leading-relaxed text-[15px] sm:text-[17px]">
+          PrismAI refracts one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, decisions, and recurring themes.
         </p>
       </div>
 
       {/* Output pills — ROYGBIV */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mb-4 animate-fade-in-up relative landing-feature-pills" style={{ animationDelay: '0.18s' }}>
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-3 animate-fade-in-up relative landing-feature-pills" style={{ animationDelay: '0.18s' }}>
         {[
           { label: 'Summary',        bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.28)',   text: '#fca5a5' },
           { label: 'Action Items',   bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.28)',  text: '#fdba74' },
@@ -953,60 +953,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       <LandingPrismHero />
 
-      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-7 animate-fade-in-up relative z-10" style={{ animationDelay: '0.21s' }}>
-        {[
-          {
-            title: 'Sign in and sync',
-            body: 'Keep private meeting history, saved chats, and account-scoped intelligence attached to your workspace.',
-            accent: 'rgba(14,165,233,0.16)',
-            border: 'rgba(14,165,233,0.28)',
-            text: '#7dd3fc',
-          },
-          {
-            title: 'Join live meetings',
-            body: 'Send the PrismAI bot into Zoom, Meet, or Teams, then auto-analyze the transcript when the call ends.',
-            accent: 'rgba(16,185,129,0.15)',
-            border: 'rgba(16,185,129,0.26)',
-            text: '#86efac',
-          },
-          {
-            title: 'Cross-meeting memory',
-            body: 'Catch recurring blockers, resurfacing decisions, and ownership drift instead of rediscovering them every week.',
-            accent: 'rgba(168,85,247,0.15)',
-            border: 'rgba(168,85,247,0.26)',
-            text: '#d8b4fe',
-          },
-          {
-            title: 'Export and share',
-            body: 'Turn meetings into follow-up drafts, calendar suggestions, share links, Slack updates, and Notion-ready notes.',
-            accent: 'rgba(249,115,22,0.15)',
-            border: 'rgba(249,115,22,0.26)',
-            text: '#fdba74',
-          },
-        ].map((item) => (
-          <div
-            key={item.title}
-            className="rounded-3xl px-4 py-4"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 18px 42px rgba(2,132,199,0.05)',
-            }}
-          >
-            <span
-              className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.16em]"
-              style={{ background: item.accent, border: `1px solid ${item.border}`, color: item.text }}
-            >
-              Feature
-            </span>
-            <h3 className="text-sm font-semibold text-white mt-3">{item.title}</h3>
-            <p className="text-[11px] text-gray-500 leading-relaxed mt-1.5">{item.body}</p>
-          </div>
-        ))}
-      </div>
-
       {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-8 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
           className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98] landing-primary-cta"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
@@ -1022,8 +970,68 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </button>
       </div>
 
+      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-4 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
+        {[
+          {
+            title: 'Sign in and sync',
+            body: 'Private meeting history',
+            accent: 'rgba(14,165,233,0.16)',
+            border: 'rgba(14,165,233,0.28)',
+            text: '#7dd3fc',
+            icon: '↗',
+          },
+          {
+            title: 'Join live meetings',
+            body: 'Bot joins and returns with analysis',
+            accent: 'rgba(16,185,129,0.15)',
+            border: 'rgba(16,185,129,0.26)',
+            text: '#86efac',
+            icon: '◌',
+          },
+          {
+            title: 'Cross-meeting memory',
+            body: 'Recurring blockers and decisions',
+            accent: 'rgba(168,85,247,0.15)',
+            border: 'rgba(168,85,247,0.26)',
+            text: '#d8b4fe',
+            icon: '≈',
+          },
+          {
+            title: 'Export and share',
+            body: 'Calendar, email, Slack, Notion',
+            accent: 'rgba(249,115,22,0.15)',
+            border: 'rgba(249,115,22,0.26)',
+            text: '#fdba74',
+            icon: '→',
+          },
+        ].map((item) => (
+          <div
+            key={item.title}
+            className="rounded-[22px] px-4 py-2.5 landing-capability-card"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 14px 34px rgba(2,132,199,0.05)',
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold flex-shrink-0"
+                style={{ background: item.accent, border: `1px solid ${item.border}`, color: item.text }}
+              >
+                {item.icon}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-[13px] font-semibold text-white leading-tight">{item.title}</h3>
+                <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5 truncate">{item.body}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Agent grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl landing-agent-grid" style={{ animationDelay: '0.3s' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl landing-agent-grid" style={{ animationDelay: '0.34s' }}>
         {AGENTS_META.map((a, i) => (
           <div key={a.id}
             className="flex flex-col items-center gap-2 px-3 py-4 rounded-2xl transition-all duration-200 hover:-translate-y-1 landing-agent-tile"
