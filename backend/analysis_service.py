@@ -29,7 +29,7 @@ DEFAULT_RESULT = {
     "decisions": [],
     "sentiment": {"overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": []},
     "follow_up_email": {"subject": "", "body": ""},
-    "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": ""},
+    "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "resolved_date": "", "resolved_day": ""},
     "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
     "agents_run": [],
 }

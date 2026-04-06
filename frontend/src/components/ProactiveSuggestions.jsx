@@ -9,7 +9,16 @@ function computeSuggestions(result) {
   if (result.calendar_suggestion?.recommended) {
     const title = encodeURIComponent('Follow-up Meeting')
     const details = encodeURIComponent(result.calendar_suggestion.reason || 'Follow-up from meeting')
-    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}`
+    const dates = result.calendar_suggestion?.resolved_date
+      ? (() => {
+          const start = result.calendar_suggestion.resolved_date.replace(/-/g, '')
+          const endDate = new Date(`${result.calendar_suggestion.resolved_date}T12:00:00`)
+          endDate.setDate(endDate.getDate() + 1)
+          const end = endDate.toISOString().slice(0, 10).replace(/-/g, '')
+          return `&dates=${start}/${end}`
+        })()
+      : ''
+    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}${dates}`
     suggestions.push({
       id: 'calendar',
       accentColor: '#ec4899',

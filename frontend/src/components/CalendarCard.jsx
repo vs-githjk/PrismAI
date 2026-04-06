@@ -1,5 +1,14 @@
+function formatResolvedDate(value) {
+  if (!value) return ''
+  const parsed = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export default function CalendarCard({ suggestion }) {
   if (!suggestion || (!suggestion.recommended && !suggestion.reason)) return null
+
+  const resolvedLabel = [suggestion.resolved_day, formatResolvedDate(suggestion.resolved_date)].filter(Boolean).join(' · ')
 
   return (
     <div className="rounded-2xl overflow-hidden card-glow-pink transition-transform duration-200 hover:-translate-y-0.5" style={{ background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.22)' }}>
@@ -28,6 +37,11 @@ export default function CalendarCard({ suggestion }) {
               {suggestion.suggested_timeframe}
             </span>
           )}
+          {resolvedLabel && (
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-pink-500/10 border border-pink-500/25 text-pink-200">
+              {resolvedLabel}
+            </span>
+          )}
         </div>
 
         <div className="flex items-start gap-4">
@@ -35,6 +49,7 @@ export default function CalendarCard({ suggestion }) {
             <div className="flex-shrink-0 px-3 py-2.5 rounded-xl bg-pink-500/10 border border-pink-500/25 text-center min-w-[80px]">
               <p className="text-xs text-pink-400/70 leading-none mb-1">Next meeting</p>
               <p className="text-sm font-bold text-pink-300 leading-snug">{suggestion.suggested_timeframe}</p>
+              {resolvedLabel && <p className="text-[11px] text-pink-200/80 mt-1 leading-snug">{resolvedLabel}</p>}
             </div>
           )}
           <div>

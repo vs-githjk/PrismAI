@@ -112,6 +112,9 @@ def _build_notion_blocks(result: dict) -> list:
         blocks.append(_para(calendar["reason"]))
         if calendar.get("suggested_timeframe"):
             blocks.append(_para(f"Suggested timeframe: {calendar['suggested_timeframe']}"))
+        if calendar.get("resolved_day") or calendar.get("resolved_date"):
+            resolved = ", ".join(value for value in [calendar.get("resolved_day"), calendar.get("resolved_date")] if value)
+            blocks.append(_para(f"Resolved follow-up date: {resolved}"))
 
     return blocks
 
