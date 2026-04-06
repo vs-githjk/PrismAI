@@ -993,6 +993,7 @@ export default function App() {
   )
   const [landingExiting, setLandingExiting] = useState(false)
   const [isDemoMode, setIsDemoMode] = useState(false)
+  const [demoChatOpen, setDemoChatOpen] = useState(false)
 
   const exitLanding = (demo = false) => {
     sessionStorage.setItem(VISITED_KEY, '1')
@@ -1370,6 +1371,7 @@ export default function App() {
   const startDemo = () => {
     const t = getRandomDemoTranscript()
     setIsDemoMode(true)
+    setDemoChatOpen(false)
     setInputTab('paste')
     setTranscriptForTab(t, 'paste')
     setMobileTab('input')
@@ -1399,12 +1401,14 @@ export default function App() {
 
   const signOut = async () => {
     clearWorkspaceState()
+    setDemoChatOpen(false)
     setHistory([])
     if (supabase) await supabase.auth.signOut()
   }
 
   const exitDemoMode = () => {
     setIsDemoMode(false)
+    setDemoChatOpen(false)
     setInputTab('paste')
     clearWorkspaceState()
   }
@@ -2242,8 +2246,43 @@ export default function App() {
                 </svg>
               </div>
               <span className="text-xs font-semibold text-gray-400">Chat with meeting</span>
+              {isDemoMode && (
+                <button
+                  onClick={() => setDemoChatOpen((v) => !v)}
+                  className="ml-auto text-[11px] px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1' }}>
+                  {demoChatOpen ? 'Hide chat' : 'Open chat'}
+                </button>
+              )}
             </div>
-            {result ? (
+            {isDemoMode && !demoChatOpen ? (
+              <button
+                onClick={() => setDemoChatOpen(true)}
+                className="w-full rounded-[22px] px-4 py-4 text-left transition-all hover:scale-[1.005] active:scale-[0.995]"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.02) 100%)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  boxShadow: '0 16px 34px rgba(2,132,199,0.05)',
+                }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.22)' }}>
+                    <svg className="w-4 h-4 text-sky-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-white">Open demo chat</p>
+                    <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                      Ask follow-up questions about the sample run only when you want to inspect the outputs more deeply.
+                    </p>
+                  </div>
+                  <svg className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            ) : result ? (
               <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} isSignedIn={Boolean(user)} compact />
             ) : (
               <div className="rounded-[24px] px-5 py-5"
