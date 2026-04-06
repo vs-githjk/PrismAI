@@ -1037,10 +1037,14 @@ export default function App() {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [mdCopied, setMdCopied] = useState(false)
   const historySearchDebounceRef = useRef(null)
+  const previousUserRef = useRef(null)
   const user = authSession?.user || null
 
   useEffect(() => {
     if (INITIAL_SHARE_TOKEN || !authReady) return // skip auto-load for shared links
+    const previousUser = previousUserRef.current
+    previousUserRef.current = user
+
     if (!user) {
       setHistory([])
       setInitialMessages([])
@@ -1050,7 +1054,30 @@ export default function App() {
       setShareCopied(false)
       return
     }
-    apiFetch('/meetings')
+
+    const shouldPreserveLocalWorkspace =
+      !previousUser &&
+      Boolean(transcript.trim()) &&
+      Boolean(result) &&
+      !meetingId &&
+      !INITIAL_SHARE_TOKEN
+
+    ;(async () => {
+      if (shouldPreserveLocalWorkspace) {
+        const preserved = saveToHistory(transcript, result)
+        setInitialMessages([])
+        setSessionId((s) => s + 1)
+        setWorkspaceToast('Local workspace saved to your account.')
+        setTimeout(() => setWorkspaceToast(null), 3500)
+        const res = await apiFetch('/meetings').catch(() => null)
+        const data = res?.ok ? await res.json() : []
+        if (Array.isArray(data)) {
+          setHistory(mergeHistoryEntries([preserved, ...data]))
+        }
+        return
+      }
+
+      apiFetch('/meetings')
       .then(r => (r.ok ? r.json() : []))
       .then(async data => {
         if (!Array.isArray(data)) return
@@ -1070,7 +1097,8 @@ export default function App() {
         }
       })
       .catch(() => {})
-  }, [authReady, user])
+    })()
+  }, [authReady, user, transcript, result, meetingId])
 
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
@@ -1088,6 +1116,7 @@ export default function App() {
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
+  const [workspaceToast, setWorkspaceToast] = useState(null)
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
@@ -1278,11 +1307,20 @@ export default function App() {
   // Clean up poll on unmount
   useEffect(() => () => clearInterval(pollRef.current), [])
 
+  const mergeHistoryEntries = (entries) => {
+    const seen = new Set()
+    return entries.filter((entry) => {
+      if (!entry?.id || seen.has(entry.id)) return false
+      seen.add(entry.id)
+      return true
+    }).sort((a, b) => b.id - a.id)
+  }
+
   const saveToHistory = (t, r) => {
     if (!user) {
       setMeetingId(null)
       setShareToken(null)
-      return
+      return null
     }
     sessionStorage.removeItem('prism_new_meeting')
     const id = Date.now()
@@ -1296,7 +1334,7 @@ export default function App() {
       score: r.health_score?.score,
       share_token,
     }
-    setHistory(prev => [entry, ...prev])
+    setHistory(prev => mergeHistoryEntries([entry, ...prev]))
     setMeetingId(id)
     setShareToken(share_token)
     apiFetch('/meetings', {
@@ -1304,6 +1342,7 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entry),
     }).catch(() => {})
+    return entry
   }
 
   const loadFromHistory = async (entry) => {
@@ -2718,6 +2757,20 @@ export default function App() {
             onClose={() => setShowIntegrations(false)}
           />
         </Suspense>
+      )}
+
+      {workspaceToast && (
+        <div className="fixed top-20 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl animate-fade-in-up"
+          style={{
+            background: 'rgba(14,165,233,0.14)',
+            border: '1px solid rgba(14,165,233,0.28)',
+            backdropFilter: 'blur(16px)',
+          }}>
+          <svg className="w-4 h-4 text-sky-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-xs font-medium text-sky-100">{workspaceToast}</span>
+        </div>
       )}
 
       {/* Integration export toast */}
