@@ -989,6 +989,7 @@ export default function App() {
   const analysisAbortRef = useRef(null)
   const analysisRunIdRef = useRef(0)
   const [mobileTab, setMobileTab] = useState('input') // 'input' | 'results'
+  const hasResultsView = loading || Boolean(result)
 
   // Show landing only to first-time visitors (not returning users, not share links)
   const [showLanding, setShowLanding] = useState(
@@ -1351,6 +1352,7 @@ export default function App() {
     setTranscript(entry.transcript)
     setTranscriptDrafts((prev) => ({ ...prev, paste: entry.transcript || '' }))
     setResult(entry.result)
+    setMobileTab('results')
     setMeetingId(entry.id)
     setShareToken(entry.share_token || null)
     setSessionId(s => s + 1)
@@ -1468,6 +1470,7 @@ export default function App() {
     cancelActiveAnalysis()
     setShowSpeakerModal(false)
     setLoading(true)
+    setMobileTab('results')
     setError(null)
     setResult(null)
     setAnalysisTime(null)
@@ -2584,10 +2587,11 @@ export default function App() {
             Input
           </button>
           <button
-            onClick={() => setMobileTab('results')}
+            onClick={() => hasResultsView && setMobileTab('results')}
+            disabled={!hasResultsView}
             className={`flex-1 py-3 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${mobileTab === 'results' ? 'text-sky-400' : 'text-gray-600'}`}>
             Results
-            {(loading || result) && (
+            {hasResultsView && (
               <span className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400'}`} />
             )}
           </button>
@@ -2742,9 +2746,6 @@ export default function App() {
             />
           )}
         </div>
-
-        {/* Mobile input panel — hide when on results tab */}
-        <div className={`lg:hidden ${mobileTab === 'input' ? 'block' : 'hidden'}`} />
 
       </div>
 
