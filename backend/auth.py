@@ -22,20 +22,26 @@ async def require_user_id(request: Request) -> str:
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{SUPABASE_URL}/auth/v1/user",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "apikey": SUPABASE_KEY,
-            },
-            timeout=10,
-        )
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{SUPABASE_URL}/auth/v1/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "apikey": SUPABASE_KEY,
+                },
+                timeout=10,
+            )
+    except httpx.HTTPError:
+        raise HTTPException(status_code=503, detail="Auth service unavailable")
 
     if resp.status_code != 200:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    user = resp.json()
+    try:
+        user = resp.json()
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
     user_id = user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired session")

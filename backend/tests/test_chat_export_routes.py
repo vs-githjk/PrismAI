@@ -104,13 +104,16 @@ class FakeSupabase:
 
 
 class DummyHTTPXResponse:
-    def __init__(self, status_code, payload=None, text=""):
+    def __init__(self, status_code, payload=None, text="", json_error=False):
         self.status_code = status_code
         self._payload = payload or {}
         self.text = text
         self.content = text.encode() if text else b"payload"
+        self._json_error = json_error
 
     def json(self):
+        if self._json_error:
+            raise ValueError("invalid json")
         return self._payload
 
 
@@ -221,6 +224,25 @@ class ChatAndExportRoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["detail"], "Slack webhook failed")
+
+    def test_export_to_notion_non_json_error_falls_back_cleanly(self):
+        valid_page_url = "https://www.notion.so/workspace/1234567890abcdef1234567890abcdef"
+        with patch(
+            "export_routes.httpx.AsyncClient",
+            return_value=FakeAsyncClient(DummyHTTPXResponse(500, text="server error", json_error=True)),
+        ):
+            response = self.client.post(
+                "/export/notion",
+                json={
+                    "token": "notion-token",
+                    "parent_page_id": valid_page_url,
+                    "title": "Meeting Analysis",
+                    "result": {},
+                },
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Notion API error")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,13 @@ from pydantic import BaseModel
 router = APIRouter(tags=["export"])
 
 
+def _safe_json(response):
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
 class NotionExportRequest(BaseModel):
     token: str
     parent_page_id: str
@@ -139,10 +146,10 @@ async def export_to_notion(req: NotionExportRequest):
         )
 
     if resp.status_code not in (200, 201):
-        detail = resp.json().get("message", "Notion API error") if resp.content else "Notion API error"
+        detail = _safe_json(resp).get("message", "Notion API error") if resp.content else "Notion API error"
         raise HTTPException(status_code=resp.status_code, detail=detail)
 
-    page = resp.json()
+    page = _safe_json(resp)
     return {"url": page.get("url", ""), "page_id": page.get("id", "")}
 
 
