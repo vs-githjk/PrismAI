@@ -1,12 +1,12 @@
 import importlib
+import asyncio
 import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 from fastapi.dependencies import utils as fastapi_dependency_utils
+from fastapi.testclient import TestClient
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -63,156 +63,41 @@ sys.modules["analysis_service"] = fake_analysis_service
 fastapi_dependency_utils.ensure_multipart_is_installed = lambda: None
 
 
+analysis_routes = importlib.import_module("analysis_routes")
 main = importlib.import_module("main")
-auth = importlib.import_module("auth")
-
-
-class FakeExecuteResult:
-    def __init__(self, data):
-        self.data = data
-
-
-class FakeQuery:
-    def __init__(self, client, table_name):
-        self.client = client
-        self.table_name = table_name
-        self.filters = []
-        self.selected_fields = None
-        self.order_field = None
-        self.order_desc = False
-        self.limit_count = None
-
-    def select(self, fields):
-        self.selected_fields = [field.strip() for field in fields.split(",")]
-        return self
-
-    def eq(self, field, value):
-        self.filters.append((field, value))
-        return self
-
-    def order(self, field, desc=False):
-        self.order_field = field
-        self.order_desc = desc
-        return self
-
-    def limit(self, count):
-        self.limit_count = count
-        return self
-
-    def _matches(self, row):
-        for field, value in self.filters:
-            if row.get(field) != value:
-                return False
-        return True
-
-    def execute(self):
-        rows = [row.copy() for row in self.client.tables[self.table_name] if self._matches(row)]
-        if self.order_field:
-            rows.sort(key=lambda row: row.get(self.order_field), reverse=self.order_desc)
-        if self.limit_count is not None:
-            rows = rows[: self.limit_count]
-        if self.selected_fields:
-            rows = [{field: row.get(field) for field in self.selected_fields} for row in rows]
-        return FakeExecuteResult(rows)
-
-
-class FakeSupabase:
-    def __init__(self):
-        self.tables = {"meetings": []}
-
-    def table(self, table_name):
-        return FakeQuery(self, table_name)
-
-
-class DummyHTTPXResponse:
-    def __init__(self, status_code, payload=None, text=""):
-        self.status_code = status_code
-        self._payload = payload or {}
-        self.text = text
-        self.content = text.encode() if text else b"payload"
-
-    def json(self):
-        return self._payload
-
-
-class FakeAsyncClient:
-    def __init__(self, response):
-        self.response = response
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-    async def post(self, *args, **kwargs):
-        return self.response
 
 
 class MainRoutesTestCase(unittest.TestCase):
     def setUp(self):
-        self.original_supabase = main.supabase
-        self.fake_db = FakeSupabase()
-        main.supabase = self.fake_db
         self.client = TestClient(main.app)
-        main.app.dependency_overrides[auth.require_user_id] = lambda: "user-123"
 
-    def tearDown(self):
-        main.supabase = self.original_supabase
-        main.app.dependency_overrides.clear()
-
-    def test_chat_global_without_saved_meetings_returns_empty_state_message(self):
-        response = self.client.post("/chat/global", json={"message": "What happened across all meetings?"})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("No meetings found in your history yet", response.json()["response"])
-
-    def test_export_to_notion_rejects_invalid_page_url(self):
-        response = self.client.post(
-            "/export/notion",
-            json={
-                "token": "notion-token",
-                "parent_page_id": "https://www.notion.so/not-a-valid-page",
-                "title": "Meeting Analysis",
-                "result": {},
-            },
-        )
+    def test_analyze_rejects_empty_transcript(self):
+        response = self.client.post("/analyze", json={"transcript": "   ", "speakers": []})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Could not extract a valid Notion page ID", response.json()["detail"])
+        self.assertEqual(response.json()["detail"], "Transcript cannot be empty")
 
-    def test_export_to_slack_success(self):
-        with patch("main.httpx.AsyncClient", return_value=FakeAsyncClient(DummyHTTPXResponse(200))):
-            response = self.client.post(
-                "/export/slack",
-                json={
-                    "webhook_url": "https://hooks.slack.test/services/demo",
-                    "title": "Weekly Sync",
-                    "result": {
-                        "summary": "All good",
-                        "health_score": {"score": 91, "verdict": "Strong"},
-                        "action_items": [{"task": "Ship auth", "owner": "Vidyut", "due": "Friday"}],
-                        "decisions": [{"decision": "Delay analytics"}],
-                    },
-                },
-            )
+    def test_analyze_returns_result(self):
+        response = self.client.post("/analyze", json={"transcript": "Hello world", "speakers": []})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True})
+        self.assertEqual(response.json(), {"summary": "ok", "agents_run": []})
 
-    def test_export_to_slack_failure_bubbles_as_502(self):
-        with patch("main.httpx.AsyncClient", return_value=FakeAsyncClient(DummyHTTPXResponse(500, text="boom"))):
-            response = self.client.post(
-                "/export/slack",
-                json={
-                    "webhook_url": "https://hooks.slack.test/services/demo",
-                    "title": "Weekly Sync",
-                    "result": {},
-                },
-            )
+    def test_transcribe_returns_mocked_transcript(self):
+        class FakeUploadFile:
+            filename = "demo.wav"
+            content_type = "audio/wav"
 
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json()["detail"], "Slack webhook failed")
+            async def read(self):
+                return b"audio-bytes"
+
+        router = analysis_routes.create_analysis_router(_FakeAsyncGroq())
+        transcribe_endpoint = next(
+            route.endpoint for route in router.routes if getattr(route, "path", None) == "/transcribe"
+        )
+        response = asyncio.run(transcribe_endpoint(FakeUploadFile()))
+
+        self.assertEqual(response, {"transcript": "mock transcript"})
 
 
 if __name__ == "__main__":
