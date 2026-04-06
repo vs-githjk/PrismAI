@@ -963,12 +963,6 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       <LandingPrismHero />
 
-      <div className="mb-3 animate-fade-in-up relative z-10 landing-cta-bridge" style={{ animationDelay: '0.22s' }}>
-        <p className="text-[13px] sm:text-[14px] text-gray-500 text-center max-w-2xl mx-auto leading-relaxed">
-          PrismAI keeps decisions, owners, blockers, and follow-up visible so the next meeting starts with context, not catch-up.
-        </p>
-      </div>
-
       {/* CTAs */}
       <div className="flex flex-col sm:flex-row gap-3 mb-3 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
@@ -984,6 +978,12 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
           Use my own transcript
         </button>
+      </div>
+
+      <div className="mb-3 animate-fade-in-up relative z-10 landing-cta-bridge" style={{ animationDelay: '0.26s' }}>
+        <p className="text-[13px] sm:text-[14px] text-gray-500 text-center max-w-2xl mx-auto leading-relaxed">
+          PrismAI keeps decisions, owners, blockers, and follow-up visible so the next meeting starts with context, not catch-up.
+        </p>
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-3 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
