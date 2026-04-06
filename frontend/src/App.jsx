@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Component } from 'react'
+import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -7,14 +7,15 @@ import DecisionsCard from './components/DecisionsCard'
 import SentimentCard from './components/SentimentCard'
 import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
-import ChatPanel from './components/ChatPanel'
 import SkeletonCard from './components/SkeletonCard'
-import ProactiveSuggestions from './components/ProactiveSuggestions'
 import ErrorCard from './components/ErrorCard'
-import ScoreTrendChart from './components/ScoreTrendChart'
-import IntegrationsModal from './components/IntegrationsModal'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
+
+const ChatPanel = lazy(() => import('./components/ChatPanel'))
+const ProactiveSuggestions = lazy(() => import('./components/ProactiveSuggestions'))
+const ScoreTrendChart = lazy(() => import('./components/ScoreTrendChart'))
+const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -43,6 +44,14 @@ class ErrorBoundary extends Component {
 }
 
 const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
+
+function DeferredCardFallback({ lines = 2 }) {
+  return (
+    <div className="animate-fade-in-up">
+      <SkeletonCard lines={lines} />
+    </div>
+  )
+}
 
 const DEMO_TRANSCRIPTS = [
   // Q2 roadmap planning
@@ -1982,7 +1991,9 @@ export default function App() {
           </div>
 
           {/* Health trend chart — visible when 2+ meetings in history */}
-          <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+          <Suspense fallback={null}>
+            <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+          </Suspense>
 
           {/* Error */}
           {error && <ErrorCard message={error} onRetry={() => runAnalysis([])} />}
@@ -2286,7 +2297,9 @@ export default function App() {
                 </div>
               </button>
             ) : result ? (
-              <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} isSignedIn={Boolean(user)} compact />
+              <Suspense fallback={<DeferredCardFallback lines={4} />}>
+                <ChatPanel key={sessionId} meetingId={meetingId} initialMessages={initialMessages} transcript={transcript} result={result} onResultUpdate={(updated) => setResult(r => ({ ...r, ...updated }))} isSignedIn={Boolean(user)} compact />
+              </Suspense>
             ) : (
               <div className="rounded-[24px] px-5 py-5"
                 style={{
@@ -2462,7 +2475,9 @@ export default function App() {
 
               <ErrorBoundary>
                 {/* Proactive suggestions */}
-                <ProactiveSuggestions result={result} transcript={transcript} />
+                <Suspense fallback={<DeferredCardFallback lines={2} />}>
+                  <ProactiveSuggestions result={result} transcript={transcript} />
+                </Suspense>
 
                 {/* Health score — full width, prominent */}
                 <div className="animate-fade-in-up card-delay-0">
@@ -2636,7 +2651,9 @@ export default function App() {
                 )
               })()}
               <ErrorBoundary>
-                <ProactiveSuggestions result={result} transcript={transcript} />
+                <Suspense fallback={<DeferredCardFallback lines={2} />}>
+                  <ProactiveSuggestions result={result} transcript={transcript} />
+                </Suspense>
                 <div className="animate-fade-in-up card-delay-0"><HealthScoreCard healthScore={result.health_score} /></div>
                 <div className="animate-fade-in-up card-delay-1"><SummaryCard summary={result.summary} /></div>
                 <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
@@ -2663,11 +2680,13 @@ export default function App() {
 
       {/* Integrations modal */}
       {showIntegrations && (
-        <IntegrationsModal
-          integrations={integrations}
-          onSave={setIntegrations}
-          onClose={() => setShowIntegrations(false)}
-        />
+        <Suspense fallback={null}>
+          <IntegrationsModal
+            integrations={integrations}
+            onSave={setIntegrations}
+            onClose={() => setShowIntegrations(false)}
+          />
+        </Suspense>
       )}
 
       {/* Integration export toast */}
