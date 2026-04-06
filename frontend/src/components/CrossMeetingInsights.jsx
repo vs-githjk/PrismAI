@@ -48,6 +48,11 @@ function buildBlockerSnippet(text) {
   return clean.length > 88 ? `${clean.slice(0, 85).trim()}...` : clean
 }
 
+function buildDecisionKey(text) {
+  const terms = extractSignificantTerms(text, 4).slice(0, 3)
+  return terms.join(' ')
+}
+
 function deriveInsights(history) {
   const meetings = [...history]
     .filter((entry) => entry?.result)
@@ -62,10 +67,13 @@ function deriveInsights(history) {
   const scoreDelta = latestScore !== null && oldestScore !== null ? latestScore - oldestScore : null
 
   const ownerCounts = new Map()
+  const ownerMeetingCounts = new Map()
   const themeCounts = new Map()
   const decisionThemeCounts = new Map()
+  const decisionGroups = new Map()
   const decisionMemory = []
   const blockerCounts = new Map()
+  const hygieneMeetings = []
   let tenseMeetings = 0
 
   meetings.forEach((entry) => {
@@ -80,7 +88,11 @@ function deriveInsights(history) {
 
     items.forEach((item) => {
       const owner = (item.owner || '').trim()
-      if (owner) ownerCounts.set(owner, (ownerCounts.get(owner) || 0) + 1)
+      if (owner) {
+        ownerCounts.set(owner, (ownerCounts.get(owner) || 0) + 1)
+        if (!ownerMeetingCounts.has(owner)) ownerMeetingCounts.set(owner, new Set())
+        ownerMeetingCounts.get(owner).add(entry.id)
+      }
 
       const text = `${item.task || ''} ${item.owner || ''} ${item.due || ''}`
       extractSignificantTerms(text).forEach((word) => {
@@ -93,22 +105,39 @@ function deriveInsights(history) {
       }
     })
 
+    const missingOwnerItems = items.filter((item) => !(item.owner || '').trim())
+    const missingDueItems = items.filter((item) => !(item.due || '').trim())
+    if (missingOwnerItems.length > 0 || missingDueItems.length > 0) {
+      hygieneMeetings.push({
+        meeting: entry,
+        missingOwners: missingOwnerItems.length,
+        missingDueDates: missingDueItems.length,
+      })
+    }
+
     decisions.forEach((decision) => {
       const text = decision.decision || ''
       const decisionTerms = extractSignificantTerms(text)
+      const decisionKey = buildDecisionKey(text)
       decisionTerms.forEach((word) => {
         themeCounts.set(word, (themeCounts.get(word) || 0) + 1)
         decisionThemeCounts.set(word, (decisionThemeCounts.get(word) || 0) + 1)
       })
 
-      decisionMemory.push({
+      const decisionEntry = {
         id: `${entry.id}-${decision.decision}`,
         meeting: entry,
         title: decision.decision || 'Decision recorded',
         owner: decision.owner || '',
         importance: Number(decision.importance ?? 3),
         date: entry.date,
-      })
+      }
+      decisionMemory.push(decisionEntry)
+
+      if (decisionKey) {
+        if (!decisionGroups.has(decisionKey)) decisionGroups.set(decisionKey, [])
+        decisionGroups.get(decisionKey).push(decisionEntry)
+      }
     })
 
     const summaryText = result.summary || ''
@@ -131,6 +160,19 @@ function deriveInsights(history) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([owner, count]) => ({ owner, count }))
+
+  const ownershipDrift = [...ownerCounts.entries()]
+    .map(([owner, count]) => ({
+      owner,
+      count,
+      meetings: ownerMeetingCounts.get(owner)?.size || 0,
+    }))
+    .filter(({ count, meetings }) => count >= 3 || meetings >= 2)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count
+      return b.meetings - a.meetings
+    })
+    .slice(0, 3)
 
   const recurringThemes = [...themeCounts.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -155,6 +197,29 @@ function deriveInsights(history) {
     })
     .slice(0, 4)
 
+  const unresolvedDecisions = [...decisionGroups.entries()]
+    .filter(([, group]) => {
+      const uniqueMeetings = new Set(group.map((item) => item.meeting.id))
+      return uniqueMeetings.size > 1
+    })
+    .map(([key, group]) => {
+      const sorted = [...group].sort((a, b) => new Date(b.date) - new Date(a.date))
+      const uniqueMeetings = [...new Set(group.map((item) => item.meeting.id))]
+      return {
+        key,
+        count: uniqueMeetings.length,
+        latestTitle: sorted[0]?.title || 'Decision thread',
+        latestOwner: sorted[0]?.owner || '',
+        meetings: sorted.map((item) => item.meeting).filter((meeting, index, all) => all.findIndex((value) => value.id === meeting.id) === index).slice(0, 5),
+      }
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3)
+
+  const recurringHygieneIssues = hygieneMeetings
+    .sort((a, b) => (b.missingOwners + b.missingDueDates) - (a.missingOwners + a.missingDueDates))
+    .slice(0, 4)
+
   return {
     meetingCount: meetings.length,
     avgScore,
@@ -162,9 +227,12 @@ function deriveInsights(history) {
     scoreDelta,
     tenseMeetings,
     topOwners,
+    ownershipDrift,
     recurringThemes,
     recurringBlockers,
+    recurringHygieneIssues,
     resurfacingDecisionThemes,
+    unresolvedDecisions,
     recentDecisions,
   }
 }
@@ -252,6 +320,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               Recurring blocker signal detected
             </span>
           )}
+          {insights.ownershipDrift[0] && (
+            <span className="text-[10px] px-2.5 py-1 rounded-full"
+              style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)', color: '#7dd3fc' }}>
+              Ownership drift detected
+            </span>
+          )}
         </div>
       </button>
 
@@ -278,6 +352,108 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                 <p className="text-[11px] text-gray-500 mt-1">recent decisions tracked</p>
               </div>
             </div>
+
+            {(insights.ownershipDrift.length > 0 || insights.recurringHygieneIssues.length > 0 || insights.unresolvedDecisions.length > 0) && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl px-3.5 py-3"
+                  style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.12)' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-sky-300/80">Ownership Drift</p>
+                    <span className="text-[10px] text-gray-600">tap to inspect</span>
+                  </div>
+                  {insights.ownershipDrift.length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {insights.ownershipDrift.map(({ owner, count, meetings }) => (
+                        <button
+                          key={owner}
+                          onClick={() => {
+                            const matches = history
+                              .filter((entry) => entry?.result)
+                              .filter((entry) => (entry.result?.action_items || []).some((item) => (item.owner || '').trim() === owner))
+                              .slice(0, 5)
+                            setFocusCluster({
+                              title: 'Meetings loading this owner repeatedly',
+                              subtitle: `${owner} appears on ${count} action items across ${meetings} meetings`,
+                              meetings: matches,
+                            })
+                          }}
+                          className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
+                          style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
+                        >
+                          <p className="text-sm text-white">{owner}</p>
+                          <p className="text-[11px] text-sky-300/80 mt-1">{count} items · {meetings} meetings</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-500 mt-2">Ownership looks balanced across recent meetings.</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl px-3.5 py-3"
+                  style={{ background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.12)' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Action Hygiene</p>
+                    <span className="text-[10px] text-gray-600">tap to inspect</span>
+                  </div>
+                  {insights.recurringHygieneIssues.length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {insights.recurringHygieneIssues.map(({ meeting, missingOwners, missingDueDates }) => (
+                        <button
+                          key={meeting.id}
+                          onClick={() => onSelect?.(meeting)}
+                          className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
+                          style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
+                        >
+                          <p className="text-sm text-white leading-snug">{meeting.title || 'Meeting'}</p>
+                          <p className="text-[11px] text-amber-300/80 mt-1">
+                            {missingOwners > 0 ? `${missingOwners} unowned` : '0 unowned'}
+                            {' · '}
+                            {missingDueDates > 0 ? `${missingDueDates} undated` : '0 undated'}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-500 mt-2">Recent action items are consistently assigned and dated.</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl px-3.5 py-3"
+                  style={{ background: 'rgba(168,85,247,0.05)', border: '1px solid rgba(168,85,247,0.12)' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-violet-300/80">Unresolved Decisions</p>
+                    <span className="text-[10px] text-gray-600">tap to inspect</span>
+                  </div>
+                  {insights.unresolvedDecisions.length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {insights.unresolvedDecisions.map((decision) => (
+                        <button
+                          key={decision.key}
+                          onClick={() => {
+                            setFocusCluster({
+                              title: 'Meetings revisiting this unresolved decision',
+                              subtitle: decision.latestTitle,
+                              meetings: decision.meetings,
+                            })
+                          }}
+                          className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
+                          style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
+                        >
+                          <p className="text-sm text-white leading-snug">{decision.latestTitle}</p>
+                          <p className="text-[11px] text-violet-300/80 mt-1">
+                            {decision.count} meetings
+                            {decision.latestOwner ? ` · latest owner: ${decision.latestOwner}` : ''}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-500 mt-2">Recent decisions do not appear to be looping back unresolved.</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {(insights.recurringBlockers.length > 0 || insights.resurfacingDecisionThemes.length > 0) && (
               <div className="grid grid-cols-2 gap-3">
