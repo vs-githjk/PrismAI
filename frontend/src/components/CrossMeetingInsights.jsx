@@ -171,6 +171,7 @@ function deriveInsights(history) {
 
 export default function CrossMeetingInsights({ history, onSelect }) {
   const [expanded, setExpanded] = useState(false)
+  const [focusCluster, setFocusCluster] = useState(null)
   const insights = deriveInsights(history)
 
   if (insights.meetingCount < 2) return null
@@ -282,14 +283,38 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.12)' }}>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-rose-300/80">Recurring Blockers</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-rose-300/80">Recurring Blockers</p>
+                    <span className="text-[10px] text-gray-600">tap to inspect</span>
+                  </div>
                   {insights.recurringBlockers.length > 0 ? (
                     <div className="space-y-2 mt-2">
                       {insights.recurringBlockers.map(({ snippet, count }) => (
-                        <div key={snippet} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.025)' }}>
+                        <button
+                          key={snippet}
+                          onClick={() => {
+                            const matches = history
+                              .filter((entry) => entry?.result)
+                              .filter((entry) => {
+                                const summary = entry.result?.summary || ''
+                                const sentimentNotes = entry.result?.sentiment?.notes || ''
+                                const tasks = (entry.result?.action_items || []).map((item) => item.task || '').join(' ')
+                                const haystack = `${summary} ${sentimentNotes} ${tasks}`.toLowerCase()
+                                return haystack.includes(snippet.toLowerCase().replace(/\.\.\.$/, '').trim().slice(0, 24))
+                              })
+                              .slice(0, 5)
+                            setFocusCluster({
+                              title: 'Meetings behind this blocker',
+                              subtitle: snippet,
+                              meetings: matches,
+                            })
+                          }}
+                          className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
+                          style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
+                        >
                           <p className="text-sm text-white leading-snug">{snippet}</p>
                           <p className="text-[11px] text-rose-300/80 mt-1">surfaced {count} time{count === 1 ? '' : 's'}</p>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   ) : (
@@ -299,23 +324,81 @@ export default function CrossMeetingInsights({ history, onSelect }) {
 
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(250,204,21,0.05)', border: '1px solid rgba(250,204,21,0.12)' }}>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Decision Resurfacing</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Decision Resurfacing</p>
+                    <span className="text-[10px] text-gray-600">tap to inspect</span>
+                  </div>
                   {insights.resurfacingDecisionThemes.length > 0 ? (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {insights.resurfacingDecisionThemes.map(({ theme, count }) => (
-                        <span
+                        <button
                           key={theme}
+                          onClick={() => {
+                            const matches = history
+                              .filter((entry) => entry?.result)
+                              .filter((entry) => {
+                                const decisionsText = (entry.result?.decisions || []).map((item) => item.decision || '').join(' ')
+                                return decisionsText.toLowerCase().includes(theme.toLowerCase())
+                              })
+                              .slice(0, 5)
+                            setFocusCluster({
+                              title: 'Meetings revisiting this decision theme',
+                              subtitle: theme,
+                              meetings: matches,
+                            })
+                          }}
                           className="text-[11px] px-2.5 py-1 rounded-full"
                           style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.16)', color: '#fde68a' }}
                         >
                           {theme} · {count} mentions
-                        </span>
+                        </button>
                       ))}
                     </div>
                   ) : (
                     <p className="text-[11px] text-gray-500 mt-2">Recent decisions are not repeating in a concerning way.</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {focusCluster && (
+              <div className="rounded-xl px-3.5 py-3"
+                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">{focusCluster.title}</p>
+                    <p className="text-sm text-white mt-1 leading-snug">{focusCluster.subtitle}</p>
+                  </div>
+                  <button
+                    onClick={() => setFocusCluster(null)}
+                    className="text-[10px] px-2 py-1 rounded-lg text-gray-500 hover:text-gray-300 transition-colors"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                  >
+                    Close
+                  </button>
+                </div>
+                {focusCluster.meetings.length > 0 ? (
+                  <div className="space-y-2 mt-3">
+                    {focusCluster.meetings.map((meeting) => (
+                      <button
+                        key={meeting.id}
+                        onClick={() => onSelect?.(meeting)}
+                        className="w-full text-left rounded-xl px-3 py-2 transition-colors hover:bg-white/5"
+                        style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                      >
+                        <p className="text-sm font-medium text-white leading-snug">{meeting.title || 'Meeting'}</p>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          {formatMeetingDate(meeting.date)}
+                          {meeting.result?.health_score?.score !== undefined && meeting.result?.health_score?.score !== null
+                            ? ` · ${meeting.result.health_score.score}/100`
+                            : ''}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-gray-500 mt-3">No matching meetings were found in the current saved history.</p>
+                )}
               </div>
             )}
 
