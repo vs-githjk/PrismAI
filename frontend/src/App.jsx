@@ -935,9 +935,9 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       {/* Headline */}
       <div className="text-center mb-2 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-[3.35rem] sm:text-[4.6rem] lg:text-[5.1rem] xl:text-[5.35rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
+        <h1 className="text-[3.15rem] sm:text-[4.35rem] lg:text-[4.85rem] xl:text-[5.1rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
           Meetings in.<br />
-          <span className="gradient-text">Memory out.</span>
+          <span className="gradient-text">Clarity that lasts.</span>
         </h1>
         <p className="text-gray-400 max-w-3xl mx-auto leading-relaxed text-[15px] sm:text-[17px]">
           PrismAI turns one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, decisions, and recurring themes.

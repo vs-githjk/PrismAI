@@ -417,7 +417,7 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 3.2rem;
+    font-size: 3rem;
     line-height: 0.96;
     margin-bottom: 0.25rem;
   }
@@ -432,18 +432,18 @@ h1, h2, h3, .font-display {
   }
 
   .landing-prism-hero {
-    transform: scale(0.76);
+    transform: scale(0.72);
     transform-origin: top center;
     margin-top: -0.35rem;
-    margin-bottom: -2.15rem;
+    margin-bottom: -2.5rem;
   }
 
   .landing-prism-center {
-    height: 164px;
+    height: 152px;
   }
 
   .landing-prism-column {
-    transform: scale(0.7);
+    transform: scale(0.66);
   }
 
   .landing-cta-row {
@@ -452,7 +452,7 @@ h1, h2, h3, .font-display {
 
   .landing-capability-rail {
     gap: 0.55rem;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.15rem;
   }
 
   .landing-capability-card {
@@ -469,18 +469,16 @@ h1, h2, h3, .font-display {
   }
 }
 
-@media (max-height: 980px) and (min-width: 1024px) {
+@media (max-height: 1040px) and (min-width: 1024px) {
+  .landing-capability-rail,
   .landing-agent-grid {
     display: none;
   }
 }
 
 @media (max-height: 900px) and (min-width: 1024px) {
-  .landing-capability-rail {
-    margin-bottom: 0.2rem;
-  }
-
-  .landing-capability-card p {
+  .landing-capability-rail,
+  .landing-agent-grid {
     display: none;
   }
 }
@@ -492,7 +490,7 @@ h1, h2, h3, .font-display {
   }
 
   .landing-headline h1 {
-    font-size: 2.85rem;
+    font-size: 2.7rem;
     line-height: 0.95;
   }
 
@@ -501,9 +499,9 @@ h1, h2, h3, .font-display {
   }
 
   .landing-prism-hero {
-    transform: scale(0.72);
+    transform: scale(0.68);
     transform-origin: top center;
-    margin-bottom: -2.8rem;
+    margin-bottom: -3rem;
   }
 
   .landing-capability-rail {
