@@ -6,14 +6,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Query, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import AsyncGroq
-from supabase import create_client, Client as SupabaseClient
 
 from agents import orchestrator, summarizer, action_items, decisions, sentiment, email_drafter, calendar_suggester, health_score
+from auth import require_user_id, supabase
+from storage_routes import router as storage_router
 
 app = FastAPI(title="Agentic Meeting Copilot")
 
@@ -23,12 +24,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(storage_router)
 
 groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-
-_sb_url = os.getenv("SUPABASE_URL", "")
-_sb_key = os.getenv("SUPABASE_KEY", "")
-supabase: SupabaseClient = create_client(_sb_url, _sb_key) if _sb_url and _sb_key else None
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
@@ -52,38 +50,6 @@ def _extract_recall_error(resp: httpx.Response) -> str:
     text = (resp.text or "").strip()
     return text or f"Recall.ai request failed with status {resp.status_code}"
 
-
-async def require_user_id(request: Request) -> str:
-    if not _sb_url or not _sb_key:
-        raise HTTPException(status_code=503, detail="Auth is not configured")
-
-    auth_header = request.headers.get("authorization", "")
-    if not auth_header.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    token = auth_header.split(" ", 1)[1].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{_sb_url}/auth/v1/user",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "apikey": _sb_key,
-            },
-            timeout=10,
-        )
-
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    user = resp.json()
-    user_id = user.get("id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    return user_id
 
 AGENT_MAP = {
     "summarizer": summarizer.run,
@@ -138,126 +104,6 @@ class SlackExportRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-# ── Meeting history ────────────────────────────────────────────────
-
-class MeetingEntry(BaseModel):
-    id: int
-    date: str
-    title: str = ""
-    score: int = None
-    transcript: str = ""
-    result: dict = {}
-    share_token: str = ""
-
-
-@app.get("/meetings")
-async def get_meetings(q: str = Query(default=""), user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    query = (
-        supabase.table("meetings")
-        .select("id,date,title,score,transcript,result,share_token")
-        .eq("user_id", user_id)
-        .order("id", desc=True)
-        .limit(50)
-    )
-    if q.strip():
-        query = query.ilike("title", f"%{q}%")
-    res = query.execute()
-    return res.data
-
-
-@app.post("/meetings")
-async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("meetings").upsert({
-        "id": entry.id,
-        "user_id": user_id,
-        "date": entry.date,
-        "title": entry.title,
-        "score": entry.score,
-        "transcript": entry.transcript,
-        "result": entry.result,
-        "share_token": entry.share_token or None,
-    }).execute()
-    return {"ok": True}
-
-
-@app.get("/share/{token}")
-async def get_shared_meeting(token: str):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    res = supabase.table("meetings").select("title,date,result,score").eq("share_token", token).limit(1).execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Share link not found")
-    return res.data[0]
-
-
-@app.delete("/meetings/{meeting_id}")
-async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
-    return {"ok": True}
-
-
-class MeetingPatch(BaseModel):
-    result: dict
-
-
-@app.patch("/meetings/{meeting_id}")
-async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("meetings").update({"result": patch.result}).eq("id", meeting_id).eq("user_id", user_id).execute()
-    return {"ok": True}
-
-
-# ── Chat history ───────────────────────────────────────────────────
-
-class ChatEntry(BaseModel):
-    messages: list
-
-
-@app.get("/chats")
-async def get_all_chats(user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    res = supabase.table("chats").select("meeting_id,messages").eq("user_id", user_id).execute()
-    return {str(row["meeting_id"]): row["messages"] for row in res.data}
-
-
-@app.get("/chats/{meeting_id}")
-async def get_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    res = supabase.table("chats").select("messages").eq("meeting_id", meeting_id).eq("user_id", user_id).limit(1).execute()
-    if res.data:
-        return {"messages": res.data[0]["messages"]}
-    return {"messages": []}
-
-
-@app.post("/chats/{meeting_id}")
-async def save_chat(meeting_id: int, entry: ChatEntry, user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    existing = supabase.table("chats").select("id").eq("meeting_id", meeting_id).eq("user_id", user_id).limit(1).execute()
-    if existing.data:
-        supabase.table("chats").update({"messages": entry.messages}).eq("meeting_id", meeting_id).eq("user_id", user_id).execute()
-    else:
-        supabase.table("chats").insert({"meeting_id": meeting_id, "user_id": user_id, "messages": entry.messages}).execute()
-    return {"ok": True}
-
-
-@app.delete("/chats/{meeting_id}")
-async def delete_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Storage not configured")
-    supabase.table("chats").delete().eq("meeting_id", meeting_id).eq("user_id", user_id).execute()
-    return {"ok": True}
 
 
 @app.post("/analyze")
