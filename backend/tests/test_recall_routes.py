@@ -28,7 +28,7 @@ async def _fake_run_full_analysis(_transcript: str):
 
 
 fake_analysis_service.run_full_analysis = _fake_run_full_analysis
-sys.modules.setdefault("analysis_service", fake_analysis_service)
+sys.modules["analysis_service"] = fake_analysis_service
 
 recall_routes = importlib.import_module("recall_routes")
 
