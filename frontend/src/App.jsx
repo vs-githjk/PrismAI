@@ -1082,6 +1082,7 @@ export default function App() {
   const [error, setError] = useState(null)
   const [analysisTime, setAnalysisTime] = useState(null) // seconds elapsed
   const [showTimeSaved, setShowTimeSaved] = useState(false)
+  const [timeSavedShared, setTimeSavedShared] = useState(false)
   const analysisStartRef = useRef(null)
   const analysisAbortRef = useRef(null)
   const analysisRunIdRef = useRef(0)
@@ -1227,6 +1228,8 @@ export default function App() {
     slack_webhook: localStorage.getItem('prism_slack_webhook') || '',
     notion_token: localStorage.getItem('prism_notion_token') || '',
     notion_page_id: localStorage.getItem('prism_notion_page_id') || '',
+    auto_send_slack: localStorage.getItem('prism_auto_send_slack') === '1',
+    auto_send_notion: localStorage.getItem('prism_auto_send_notion') === '1',
   }))
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
@@ -1308,6 +1311,71 @@ export default function App() {
     } finally {
       setExportingSlack(false)
       setTimeout(() => setIntegrationToast(null), 3000)
+    }
+  }
+
+  const autoDeliveryRef = useRef(new Set())
+
+  async function deliverMeetingRecap(meetingTitle, meetingResult) {
+    if (!meetingResult) return
+    const deliveryKey = `${meetingTitle}-${meetingResult.summary || ''}-${meetingResult.health_score?.score ?? 'na'}`
+    if (autoDeliveryRef.current.has(deliveryKey)) return
+    autoDeliveryRef.current.add(deliveryKey)
+
+    const delivered = []
+    const failed = []
+
+    if (integrations.auto_send_slack && integrations.slack_webhook) {
+      try {
+        const res = await apiFetch('/export/slack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            webhook_url: integrations.slack_webhook,
+            title: meetingTitle,
+            result: meetingResult,
+          }),
+        })
+        if (!res.ok) throw new Error('Slack failed')
+        delivered.push('Slack')
+      } catch {
+        failed.push('Slack')
+      }
+    }
+
+    if (integrations.auto_send_notion && integrations.notion_token && integrations.notion_page_id) {
+      try {
+        const res = await apiFetch('/export/notion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: integrations.notion_token,
+            parent_page_id: integrations.notion_page_id,
+            title: meetingTitle,
+            result: meetingResult,
+          }),
+        })
+        if (!res.ok) throw new Error('Notion failed')
+        delivered.push('Notion')
+      } catch {
+        failed.push('Notion')
+      }
+    }
+
+    if (delivered.length > 0) {
+      setIntegrationToast({
+        type: failed.length ? 'err' : 'ok',
+        msg: failed.length
+          ? `Auto-sent to ${delivered.join(' + ')}. ${failed.join(' + ')} failed.`
+          : `Auto-sent recap to ${delivered.join(' + ')}.`,
+      })
+      setTimeout(() => setIntegrationToast(null), 5000)
+    } else if (failed.length > 0) {
+      setIntegrationToast({
+        type: 'err',
+        msg: `Auto-send failed for ${failed.join(' + ')}.`,
+      })
+      setTimeout(() => setIntegrationToast(null), 5000)
     }
   }
 
@@ -1404,7 +1472,9 @@ export default function App() {
           setSessionId(s => s + 1)
           if (data.result) {
             setResult(data.result)
-            saveToHistory(data.transcript || '', data.result)
+            const entry = saveToHistory(data.transcript || '', data.result)
+            const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
+            void deliverMeetingRecap(meetingTitle, data.result)
             setBotTranscriptReady(false)
             setMobileTab('results')
           } else {
@@ -1570,6 +1640,7 @@ export default function App() {
   const signOut = async () => {
     clearWorkspaceState()
     setDemoChatOpen(false)
+    setIsDemoMode(false)
     setHistory([])
     if (supabase) await supabase.auth.signOut()
   }
@@ -1578,6 +1649,7 @@ export default function App() {
     setIsDemoMode(false)
     setDemoChatOpen(false)
     setInputTab('paste')
+    setShowHistory(false)
     clearWorkspaceState()
   }
 
@@ -1638,7 +1710,11 @@ export default function App() {
             setAnalysisTime(parseFloat(elapsed))
             setShowTimeSaved(true)
             setMobileTab('results')
-            if (!isDemo) saveToHistory(t, accumulated)
+            if (!isDemo) {
+              const entry = saveToHistory(t, accumulated)
+              const meetingTitle = entry?.title || accumulated.summary?.slice(0, 65) || 'Meeting Analysis'
+              void deliverMeetingRecap(meetingTitle, accumulated)
+            }
             streamDone = true
             break
           }
@@ -1941,6 +2017,15 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 no-scrollbar">
+            {authReady && !user && (
+              <button
+                onClick={signInWithGoogle}
+                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-sky-300 hover:text-white transition-colors flex-shrink-0"
+                style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)' }}>
+                Sign in
+              </button>
+            )}
+
             {authReady && user && (
               <button
                 onClick={signOut}
@@ -2665,10 +2750,25 @@ export default function App() {
                       <span className="text-emerald-500 ml-1">— analyzed in {analysisTime}s</span>
                     </p>
                     <button
-                      onClick={() => navigator.clipboard.writeText(tweetText)}
+                      onClick={async () => {
+                        try {
+                          if (navigator.share) {
+                            await navigator.share({
+                              title: 'PrismAI',
+                              text: tweetText,
+                            })
+                          } else {
+                            await navigator.clipboard.writeText(tweetText)
+                          }
+                          setTimeSavedShared(true)
+                          setTimeout(() => setTimeSavedShared(false), 2000)
+                        } catch {
+                          // user canceled or browser blocked share; no-op
+                        }
+                      }}
                       className="text-[11px] px-2.5 py-1.5 rounded-lg font-medium transition-all hover:scale-105 flex-shrink-0"
                       style={{ background: 'rgba(52,211,153,0.12)', color: '#6ee7b7', border: '1px solid rgba(52,211,153,0.25)' }}>
-                      Share
+                      {timeSavedShared ? 'Shared!' : 'Share'}
                     </button>
                     <button onClick={() => setShowTimeSaved(false)}
                       aria-label="Dismiss"
@@ -2882,10 +2982,25 @@ export default function App() {
                       <span className="text-emerald-500 ml-1">· analyzed in {analysisTime}s</span>
                     </p>
                     <button
-                      onClick={() => navigator.clipboard.writeText(tweetText)}
+                      onClick={async () => {
+                        try {
+                          if (navigator.share) {
+                            await navigator.share({
+                              title: 'PrismAI',
+                              text: tweetText,
+                            })
+                          } else {
+                            await navigator.clipboard.writeText(tweetText)
+                          }
+                          setTimeSavedShared(true)
+                          setTimeout(() => setTimeSavedShared(false), 2000)
+                        } catch {
+                          // user canceled or browser blocked share; no-op
+                        }
+                      }}
                       className="text-[11px] px-2.5 py-1.5 rounded-lg font-medium flex-shrink-0"
                       style={{ background: 'rgba(52,211,153,0.12)', color: '#6ee7b7', border: '1px solid rgba(52,211,153,0.25)' }}>
-                      Share
+                      {timeSavedShared ? 'Shared!' : 'Share'}
                     </button>
                     <button onClick={() => setShowTimeSaved(false)} aria-label="Dismiss" className="text-gray-700 hover:text-gray-400 transition-colors flex-shrink-0 p-0.5">
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

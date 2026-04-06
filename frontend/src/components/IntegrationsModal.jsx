@@ -20,19 +20,52 @@ function Field({ label, placeholder, value, onChange, type = 'text', hint }) {
   )
 }
 
+function Toggle({ label, checked, onChange, hint }) {
+  return (
+    <div className="rounded-xl p-3 flex items-start justify-between gap-3"
+      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div>
+        <p className="text-xs font-medium text-gray-300">{label}</p>
+        {hint && <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed max-w-xs">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        aria-pressed={checked}
+        onClick={() => onChange(!checked)}
+        className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+        style={{ background: checked ? 'linear-gradient(135deg, #0284c7, #0d9488)' : 'rgba(255,255,255,0.08)' }}>
+        <span
+          className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform"
+          style={{ left: '2px', transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
+        />
+      </button>
+    </div>
+  )
+}
+
 export default function IntegrationsModal({ integrations, onSave, onClose }) {
   const [tab, setTab] = useState('Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
   const [notionPageId, setNotionPageId] = useState(integrations.notion_page_id || '')
+  const [autoSendSlack, setAutoSendSlack] = useState(Boolean(integrations.auto_send_slack))
+  const [autoSendNotion, setAutoSendNotion] = useState(Boolean(integrations.auto_send_notion))
   const [testingSlack, setTestingSlack] = useState(false)
   const [slackTestResult, setSlackTestResult] = useState(null) // 'ok' | 'err'
 
   function save() {
-    const updated = { slack_webhook: slackWebhook, notion_token: notionToken, notion_page_id: notionPageId }
+    const updated = {
+      slack_webhook: slackWebhook,
+      notion_token: notionToken,
+      notion_page_id: notionPageId,
+      auto_send_slack: autoSendSlack,
+      auto_send_notion: autoSendNotion,
+    }
     localStorage.setItem('prism_slack_webhook', slackWebhook)
     localStorage.setItem('prism_notion_token', notionToken)
     localStorage.setItem('prism_notion_page_id', notionPageId)
+    localStorage.setItem('prism_auto_send_slack', autoSendSlack ? '1' : '0')
+    localStorage.setItem('prism_auto_send_notion', autoSendNotion ? '1' : '0')
     onSave(updated)
     onClose()
   }
@@ -133,6 +166,12 @@ export default function IntegrationsModal({ integrations, onSave, onClose }) {
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 When you export to Slack, PrismAI sends a formatted summary with action items and decisions to your webhook channel.
               </div>
+              <Toggle
+                label="Auto-send recap after every meeting"
+                checked={autoSendSlack}
+                onChange={setAutoSendSlack}
+                hint="When enabled, PrismAI will post the meeting recap to Slack automatically after analysis finishes."
+              />
             </>
           )}
 
@@ -157,6 +196,12 @@ export default function IntegrationsModal({ integrations, onSave, onClose }) {
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 PrismAI will create a new Notion page for each meeting with full analysis: summary, action items (as checkboxes), decisions, email draft, and health score.
               </div>
+              <Toggle
+                label="Auto-create a Notion page after every meeting"
+                checked={autoSendNotion}
+                onChange={setAutoSendNotion}
+                hint="When enabled, PrismAI will create a Notion recap page automatically as soon as the analysis completes."
+              />
             </>
           )}
         </div>
