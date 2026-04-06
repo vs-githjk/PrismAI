@@ -388,24 +388,6 @@ h1, h2, h3, .font-display {
   animation: cta-pulse 3.2s ease-in-out infinite;
 }
 
-.landing-fragment-card {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
-  border: 1px solid rgba(255,255,255,0.09);
-  box-shadow:
-    0 14px 34px rgba(2,132,199,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.06);
-  backdrop-filter: blur(16px);
-  animation: fadeInUp 0.45s ease-out both, landing-card-float 5.2s ease-in-out infinite;
-}
-
-.landing-memory-card {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-}
-
 .landing-capability-card {
   backdrop-filter: blur(16px);
   box-shadow:
@@ -501,10 +483,6 @@ h1, h2, h3, .font-display {
   .landing-capability-card p {
     display: none;
   }
-
-  .landing-memory-card:last-child {
-    display: none;
-  }
 }
 
 @media (max-height: 760px) and (min-width: 1024px) {
@@ -526,10 +504,6 @@ h1, h2, h3, .font-display {
     transform: scale(0.72);
     transform-origin: top center;
     margin-bottom: -2.8rem;
-  }
-
-  .landing-fragment-card {
-    display: none;
   }
 
   .landing-capability-rail {

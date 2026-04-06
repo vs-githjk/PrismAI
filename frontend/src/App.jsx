@@ -798,23 +798,11 @@ function LandingPrismHero() {
     'Lisa: I’ll send the client update by Wednesday.',
   ]
 
-  const incomingFragments = [
-    { label: 'Blocker', value: 'Specs still waiting on approval' },
-    { label: 'Decision', value: 'Push analytics to Q3' },
-    { label: 'Owner', value: 'Lisa handles client update' },
-  ]
-
   const outputs = [
     { label: 'Decision', value: 'Analytics moves to Q3', text: '#fde047' },
     { label: 'Owner', value: 'Lisa owns client update', text: '#86efac' },
     { label: 'Health', value: '82 / 100', text: '#d8b4fe' },
     { label: 'Follow-up', value: 'Schedule in 2 weeks', text: '#7dd3fc' },
-  ]
-
-  const memorySignals = [
-    { title: 'Recurring blocker', body: 'Approval delays surfaced in 3 meetings', color: '#7dd3fc' },
-    { title: 'Decision memory', body: 'Budget timeline changed twice this month', color: '#fde047' },
-    { title: 'Ownership drift', body: 'Lisa is carrying most follow-through work', color: '#d8b4fe' },
   ]
 
   return (
@@ -847,22 +835,6 @@ function LandingPrismHero() {
           <div className="mt-3 flex flex-wrap gap-2 relative z-10">
             <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Multiple speakers</span>
             <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions buried in conversation</span>
-          </div>
-
-          <div className="hidden lg:flex flex-col gap-2 absolute -right-8 top-10 w-52 pointer-events-none">
-            {incomingFragments.map((item, i) => (
-              <div
-                key={item.label}
-                className="landing-fragment-card rounded-2xl px-3.5 py-2.5"
-                style={{
-                  animationDelay: `${0.35 + i * 0.08}s`,
-                  transform: `translateX(${i * 10}px) rotate(${i % 2 === 0 ? -5 : 4}deg)`,
-                }}
-              >
-                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                <p className="text-[12px] text-white/90 mt-1 leading-snug">{item.value}</p>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -903,20 +875,11 @@ function LandingPrismHero() {
             ))}
           </div>
 
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5 relative z-10">
-            {memorySignals.map((item, i) => (
-              <div
-                key={item.title}
-                className="landing-memory-card rounded-2xl px-3.5 py-3 animate-fade-in-up"
-                style={{ animationDelay: `${0.52 + i * 0.06}s` }}
-              >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: item.color, boxShadow: `0 0 12px ${item.color}` }} />
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">{item.title}</p>
-                </div>
-                <p className="text-[12px] text-slate-200 leading-relaxed">{item.body}</p>
-              </div>
-            ))}
+          <div className="mt-3 rounded-2xl px-4 py-3 border border-white/8 bg-white/[0.03] relative z-10">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Living meeting memory</p>
+            <p className="text-[13px] text-slate-200 leading-relaxed mt-1">
+              PrismAI remembers recurring blockers, resurfacing decisions, and ownership drift so the next meeting starts with context, not guesswork.
+            </p>
           </div>
         </div>
       </div>
@@ -974,10 +937,10 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       <div className="text-center mb-2 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
         <h1 className="text-[3.35rem] sm:text-[4.6rem] lg:text-[5.1rem] xl:text-[5.35rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
           Meetings in.<br />
-          <span className="gradient-text">Clarity out.</span>
+          <span className="gradient-text">Memory out.</span>
         </h1>
         <p className="text-gray-400 max-w-3xl mx-auto leading-relaxed text-[15px] sm:text-[17px]">
-          PrismAI refracts one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, decisions, and recurring themes.
+          PrismAI turns one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, decisions, and recurring themes.
         </p>
       </div>
 
