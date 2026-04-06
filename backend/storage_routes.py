@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase
+from cross_meeting_service import derive_cross_meeting_insights
 
 
 router = APIRouter(tags=["storage"])
@@ -45,6 +46,20 @@ async def get_meetings(q: str = Query(default=""), user_id: str = Depends(requir
         query = query.ilike("title", f"%{q}%")
     res = query.execute()
     return res.data
+
+
+@router.get("/insights")
+async def get_cross_meeting_insights(user_id: str = Depends(require_user_id)):
+    client = _require_storage()
+    res = (
+        client.table("meetings")
+        .select("id,date,title,score,result")
+        .eq("user_id", user_id)
+        .order("id", desc=True)
+        .limit(50)
+        .execute()
+    )
+    return derive_cross_meeting_insights(res.data)
 
 
 @router.post("/meetings")

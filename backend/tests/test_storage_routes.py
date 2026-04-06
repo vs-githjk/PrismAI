@@ -204,6 +204,80 @@ class StorageRoutesTestCase(unittest.TestCase):
         self.assertEqual(self.fake_db.tables["meetings"][0]["user_id"], "user-123")
         self.assertEqual(self.fake_db.tables["meetings"][0]["share_token"], "share-123")
 
+    def test_get_insights_returns_user_scoped_recommended_actions(self):
+        self.fake_db.tables["meetings"] = [
+            {
+                "id": 5,
+                "user_id": "user-999",
+                "date": "2026-04-03",
+                "title": "Other team",
+                "score": 80,
+                "result": {"summary": "blocked on security review", "action_items": [], "decisions": [], "sentiment": {"overall": "neutral"}, "health_score": {"score": 80}},
+            },
+            {
+                "id": 4,
+                "user_id": "user-123",
+                "date": "2026-04-04",
+                "title": "Weekly sync",
+                "score": 78,
+                "result": {
+                    "summary": "We are still blocked on vendor approval",
+                    "action_items": [{"task": "Finalize launch plan", "owner": "Lisa", "due": ""}],
+                    "decisions": [{"decision": "Move analytics to Q3", "owner": "Lisa", "importance": 1}],
+                    "sentiment": {"overall": "unresolved", "notes": "The blocker is still unresolved"},
+                    "health_score": {"score": 78},
+                },
+            },
+            {
+                "id": 3,
+                "user_id": "user-123",
+                "date": "2026-04-02",
+                "title": "Roadmap review",
+                "score": 71,
+                "result": {
+                    "summary": "We have a dependency and blocked rollout risk",
+                    "action_items": [{"task": "Finalize vendor approval", "owner": "Lisa", "due": "Friday"}],
+                    "decisions": [{"decision": "Move analytics to Q3", "owner": "Lisa", "importance": 2}],
+                    "sentiment": {"overall": "tense", "notes": "risk remains unresolved"},
+                    "health_score": {"score": 71},
+                },
+            },
+        ]
+
+        response = self.client.get("/insights")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["meeting_count"], 2)
+        self.assertTrue(payload["recommended_actions"])
+        self.assertTrue(payload["recommended_actions"][0]["meeting_ids"])
+        self.assertEqual(payload["ownership_drift"][0]["owner"], "Lisa")
+
+    def test_get_insights_handles_small_history(self):
+        self.fake_db.tables["meetings"] = [
+            {
+                "id": 1,
+                "user_id": "user-123",
+                "date": "2026-04-01",
+                "title": "One-off",
+                "score": 90,
+                "result": {
+                    "summary": "All good",
+                    "action_items": [{"task": "Ship it", "owner": "Alex", "due": "Tomorrow"}],
+                    "decisions": [],
+                    "sentiment": {"overall": "positive", "notes": ""},
+                    "health_score": {"score": 90},
+                },
+            }
+        ]
+
+        response = self.client.get("/insights")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["meeting_count"], 1)
+        self.assertEqual(payload["recommended_actions"], [])
+
     def test_share_link_is_public(self):
         self.fake_db.tables["meetings"] = [
             {"id": 1, "user_id": "user-999", "date": "2026-04-01", "title": "Shared", "score": 91, "transcript": "", "result": {"summary": "Visible"}, "share_token": "abc123"}

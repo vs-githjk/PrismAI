@@ -237,24 +237,45 @@ function deriveInsights(history) {
   }
 }
 
-export default function CrossMeetingInsights({ history, onSelect }) {
+export default function CrossMeetingInsights({ history, insights: insightsProp, onSelect }) {
   const [expanded, setExpanded] = useState(false)
   const [focusCluster, setFocusCluster] = useState(null)
-  const insights = deriveInsights(history)
+  const insights = insightsProp || deriveInsights(history)
+  const meetingMap = new Map(history.map((meeting) => [meeting.id, meeting]))
 
-  if (insights.meetingCount < 2) return null
+  const openCluster = (title, subtitle, meetingIds = []) => {
+    const meetings = meetingIds.map((id) => meetingMap.get(id)).filter(Boolean)
+    setFocusCluster({ title, subtitle, meetings })
+  }
 
-  const deltaLabel = insights.scoreDelta === null
+  if ((insights.meeting_count ?? insights.meetingCount) < 2) return null
+
+  const avgScore = insights.avg_score ?? insights.avgScore
+  const latestScore = insights.latest_score ?? insights.latestScore
+  const scoreDelta = insights.score_delta ?? insights.scoreDelta
+  const tenseMeetings = insights.tense_meetings ?? insights.tenseMeetings ?? 0
+  const topOwners = insights.top_owners ?? insights.topOwners ?? []
+  const ownershipDrift = insights.ownership_drift ?? insights.ownershipDrift ?? []
+  const recurringThemes = insights.recurring_themes ?? insights.recurringThemes ?? []
+  const recurringBlockers = insights.recurring_blockers ?? insights.recurringBlockers ?? []
+  const recurringHygieneIssues = insights.recurring_hygiene_issues ?? insights.recurringHygieneIssues ?? []
+  const resurfacingDecisionThemes = insights.resurfacing_decision_themes ?? insights.resurfacingDecisionThemes ?? []
+  const unresolvedDecisions = insights.unresolved_decisions ?? insights.unresolvedDecisions ?? []
+  const recentDecisions = insights.recent_decisions ?? insights.recentDecisions ?? []
+  const recommendedActions = insights.recommended_actions ?? insights.recommendedActions ?? []
+  const meetingCount = insights.meeting_count ?? insights.meetingCount ?? 0
+
+  const deltaLabel = scoreDelta === null
     ? 'stable'
-    : insights.scoreDelta > 0
-      ? `+${insights.scoreDelta}`
-      : `${insights.scoreDelta}`
+    : scoreDelta > 0
+      ? `+${scoreDelta}`
+      : `${scoreDelta}`
 
-  const deltaColor = insights.scoreDelta === null
+  const deltaColor = scoreDelta === null
     ? '#94a3b8'
-    : insights.scoreDelta > 0
+    : scoreDelta > 0
       ? '#34d399'
-      : insights.scoreDelta < 0
+      : scoreDelta < 0
         ? '#f87171'
         : '#94a3b8'
 
@@ -276,14 +297,14 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               <span className="text-xs font-semibold text-gray-400">Cross-Meeting Intelligence</span>
             </div>
             <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-              PrismAI is spotting patterns across {insights.meetingCount} saved meetings, not just this one.
+              PrismAI is spotting patterns across {meetingCount} saved meetings, not just this one.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {insights.avgScore !== null && (
+            {avgScore !== null && (
               <span className="text-[11px] px-2.5 py-1 rounded-full"
                 style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.18)', color: '#86efac' }}>
-                avg {insights.avgScore}/100
+                avg {avgScore}/100
               </span>
             )}
             <span className="text-[11px] font-semibold" style={{ color: deltaColor }}>{deltaLabel}</span>
@@ -298,29 +319,29 @@ export default function CrossMeetingInsights({ history, onSelect }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 mt-3">
-          {insights.topOwners[0] && (
+          {topOwners[0] && (
             <span className="text-[10px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-              Most active owner: {insights.topOwners[0].owner}
+              Most active owner: {topOwners[0].owner}
             </span>
           )}
-          {insights.recurringThemes[0] && (
+          {recurringThemes[0] && (
             <span className="text-[10px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-              Recurring theme: {insights.recurringThemes[0].theme}
+              Recurring theme: {recurringThemes[0].theme}
             </span>
           )}
-          {insights.tenseMeetings > 0 && (
+          {tenseMeetings > 0 && (
             <span className="text-[10px] px-2.5 py-1 rounded-full"
               style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)', color: '#fca5a5' }}>
-              {insights.tenseMeetings} tense meeting{insights.tenseMeetings === 1 ? '' : 's'} in history
+              {tenseMeetings} tense meeting{tenseMeetings === 1 ? '' : 's'} in history
             </span>
           )}
-          {insights.recurringBlockers[0] && (
+          {recurringBlockers[0] && (
             <span className="text-[10px] px-2.5 py-1 rounded-full"
               style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)', color: '#fca5a5' }}>
               Recurring blocker signal detected
             </span>
           )}
-          {insights.ownershipDrift[0] && (
+          {ownershipDrift[0] && (
             <span className="text-[10px] px-2.5 py-1 rounded-full"
               style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)', color: '#7dd3fc' }}>
               Ownership drift detected
@@ -332,11 +353,34 @@ export default function CrossMeetingInsights({ history, onSelect }) {
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
           <div className="grid grid-cols-1 gap-3">
+            {recommendedActions.length > 0 && (
+              <div className="rounded-xl px-3.5 py-3"
+                style={{ background: 'rgba(14,165,233,0.04)', border: '1px solid rgba(14,165,233,0.12)' }}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-sky-300/80">Recommended Next Actions</p>
+                  <span className="text-[10px] text-gray-600">tap to inspect</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {recommendedActions.map((action) => (
+                    <button
+                      key={action.id}
+                      onClick={() => openCluster(action.title, action.description, action.meeting_ids || action.meetingIds || [])}
+                      className="text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
+                      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
+                    >
+                      <p className="text-sm font-medium text-white leading-snug">{action.title}</p>
+                      <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">{action.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-xl px-3 py-3"
                 style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.12)' }}>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-400/75">Momentum</p>
-                <p className="text-lg font-semibold text-white mt-1">{insights.latestScore ?? '—'}</p>
+                <p className="text-lg font-semibold text-white mt-1">{latestScore ?? '—'}</p>
                 <p className="text-[11px] text-gray-500 mt-1">latest health score</p>
               </div>
               <div className="rounded-xl px-3 py-3"
@@ -353,7 +397,7 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               </div>
             </div>
 
-            {(insights.ownershipDrift.length > 0 || insights.recurringHygieneIssues.length > 0 || insights.unresolvedDecisions.length > 0) && (
+            {(ownershipDrift.length > 0 || recurringHygieneIssues.length > 0 || unresolvedDecisions.length > 0) && (
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.12)' }}>
@@ -361,22 +405,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                     <p className="text-[11px] uppercase tracking-[0.18em] text-sky-300/80">Ownership Drift</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
-                  {insights.ownershipDrift.length > 0 ? (
+                  {ownershipDrift.length > 0 ? (
                     <div className="space-y-2 mt-2">
-                      {insights.ownershipDrift.map(({ owner, count, meetings }) => (
+                      {ownershipDrift.map(({ owner, count, meetings, meeting_ids: meetingIds, meetingIds: legacyMeetingIds }) => (
                         <button
                           key={owner}
-                          onClick={() => {
-                            const matches = history
-                              .filter((entry) => entry?.result)
-                              .filter((entry) => (entry.result?.action_items || []).some((item) => (item.owner || '').trim() === owner))
-                              .slice(0, 5)
-                            setFocusCluster({
-                              title: 'Meetings loading this owner repeatedly',
-                              subtitle: `${owner} appears on ${count} action items across ${meetings} meetings`,
-                              meetings: matches,
-                            })
-                          }}
+                          onClick={() => openCluster('Meetings loading this owner repeatedly', `${owner} appears on ${count} action items across ${meetings} meetings`, meetingIds || legacyMeetingIds || [])}
                           className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
                           style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
                         >
@@ -396,20 +430,20 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                     <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Action Hygiene</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
-                  {insights.recurringHygieneIssues.length > 0 ? (
+                  {recurringHygieneIssues.length > 0 ? (
                     <div className="space-y-2 mt-2">
-                      {insights.recurringHygieneIssues.map(({ meeting, missingOwners, missingDueDates }) => (
+                      {recurringHygieneIssues.map(({ meeting, meeting_id: meetingId, missingOwners, missingDueDates, missing_owners: missingOwnersSnake, missing_due_dates: missingDueDatesSnake }) => (
                         <button
-                          key={meeting.id}
-                          onClick={() => onSelect?.(meeting)}
+                          key={meeting?.id || meetingId}
+                          onClick={() => onSelect?.(meeting || meetingMap.get(meetingId))}
                           className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
                           style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
                         >
-                          <p className="text-sm text-white leading-snug">{meeting.title || 'Meeting'}</p>
+                          <p className="text-sm text-white leading-snug">{meeting?.title || meetingMap.get(meetingId)?.title || 'Meeting'}</p>
                           <p className="text-[11px] text-amber-300/80 mt-1">
-                            {missingOwners > 0 ? `${missingOwners} unowned` : '0 unowned'}
+                            {(missingOwners ?? missingOwnersSnake) > 0 ? `${missingOwners ?? missingOwnersSnake} unowned` : '0 unowned'}
                             {' · '}
-                            {missingDueDates > 0 ? `${missingDueDates} undated` : '0 undated'}
+                            {(missingDueDates ?? missingDueDatesSnake) > 0 ? `${missingDueDates ?? missingDueDatesSnake} undated` : '0 undated'}
                           </p>
                         </button>
                       ))}
@@ -425,25 +459,19 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                     <p className="text-[11px] uppercase tracking-[0.18em] text-violet-300/80">Unresolved Decisions</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
-                  {insights.unresolvedDecisions.length > 0 ? (
+                  {unresolvedDecisions.length > 0 ? (
                     <div className="space-y-2 mt-2">
-                      {insights.unresolvedDecisions.map((decision) => (
+                      {unresolvedDecisions.map((decision) => (
                         <button
                           key={decision.key}
-                          onClick={() => {
-                            setFocusCluster({
-                              title: 'Meetings revisiting this unresolved decision',
-                              subtitle: decision.latestTitle,
-                              meetings: decision.meetings,
-                            })
-                          }}
+                          onClick={() => openCluster('Meetings revisiting this unresolved decision', decision.latestTitle || decision.latest_title, decision.meeting_ids || decision.meetingIds || [])}
                           className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
                           style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
                         >
-                          <p className="text-sm text-white leading-snug">{decision.latestTitle}</p>
+                          <p className="text-sm text-white leading-snug">{decision.latestTitle || decision.latest_title}</p>
                           <p className="text-[11px] text-violet-300/80 mt-1">
                             {decision.count} meetings
-                            {decision.latestOwner ? ` · latest owner: ${decision.latestOwner}` : ''}
+                            {(decision.latestOwner || decision.latest_owner) ? ` · latest owner: ${decision.latestOwner || decision.latest_owner}` : ''}
                           </p>
                         </button>
                       ))}
@@ -455,7 +483,7 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               </div>
             )}
 
-            {(insights.recurringBlockers.length > 0 || insights.resurfacingDecisionThemes.length > 0) && (
+            {(recurringBlockers.length > 0 || resurfacingDecisionThemes.length > 0) && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.12)' }}>
@@ -463,28 +491,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                     <p className="text-[11px] uppercase tracking-[0.18em] text-rose-300/80">Recurring Blockers</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
-                  {insights.recurringBlockers.length > 0 ? (
+                  {recurringBlockers.length > 0 ? (
                     <div className="space-y-2 mt-2">
-                      {insights.recurringBlockers.map(({ snippet, count }) => (
+                      {recurringBlockers.map(({ snippet, count, meeting_ids: meetingIds, meetingIds: legacyMeetingIds }) => (
                         <button
                           key={snippet}
-                          onClick={() => {
-                            const matches = history
-                              .filter((entry) => entry?.result)
-                              .filter((entry) => {
-                                const summary = entry.result?.summary || ''
-                                const sentimentNotes = entry.result?.sentiment?.notes || ''
-                                const tasks = (entry.result?.action_items || []).map((item) => item.task || '').join(' ')
-                                const haystack = `${summary} ${sentimentNotes} ${tasks}`.toLowerCase()
-                                return haystack.includes(snippet.toLowerCase().replace(/\.\.\.$/, '').trim().slice(0, 24))
-                              })
-                              .slice(0, 5)
-                            setFocusCluster({
-                              title: 'Meetings behind this blocker',
-                              subtitle: snippet,
-                              meetings: matches,
-                            })
-                          }}
+                          onClick={() => openCluster('Meetings behind this blocker', snippet, meetingIds || legacyMeetingIds || [])}
                           className="w-full text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/5"
                           style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}
                         >
@@ -504,25 +516,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                     <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Decision Resurfacing</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
-                  {insights.resurfacingDecisionThemes.length > 0 ? (
+                  {resurfacingDecisionThemes.length > 0 ? (
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {insights.resurfacingDecisionThemes.map(({ theme, count }) => (
+                      {resurfacingDecisionThemes.map(({ theme, count, meeting_ids: meetingIds, meetingIds: legacyMeetingIds }) => (
                         <button
                           key={theme}
-                          onClick={() => {
-                            const matches = history
-                              .filter((entry) => entry?.result)
-                              .filter((entry) => {
-                                const decisionsText = (entry.result?.decisions || []).map((item) => item.decision || '').join(' ')
-                                return decisionsText.toLowerCase().includes(theme.toLowerCase())
-                              })
-                              .slice(0, 5)
-                            setFocusCluster({
-                              title: 'Meetings revisiting this decision theme',
-                              subtitle: theme,
-                              meetings: matches,
-                            })
-                          }}
+                          onClick={() => openCluster('Meetings revisiting this decision theme', theme, meetingIds || legacyMeetingIds || [])}
                           className="text-[11px] px-2.5 py-1 rounded-full"
                           style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.16)', color: '#fde68a' }}
                         >
@@ -578,12 +577,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               </div>
             )}
 
-            {insights.topOwners.length > 0 && (
+            {topOwners.length > 0 && (
               <div className="rounded-xl px-3.5 py-3"
                 style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Ownership Pattern</p>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {insights.topOwners.map(({ owner, count }) => (
+                  {topOwners.map(({ owner, count }) => (
                     <span
                       key={owner}
                       className="text-[11px] px-2.5 py-1 rounded-full"
@@ -596,12 +595,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               </div>
             )}
 
-            {insights.recurringThemes.length > 0 && (
+            {recurringThemes.length > 0 && (
               <div className="rounded-xl px-3.5 py-3"
                 style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Recurring Themes</p>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {insights.recurringThemes.map(({ theme, count }) => (
+                  {recurringThemes.map(({ theme, count }) => (
                     <span
                       key={theme}
                       className="text-[11px] px-2.5 py-1 rounded-full"
@@ -614,7 +613,7 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               </div>
             )}
 
-            {insights.recentDecisions.length > 0 && (
+            {recentDecisions.length > 0 && (
               <div className="rounded-xl px-3.5 py-3"
                 style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div className="flex items-center justify-between gap-2">
@@ -622,10 +621,10 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                   <span className="text-[10px] text-gray-600">tap to load meeting</span>
                 </div>
                 <div className="space-y-2 mt-2">
-                  {insights.recentDecisions.map((decision) => (
+                  {recentDecisions.map((decision) => (
                     <button
                       key={decision.id}
-                      onClick={() => onSelect?.(decision.meeting)}
+                      onClick={() => onSelect?.(decision.meeting || meetingMap.get(decision.meeting_id || decision.meetingId))}
                       className="w-full text-left rounded-xl px-3 py-2 transition-colors hover:bg-white/5"
                       style={{ border: '1px solid rgba(255,255,255,0.06)' }}
                     >

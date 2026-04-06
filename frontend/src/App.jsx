@@ -979,6 +979,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 export default function App() {
   const [authReady, setAuthReady] = useState(() => !supabase)
   const [authSession, setAuthSession] = useState(null)
+  const [crossMeetingInsights, setCrossMeetingInsights] = useState(null)
   const [transcript, setTranscript] = useState('')
   const [transcriptDrafts, setTranscriptDrafts] = useState({ paste: '', record: '', upload: '' })
   const [loading, setLoading] = useState(false)
@@ -1049,6 +1050,7 @@ export default function App() {
 
     if (!user) {
       setHistory([])
+      setCrossMeetingInsights(null)
       setInitialMessages([])
       setMeetingId(null)
       setShareToken(null)
@@ -1101,6 +1103,20 @@ export default function App() {
       .catch(() => {})
     })()
   }, [authReady, user, transcript, result, meetingId])
+
+  useEffect(() => {
+    if (!user || history.length < 2) {
+      setCrossMeetingInsights(null)
+      return
+    }
+
+    apiFetch('/insights')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && typeof data === 'object') setCrossMeetingInsights(data)
+      })
+      .catch(() => {})
+  }, [user, history])
 
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
@@ -2053,7 +2069,7 @@ export default function App() {
                 <ScoreTrendChart history={history} onSelect={loadFromHistory} />
               </Suspense>
               <Suspense fallback={null}>
-                <CrossMeetingInsights history={history} onSelect={loadFromHistory} />
+                <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
               </Suspense>
             </>
           )}
