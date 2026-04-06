@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import AsyncGroq
 
-from agents import orchestrator, summarizer, action_items, decisions, sentiment, email_drafter, calendar_suggester, health_score
 from auth import require_user_id, supabase
+from analysis_service import AGENT_MAP, AGENT_RESULT_KEY, build_analysis_transcript, run_full_analysis
 from storage_routes import router as storage_router
 
 app = FastAPI(title="Agentic Meeting Copilot")
@@ -49,28 +49,6 @@ def _extract_recall_error(resp: httpx.Response) -> str:
 
     text = (resp.text or "").strip()
     return text or f"Recall.ai request failed with status {resp.status_code}"
-
-
-AGENT_MAP = {
-    "summarizer": summarizer.run,
-    "action_items": action_items.run,
-    "decisions": decisions.run,
-    "sentiment": sentiment.run,
-    "email_drafter": email_drafter.run,
-    "calendar_suggester": calendar_suggester.run,
-    "health_score": health_score.run,
-}
-
-DEFAULT_RESULT = {
-    "summary": "",
-    "action_items": [],
-    "decisions": [],
-    "sentiment": {"overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": []},
-    "follow_up_email": {"subject": "", "body": ""},
-    "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": ""},
-    "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
-    "agents_run": [],
-}
 
 
 class AnalyzeRequest(BaseModel):
@@ -111,57 +89,8 @@ async def analyze(req: AnalyzeRequest):
     if not req.transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
-    transcript = req.transcript
-    if req.speakers:
-        lines = ["Meeting participants:"]
-        for s in req.speakers:
-            name = (s.get("name") or "").strip()
-            role = (s.get("role") or "").strip()
-            if name:
-                lines.append(f"  - {name}: {role}" if role else f"  - {name}")
-        transcript = "\n".join(lines) + "\n\n" + transcript
-
-    agents_to_run = await orchestrator.run_orchestrator(transcript)
-
-    # Run selected agents in parallel
-    valid_agents = [a for a in agents_to_run if a in AGENT_MAP]
-    tasks = [AGENT_MAP[agent](transcript) for agent in valid_agents]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    result = dict(DEFAULT_RESULT)
-    result["agents_run"] = valid_agents
-
-    for agent_name, agent_result in zip(valid_agents, results):
-        if isinstance(agent_result, Exception):
-            # Skip failed agents gracefully
-            continue
-        if agent_name == "summarizer":
-            result["summary"] = agent_result.get("summary", "")
-        elif agent_name == "action_items":
-            result["action_items"] = agent_result.get("action_items", [])
-        elif agent_name == "decisions":
-            result["decisions"] = agent_result.get("decisions", [])
-        elif agent_name == "sentiment":
-            result["sentiment"] = agent_result.get("sentiment", DEFAULT_RESULT["sentiment"])
-        elif agent_name == "email_drafter":
-            result["follow_up_email"] = agent_result.get("follow_up_email", DEFAULT_RESULT["follow_up_email"])
-        elif agent_name == "calendar_suggester":
-            result["calendar_suggestion"] = agent_result.get("calendar_suggestion", DEFAULT_RESULT["calendar_suggestion"])
-        elif agent_name == "health_score":
-            result["health_score"] = agent_result.get("health_score", DEFAULT_RESULT["health_score"])
-
-    return result
-
-
-AGENT_RESULT_KEY = {
-    "summarizer": "summary",
-    "action_items": "action_items",
-    "decisions": "decisions",
-    "sentiment": "sentiment",
-    "email_drafter": "follow_up_email",
-    "calendar_suggester": "calendar_suggestion",
-    "health_score": "health_score",
-}
+    transcript = build_analysis_transcript(req.transcript, req.speakers)
+    return await run_full_analysis(transcript)
 
 
 @app.post("/analyze-stream")
@@ -169,16 +98,8 @@ async def analyze_stream(req: AnalyzeRequest):
     if not req.transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
-    transcript = req.transcript
-    if req.speakers:
-        lines = ["Meeting participants:"]
-        for s in req.speakers:
-            name = (s.get("name") or "").strip()
-            role = (s.get("role") or "").strip()
-            if name:
-                lines.append(f"  - {name}: {role}" if role else f"  - {name}")
-        transcript = "\n".join(lines) + "\n\n" + transcript
-
+    transcript = build_analysis_transcript(req.transcript, req.speakers)
+    from agents import orchestrator
     agents_to_run = await orchestrator.run_orchestrator(transcript)
     valid_agents = [a for a in agents_to_run if a in AGENT_MAP]
 
@@ -410,33 +331,7 @@ async def _process_bot_transcript(bot_id: str):
 
         bot_store[bot_id]["transcript"] = transcript
 
-        # Run through existing agent pipeline
-        agents_to_run = await orchestrator.run_orchestrator(transcript)
-        valid_agents = [a for a in agents_to_run if a in AGENT_MAP]
-        tasks = [AGENT_MAP[agent](transcript) for agent in valid_agents]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        result = dict(DEFAULT_RESULT)
-        result["agents_run"] = valid_agents
-        for agent_name, agent_result in zip(valid_agents, results):
-            if isinstance(agent_result, Exception):
-                continue
-            if agent_name == "summarizer":
-                result["summary"] = agent_result.get("summary", "")
-            elif agent_name == "action_items":
-                result["action_items"] = agent_result.get("action_items", [])
-            elif agent_name == "decisions":
-                result["decisions"] = agent_result.get("decisions", [])
-            elif agent_name == "sentiment":
-                result["sentiment"] = agent_result.get("sentiment", DEFAULT_RESULT["sentiment"])
-            elif agent_name == "email_drafter":
-                result["follow_up_email"] = agent_result.get("follow_up_email", DEFAULT_RESULT["follow_up_email"])
-            elif agent_name == "calendar_suggester":
-                result["calendar_suggestion"] = agent_result.get("calendar_suggestion", DEFAULT_RESULT["calendar_suggestion"])
-            elif agent_name == "health_score":
-                result["health_score"] = agent_result.get("health_score", DEFAULT_RESULT["health_score"])
-
-        bot_store[bot_id]["result"] = result
+        bot_store[bot_id]["result"] = await run_full_analysis(transcript)
         bot_store[bot_id]["status"] = "done"
 
     except Exception as e:
