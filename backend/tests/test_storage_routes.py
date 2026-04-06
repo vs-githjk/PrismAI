@@ -185,7 +185,42 @@ class StorageRoutesTestCase(unittest.TestCase):
         response = self.client.get("/meetings")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([row["id"] for row in response.json()], [3, 1])
+        self.assertEqual(response.json(), [])
+
+    def test_get_meetings_filters_placeholder_results(self):
+        self.fake_db.tables["meetings"] = [
+            {
+                "id": 5,
+                "user_id": "user-123",
+                "date": "2026-04-05",
+                "title": "Placeholder",
+                "score": 0,
+                "transcript": "a",
+                "result": {
+                    "summary": "",
+                    "action_items": [],
+                    "decisions": [],
+                    "health_score": {"score": 0, "verdict": ""},
+                    "sentiment": {"notes": ""},
+                },
+                "share_token": None,
+            },
+            {
+                "id": 4,
+                "user_id": "user-123",
+                "date": "2026-04-04",
+                "title": "Real",
+                "score": 88,
+                "transcript": "b",
+                "result": {"summary": "A real summary"},
+                "share_token": None,
+            },
+        ]
+
+        response = self.client.get("/meetings")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["id"] for row in response.json()], [4])
 
     def test_save_meeting_attaches_user_id(self):
         payload = {
@@ -277,6 +312,45 @@ class StorageRoutesTestCase(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["meeting_count"], 1)
         self.assertEqual(payload["recommended_actions"], [])
+
+    def test_get_insights_ignores_placeholder_results(self):
+        self.fake_db.tables["meetings"] = [
+            {
+                "id": 2,
+                "user_id": "user-123",
+                "date": "2026-04-02",
+                "title": "Placeholder",
+                "score": 0,
+                "result": {
+                    "summary": "",
+                    "action_items": [],
+                    "decisions": [],
+                    "health_score": {"score": 0, "verdict": ""},
+                    "sentiment": {"notes": ""},
+                },
+            },
+            {
+                "id": 1,
+                "user_id": "user-123",
+                "date": "2026-04-01",
+                "title": "Useful",
+                "score": 91,
+                "result": {
+                    "summary": "All good",
+                    "action_items": [{"task": "Ship it", "owner": "Alex", "due": "Tomorrow"}],
+                    "decisions": [],
+                    "sentiment": {"overall": "positive", "notes": ""},
+                    "health_score": {"score": 91},
+                },
+            },
+        ]
+
+        response = self.client.get("/insights")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["meeting_count"], 1)
+        self.assertEqual(payload["avg_score"], 91)
 
     def test_share_link_is_public(self):
         self.fake_db.tables["meetings"] = [

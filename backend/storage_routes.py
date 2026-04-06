@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase
-from cross_meeting_service import derive_cross_meeting_insights
+from cross_meeting_service import derive_cross_meeting_insights, has_meaningful_result
 
 
 router = APIRouter(tags=["storage"])
@@ -45,7 +45,7 @@ async def get_meetings(q: str = Query(default=""), user_id: str = Depends(requir
     if q.strip():
         query = query.ilike("title", f"%{q}%")
     res = query.execute()
-    return res.data
+    return [entry for entry in res.data if has_meaningful_result(entry.get("result"))]
 
 
 @router.get("/insights")

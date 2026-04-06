@@ -346,6 +346,19 @@ function countNamedSpeakers(text = '') {
   return [...new Set(matches.map((m) => m.replace(/:$/, '').trim()))].length
 }
 
+function hasMeaningfulResult(result) {
+  if (!result || typeof result !== 'object') return false
+  if (typeof result.summary === 'string' && result.summary.trim()) return true
+  if (Array.isArray(result.action_items) && result.action_items.length > 0) return true
+  if (Array.isArray(result.decisions) && result.decisions.length > 0) return true
+  if (result.health_score?.verdict) return true
+  if ((result.health_score?.score ?? 0) > 0) return true
+  if (result.sentiment?.notes) return true
+  if (result.follow_up_email?.subject || result.follow_up_email?.body) return true
+  if (result.calendar_suggestion?.recommended || result.calendar_suggestion?.reason) return true
+  return false
+}
+
 function PrismStoryPanel({ transcript, result, loading, analysisTime }) {
   const stats = getTranscriptStats(transcript)
   const speakers = countNamedSpeakers(transcript)
@@ -630,7 +643,7 @@ function AgentPipelineLoader() {
       <div className="flex flex-col items-center gap-2 animate-fade-in-up card-delay-1">
         <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.4), rgba(255,255,255,0.15))' }}></div>
         <div className="text-xs text-gray-400 px-4 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)' }}>
-          refracting the meeting into 7 live intelligence streams
+          Refracting the meeting into 7 live intelligence streams
         </div>
         <div className="w-px h-8" style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)' }}></div>
       </div>
@@ -1061,8 +1074,9 @@ export default function App() {
 
     const shouldPreserveLocalWorkspace =
       !previousUser &&
+      !loading &&
       Boolean(transcript.trim()) &&
-      Boolean(result) &&
+      hasMeaningfulResult(result) &&
       !meetingId &&
       !INITIAL_SHARE_TOKEN
 
@@ -1085,9 +1099,10 @@ export default function App() {
       .then(r => (r.ok ? r.json() : []))
       .then(async data => {
         if (!Array.isArray(data)) return
-        setHistory(data)
-        if (data.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
-          const latest = data[0]
+        const validHistory = data.filter((entry) => hasMeaningfulResult(entry?.result))
+        setHistory(validHistory)
+        if (validHistory.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
+          const latest = validHistory[0]
           setTranscript(latest.transcript || '')
           setTranscriptDrafts((prev) => ({ ...prev, paste: latest.transcript || '' }))
           setResult(latest.result || null)
@@ -1340,8 +1355,9 @@ export default function App() {
       setShareToken(null)
       return null
     }
+    if (!hasMeaningfulResult(r)) return null
     sessionStorage.removeItem('prism_new_meeting')
-    const id = Date.now()
+    const id = (Date.now() * 1000) + Math.floor(Math.random() * 1000)
     const share_token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
     const entry = {
       id,
@@ -1512,6 +1528,7 @@ export default function App() {
       const decoder = new TextDecoder()
       let accumulated = { ...DEFAULT_RESULT }
       let buffer = ''
+      let successfulPayloads = 0
 
       let streamDone = false
       while (!streamDone) {
@@ -1532,6 +1549,9 @@ export default function App() {
               streamDone = true
               break
             }
+            if (!hasMeaningfulResult(accumulated) || successfulPayloads === 0) {
+              throw new Error('Analysis did not return usable results. Please try again.')
+            }
             const elapsed = ((Date.now() - analysisStartRef.current) / 1000).toFixed(1)
             setAnalysisTime(parseFloat(elapsed))
             setShowTimeSaved(true)
@@ -1543,6 +1563,9 @@ export default function App() {
           try {
             const chunk = JSON.parse(raw)
             accumulated = { ...accumulated, ...chunk }
+            if (Object.keys(chunk).some((key) => key !== 'agents_run')) {
+              successfulPayloads += 1
+            }
             if (runId === analysisRunIdRef.current) {
               setResult({ ...accumulated })
             }
@@ -1866,11 +1889,14 @@ export default function App() {
                       value={historySearch}
                       onChange={e => {
                         const q = e.target.value
-                        setHistorySearch(q)
-                        clearTimeout(historySearchDebounceRef.current)
-                        historySearchDebounceRef.current = setTimeout(async () => {
+                      setHistorySearch(q)
+                      clearTimeout(historySearchDebounceRef.current)
+                      historySearchDebounceRef.current = setTimeout(async () => {
                           const res = await apiFetch(`/meetings?q=${encodeURIComponent(q)}`).catch(() => null)
-                          if (res?.ok) { const d = await res.json(); setHistory(Array.isArray(d) ? d : []) }
+                          if (res?.ok) {
+                            const d = await res.json()
+                            setHistory(Array.isArray(d) ? d.filter((entry) => hasMeaningfulResult(entry?.result)) : [])
+                          }
                         }, 300)
                       }}
                       placeholder="Search meetings..."

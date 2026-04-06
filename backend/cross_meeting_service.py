@@ -50,9 +50,35 @@ def build_decision_key(text: str) -> str:
     return " ".join(extract_significant_terms(text, 4)[:3])
 
 
+def has_meaningful_result(result: dict | None) -> bool:
+    if not result or not isinstance(result, dict):
+        return False
+    if isinstance(result.get("summary"), str) and result["summary"].strip():
+        return True
+    if isinstance(result.get("action_items"), list) and len(result["action_items"]) > 0:
+        return True
+    if isinstance(result.get("decisions"), list) and len(result["decisions"]) > 0:
+        return True
+    health = result.get("health_score") or {}
+    if health.get("verdict"):
+        return True
+    if (health.get("score") or 0) > 0:
+        return True
+    sentiment = result.get("sentiment") or {}
+    if sentiment.get("notes"):
+        return True
+    follow_up = result.get("follow_up_email") or {}
+    if follow_up.get("subject") or follow_up.get("body"):
+        return True
+    calendar = result.get("calendar_suggestion") or {}
+    if calendar.get("recommended") or calendar.get("reason"):
+        return True
+    return False
+
+
 def derive_cross_meeting_insights(history: list[dict]) -> dict:
     meetings = sorted(
-        [entry for entry in history if entry.get("result")],
+        [entry for entry in history if has_meaningful_result(entry.get("result"))],
         key=lambda entry: entry.get("date") or "",
         reverse=True,
     )
