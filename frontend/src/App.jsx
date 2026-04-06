@@ -798,6 +798,12 @@ function LandingPrismHero() {
     'Lisa: I’ll send the client update by Wednesday.',
   ]
 
+  const incomingFragments = [
+    { label: 'Blocker', value: 'Specs still waiting on approval' },
+    { label: 'Decision', value: 'Push analytics to Q3' },
+    { label: 'Owner', value: 'Lisa handles client update' },
+  ]
+
   const outputs = [
     { label: 'Decision', value: 'Analytics moves to Q3', text: '#fde047' },
     { label: 'Owner', value: 'Lisa owns client update', text: '#86efac' },
@@ -805,19 +811,28 @@ function LandingPrismHero() {
     { label: 'Follow-up', value: 'Schedule in 2 weeks', text: '#7dd3fc' },
   ]
 
+  const memorySignals = [
+    { title: 'Recurring blocker', body: 'Approval delays surfaced in 3 meetings', color: '#7dd3fc' },
+    { title: 'Decision memory', body: 'Budget timeline changed twice this month', color: '#fde047' },
+    { title: 'Ownership drift', body: 'Lisa is carrying most follow-through work', color: '#d8b4fe' },
+  ]
+
   return (
     <div className="relative w-full max-w-6xl mx-auto mt-1 mb-4 px-2 landing-prism-hero">
-      <div className="grid lg:grid-cols-[1.1fr_100px_1.1fr] gap-3 lg:gap-4 items-center">
-        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
+      <div className="absolute inset-x-[16%] top-[18%] h-40 rounded-full blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.12) 0%, rgba(168,85,247,0.08) 40%, transparent 72%)' }} />
+
+      <div className="grid lg:grid-cols-[1.08fr_124px_1.12fr] gap-3 lg:gap-4 items-center relative">
+        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up relative overflow-hidden" style={{ animationDelay: '0.18s' }}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Raw meeting input</p>
-              <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Transcript enters the prism</h3>
+              <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Conversation enters the prism</h3>
             </div>
             <span className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400">Unstructured</span>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2.5 relative z-10">
             {transcriptLines.map((line, i) => (
               <div
                 key={line}
@@ -829,14 +844,31 @@ function LandingPrismHero() {
             ))}
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 relative z-10">
             <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Multiple speakers</span>
             <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions buried in conversation</span>
+          </div>
+
+          <div className="hidden lg:flex flex-col gap-2 absolute -right-8 top-10 w-52 pointer-events-none">
+            {incomingFragments.map((item, i) => (
+              <div
+                key={item.label}
+                className="landing-fragment-card rounded-2xl px-3.5 py-2.5"
+                style={{
+                  animationDelay: `${0.35 + i * 0.08}s`,
+                  transform: `translateX(${i * 10}px) rotate(${i % 2 === 0 ? -5 : 4}deg)`,
+                }}
+              >
+                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                <p className="text-[12px] text-white/90 mt-1 leading-snug">{item.value}</p>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="hidden lg:flex items-center justify-center relative h-[300px] landing-prism-center animate-fade-in-up" style={{ animationDelay: '0.26s' }}>
           <div className="landing-prism-column">
+            <div className="landing-prism-halo" />
             <div className="landing-prism-beam landing-prism-beam-in" />
             <div className="landing-prism-core">
               <div className="landing-prism-facet" />
@@ -845,7 +877,7 @@ function LandingPrismHero() {
           </div>
         </div>
 
-        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up" style={{ animationDelay: '0.34s' }}>
+        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up relative overflow-hidden" style={{ animationDelay: '0.34s' }}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Structured intelligence</p>
@@ -854,7 +886,7 @@ function LandingPrismHero() {
             <span className="text-[11px] px-2.5 py-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">Streaming</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 relative z-10">
             {outputs.map((item, i) => (
               <div
                 key={item.label}
@@ -867,6 +899,22 @@ function LandingPrismHero() {
                 </div>
                 <p className="text-sm font-semibold leading-snug" style={{ color: item.text }}>{item.value}</p>
                 <div className="mt-3 h-1 rounded-full" style={{ background: `${item.text}33` }} />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5 relative z-10">
+            {memorySignals.map((item, i) => (
+              <div
+                key={item.title}
+                className="landing-memory-card rounded-2xl px-3.5 py-3 animate-fade-in-up"
+                style={{ animationDelay: `${0.52 + i * 0.06}s` }}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: item.color, boxShadow: `0 0 12px ${item.color}` }} />
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">{item.title}</p>
+                </div>
+                <p className="text-[12px] text-slate-200 leading-relaxed">{item.body}</p>
               </div>
             ))}
           </div>
