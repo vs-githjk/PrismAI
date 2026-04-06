@@ -1987,13 +1987,28 @@ export default function App() {
                   {user ? 'Signed in · sync enabled' : 'Signed out · local-only workspace'}
                 </span>
               </div>
+              {!user && !isDemoMode && (
+                <div className="mt-3">
+                  <button
+                    onClick={signInWithGoogle}
+                    className="inline-flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-[1.02]"
+                    style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)', color: '#7dd3fc' }}>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Sign in to save this workspace
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Health trend chart — visible when 2+ meetings in history */}
-          <Suspense fallback={null}>
-            <ScoreTrendChart history={history} onSelect={loadFromHistory} />
-          </Suspense>
+          {user && history.length > 1 && (
+            <Suspense fallback={null}>
+              <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+            </Suspense>
+          )}
 
           {/* Error */}
           {error && <ErrorCard message={error} onRetry={() => runAnalysis([])} />}
@@ -2369,11 +2384,19 @@ export default function App() {
                     </span>
                   )}
                   {!user && (
-                    <span
-                      className="text-[11px] px-2.5 py-1 rounded-full"
-                      style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.18)', color: '#fcd34d' }}>
-                      Local only · sign in to save history and share links
-                    </span>
+                    <>
+                      <span
+                        className="text-[11px] px-2.5 py-1 rounded-full"
+                        style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.18)', color: '#fcd34d' }}>
+                        Local only
+                      </span>
+                      <button
+                        onClick={signInWithGoogle}
+                        className="text-[11px] px-2.5 py-1 rounded-full font-medium transition-all hover:scale-[1.02]"
+                        style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)', color: '#7dd3fc' }}>
+                        Sign in to save
+                      </button>
+                    </>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-3">
@@ -2557,11 +2580,19 @@ export default function App() {
                     <span className="text-[11px] text-gray-600">{analysisTime}s · ~{Math.round(analysisTime * 1.8 + 20)} min saved</span>
                   )}
                   {!user && (
-                    <span
-                      className="text-[11px] px-2.5 py-1 rounded-full"
-                      style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.18)', color: '#fcd34d' }}>
-                      Local only
-                    </span>
+                    <>
+                      <span
+                        className="text-[11px] px-2.5 py-1 rounded-full"
+                        style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.18)', color: '#fcd34d' }}>
+                        Local only
+                      </span>
+                      <button
+                        onClick={signInWithGoogle}
+                        className="text-[11px] px-2.5 py-1 rounded-full font-medium transition-all hover:scale-[1.02]"
+                        style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)', color: '#7dd3fc' }}>
+                        Sign in to save
+                      </button>
+                    </>
                   )}
                 </div>
                 <div className="flex items-center gap-2 ml-2 flex-shrink-0">
