@@ -12,6 +12,12 @@ const STOP_WORDS = new Set([
   'under', 'today', 'tomorrow', 'yesterday', 'week', 'weeks', 'month', 'months',
 ])
 
+const BLOCKER_KEYWORDS = [
+  'blocked', 'blocker', 'delay', 'delayed', 'risk', 'risky', 'concern', 'concerns',
+  'worried', 'worry', 'issue', 'issues', 'stuck', 'slip', 'slipping', 'outage',
+  'degraded', 'preventable', 'missed', 'overcommit', 'overcommitting', 'dependency',
+]
+
 function formatMeetingDate(value) {
   if (!value) return 'Unknown date'
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -22,6 +28,24 @@ function normalizeWord(word) {
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '')
     .trim()
+}
+
+function extractSignificantTerms(text, minimumLength = 4) {
+  return (text || '')
+    .split(/\s+/)
+    .map(normalizeWord)
+    .filter((word) => word.length >= minimumLength && !STOP_WORDS.has(word))
+}
+
+function looksLikeBlocker(text) {
+  const value = (text || '').toLowerCase()
+  return BLOCKER_KEYWORDS.some((keyword) => value.includes(keyword))
+}
+
+function buildBlockerSnippet(text) {
+  const clean = (text || '').replace(/\s+/g, ' ').trim()
+  if (!clean) return ''
+  return clean.length > 88 ? `${clean.slice(0, 85).trim()}...` : clean
 }
 
 function deriveInsights(history) {
@@ -39,7 +63,9 @@ function deriveInsights(history) {
 
   const ownerCounts = new Map()
   const themeCounts = new Map()
+  const decisionThemeCounts = new Map()
   const decisionMemory = []
+  const blockerCounts = new Map()
   let tenseMeetings = 0
 
   meetings.forEach((entry) => {
@@ -57,19 +83,22 @@ function deriveInsights(history) {
       if (owner) ownerCounts.set(owner, (ownerCounts.get(owner) || 0) + 1)
 
       const text = `${item.task || ''} ${item.owner || ''} ${item.due || ''}`
-      text.split(/\s+/).forEach((token) => {
-        const word = normalizeWord(token)
-        if (word.length < 4 || STOP_WORDS.has(word)) return
+      extractSignificantTerms(text).forEach((word) => {
         themeCounts.set(word, (themeCounts.get(word) || 0) + 1)
       })
+
+      if (looksLikeBlocker(item.task || '')) {
+        const snippet = buildBlockerSnippet(item.task || '')
+        if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
+      }
     })
 
     decisions.forEach((decision) => {
       const text = decision.decision || ''
-      text.split(/\s+/).forEach((token) => {
-        const word = normalizeWord(token)
-        if (word.length < 4 || STOP_WORDS.has(word)) return
+      const decisionTerms = extractSignificantTerms(text)
+      decisionTerms.forEach((word) => {
         themeCounts.set(word, (themeCounts.get(word) || 0) + 1)
+        decisionThemeCounts.set(word, (decisionThemeCounts.get(word) || 0) + 1)
       })
 
       decisionMemory.push({
@@ -83,11 +112,19 @@ function deriveInsights(history) {
     })
 
     const summaryText = result.summary || ''
-    summaryText.split(/\s+/).forEach((token) => {
-      const word = normalizeWord(token)
-      if (word.length < 5 || STOP_WORDS.has(word)) return
+    extractSignificantTerms(summaryText, 5).forEach((word) => {
       themeCounts.set(word, (themeCounts.get(word) || 0) + 1)
     })
+
+    if (looksLikeBlocker(summaryText)) {
+      const snippet = buildBlockerSnippet(summaryText)
+      if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
+    }
+
+    if (looksLikeBlocker(sentiment.notes || '')) {
+      const snippet = buildBlockerSnippet(sentiment.notes || '')
+      if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
+    }
   })
 
   const topOwners = [...ownerCounts.entries()]
@@ -98,6 +135,17 @@ function deriveInsights(history) {
   const recurringThemes = [...themeCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4)
+    .map(([theme, count]) => ({ theme, count }))
+
+  const recurringBlockers = [...blockerCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([snippet, count]) => ({ snippet, count }))
+
+  const resurfacingDecisionThemes = [...decisionThemeCounts.entries()]
+    .filter(([, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
     .map(([theme, count]) => ({ theme, count }))
 
   const recentDecisions = decisionMemory
@@ -115,6 +163,8 @@ function deriveInsights(history) {
     tenseMeetings,
     topOwners,
     recurringThemes,
+    recurringBlockers,
+    resurfacingDecisionThemes,
     recentDecisions,
   }
 }
@@ -195,6 +245,12 @@ export default function CrossMeetingInsights({ history, onSelect }) {
               {insights.tenseMeetings} tense meeting{insights.tenseMeetings === 1 ? '' : 's'} in history
             </span>
           )}
+          {insights.recurringBlockers[0] && (
+            <span className="text-[10px] px-2.5 py-1 rounded-full"
+              style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)', color: '#fca5a5' }}>
+              Recurring blocker signal detected
+            </span>
+          )}
         </div>
       </button>
 
@@ -221,6 +277,47 @@ export default function CrossMeetingInsights({ history, onSelect }) {
                 <p className="text-[11px] text-gray-500 mt-1">recent decisions tracked</p>
               </div>
             </div>
+
+            {(insights.recurringBlockers.length > 0 || insights.resurfacingDecisionThemes.length > 0) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl px-3.5 py-3"
+                  style={{ background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.12)' }}>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-rose-300/80">Recurring Blockers</p>
+                  {insights.recurringBlockers.length > 0 ? (
+                    <div className="space-y-2 mt-2">
+                      {insights.recurringBlockers.map(({ snippet, count }) => (
+                        <div key={snippet} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.025)' }}>
+                          <p className="text-sm text-white leading-snug">{snippet}</p>
+                          <p className="text-[11px] text-rose-300/80 mt-1">surfaced {count} time{count === 1 ? '' : 's'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-500 mt-2">No repeated blockers are surfacing yet.</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl px-3.5 py-3"
+                  style={{ background: 'rgba(250,204,21,0.05)', border: '1px solid rgba(250,204,21,0.12)' }}>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Decision Resurfacing</p>
+                  {insights.resurfacingDecisionThemes.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {insights.resurfacingDecisionThemes.map(({ theme, count }) => (
+                        <span
+                          key={theme}
+                          className="text-[11px] px-2.5 py-1 rounded-full"
+                          style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.16)', color: '#fde68a' }}
+                        >
+                          {theme} · {count} mentions
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-500 mt-2">Recent decisions are not repeating in a concerning way.</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {insights.topOwners.length > 0 && (
               <div className="rounded-xl px-3.5 py-3"
