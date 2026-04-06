@@ -1035,7 +1035,10 @@ export default function App() {
     if (!user) {
       setHistory([])
       setInitialMessages([])
+      setMeetingId(null)
       setShareToken(null)
+      setShowHistory(false)
+      setShareCopied(false)
       return
     }
     apiFetch('/meetings')
@@ -1972,7 +1975,7 @@ export default function App() {
                   </span>
                 )}
                 <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                  {user ? 'Signed in · sync enabled' : 'Sign in to sync history'}
+                  {user ? 'Signed in · sync enabled' : 'Signed out · local-only workspace'}
                 </span>
               </div>
             </div>
@@ -2345,11 +2348,18 @@ export default function App() {
               <PrismSignatureScene transcript={transcript} result={result} loading={false} />
               {/* Results header strip */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <AgentTags agents={result.agents_run || []} />
                   {analysisTime && (
                     <span className="text-[11px] text-gray-600">
                       {analysisTime}s · ~{Math.round(analysisTime * 1.8 + 20)} min saved
+                    </span>
+                  )}
+                  {!user && (
+                    <span
+                      className="text-[11px] px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.18)', color: '#fcd34d' }}>
+                      Local only · sign in to save history and share links
                     </span>
                   )}
                 </div>
@@ -2530,6 +2540,13 @@ export default function App() {
                   <AgentTags agents={result.agents_run || []} />
                   {analysisTime && (
                     <span className="text-[11px] text-gray-600">{analysisTime}s · ~{Math.round(analysisTime * 1.8 + 20)} min saved</span>
+                  )}
+                  {!user && (
+                    <span
+                      className="text-[11px] px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.18)', color: '#fcd34d' }}>
+                      Local only
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 ml-2 flex-shrink-0">
