@@ -1040,66 +1040,6 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         ))}
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-4 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
-        {[
-          {
-            title: 'Sign in and sync',
-            body: 'Private meeting history',
-            accent: 'rgba(14,165,233,0.16)',
-            border: 'rgba(14,165,233,0.28)',
-            text: '#7dd3fc',
-            icon: '↗',
-          },
-          {
-            title: 'Join live meetings',
-            body: 'Bot joins and returns with analysis',
-            accent: 'rgba(16,185,129,0.15)',
-            border: 'rgba(16,185,129,0.26)',
-            text: '#86efac',
-            icon: '◌',
-          },
-          {
-            title: 'Cross-meeting memory',
-            body: 'Recurring blockers and decisions',
-            accent: 'rgba(168,85,247,0.15)',
-            border: 'rgba(168,85,247,0.26)',
-            text: '#d8b4fe',
-            icon: '≈',
-          },
-          {
-            title: 'Export and share',
-            body: 'Calendar, email, Slack, Notion',
-            accent: 'rgba(249,115,22,0.15)',
-            border: 'rgba(249,115,22,0.26)',
-            text: '#fdba74',
-            icon: '→',
-          },
-        ].map((item) => (
-          <div
-            key={item.title}
-            className="rounded-[22px] px-4 py-2.5 landing-capability-card"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 14px 34px rgba(2,132,199,0.05)',
-            }}
-          >
-            <div className="flex items-center gap-3">
-              <span
-                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold flex-shrink-0"
-                style={{ background: item.accent, border: `1px solid ${item.border}`, color: item.text }}
-              >
-                {item.icon}
-              </span>
-              <div className="min-w-0">
-                <h3 className="text-[13px] font-semibold text-white leading-tight">{item.title}</h3>
-                <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5 truncate">{item.body}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Agent grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl landing-agent-grid" style={{ animationDelay: '0.34s' }}>
         {AGENTS_META.map((a, i) => (
