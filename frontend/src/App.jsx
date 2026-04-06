@@ -934,7 +934,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       {/* Headline */}
       <div className="text-center mb-2 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-[3.05rem] sm:text-[4.2rem] lg:text-[4.65rem] xl:text-[4.9rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
+        <h1 className="text-[2.95rem] sm:text-[4.05rem] lg:text-[4.45rem] xl:text-[4.72rem] font-bold text-white leading-[0.91] mb-2 tracking-tight">
           Meetings in.<br />
           <span className="gradient-text">Clarity that lasts.</span>
         </h1>
@@ -964,7 +964,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       <LandingPrismHero />
 
       {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-3 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-2 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
           className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98] landing-primary-cta"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
@@ -980,13 +980,13 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </button>
       </div>
 
-      <div className="mb-3 animate-fade-in-up relative z-10 landing-cta-bridge" style={{ animationDelay: '0.26s' }}>
+      <div className="mb-2 animate-fade-in-up relative z-10 landing-cta-bridge" style={{ animationDelay: '0.26s' }}>
         <p className="text-[13px] sm:text-[14px] text-gray-500 text-center max-w-2xl mx-auto leading-relaxed">
           PrismAI keeps decisions, owners, blockers, and follow-up visible so the next meeting starts with context, not catch-up.
         </p>
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-3 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
+      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-2 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
         {[
           {
             title: 'Sign in and sync',
