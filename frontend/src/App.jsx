@@ -810,7 +810,7 @@ function LandingPrismHero() {
       <div className="absolute inset-x-[16%] top-[18%] h-40 rounded-full blur-3xl pointer-events-none"
         style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.12) 0%, rgba(168,85,247,0.08) 40%, transparent 72%)' }} />
 
-      <div className="grid lg:grid-cols-[1.08fr_124px_1.12fr] gap-3 lg:gap-4 items-center relative">
+      <div className="grid lg:grid-cols-[1fr_112px_1fr] gap-3 lg:gap-4 items-center relative">
         <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up relative overflow-hidden" style={{ animationDelay: '0.18s' }}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
@@ -875,11 +875,10 @@ function LandingPrismHero() {
             ))}
           </div>
 
-          <div className="mt-3 rounded-2xl px-4 py-3 border border-white/8 bg-white/[0.03] relative z-10">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Living meeting memory</p>
-            <p className="text-[13px] text-slate-200 leading-relaxed mt-1">
-              PrismAI remembers recurring blockers, resurfacing decisions, and ownership drift so the next meeting starts with context, not guesswork.
-            </p>
+          <div className="mt-3 flex flex-wrap gap-2 relative z-10">
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions stay visible</span>
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Owners don’t get lost</span>
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Follow-up leaves the meeting</span>
           </div>
         </div>
       </div>
@@ -935,7 +934,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       {/* Headline */}
       <div className="text-center mb-2 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-[3.15rem] sm:text-[4.35rem] lg:text-[4.85rem] xl:text-[5.1rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
+        <h1 className="text-[3.05rem] sm:text-[4.2rem] lg:text-[4.65rem] xl:text-[4.9rem] font-bold text-white leading-[0.92] mb-2 tracking-tight">
           Meetings in.<br />
           <span className="gradient-text">Clarity that lasts.</span>
         </h1>
@@ -965,7 +964,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       <LandingPrismHero />
 
       {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-3 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
         <button onClick={onDemo}
           className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98] landing-primary-cta"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
@@ -979,6 +978,66 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
           Use my own transcript
         </button>
+      </div>
+
+      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-3 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
+        {[
+          {
+            title: 'Sign in and sync',
+            body: 'Private meeting history',
+            accent: 'rgba(14,165,233,0.16)',
+            border: 'rgba(14,165,233,0.28)',
+            text: '#7dd3fc',
+            icon: '↗',
+          },
+          {
+            title: 'Join live meetings',
+            body: 'Bot joins and analyzes on finish',
+            accent: 'rgba(16,185,129,0.15)',
+            border: 'rgba(16,185,129,0.26)',
+            text: '#86efac',
+            icon: '◌',
+          },
+          {
+            title: 'Cross-meeting memory',
+            body: 'Recurring blockers and decisions',
+            accent: 'rgba(168,85,247,0.15)',
+            border: 'rgba(168,85,247,0.26)',
+            text: '#d8b4fe',
+            icon: '≈',
+          },
+          {
+            title: 'Export and share',
+            body: 'Calendar, email, Slack, Notion',
+            accent: 'rgba(249,115,22,0.15)',
+            border: 'rgba(249,115,22,0.26)',
+            text: '#fdba74',
+            icon: '→',
+          },
+        ].map((item) => (
+          <div
+            key={item.title}
+            className="rounded-[22px] px-4 py-2.5 landing-capability-card"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 14px 34px rgba(2,132,199,0.05)',
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold flex-shrink-0"
+                style={{ background: item.accent, border: `1px solid ${item.border}`, color: item.text }}
+              >
+                {item.icon}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-[13px] font-semibold text-white leading-tight">{item.title}</h3>
+                <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5 truncate">{item.body}</p>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-4 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
