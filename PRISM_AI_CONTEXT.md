@@ -361,3 +361,67 @@ async def run(transcript: str) -> dict:
 9. Add to `AGENT_CONFIG` in `AgentTags.jsx` with ROYGBIV color
 10. Create `YournameCard.jsx` in `frontend/src/components/`
 11. Import and place card in `App.jsx` (both desktop and mobile layouts)
+
+---
+
+## Google Calendar Integration (built, partially working)
+
+### What was built
+- `backend/calendar_routes.py` — `POST /calendar/connect`, `GET /calendar/events`, `GET /calendar/status`, `DELETE /calendar/disconnect`
+- `supabase/calendar_migration.sql` — `user_settings` table (run this in Supabase SQL editor before using calendar features — **already run**)
+- `frontend/src/components/UpcomingMeetings.jsx` — panel in Join tab showing upcoming events with meeting links; star/mark events for auto-join
+- `IntegrationsModal.jsx` — Calendar tab with connect/disconnect UI and auto-join mode selector
+- `App.jsx` — `calendarConnected` state, `connectGoogleCalendar()`, `disconnectCalendar()`, auto-join polling effect, auto-join prompt toast
+
+### Auto-join modes (stored in `localStorage` as `prism_autojoin`)
+- `off` (default) — nothing automatic
+- `ask` — toast prompt when meeting starts within 5 min
+- `auto` — bot joins automatically at ≤2 min
+- `marked` — auto-join only starred events (stars stored in `localStorage` as `prism_marked_events`)
+
+### Workspace declutter (done)
+- Removed hero blurb card (eyebrow, H1, 4 status pills)
+- Removed "Input Quality" nested box (duplicate stats + patronizing copy)
+- Replaced with a single slim `Meeting workspace` header
+
+### Calendar connect — BROKEN, needs debugging
+
+**Symptom:** After OAuth flow completes, Calendar tab still shows "Connect Google Calendar" — `calendarConnected` stays false.
+
+**Root cause (best guess):** Supabase does not reliably return `provider_token` in the session when the user is already signed in and re-auths for a new scope. `provider_token` is null → `trySaveProviderToken()` exits early → `/calendar/connect` is never called → backend never stores the token.
+
+**What was tried:**
+1. Check `provider_token` in `onAuthStateChange` only → didn't work
+2. Check in both `getSession()` and `onAuthStateChange` → didn't work
+3. Combined calendar scope into the main `signInWithGoogle` flow with `prompt: consent` → still shows "Connect" button
+
+**Required env vars on Render (must be set):**
+- `GOOGLE_CLIENT_ID` — from Google Cloud Console OAuth credentials
+- `GOOGLE_CLIENT_SECRET` — same
+
+**Required Supabase config:**
+- Google OAuth scopes must include `https://www.googleapis.com/auth/calendar.readonly`
+- Test user (the developer's email) must be added in Google Cloud → APIs & Services → OAuth consent screen → Audience → Test users
+
+**Recommended next debugging step:**
+Add a temporary `console.log` in `trySaveProviderToken` to log `session?.provider_token` and see if it's null or present. Specifically:
+
+```javascript
+const trySaveProviderToken = (session) => {
+  console.log('[calendar] provider_token:', session?.provider_token, 'refresh:', session?.provider_refresh_token)
+  if (!session?.provider_token) return
+  ...
+}
+```
+
+If `provider_token` is always null, the fix is to NOT go through Supabase for calendar OAuth. Instead:
+- Use a direct Google OAuth PKCE flow for calendar (separate from Supabase sign-in)
+- Store the returned tokens directly
+- This avoids Supabase's session management entirely for the calendar token
+
+**Files involved:**
+- `frontend/src/App.jsx` — `trySaveProviderToken`, `signInWithGoogle`, `connectGoogleCalendar`, `calendarConnected` state
+- `frontend/src/components/IntegrationsModal.jsx` — Calendar tab UI
+- `frontend/src/components/UpcomingMeetings.jsx` — events panel
+- `backend/calendar_routes.py` — all calendar API routes
+- `supabase/calendar_migration.sql` — already applied
