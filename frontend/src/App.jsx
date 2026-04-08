@@ -1181,6 +1181,8 @@ export default function App() {
   const [historySearch, setHistorySearch] = useState('')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [mdCopied, setMdCopied] = useState(false)
+  const [calendarConnected, setCalendarConnected] = useState(false)
+  const [nextUpcomingMeeting, setNextUpcomingMeeting] = useState(null)
   const historySearchDebounceRef = useRef(null)
   const previousUserRef = useRef(null)
   const user = authSession?.user || null
@@ -1320,12 +1322,10 @@ export default function App() {
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
-  const [calendarConnected, setCalendarConnected] = useState(false)
   const [autoJoinSetting, setAutoJoinSetting] = useState(
     () => localStorage.getItem('prism_autojoin') || 'off'
   )
   const [autoJoinPrompt, setAutoJoinPrompt] = useState(null) // { title, url, minsUntil }
-  const [nextUpcomingMeeting, setNextUpcomingMeeting] = useState(null)
   const autoJoinFiredRef = useRef(new Set()) // event IDs already acted on this session
   const [workspaceToast, setWorkspaceToast] = useState(null)
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
