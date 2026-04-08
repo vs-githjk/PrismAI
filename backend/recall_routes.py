@@ -98,10 +98,12 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["error"] = "Failed to fetch transcript from Recall.ai"
             return
 
-        transcript = _transcript_from_recall_words(resp.json())
+        raw = resp.json()
+        print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:300]}")
+        transcript = _transcript_from_recall_words(raw)
         if not transcript.strip():
             bot_store[bot_id]["status"] = "error"
-            bot_store[bot_id]["error"] = "No transcript content found"
+            bot_store[bot_id]["error"] = f"No transcript content found (raw had {len(raw) if isinstance(raw, list) else type(raw).__name__} items)"
             return
 
         bot_store[bot_id]["transcript"] = transcript
@@ -132,6 +134,7 @@ async def join_meeting(req: JoinMeetingRequest):
                 "meeting_url": req.meeting_url,
                 "bot_name": "PrismAI",
                 "webhook_url": webhook_url,
+                "transcription_options": {"provider": "meeting_captions"},
             },
             timeout=15,
         )
@@ -187,9 +190,14 @@ async def bot_status(bot_id: str):
     recall_status = recall_data.get("status_changes", [{}])[-1].get("code", "") if recall_data.get("status_changes") else ""
     our_status = STATUS_MAP.get(recall_status, bot_store.get(bot_id, {}).get("status", "joining"))
 
-    if recall_status in ("call_ended", "done") and bot_id not in bot_store:
-        bot_store[bot_id] = {"status": "processing", "result": None, "error": None}
-        asyncio.create_task(_process_bot_transcript(bot_id))
+    if recall_status in ("call_ended", "done"):
+        if bot_id not in bot_store:
+            bot_store[bot_id] = {"status": "processing", "result": None, "error": None}
+            asyncio.create_task(_process_bot_transcript(bot_id))
+        elif bot_store[bot_id].get("status") not in ("processing", "done", "error"):
+            # Webhook never fired — trigger processing via polling fallback
+            bot_store[bot_id]["status"] = "processing"
+            asyncio.create_task(_process_bot_transcript(bot_id))
 
     entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None})
     # Don't let Recall's "done" override our internal "processing" — our analysis may still be running
