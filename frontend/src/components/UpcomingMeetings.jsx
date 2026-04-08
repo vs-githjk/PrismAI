@@ -98,7 +98,18 @@ export default function UpcomingMeetings({ onJoin }) {
 
   // Only show events with meeting links (others aren't actionable here)
   const joinable = events.filter(e => e.has_meeting_link)
-  if (joinable.length === 0) return null
+  if (joinable.length === 0) return (
+    <div className="rounded-xl px-3 py-3"
+      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex items-center gap-2">
+        <div className="w-3 h-3 rounded-full" style={{ background: 'rgba(148,163,184,0.18)' }} />
+        <span className="text-[11px] font-medium text-gray-400">Upcoming meetings</span>
+      </div>
+      <p className="text-[11px] text-gray-500 mt-2">
+        No upcoming meetings with supported join links right now.
+      </p>
+    </div>
+  )
 
   return (
     <div className="rounded-xl overflow-hidden"
