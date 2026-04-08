@@ -134,7 +134,6 @@ async def join_meeting(req: JoinMeetingRequest):
                 "meeting_url": req.meeting_url,
                 "bot_name": "PrismAI",
                 "webhook_url": webhook_url,
-                "transcription_options": {"provider": "meeting_captions"},
             },
             timeout=15,
         )
