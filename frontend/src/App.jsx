@@ -360,6 +360,38 @@ function hasMeaningfulResult(result) {
   return false
 }
 
+function formatRelativeMeetingDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const diffMs = now - date
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+
+  if (Math.abs(diffHours) < 24) {
+    return diffHours <= 0 ? 'Just now' : `${diffHours}h ago`
+  }
+
+  if (Math.abs(diffDays) < 7) {
+    return diffDays <= 0 ? 'Today' : `${diffDays}d ago`
+  }
+
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function formatMinutesUntil(start) {
+  if (!start) return ''
+  const date = new Date(start)
+  if (Number.isNaN(date.getTime())) return ''
+  const mins = Math.round((date - new Date()) / 60000)
+  if (mins <= 0) return 'starting now'
+  if (mins < 60) return `in ${mins}m`
+  const hours = Math.floor(mins / 60)
+  const rem = mins % 60
+  return rem ? `in ${hours}h ${rem}m` : `in ${hours}h`
+}
+
 function PrismStoryPanel({ transcript, result, loading, analysisTime }) {
   const stats = getTranscriptStats(transcript)
   const speakers = countNamedSpeakers(transcript)
@@ -1238,6 +1270,35 @@ export default function App() {
       .catch(() => {})
   }, [user])
 
+  useEffect(() => {
+    if (!calendarConnected || !user) {
+      setNextUpcomingMeeting(null)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadNextUpcomingMeeting() {
+      try {
+        const res = await apiFetch('/calendar/events?days_ahead=1')
+        if (!res.ok) throw new Error('calendar fetch failed')
+        const data = await res.json()
+        if (cancelled) return
+        const nextEvent = (data?.events || []).find((event) => event?.start)
+        setNextUpcomingMeeting(nextEvent || null)
+      } catch {
+        if (!cancelled) setNextUpcomingMeeting(null)
+      }
+    }
+
+    loadNextUpcomingMeeting()
+    const interval = setInterval(loadNextUpcomingMeeting, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [calendarConnected, user])
+
   // pendingAutoJoinUrl: set by polling effect, consumed by an effect after joinMeeting is defined
   const pendingAutoJoinRef = useRef(null)
 
@@ -1264,12 +1325,14 @@ export default function App() {
     () => localStorage.getItem('prism_autojoin') || 'off'
   )
   const [autoJoinPrompt, setAutoJoinPrompt] = useState(null) // { title, url, minsUntil }
+  const [nextUpcomingMeeting, setNextUpcomingMeeting] = useState(null)
   const autoJoinFiredRef = useRef(new Set()) // event IDs already acted on this session
   const [workspaceToast, setWorkspaceToast] = useState(null)
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
   const transcriptSpeakerCount = countNamedSpeakers(transcript)
   const inputModeMeta = INPUT_MODE_META[inputTab] || INPUT_MODE_META.paste
+  const recentMeetings = user ? history.slice(0, 3) : []
 
   useEffect(() => {
     if (!supabase) {
@@ -2387,26 +2450,85 @@ export default function App() {
         {/* LEFT PANEL — Input */}
         <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-32 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
 
-          {/* Workspace header — minimal */}
-          <div className="px-6 pt-4 pb-1 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold text-white">
-                {isDemoMode ? 'Demo workspace' : 'Meeting workspace'}
-              </h1>
-              {isDemoMode && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                  style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
-                  Demo
-                </span>
+          {/* Workspace header */}
+          <div className="px-6 pt-4 pb-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-semibold text-white">
+                  {isDemoMode ? 'Demo workspace' : 'Meeting workspace'}
+                </h1>
+                {isDemoMode && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                    style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                    Demo
+                  </span>
+                )}
+              </div>
+              {!user && !isDemoMode && (
+                <button
+                  onClick={signInWithGoogle}
+                  className="text-[11px] px-2.5 py-1 rounded-lg transition-all flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#94a3b8' }}>
+                  Sign in to save this workspace
+                </button>
               )}
             </div>
-            {!user && !isDemoMode && (
-              <button
-                onClick={signInWithGoogle}
-                className="text-[11px] px-2.5 py-1 rounded-lg transition-all flex-shrink-0"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#94a3b8' }}>
-                Sign in to sync
-              </button>
+            <p className="mt-2 text-[12px] text-slate-400 leading-relaxed">
+              {isDemoMode
+                ? 'Inspect the sample flow, then switch into your own meeting when you are ready.'
+                : 'Paste, record, upload, or join live · 7 agents stream results back.'}
+            </p>
+
+            {recentMeetings.length > 0 && !isDemoMode && (
+              <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                {recentMeetings.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => loadFromHistory(entry)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-left flex-shrink-0 transition-all hover:scale-[1.01]"
+                    style={{
+                      background: entry.id === meetingId ? 'rgba(14,165,233,0.12)' : 'rgba(255,255,255,0.04)',
+                      border: entry.id === meetingId ? '1px solid rgba(14,165,233,0.28)' : '1px solid rgba(255,255,255,0.08)',
+                    }}>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                      style={{
+                        background: 'rgba(255,255,255,0.06)',
+                        color: (entry.score ?? 0) > 0 ? '#99f6e4' : '#cbd5e1',
+                      }}>
+                      {entry.score ? `${entry.score}` : 'Saved'}
+                    </span>
+                    <span className="text-[11px] text-slate-200 max-w-[120px] truncate">
+                      {entry.title || 'Meeting'}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {formatRelativeMeetingDate(entry.date)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {calendarConnected && user && nextUpcomingMeeting && !isDemoMode && (
+              <div className="mt-3 flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl"
+                style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.16)' }}>
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-sky-300/80">Next up</p>
+                  <p className="text-[12px] text-slate-100 truncate">
+                    {nextUpcomingMeeting.title || 'Upcoming meeting'} · {formatMinutesUntil(nextUpcomingMeeting.start)}
+                  </p>
+                </div>
+                {nextUpcomingMeeting.meeting_link && (
+                  <button
+                    onClick={() => {
+                      setInputTab('join')
+                      setMeetingUrl(nextUpcomingMeeting.meeting_link)
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-xl flex-shrink-0 transition-colors"
+                    style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.2)', color: '#7dd3fc' }}>
+                    Join
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -2466,14 +2588,35 @@ export default function App() {
             {/* Paste Transcript */}
             {inputTab === 'paste' && (
               <div className="px-4 pb-3">
-                <textarea
-                  value={transcript}
-                  onChange={(e) => setTranscriptForTab(e.target.value, 'paste')}
-                  placeholder="Paste your meeting transcript here..."
-                  rows={6}
-                  className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed placeholder-gray-700 min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
-                  style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }}
-                />
+                <div className="relative">
+                  <textarea
+                    value={transcript}
+                    onChange={(e) => setTranscriptForTab(e.target.value, 'paste')}
+                    placeholder=""
+                    rows={6}
+                    className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
+                    style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      border: transcript.trim() ? '1px solid rgba(255,255,255,0.06)' : '1px dashed rgba(125,211,252,0.22)',
+                    }}
+                  />
+                  {!transcript.trim() && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-5 text-center">
+                      <div className="max-w-xs">
+                        <div className="w-10 h-10 rounded-2xl mx-auto mb-3 flex items-center justify-center"
+                          style={{ background: 'rgba(14,165,233,0.09)', border: '1px solid rgba(14,165,233,0.18)' }}>
+                          <svg className="w-5 h-5 text-sky-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-8-4h5M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H9l-3 3v11a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <p className="text-sm font-medium text-slate-200">Paste your meeting transcript here</p>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Use speaker labels like <span className="text-slate-400">Sarah:</span> and <span className="text-slate-400">Mike:</span> for stronger decisions, ownership, and sentiment output.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between gap-3 mt-2.5 sticky bottom-0 pt-2.5"
                   style={{ background: 'linear-gradient(180deg, rgba(7,4,15,0), rgba(7,4,15,0.88) 28%, rgba(7,4,15,0.96) 100%)' }}>
                   <span className="text-[11px] text-gray-600">
