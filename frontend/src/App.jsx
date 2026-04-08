@@ -17,6 +17,7 @@ const ProactiveSuggestions = lazy(() => import('./components/ProactiveSuggestion
 const ScoreTrendChart = lazy(() => import('./components/ScoreTrendChart'))
 const CrossMeetingInsights = lazy(() => import('./components/CrossMeetingInsights'))
 const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
+const UpcomingMeetings = lazy(() => import('./components/UpcomingMeetings'))
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -1216,6 +1217,65 @@ export default function App() {
       .catch(() => {})
   }, [user, history])
 
+  useEffect(() => {
+    if (!user) { setCalendarConnected(false); return }
+    apiFetch('/calendar/status')
+      .then(r => r.ok ? r.json() : { connected: false })
+      .then(d => setCalendarConnected(Boolean(d.connected)))
+      .catch(() => {})
+  }, [user])
+
+  // Auto-join polling — check every 60s for imminent meetings
+  useEffect(() => {
+    if (!calendarConnected || !user || autoJoinSetting === 'off') return
+
+    const markedIds = JSON.parse(localStorage.getItem('prism_marked_events') || '[]')
+
+    async function checkImminent() {
+      try {
+        const res = await apiFetch('/calendar/events?days_ahead=1')
+        if (!res.ok) return
+        const { events } = await res.json()
+        const now = new Date()
+        for (const ev of events) {
+          if (!ev.has_meeting_link || !ev.start) continue
+          if (autoJoinFiredRef.current.has(ev.id)) continue
+          const minsUntil = Math.round((new Date(ev.start) - now) / 60000)
+          if (minsUntil < -5 || minsUntil > 5) continue // only within ±5 min window
+
+          if (autoJoinSetting === 'marked' && !markedIds.includes(ev.id)) continue
+
+          autoJoinFiredRef.current.add(ev.id)
+
+          if (autoJoinSetting === 'auto' || autoJoinSetting === 'marked') {
+            // Auto-join: switch to join tab, set URL, fire join
+            setInputTab('join')
+            setMeetingUrl(ev.meeting_link)
+            setTimeout(() => {
+              setBotError(null)
+              setBotTranscriptReady(false)
+              setBotStatus('joining')
+              apiFetch('/join-meeting', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meeting_url: ev.meeting_link }),
+              }).then(r => r.ok ? r.json() : Promise.reject())
+                .then(data => { setBotStatus(data.status); startPolling(data.bot_id) })
+                .catch(() => { setBotStatus('error'); setBotError('Auto-join failed — try manually.') })
+            }, 300)
+          } else if (autoJoinSetting === 'ask') {
+            setAutoJoinPrompt({ title: ev.title, url: ev.meeting_link, minsUntil })
+          }
+          break // one event at a time
+        }
+      } catch {}
+    }
+
+    checkImminent()
+    const interval = setInterval(checkImminent, 60_000)
+    return () => clearInterval(interval)
+  }, [calendarConnected, user, autoJoinSetting])
+
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
   const [shareToken, setShareToken] = useState(null)
@@ -1234,6 +1294,12 @@ export default function App() {
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
+  const [calendarConnected, setCalendarConnected] = useState(false)
+  const [autoJoinSetting, setAutoJoinSetting] = useState(
+    () => localStorage.getItem('prism_autojoin') || 'off'
+  )
+  const [autoJoinPrompt, setAutoJoinPrompt] = useState(null) // { title, url, minsUntil }
+  const autoJoinFiredRef = useRef(new Set()) // event IDs already acted on this session
   const [workspaceToast, setWorkspaceToast] = useState(null)
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
@@ -1254,6 +1320,22 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthSession(session || null)
       setAuthReady(true)
+
+      // If returning from calendar OAuth, capture provider_token and save to backend
+      if (session?.provider_token && sessionStorage.getItem('calendar_oauth_pending') === '1') {
+        sessionStorage.removeItem('calendar_oauth_pending')
+        apiFetch('/calendar/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            access_token: session.provider_token,
+            refresh_token: session.provider_refresh_token || null,
+            expires_in: session.expires_in || null,
+          }),
+        }).then(res => {
+          if (res.ok) setCalendarConnected(true)
+        }).catch(() => {})
+      }
     })
 
     return () => data.subscription.unsubscribe()
@@ -1271,6 +1353,38 @@ export default function App() {
       },
     })
     if (authError) setError(authError.message)
+  }
+
+  const connectGoogleCalendar = async () => {
+    if (!supabase) {
+      setError('Supabase auth is not configured yet.')
+      return
+    }
+    sessionStorage.setItem('calendar_oauth_pending', '1')
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'https://www.googleapis.com/auth/calendar.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+        redirectTo: `${window.location.origin}${window.location.pathname}`,
+      },
+    })
+    if (authError) {
+      sessionStorage.removeItem('calendar_oauth_pending')
+      setError(authError.message)
+    }
+  }
+
+  const disconnectCalendar = async () => {
+    try {
+      await apiFetch('/calendar/disconnect', { method: 'DELETE' })
+    } catch {}
+    setCalendarConnected(false)
+  }
+
+  const saveAutoJoinSetting = (val) => {
+    setAutoJoinSetting(val)
+    localStorage.setItem('prism_autojoin', val)
   }
 
   const setTranscriptForTab = (value, tab = inputTab) => {
@@ -2221,61 +2335,27 @@ export default function App() {
         {/* LEFT PANEL — Input */}
         <div className={`flex flex-col w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-32 lg:pb-0 ${mobileTab === 'results' ? 'hidden lg:flex' : 'flex'}`} style={PANEL_STYLE}>
 
-          {/* Hero blurb */}
-          <div className="px-6 pt-4 pb-2">
-            <div className="rounded-[22px] px-4 py-2.5"
-              style={{
-                background: 'linear-gradient(135deg, rgba(8,15,33,0.86) 0%, rgba(10,24,37,0.72) 55%, rgba(18,18,42,0.78) 100%)',
-                border: '1px solid rgba(125,211,252,0.12)',
-                boxShadow: '0 16px 40px rgba(2,132,199,0.07)',
-              }}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-gray-600">{inputModeMeta.eyebrow}</p>
-                  <h1 className="text-[1.05rem] font-bold text-white leading-snug mt-1">
-                    <span className="gradient-text">{inputModeMeta.label}</span> with PrismAI.
-                  </h1>
-                </div>
-                <span className="text-[11px] px-2.5 py-1 rounded-full"
-                  style={{ background: inputModeMeta.accent, border: `1px solid ${inputModeMeta.border}`, color: inputModeMeta.text }}>
-                  {isDemoMode ? 'Demo' : 'Live workspace'}
+          {/* Workspace header — minimal */}
+          <div className="px-6 pt-4 pb-1 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-semibold text-white">
+                {isDemoMode ? 'Demo workspace' : 'Meeting workspace'}
+              </h1>
+              {isDemoMode && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                  style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                  Demo
                 </span>
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
-                {isDemoMode
-                  ? 'Use the sample transcript as a reference point, then switch into your own meeting flow when you are ready.'
-                  : inputModeMeta.description}
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2.5">
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                  {transcriptStats.words} words in workspace
-                </span>
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                  {result ? 'Results loaded' : loading ? 'Analysis running' : 'Ready to analyze'}
-                </span>
-                {!isDemoMode && (
-                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                    Your own meeting flow
-                  </span>
-                )}
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                  {user ? 'Signed in · sync enabled' : 'Signed out · local-only workspace'}
-                </span>
-              </div>
-              {!user && !isDemoMode && (
-                <div className="mt-3">
-                  <button
-                    onClick={signInWithGoogle}
-                    className="inline-flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-[1.02]"
-                    style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.18)', color: '#7dd3fc' }}>
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Sign in to save this workspace
-                  </button>
-                </div>
               )}
             </div>
+            {!user && !isDemoMode && (
+              <button
+                onClick={signInWithGoogle}
+                className="text-[11px] px-2.5 py-1 rounded-lg transition-all flex-shrink-0"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', color: '#94a3b8' }}>
+                Sign in to sync
+              </button>
+            )}
           </div>
 
           {/* Health trend chart — visible when 2+ meetings in history */}
@@ -2296,7 +2376,7 @@ export default function App() {
           {/* Transcript card */}
           <div className="mx-6 mb-3 rounded-2xl overflow-hidden card-breathe" style={CARD_STYLE}>
 
-            {/* Input method dropdown */}
+            {/* Input method tabs */}
             <div className="px-4 pt-3 pb-2 flex items-center gap-2">
               <div className="relative flex-1">
                 <select
@@ -2330,26 +2410,6 @@ export default function App() {
               )}
             </div>
 
-            <div className="px-4 pb-2.5">
-              <div className="rounded-2xl px-3.5 py-2 flex flex-wrap items-center gap-2"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-gray-600">Input Quality</p>
-                  <p className="text-[10px] text-gray-400 mt-1">Speaker labels improve ownership, decision, and sentiment accuracy.</p>
-                </div>
-                <div className="ml-auto flex flex-wrap gap-2">
-                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                    {transcriptStats.words} words
-                  </span>
-                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                    {transcriptStats.lines} lines
-                  </span>
-                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
-                    {transcriptSpeakerCount} named speaker{transcriptSpeakerCount !== 1 ? 's' : ''}
-                  </span>
-                </div>
-              </div>
-            </div>
 
             {/* Paste Transcript */}
             {inputTab === 'paste' && (
@@ -2379,7 +2439,7 @@ export default function App() {
             {/* Record Audio */}
             {inputTab === 'record' && (
               <div className="px-4 pb-3">
-                <p className="text-[11px] text-gray-500 mb-3">Speak and your words will appear in the transcript below. Hit Analyze when done.</p>
+                <p className="text-[11px] text-gray-500 mb-3">Speak — your words will appear below. Hit Analyze when done.</p>
                 <button onClick={recording ? stopRecording : startRecording}
                   className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all mb-3 ${recording ? 'animate-pulse' : ''}`}
                   style={recording
@@ -2413,7 +2473,7 @@ export default function App() {
             {/* Upload Audio */}
             {inputTab === 'upload' && (
               <div className="px-4 pb-3">
-                <p className="text-[11px] text-gray-500 mb-3">Upload an audio file and Whisper will transcribe it automatically. Supports mp3, wav, m4a, ogg, webm — max 25MB.</p>
+                <p className="text-[11px] text-gray-500 mb-3">Upload audio — Whisper will transcribe it. Supports mp3, wav, m4a, ogg, webm (max 25MB).</p>
                 <button onClick={() => fileInputRef.current?.click()} disabled={transcribing}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 mb-3 hover:scale-[1.02] active:scale-[0.98]"
                   style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.3)' }}>
@@ -2448,8 +2508,19 @@ export default function App() {
             {inputTab === 'join' && (
               /* Join Meeting tab */
               <div className="px-4 pt-3 pb-4">
+                {/* Upcoming meetings from Google Calendar */}
+                {calendarConnected && user && (
+                  <div className="mb-3">
+                    <Suspense fallback={null}>
+                      <UpcomingMeetings onJoin={(url) => setMeetingUrl(url)} />
+                    </Suspense>
+                  </div>
+                )}
+
                 <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
-                  Paste a Zoom, Google Meet, or Teams link. PrismAI will join the meeting, record, and automatically analyze it when it ends.
+                  {calendarConnected
+                    ? 'Or paste a link manually:'
+                    : 'Paste a Zoom, Google Meet, or Teams link. PrismAI will join the meeting, record, and automatically analyze it when it ends.'}
                 </p>
                 <input
                   type="url"
@@ -3052,8 +3123,50 @@ export default function App() {
             integrations={integrations}
             onSave={setIntegrations}
             onClose={() => setShowIntegrations(false)}
+            calendarConnected={calendarConnected}
+            onConnectCalendar={connectGoogleCalendar}
+            onDisconnectCalendar={disconnectCalendar}
+            autoJoinSetting={autoJoinSetting}
+            onAutoJoinChange={saveAutoJoinSetting}
           />
         </Suspense>
+      )}
+
+      {/* Auto-join prompt toast */}
+      {autoJoinPrompt && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl animate-fade-in-up"
+          style={{ background: 'rgba(7,12,28,0.96)', border: '1px solid rgba(14,165,233,0.35)', backdropFilter: 'blur(20px)', maxWidth: '90vw' }}>
+          <svg className="w-4 h-4 text-sky-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-white truncate">{autoJoinPrompt.title}</p>
+            <p className="text-[10px] text-gray-400">
+              {autoJoinPrompt.minsUntil <= 0 ? 'Starting now' : `Starts in ${autoJoinPrompt.minsUntil}m`}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setAutoJoinPrompt(null)
+              setInputTab('join')
+              setMeetingUrl(autoJoinPrompt.url)
+            }}
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', color: '#fff' }}>
+            Join
+          </button>
+          <button
+            onClick={() => setAutoJoinPrompt(null)}
+            aria-label="Dismiss"
+            className="text-gray-600 hover:text-gray-300 transition-colors flex-shrink-0 p-1">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       )}
 
       {workspaceToast && (

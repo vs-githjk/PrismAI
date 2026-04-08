@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from groq import AsyncGroq
 
 from analysis_routes import create_analysis_router
+from calendar_routes import router as calendar_router
 from chat_routes import create_chat_router
 from export_routes import router as export_router
 from recall_routes import router as recall_router
@@ -24,6 +25,7 @@ app.add_middleware(
 app.include_router(storage_router)
 app.include_router(recall_router)
 app.include_router(export_router)
+app.include_router(calendar_router)
 
 groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 app.include_router(create_analysis_router(groq_client))
