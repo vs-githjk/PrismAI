@@ -1705,6 +1705,34 @@ export default function App() {
     setTimeout(() => joinMeeting(), 100)
   })
 
+  // Auto-join: directly join when polling detects an imminent meeting
+  const autoJoinDirect = (url) => {
+    setInputTab('join')
+    setMeetingUrl(url)
+    // joinMeeting reads meetingUrl state, so we need to call the API directly
+    setBotError(null)
+    setBotTranscriptReady(false)
+    setBotStatus('joining')
+    apiFetch('/join-meeting', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meeting_url: url }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
+        return res.json()
+      })
+      .then((data) => {
+        setBotStatus(data.status)
+        setActiveBotId(data.bot_id)
+        startPolling(data.bot_id)
+      })
+      .catch((e) => {
+        setBotStatus('error')
+        setBotError(e.message)
+      })
+  }
+
   // Auto-join polling — check every 60s for imminent meetings
   useEffect(() => {
     if (!calendarConnected || !user || autoJoinSetting === 'off') return
@@ -1728,7 +1756,7 @@ export default function App() {
           autoJoinFiredRef.current.add(ev.id)
 
           if (autoJoinSetting === 'auto' || autoJoinSetting === 'marked') {
-            pendingAutoJoinRef.current = ev.meeting_link
+            autoJoinDirect(ev.meeting_link)
           } else if (autoJoinSetting === 'ask') {
             setAutoJoinPrompt({ title: ev.title, url: ev.meeting_link, minsUntil })
           }
