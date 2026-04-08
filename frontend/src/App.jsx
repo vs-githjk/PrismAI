@@ -1170,7 +1170,7 @@ export default function App() {
   const fileInputRef = useRef(null)
 
   // Join Meeting state
-  const [inputTab, setInputTab] = useState('paste') // 'paste' | 'join'
+  const [inputTab, setInputTab] = useState('join') // 'paste' | 'join'
   const [meetingUrl, setMeetingUrl] = useState('')
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
