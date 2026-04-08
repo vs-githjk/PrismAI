@@ -174,7 +174,8 @@ async def bot_status(bot_id: str):
         asyncio.create_task(_process_bot_transcript(bot_id))
 
     entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None})
-    entry["status"] = our_status if entry.get("status") not in ("done", "error") else entry["status"]
+    # Don't let Recall's "done" override our internal "processing" — our analysis may still be running
+    entry["status"] = our_status if entry.get("status") not in ("done", "error", "processing") else entry["status"]
     return entry
 
 

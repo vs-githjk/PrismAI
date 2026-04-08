@@ -1468,18 +1468,24 @@ export default function App() {
         setBotStatus(data.status)
         if (data.status === 'done') {
           clearInterval(pollRef.current)
-          setTranscriptForTab(data.transcript || '', 'paste')
-          setSessionId(s => s + 1)
           if (data.result) {
+            setTranscriptForTab(data.transcript || '', 'paste')
+            setSessionId(s => s + 1)
             setResult(data.result)
             const entry = saveToHistory(data.transcript || '', data.result)
             const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
             void deliverMeetingRecap(meetingTitle, data.result)
             setBotTranscriptReady(false)
             setMobileTab('results')
+          } else if (data.transcript) {
+            // Analysis didn't run but transcript is available — keep user on join tab, prompt to analyze
+            setTranscriptForTab(data.transcript, 'paste')
+            setSessionId(s => s + 1)
+            setBotTranscriptReady(true)
           } else {
-            setBotTranscriptReady(Boolean(data.transcript))
-            setInputTab('paste')
+            // No transcript and no result — surface as an error so the user isn't stuck
+            setBotStatus('error')
+            setBotError('Meeting ended but no transcript was returned. Check the Recall.ai dashboard or try again.')
           }
         } else if (data.status === 'error') {
           clearInterval(pollRef.current)
