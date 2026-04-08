@@ -1225,56 +1225,8 @@ export default function App() {
       .catch(() => {})
   }, [user])
 
-  // Auto-join polling — check every 60s for imminent meetings
-  useEffect(() => {
-    if (!calendarConnected || !user || autoJoinSetting === 'off') return
-
-    const markedIds = JSON.parse(localStorage.getItem('prism_marked_events') || '[]')
-
-    async function checkImminent() {
-      try {
-        const res = await apiFetch('/calendar/events?days_ahead=1')
-        if (!res.ok) return
-        const { events } = await res.json()
-        const now = new Date()
-        for (const ev of events) {
-          if (!ev.has_meeting_link || !ev.start) continue
-          if (autoJoinFiredRef.current.has(ev.id)) continue
-          const minsUntil = Math.round((new Date(ev.start) - now) / 60000)
-          if (minsUntil < -5 || minsUntil > 5) continue // only within ±5 min window
-
-          if (autoJoinSetting === 'marked' && !markedIds.includes(ev.id)) continue
-
-          autoJoinFiredRef.current.add(ev.id)
-
-          if (autoJoinSetting === 'auto' || autoJoinSetting === 'marked') {
-            // Auto-join: switch to join tab, set URL, fire join
-            setInputTab('join')
-            setMeetingUrl(ev.meeting_link)
-            setTimeout(() => {
-              setBotError(null)
-              setBotTranscriptReady(false)
-              setBotStatus('joining')
-              apiFetch('/join-meeting', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ meeting_url: ev.meeting_link }),
-              }).then(r => r.ok ? r.json() : Promise.reject())
-                .then(data => { setBotStatus(data.status); startPolling(data.bot_id) })
-                .catch(() => { setBotStatus('error'); setBotError('Auto-join failed — try manually.') })
-            }, 300)
-          } else if (autoJoinSetting === 'ask') {
-            setAutoJoinPrompt({ title: ev.title, url: ev.meeting_link, minsUntil })
-          }
-          break // one event at a time
-        }
-      } catch {}
-    }
-
-    checkImminent()
-    const interval = setInterval(checkImminent, 60_000)
-    return () => clearInterval(interval)
-  }, [calendarConnected, user, autoJoinSetting])
+  // pendingAutoJoinUrl: set by polling effect, consumed by an effect after joinMeeting is defined
+  const pendingAutoJoinRef = useRef(null)
 
   const [showSpeakerModal, setShowSpeakerModal] = useState(false)
   const [speakers, setSpeakers] = useState([])
@@ -1614,6 +1566,53 @@ export default function App() {
 
   // Clean up poll on unmount
   useEffect(() => () => clearInterval(pollRef.current), [])
+
+  // Consume pendingAutoJoinRef — fires joinMeeting once URL + flag are set
+  useEffect(() => {
+    if (!pendingAutoJoinRef.current) return
+    const url = pendingAutoJoinRef.current
+    pendingAutoJoinRef.current = null
+    setInputTab('join')
+    setMeetingUrl(url)
+    setTimeout(() => joinMeeting(), 100)
+  })
+
+  // Auto-join polling — check every 60s for imminent meetings
+  useEffect(() => {
+    if (!calendarConnected || !user || autoJoinSetting === 'off') return
+
+    const markedIds = JSON.parse(localStorage.getItem('prism_marked_events') || '[]')
+
+    async function checkImminent() {
+      try {
+        const res = await apiFetch('/calendar/events?days_ahead=1')
+        if (!res.ok) return
+        const { events } = await res.json()
+        const now = new Date()
+        for (const ev of events) {
+          if (!ev.has_meeting_link || !ev.start) continue
+          if (autoJoinFiredRef.current.has(ev.id)) continue
+          const minsUntil = Math.round((new Date(ev.start) - now) / 60000)
+          if (minsUntil < -5 || minsUntil > 5) continue
+
+          if (autoJoinSetting === 'marked' && !markedIds.includes(ev.id)) continue
+
+          autoJoinFiredRef.current.add(ev.id)
+
+          if (autoJoinSetting === 'auto' || autoJoinSetting === 'marked') {
+            pendingAutoJoinRef.current = ev.meeting_link
+          } else if (autoJoinSetting === 'ask') {
+            setAutoJoinPrompt({ title: ev.title, url: ev.meeting_link, minsUntil })
+          }
+          break
+        }
+      } catch {}
+    }
+
+    checkImminent()
+    const interval = setInterval(checkImminent, 60_000)
+    return () => clearInterval(interval)
+  }, [calendarConnected, user, autoJoinSetting])
 
   const mergeHistoryEntries = (entries) => {
     const seen = new Set()
