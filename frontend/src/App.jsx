@@ -1264,10 +1264,9 @@ export default function App() {
       return
     }
 
-    const tryCapureCalendarToken = (session) => {
+    // Whenever we get a provider_token (Google access token), save it for Calendar API use
+    const trySaveProviderToken = (session) => {
       if (!session?.provider_token) return
-      if (sessionStorage.getItem('calendar_oauth_pending') !== '1') return
-      sessionStorage.removeItem('calendar_oauth_pending')
       apiFetch('/calendar/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1284,14 +1283,13 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       setAuthSession(data.session || null)
       setAuthReady(true)
-      // provider_token is most reliably available in getSession() right after OAuth redirect
-      tryCapureCalendarToken(data.session)
+      trySaveProviderToken(data.session)
     })
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthSession(session || null)
       setAuthReady(true)
-      tryCapureCalendarToken(session)
+      trySaveProviderToken(session)
     })
 
     return () => data.subscription.unsubscribe()
@@ -1305,31 +1303,16 @@ export default function App() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
+        scopes: 'https://www.googleapis.com/auth/calendar.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
         redirectTo: `${window.location.origin}${window.location.pathname}`,
       },
     })
     if (authError) setError(authError.message)
   }
 
-  const connectGoogleCalendar = async () => {
-    if (!supabase) {
-      setError('Supabase auth is not configured yet.')
-      return
-    }
-    sessionStorage.setItem('calendar_oauth_pending', '1')
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        scopes: 'https://www.googleapis.com/auth/calendar.readonly',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: `${window.location.origin}${window.location.pathname}`,
-      },
-    })
-    if (authError) {
-      sessionStorage.removeItem('calendar_oauth_pending')
-      setError(authError.message)
-    }
-  }
+  // Re-auth with calendar scope for users already signed in without it
+  const connectGoogleCalendar = signInWithGoogle
 
   const disconnectCalendar = async () => {
     try {
