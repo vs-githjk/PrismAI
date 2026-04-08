@@ -1264,30 +1264,34 @@ export default function App() {
       return
     }
 
+    const tryCapureCalendarToken = (session) => {
+      if (!session?.provider_token) return
+      if (sessionStorage.getItem('calendar_oauth_pending') !== '1') return
+      sessionStorage.removeItem('calendar_oauth_pending')
+      apiFetch('/calendar/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_token: session.provider_token,
+          refresh_token: session.provider_refresh_token || null,
+          expires_in: session.expires_in || null,
+        }),
+      }).then(res => {
+        if (res.ok) setCalendarConnected(true)
+      }).catch(() => {})
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setAuthSession(data.session || null)
       setAuthReady(true)
+      // provider_token is most reliably available in getSession() right after OAuth redirect
+      tryCapureCalendarToken(data.session)
     })
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthSession(session || null)
       setAuthReady(true)
-
-      // If returning from calendar OAuth, capture provider_token and save to backend
-      if (session?.provider_token && sessionStorage.getItem('calendar_oauth_pending') === '1') {
-        sessionStorage.removeItem('calendar_oauth_pending')
-        apiFetch('/calendar/connect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            access_token: session.provider_token,
-            refresh_token: session.provider_refresh_token || null,
-            expires_in: session.expires_in || null,
-          }),
-        }).then(res => {
-          if (res.ok) setCalendarConnected(true)
-        }).catch(() => {})
-      }
+      tryCapureCalendarToken(session)
     })
 
     return () => data.subscription.unsubscribe()
