@@ -364,11 +364,11 @@ async def run(transcript: str) -> dict:
 
 ---
 
-## Google Calendar Integration (built, partially working)
+## Google Calendar Integration (fully working ✓)
 
 ### What was built
-- `backend/calendar_routes.py` — `POST /calendar/connect`, `GET /calendar/events`, `GET /calendar/status`, `DELETE /calendar/disconnect`
-- `supabase/calendar_migration.sql` — `user_settings` table (run this in Supabase SQL editor before using calendar features — **already run**)
+- `backend/calendar_routes.py` — `POST /calendar/connect`, `POST /calendar/exchange-code`, `GET /calendar/events`, `GET /calendar/status`, `DELETE /calendar/disconnect`
+- `supabase/calendar_migration.sql` — `user_settings` table (**already run**)
 - `frontend/src/components/UpcomingMeetings.jsx` — panel in Join tab showing upcoming events with meeting links; star/mark events for auto-join
 - `IntegrationsModal.jsx` — Calendar tab with connect/disconnect UI and auto-join mode selector
 - `App.jsx` — `calendarConnected` state, `connectGoogleCalendar()`, `disconnectCalendar()`, auto-join polling effect, auto-join prompt toast
@@ -384,38 +384,27 @@ async def run(transcript: str) -> dict:
 - Removed "Input Quality" nested box (duplicate stats + patronizing copy)
 - Replaced with a single slim `Meeting workspace` header
 
-### Calendar connect — IMPLEMENTED (needs env + Google Cloud config to test)
+### Calendar connect — WORKING
 
-**Root cause:** Supabase v2 does not persist `provider_token` in stored sessions. It's only present right after the initial OAuth callback, and only if Supabase's session cookie includes it (it doesn't reliably for re-auths). Three Supabase-based approaches were tried; all failed.
+**Root cause (resolved):** Supabase v2 does not persist `provider_token` in stored sessions. Three Supabase-based approaches were tried; all failed.
 
-**Fix implemented:** Direct Google OAuth PKCE flow, completely bypassing Supabase for the calendar token.
+**Fix:** Direct Google OAuth PKCE flow, completely bypassing Supabase for the calendar token.
 
 **How it works:**
-1. `connectGoogleCalendar()` generates a PKCE verifier/challenge, stores verifier in `sessionStorage`, then redirects to `https://accounts.google.com/o/oauth2/v2/auth?...&state=calendar_connect`
+1. `connectGoogleCalendar()` generates a PKCE verifier/challenge, stores verifier in `sessionStorage`, redirects to Google OAuth with `state=calendar_connect`
 2. Google redirects back to `window.location.origin` with `?code=...&state=calendar_connect`
-3. A `useEffect` in `App.jsx` detects `state === 'calendar_connect'`, retrieves the verifier, cleans the URL, and POSTs to `/calendar/exchange-code`
-4. Backend exchanges the code+verifier with Google, stores the access/refresh tokens in `user_settings`, returns `{ok: true}`
+3. A `useEffect` in `App.jsx` detects `state === 'calendar_connect'`, retrieves the verifier, cleans the URL, POSTs to `/calendar/exchange-code`
+4. Backend exchanges the code+verifier with Google, stores tokens in `user_settings`, returns `{ok: true}`
 5. Frontend sets `calendarConnected = true`
 
-**Required env vars — Vercel (frontend):**
-- `VITE_GOOGLE_CLIENT_ID` — the OAuth 2.0 Client ID (safe to expose in browser)
-
-**Required env vars — Render (backend):**
-- `GOOGLE_CLIENT_ID` — same Client ID
-- `GOOGLE_CLIENT_SECRET` — OAuth client secret (must stay server-side)
-
-**Required Google Cloud Console config:**
-- Go to APIs & Services → Credentials → your OAuth 2.0 Client ID → Authorized redirect URIs
-- Add: `https://agentic-meeting-copilot.vercel.app` (production)
-- Add: `http://localhost:5173` (local dev)
-
-**Required Supabase config (still needed for sign-in scopes):**
-- Google OAuth scopes should include `https://www.googleapis.com/auth/calendar.readonly` (already set)
-- Test user must be in Google Cloud OAuth consent screen → Test users
+**Env vars in place:**
+- Vercel: `VITE_GOOGLE_CLIENT_ID`
+- Render: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- Google Cloud Console: redirect URIs `https://agentic-meeting-copilot.vercel.app` and `http://localhost:5173` added
 
 **Files involved:**
-- `frontend/src/App.jsx` — `generateCodeVerifier`, `generateCodeChallenge`, `connectGoogleCalendar` (PKCE flow), calendar callback `useEffect`, `trySaveProviderToken` (kept with diagnostic log)
+- `frontend/src/App.jsx` — `generateCodeVerifier`, `generateCodeChallenge`, `connectGoogleCalendar` (PKCE flow), calendar callback `useEffect`
 - `frontend/src/components/IntegrationsModal.jsx` — Calendar tab UI
 - `frontend/src/components/UpcomingMeetings.jsx` — events panel
-- `backend/calendar_routes.py` — `POST /calendar/exchange-code` (new), all other calendar routes
+- `backend/calendar_routes.py` — `POST /calendar/exchange-code` (PKCE token exchange), all other calendar routes
 - `supabase/calendar_migration.sql` — already applied
