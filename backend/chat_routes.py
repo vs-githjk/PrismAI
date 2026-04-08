@@ -95,8 +95,13 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
             action_items = "; ".join(
                 f"{item.get('task','')} (owner: {item.get('owner','?')}, due: {item.get('due','?')})"
                 for item in action_items_list[:8]
+                if isinstance(item, dict)
             )
-            decisions = "; ".join(decision.get("decision", "") for decision in decisions_list[:5])
+            decisions = "; ".join(
+                decision.get("decision", "")
+                for decision in decisions_list[:5]
+                if isinstance(decision, dict)
+            )
 
             entry = (
                 f"--- Meeting: {title} | Date: {date} | Health: {score_str} ---\n"

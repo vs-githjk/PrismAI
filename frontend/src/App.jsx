@@ -1286,6 +1286,9 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (inputTab !== 'record' && recording) {
+      stopRecording()
+    }
     if (['paste', 'record', 'upload'].includes(inputTab)) {
       setTranscript(transcriptDrafts[inputTab] || '')
     }
@@ -1758,6 +1761,7 @@ export default function App() {
 
   const toggleActionItem = (index) => {
     const snapshot = result
+    if (!snapshot?.action_items) return
     const updated = snapshot.action_items.map((item, i) =>
       i === index ? { ...item, completed: !item.completed } : item
     )
