@@ -384,44 +384,38 @@ async def run(transcript: str) -> dict:
 - Removed "Input Quality" nested box (duplicate stats + patronizing copy)
 - Replaced with a single slim `Meeting workspace` header
 
-### Calendar connect — BROKEN, needs debugging
+### Calendar connect — IMPLEMENTED (needs env + Google Cloud config to test)
 
-**Symptom:** After OAuth flow completes, Calendar tab still shows "Connect Google Calendar" — `calendarConnected` stays false.
+**Root cause:** Supabase v2 does not persist `provider_token` in stored sessions. It's only present right after the initial OAuth callback, and only if Supabase's session cookie includes it (it doesn't reliably for re-auths). Three Supabase-based approaches were tried; all failed.
 
-**Root cause (best guess):** Supabase does not reliably return `provider_token` in the session when the user is already signed in and re-auths for a new scope. `provider_token` is null → `trySaveProviderToken()` exits early → `/calendar/connect` is never called → backend never stores the token.
+**Fix implemented:** Direct Google OAuth PKCE flow, completely bypassing Supabase for the calendar token.
 
-**What was tried:**
-1. Check `provider_token` in `onAuthStateChange` only → didn't work
-2. Check in both `getSession()` and `onAuthStateChange` → didn't work
-3. Combined calendar scope into the main `signInWithGoogle` flow with `prompt: consent` → still shows "Connect" button
+**How it works:**
+1. `connectGoogleCalendar()` generates a PKCE verifier/challenge, stores verifier in `sessionStorage`, then redirects to `https://accounts.google.com/o/oauth2/v2/auth?...&state=calendar_connect`
+2. Google redirects back to `window.location.origin` with `?code=...&state=calendar_connect`
+3. A `useEffect` in `App.jsx` detects `state === 'calendar_connect'`, retrieves the verifier, cleans the URL, and POSTs to `/calendar/exchange-code`
+4. Backend exchanges the code+verifier with Google, stores the access/refresh tokens in `user_settings`, returns `{ok: true}`
+5. Frontend sets `calendarConnected = true`
 
-**Required env vars on Render (must be set):**
-- `GOOGLE_CLIENT_ID` — from Google Cloud Console OAuth credentials
-- `GOOGLE_CLIENT_SECRET` — same
+**Required env vars — Vercel (frontend):**
+- `VITE_GOOGLE_CLIENT_ID` — the OAuth 2.0 Client ID (safe to expose in browser)
 
-**Required Supabase config:**
-- Google OAuth scopes must include `https://www.googleapis.com/auth/calendar.readonly`
-- Test user (the developer's email) must be added in Google Cloud → APIs & Services → OAuth consent screen → Audience → Test users
+**Required env vars — Render (backend):**
+- `GOOGLE_CLIENT_ID` — same Client ID
+- `GOOGLE_CLIENT_SECRET` — OAuth client secret (must stay server-side)
 
-**Recommended next debugging step:**
-Add a temporary `console.log` in `trySaveProviderToken` to log `session?.provider_token` and see if it's null or present. Specifically:
+**Required Google Cloud Console config:**
+- Go to APIs & Services → Credentials → your OAuth 2.0 Client ID → Authorized redirect URIs
+- Add: `https://agentic-meeting-copilot.vercel.app` (production)
+- Add: `http://localhost:5173` (local dev)
 
-```javascript
-const trySaveProviderToken = (session) => {
-  console.log('[calendar] provider_token:', session?.provider_token, 'refresh:', session?.provider_refresh_token)
-  if (!session?.provider_token) return
-  ...
-}
-```
-
-If `provider_token` is always null, the fix is to NOT go through Supabase for calendar OAuth. Instead:
-- Use a direct Google OAuth PKCE flow for calendar (separate from Supabase sign-in)
-- Store the returned tokens directly
-- This avoids Supabase's session management entirely for the calendar token
+**Required Supabase config (still needed for sign-in scopes):**
+- Google OAuth scopes should include `https://www.googleapis.com/auth/calendar.readonly` (already set)
+- Test user must be in Google Cloud OAuth consent screen → Test users
 
 **Files involved:**
-- `frontend/src/App.jsx` — `trySaveProviderToken`, `signInWithGoogle`, `connectGoogleCalendar`, `calendarConnected` state
+- `frontend/src/App.jsx` — `generateCodeVerifier`, `generateCodeChallenge`, `connectGoogleCalendar` (PKCE flow), calendar callback `useEffect`, `trySaveProviderToken` (kept with diagnostic log)
 - `frontend/src/components/IntegrationsModal.jsx` — Calendar tab UI
 - `frontend/src/components/UpcomingMeetings.jsx` — events panel
-- `backend/calendar_routes.py` — all calendar API routes
+- `backend/calendar_routes.py` — `POST /calendar/exchange-code` (new), all other calendar routes
 - `supabase/calendar_migration.sql` — already applied

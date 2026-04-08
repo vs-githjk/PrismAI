@@ -135,6 +135,66 @@ class CalendarConnectRequest(BaseModel):
     expires_in: int | None = None  # seconds until expiry
 
 
+class ExchangeCodeRequest(BaseModel):
+    code: str
+    code_verifier: str
+    redirect_uri: str
+
+
+@router.post("/calendar/exchange-code")
+async def calendar_exchange_code(
+    req: ExchangeCodeRequest,
+    user_id: str = Depends(require_user_id),
+):
+    """Exchange a Google OAuth authorization code (PKCE) for tokens and store them."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google OAuth credentials not configured on server")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": req.code,
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "redirect_uri": req.redirect_uri,
+                    "grant_type": "authorization_code",
+                    "code_verifier": req.code_verifier,
+                },
+                timeout=15,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"Google token exchange failed: {exc}")
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Google rejected code exchange: {resp.text}")
+
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="No access_token in Google response")
+
+    refresh_token = token_data.get("refresh_token")
+    expires_in = token_data.get("expires_in")
+    expires_at = None
+    if expires_in:
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+
+    row = {
+        "user_id": user_id,
+        "google_access_token": access_token,
+        "google_refresh_token": refresh_token,
+        "google_token_expires_at": expires_at,
+        "calendar_connected": True,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table("user_settings").upsert(row, on_conflict="user_id").execute()
+    return {"ok": True}
+
+
 @router.post("/calendar/connect")
 async def calendar_connect(
     req: CalendarConnectRequest,

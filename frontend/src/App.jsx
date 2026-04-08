@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -1071,6 +1071,19 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
   )
 }
 
+// ── Google Calendar PKCE helpers ─────────────────────────────────
+async function generateCodeVerifier() {
+  const arr = new Uint8Array(32)
+  crypto.getRandomValues(arr)
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
+async function generateCodeChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [authReady, setAuthReady] = useState(() => !supabase)
@@ -1266,6 +1279,7 @@ export default function App() {
 
     // Whenever we get a provider_token (Google access token), save it for Calendar API use
     const trySaveProviderToken = (session) => {
+      console.log('[calendar] provider_token:', session?.provider_token, 'refresh:', session?.provider_refresh_token)
       if (!session?.provider_token) return
       apiFetch('/calendar/connect', {
         method: 'POST',
@@ -1295,6 +1309,37 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  // Detect Google Calendar OAuth callback (?code=...&state=calendar_connect)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+    if (!code || state !== 'calendar_connect') return
+
+    const verifier = sessionStorage.getItem('cal_pkce_verifier')
+    sessionStorage.removeItem('cal_pkce_verifier')
+    // Clean URL before doing anything else
+    window.history.replaceState({}, '', window.location.pathname)
+
+    if (!verifier) {
+      console.warn('[calendar] No PKCE verifier found for calendar callback')
+      return
+    }
+
+    apiFetch('/calendar/exchange-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        code_verifier: verifier,
+        redirect_uri: window.location.origin,
+      }),
+    }).then(res => {
+      if (res.ok) setCalendarConnected(true)
+      else console.warn('[calendar] exchange-code failed:', res.status)
+    }).catch(err => console.warn('[calendar] exchange-code error:', err))
+  }, [])
+
   const signInWithGoogle = async () => {
     if (!supabase) {
       setError('Supabase auth is not configured yet.')
@@ -1311,8 +1356,29 @@ export default function App() {
     if (authError) setError(authError.message)
   }
 
-  // Re-auth with calendar scope for users already signed in without it
-  const connectGoogleCalendar = signInWithGoogle
+  // Direct Google OAuth PKCE flow for calendar (bypasses Supabase session)
+  const connectGoogleCalendar = async () => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+    if (!clientId) {
+      setError('Google Client ID is not configured (VITE_GOOGLE_CLIENT_ID missing).')
+      return
+    }
+    const verifier = await generateCodeVerifier()
+    const challenge = await generateCodeChallenge(verifier)
+    sessionStorage.setItem('cal_pkce_verifier', verifier)
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: window.location.origin,
+      response_type: 'code',
+      scope: 'https://www.googleapis.com/auth/calendar.readonly',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      access_type: 'offline',
+      prompt: 'consent',
+      state: 'calendar_connect',
+    })
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
+  }
 
   const disconnectCalendar = async () => {
     try {
