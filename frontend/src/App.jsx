@@ -380,12 +380,22 @@ function formatRelativeMeetingDate(value) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function formatMinutesUntil(start) {
+function formatMinutesUntil(start, end) {
   if (!start) return ''
-  const date = new Date(start)
-  if (Number.isNaN(date.getTime())) return ''
-  const mins = Math.round((date - new Date()) / 60000)
-  if (mins <= 0) return 'starting now'
+  const now = new Date()
+  const startDate = new Date(start)
+  if (Number.isNaN(startDate.getTime())) return ''
+  const mins = Math.round((startDate - now) / 60000)
+  // Meeting has started
+  if (mins <= 0) {
+    if (end) {
+      const endDate = new Date(end)
+      const minsLeft = Math.round((endDate - now) / 60000)
+      if (minsLeft <= 0) return 'ended'
+      return `in progress · ${minsLeft}m left`
+    }
+    return 'in progress'
+  }
   if (mins < 60) return `in ${mins}m`
   const hours = Math.floor(mins / 60)
   const rem = mins % 60
@@ -2579,9 +2589,14 @@ export default function App() {
               <div className="mt-3 flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl"
                 style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.16)' }}>
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-sky-300/80">Next up</p>
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-sky-300/80">
+                    {(() => {
+                      const status = formatMinutesUntil(nextUpcomingMeeting.start, nextUpcomingMeeting.end)
+                      return status.startsWith('in progress') ? 'In progress' : status === 'ended' ? 'Ended' : 'Next up'
+                    })()}
+                  </p>
                   <p className="text-[12px] text-slate-100 truncate">
-                    {nextUpcomingMeeting.title || 'Upcoming meeting'} · {formatMinutesUntil(nextUpcomingMeeting.start)}
+                    {nextUpcomingMeeting.title || 'Upcoming meeting'} · {formatMinutesUntil(nextUpcomingMeeting.start, nextUpcomingMeeting.end)}
                   </p>
                 </div>
                 {nextUpcomingMeeting.meeting_link && (

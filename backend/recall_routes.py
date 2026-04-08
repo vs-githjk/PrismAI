@@ -64,50 +64,103 @@ async def _send_bot_intro(bot_id: str):
 
 
 async def _fetch_transcript(bot_id: str):
-    resp = None
-    for attempt in range(5):
-        print(f"[recall] fetch transcript attempt {attempt + 1}/5 for bot {bot_id}")
+    """Fetch transcript via bot recordings → media_shortcuts → transcript download URL."""
+    for attempt in range(8):
+        print(f"[recall] fetch transcript attempt {attempt + 1}/8 for bot {bot_id}")
         async with httpx.AsyncClient() as client:
+            # Get bot details which include recordings
             resp = await client.get(
-                f"{RECALL_API_BASE}/bot/{bot_id}/transcript/",
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
                 headers={"Authorization": f"Token {RECALL_API_KEY}"},
                 timeout=30,
             )
-        if resp.status_code == 200:
-            return resp
-        print(f"[recall] transcript not ready, status={resp.status_code}")
+        if resp.status_code != 200:
+            print(f"[recall] bot fetch failed, status={resp.status_code}")
+            await asyncio.sleep(3 * (attempt + 1))
+            continue
+
+        bot_data = resp.json()
+        recordings = bot_data.get("recordings") or []
+        print(f"[recall] bot has {len(recordings)} recording(s)")
+
+        # Look for transcript download URL in recordings
+        download_url = None
+        for rec in recordings:
+            shortcuts = rec.get("media_shortcuts") or {}
+            download_url = shortcuts.get("transcript.data.download_url")
+            if download_url:
+                break
+
+        if not download_url:
+            print(f"[recall] no transcript download URL yet, waiting...")
+            await asyncio.sleep(3 * (attempt + 1))
+            continue
+
+        # Download the actual transcript data
+        print(f"[recall] downloading transcript from {download_url[:80]}...")
+        async with httpx.AsyncClient() as client:
+            transcript_resp = await client.get(download_url, timeout=30)
+
+        if transcript_resp.status_code == 200:
+            return transcript_resp
+        print(f"[recall] transcript download failed, status={transcript_resp.status_code}")
         await asyncio.sleep(3 * (attempt + 1))
-    return resp
+
+    return None
 
 
-def _transcript_from_recall_words(words: list) -> str:
-    transcript_lines = []
-    for segment in words:
-        speaker = segment.get("speaker") or "Speaker"
-        text = " ".join(w.get("text", "") for w in segment.get("words", []))
-        if text.strip():
-            transcript_lines.append(f"{speaker}: {text.strip()}")
-    return "\n".join(transcript_lines)
+def _transcript_from_recall_data(raw) -> str:
+    """Parse transcript from Recall's transcript data format."""
+    # Handle list of segments with words (legacy + new format)
+    if isinstance(raw, list):
+        transcript_lines = []
+        for segment in raw:
+            speaker = segment.get("speaker") or "Speaker"
+            # New format: words as list of dicts with "text"
+            words = segment.get("words") or []
+            if words:
+                text = " ".join(w.get("text", "") for w in words)
+            else:
+                # Fallback: segment might have direct "text" field
+                text = segment.get("text", "")
+            if text.strip():
+                transcript_lines.append(f"{speaker}: {text.strip()}")
+        return "\n".join(transcript_lines)
+
+    # Handle dict format (e.g., { "transcript": "..." })
+    if isinstance(raw, dict):
+        if "transcript" in raw:
+            return raw["transcript"]
+        # Try to find any text content
+        for key in ("text", "content", "data"):
+            if key in raw and isinstance(raw[key], str):
+                return raw[key]
+
+    # Handle plain string
+    if isinstance(raw, str):
+        return raw
+
+    return ""
 
 
 async def _process_bot_transcript(bot_id: str):
     try:
         print(f"[recall] starting transcript processing for bot {bot_id}")
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
         resp = await _fetch_transcript(bot_id)
 
-        if resp is None or resp.status_code != 200:
+        if resp is None:
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = "Failed to fetch transcript from Recall.ai"
-            print(f"[recall] ERROR: failed to fetch transcript, status={resp.status_code if resp else 'None'}")
+            print(f"[recall] ERROR: failed to fetch transcript")
             return
 
         raw = resp.json()
-        print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:300]}")
-        transcript = _transcript_from_recall_words(raw)
+        print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:500]}")
+        transcript = _transcript_from_recall_data(raw)
         if not transcript.strip():
             bot_store[bot_id]["status"] = "error"
-            bot_store[bot_id]["error"] = f"No transcript content found (raw had {len(raw) if isinstance(raw, list) else type(raw).__name__} items)"
+            bot_store[bot_id]["error"] = "No transcript content found — the meeting may have been too short or had no speech"
             print(f"[recall] ERROR: empty transcript")
             return
 

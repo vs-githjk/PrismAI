@@ -200,7 +200,7 @@ export default function UpcomingMeetings({ onJoin }) {
                       <span className="ml-1 text-sky-500/80">· in {mins}m</span>
                     )}
                     {mins !== null && mins <= 0 && mins > -60 && (
-                      <span className="ml-1 text-emerald-500/80">· now</span>
+                      <span className="ml-1 text-emerald-500/80">· in progress</span>
                     )}
                   </p>
                 </div>
