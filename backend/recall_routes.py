@@ -147,6 +147,24 @@ async def join_meeting(req: JoinMeetingRequest):
     return {"bot_id": bot_id, "status": "joining"}
 
 
+@router.delete("/remove-bot/{bot_id}")
+async def remove_bot(bot_id: str):
+    """Stop and remove a Recall.ai bot."""
+    if not RECALL_API_KEY:
+        raise HTTPException(status_code=500, detail="Recall.ai API key not configured")
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+    except httpx.HTTPError:
+        pass  # Best-effort — don't block the client reset
+    bot_store.pop(bot_id, None)
+    return {"ok": True}
+
+
 @router.get("/bot-status/{bot_id}")
 async def bot_status(bot_id: str):
     if not RECALL_API_KEY:

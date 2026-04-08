@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -1174,6 +1174,7 @@ export default function App() {
   const [meetingUrl, setMeetingUrl] = useState('')
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
+  const [activeBotId, setActiveBotId] = useState(null)
   const pollRef = useRef(null)
 
   const [history, setHistory] = useState([])
@@ -1636,6 +1637,7 @@ export default function App() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
       const data = await res.json()
       setBotStatus(data.status)
+      setActiveBotId(data.bot_id)
       startPolling(data.bot_id)
     } catch (e) {
       setBotStatus('error')
@@ -1678,6 +1680,16 @@ export default function App() {
         }
       } catch { /* network hiccup, keep polling */ }
     }, 4000)
+  }
+
+  const cancelBot = async () => {
+    clearInterval(pollRef.current)
+    if (activeBotId) {
+      apiFetch(`/remove-bot/${activeBotId}`, { method: 'DELETE' }).catch(() => {})
+    }
+    setBotStatus(null)
+    setBotError(null)
+    setActiveBotId(null)
   }
 
   // Clean up poll on unmount
@@ -2745,9 +2757,10 @@ export default function App() {
                         <p className="text-[10px] text-gray-600 mt-0.5">Results will appear automatically when the meeting ends</p>
                       )}
                     </div>
-                    {botStatus === 'recording' && (
-                      <span className="ml-auto w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></span>
-                    )}
+                    {botStatus === 'recording'
+                      ? <span className="ml-auto w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></span>
+                      : <button onClick={cancelBot} className="ml-auto text-[10px] px-2 py-1 rounded-lg flex-shrink-0 text-slate-400 hover:text-white transition-colors" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>Cancel</button>
+                    }
                   </div>
                 )}
 
