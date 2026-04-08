@@ -187,7 +187,13 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         setLoadingGlobal(false)
         if (!res.ok) throw new Error('Global chat failed')
         const data = await res.json()
-        appendMsg({ role: 'assistant', content: data.response, globalSearch: true })
+        appendMsg({
+          role: 'assistant',
+          content: data.response,
+          globalSearch: true,
+          toolsUsed: data.tools_used || [],
+          pendingConfirmations: data.pending_confirmations || [],
+        })
       } else {
         const res = await apiFetch('/chat', {
           method: 'POST',
@@ -196,7 +202,12 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         })
         if (!res.ok) throw new Error('Chat failed')
         const data = await res.json()
-        appendMsg({ role: 'assistant', content: data.response })
+        appendMsg({
+          role: 'assistant',
+          content: data.response,
+          toolsUsed: data.tools_used || [],
+          pendingConfirmations: data.pending_confirmations || [],
+        })
       }
     } catch {
       appendMsg({ role: 'assistant', content: 'Sorry, something went wrong.' })
@@ -366,6 +377,76 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                 ? { background: 'linear-gradient(135deg, #0284c7, #0d9488)' }
                 : { background: 'rgba(255,255,255,0.05)' }}>
               {msg.content}
+              {msg.toolsUsed?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {msg.toolsUsed.map((t, ti) => (
+                    <span key={ti} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-medium"
+                      style={{ background: 'rgba(14,165,233,0.12)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      {t.summary || t.tool}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {msg.pendingConfirmations?.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {msg.pendingConfirmations.map((pc, ci) => (
+                    <div key={ci} className="rounded-lg p-2.5 text-[11px]"
+                      style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                      <p className="text-yellow-400 font-medium mb-1">{pc.message || `Confirm: ${pc.tool}`}</p>
+                      <pre className="text-gray-400 text-[10px] whitespace-pre-wrap mb-2 max-h-24 overflow-y-auto">
+                        {typeof pc.arguments === 'object' ? JSON.stringify(pc.arguments, null, 2) : pc.arguments}
+                      </pre>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await apiFetch('/chat/confirm-tool', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ tool: pc.tool, arguments: pc.arguments }),
+                              })
+                              if (!res.ok) throw new Error('Confirm failed')
+                              const result = await res.json()
+                              const updateMsg = (prev) => prev.map((m, mi) => mi === i ? {
+                                ...m,
+                                pendingConfirmations: (m.pendingConfirmations || []).filter((_, idx) => idx !== ci),
+                                toolsUsed: [...(m.toolsUsed || []), { tool: pc.tool, summary: result.summary || `Executed ${pc.tool}` }],
+                              } : m)
+                              if (viewingSession) {
+                                setViewingSession(prev => ({ ...prev, msgs: updateMsg(prev.msgs) }))
+                              } else {
+                                setMessages(updateMsg)
+                              }
+                            } catch (err) {
+                              console.warn('[ChatPanel] confirm-tool failed:', err)
+                            }
+                          }}
+                          className="px-3 py-1 rounded-md text-[10px] font-medium text-white transition-colors hover:opacity-90"
+                          style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}
+                        >Confirm</button>
+                        <button
+                          onClick={() => {
+                            const updateMsg = (prev) => prev.map((m, mi) => mi === i ? {
+                              ...m,
+                              pendingConfirmations: (m.pendingConfirmations || []).filter((_, idx) => idx !== ci),
+                            } : m)
+                            if (viewingSession) {
+                              setViewingSession(prev => ({ ...prev, msgs: updateMsg(prev.msgs) }))
+                            } else {
+                              setMessages(updateMsg)
+                            }
+                          }}
+                          className="px-3 py-1 rounded-md text-[10px] font-medium text-gray-400 hover:text-gray-200 transition-colors"
+                          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                        >Cancel</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {msg.agentUpdated && (
                 <span className="block mt-1 text-[10px] text-sky-400 opacity-70">↑ card updated</span>
               )}

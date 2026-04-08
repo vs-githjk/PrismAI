@@ -184,6 +184,8 @@ async def join_meeting(req: JoinMeetingRequest):
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
 
+    realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events"
+
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{RECALL_API_BASE}/bot/",
@@ -200,7 +202,17 @@ async def join_meeting(req: JoinMeetingRequest):
                         "provider": {
                             "meeting_captions": {}
                         }
-                    }
+                    },
+                    "realtime_endpoints": [
+                        {
+                            "type": "webhook",
+                            "url": realtime_url,
+                            "events": [
+                                "transcript.data",
+                                "participant_events.chat_message",
+                            ],
+                        }
+                    ],
                 },
             },
             timeout=15,
