@@ -66,6 +66,7 @@ async def _send_bot_intro(bot_id: str):
 async def _fetch_transcript(bot_id: str):
     resp = None
     for attempt in range(5):
+        print(f"[recall] fetch transcript attempt {attempt + 1}/5 for bot {bot_id}")
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RECALL_API_BASE}/bot/{bot_id}/transcript/",
@@ -74,7 +75,8 @@ async def _fetch_transcript(bot_id: str):
             )
         if resp.status_code == 200:
             return resp
-        await asyncio.sleep(5 * (attempt + 1))
+        print(f"[recall] transcript not ready, status={resp.status_code}")
+        await asyncio.sleep(3 * (attempt + 1))
     return resp
 
 
@@ -90,12 +92,14 @@ def _transcript_from_recall_words(words: list) -> str:
 
 async def _process_bot_transcript(bot_id: str):
     try:
-        await asyncio.sleep(5)
+        print(f"[recall] starting transcript processing for bot {bot_id}")
+        await asyncio.sleep(3)
         resp = await _fetch_transcript(bot_id)
 
         if resp is None or resp.status_code != 200:
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = "Failed to fetch transcript from Recall.ai"
+            print(f"[recall] ERROR: failed to fetch transcript, status={resp.status_code if resp else 'None'}")
             return
 
         raw = resp.json()
@@ -104,14 +108,18 @@ async def _process_bot_transcript(bot_id: str):
         if not transcript.strip():
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = f"No transcript content found (raw had {len(raw) if isinstance(raw, list) else type(raw).__name__} items)"
+            print(f"[recall] ERROR: empty transcript")
             return
 
+        print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = await run_full_analysis(transcript)
         bot_store[bot_id]["status"] = "done"
+        print(f"[recall] analysis complete for bot {bot_id}")
     except Exception as exc:
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = str(exc)
+        print(f"[recall] ERROR processing bot {bot_id}: {exc}")
 
 
 @router.post("/join-meeting")

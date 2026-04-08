@@ -1647,12 +1647,33 @@ export default function App() {
 
   const startPolling = (id) => {
     clearInterval(pollRef.current)
+    let networkFailCount = 0
+    let processingStartTime = null
     pollRef.current = setInterval(async () => {
       try {
         const res = await apiFetch(`/bot-status/${id}`)
-        if (!res.ok) return
+        if (!res.ok) {
+          networkFailCount++
+          if (networkFailCount > 15) {
+            clearInterval(pollRef.current)
+            setBotStatus('error')
+            setBotError('Lost connection to server. Click Retry to try again.')
+          }
+          return
+        }
+        networkFailCount = 0
         const data = await res.json()
         setBotStatus(data.status)
+        if (data.status === 'processing' && !processingStartTime) {
+          processingStartTime = Date.now()
+        }
+        // If processing has taken more than 3 minutes, show error
+        if (data.status === 'processing' && processingStartTime && Date.now() - processingStartTime > 180_000) {
+          clearInterval(pollRef.current)
+          setBotStatus('error')
+          setBotError('Transcript processing timed out. The server may have restarted. Click Retry to try again.')
+          return
+        }
         if (data.status === 'done') {
           clearInterval(pollRef.current)
           if (data.result) {
@@ -1665,12 +1686,10 @@ export default function App() {
             setBotTranscriptReady(false)
             setMobileTab('results')
           } else if (data.transcript) {
-            // Analysis didn't run but transcript is available — keep user on join tab, prompt to analyze
             setTranscriptForTab(data.transcript, 'paste')
             setSessionId(s => s + 1)
             setBotTranscriptReady(true)
           } else {
-            // No transcript and no result — surface as an error so the user isn't stuck
             setBotStatus('error')
             setBotError('Meeting ended but no transcript was returned. Check the Recall.ai dashboard or try again.')
           }
@@ -1678,7 +1697,15 @@ export default function App() {
           clearInterval(pollRef.current)
           setBotError(data.error || 'Bot encountered an error')
         }
-      } catch { /* network hiccup, keep polling */ }
+      } catch (err) {
+        console.warn('[poll] network error, will retry:', err?.message)
+        networkFailCount++
+        if (networkFailCount > 15) {
+          clearInterval(pollRef.current)
+          setBotStatus('error')
+          setBotError('Cannot reach the server. Check your connection or try again.')
+        }
+      }
     }, 4000)
   }
 
