@@ -131,6 +131,9 @@ async def _fetch_transcript(bot_id: str):
         bot_data = resp.json()
         recordings = bot_data.get("recordings") or []
         print(f"[recall] bot has {len(recordings)} recording(s)")
+        for i, rec in enumerate(recordings):
+            shortcuts = rec.get("media_shortcuts") or {}
+            print(f"[recall] recording[{i}] media_shortcuts keys={list(shortcuts.keys())} status={rec.get('status')}")
 
         # Path 1: async providers (assembly_ai, deepgram, etc.) — download URL in media_shortcuts
         download_url = None
