@@ -288,9 +288,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "recording_config": {
                     "transcript": {
                         "provider": {
-                            "deepgram_streaming": {
-                                "api_key": DEEPGRAM_API_KEY,
-                            }
+                            "deepgram_streaming": {}
                         }
                     },
                     "realtime_endpoints": [
