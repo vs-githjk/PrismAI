@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { apiFetch } from '../lib/api'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-const TABS = ['Slack', 'Notion', 'Calendar']
+const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint }) {
   return (
@@ -50,7 +51,7 @@ const AUTO_JOIN_OPTIONS = [
   { value: 'marked', label: 'Auto-join starred',  hint: 'Only auto-join meetings you\'ve starred in the panel.' },
 ]
 
-export default function IntegrationsModal({ integrations, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange }) {
+export default function IntegrationsModal({ integrations, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false }) {
   const [tab, setTab] = useState('Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
@@ -60,19 +61,44 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
   const [testingSlack, setTestingSlack] = useState(false)
   const [slackTestResult, setSlackTestResult] = useState(null) // 'ok' | 'err'
 
-  function save() {
+  // Agentic tool integrations (stored in Supabase user_settings)
+  const [linearApiKey, setLinearApiKey] = useState(integrations.linear_api_key || '')
+  const [slackBotToken, setSlackBotToken] = useState(integrations.slack_bot_token || '')
+  const [savingTools, setSavingTools] = useState(false)
+  const [toolSaveResult, setToolSaveResult] = useState(null) // 'ok' | 'err'
+
+  async function save() {
     const updated = {
       slack_webhook: slackWebhook,
       notion_token: notionToken,
       notion_page_id: notionPageId,
       auto_send_slack: autoSendSlack,
       auto_send_notion: autoSendNotion,
+      linear_api_key: linearApiKey,
+      slack_bot_token: slackBotToken,
     }
     localStorage.setItem('prism_slack_webhook', slackWebhook)
     localStorage.setItem('prism_notion_token', notionToken)
     localStorage.setItem('prism_notion_page_id', notionPageId)
     localStorage.setItem('prism_auto_send_slack', autoSendSlack ? '1' : '0')
     localStorage.setItem('prism_auto_send_notion', autoSendNotion ? '1' : '0')
+
+    // Save tool tokens to backend (Supabase user_settings)
+    if (isSignedIn) {
+      try {
+        await apiFetch('/user-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            linear_api_key: linearApiKey || null,
+            slack_bot_token: slackBotToken || null,
+          }),
+        })
+      } catch (err) {
+        console.warn('[IntegrationsModal] Failed to save tool settings:', err)
+      }
+    }
+
     onSave(updated)
     onClose()
   }
@@ -146,6 +172,16 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                   <line x1="16" y1="2" x2="16" y2="6"/>
                   <line x1="8" y1="2" x2="8" y2="6"/>
                   <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              )}
+              {t === 'Gmail' && (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+                </svg>
+              )}
+              {t === 'Linear' && (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.357 16.643a.755.755 0 0 1 0-1.069L14.786 4.146c.15-.149.349-.223.548-.223s.399.074.548.223a.755.755 0 0 1 0 1.069L4.454 16.643a.783.783 0 0 1-1.097 0zm-.843 3.572a.755.755 0 0 1 0-1.069L16.643 5.017a.783.783 0 0 1 1.097 0 .755.755 0 0 1 0 1.069L3.611 20.215a.783.783 0 0 1-1.097 0zm3.2.856a.755.755 0 0 1 0-1.069l11.429-11.428a.783.783 0 0 1 1.097 0 .755.755 0 0 1 0 1.069L6.811 21.071a.783.783 0 0 1-1.097 0z"/>
                 </svg>
               )}
               {t}
@@ -300,6 +336,77 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 PrismAI requests read-only access to your primary calendar. It detects Zoom, Google Meet, and Teams links and lets you join with one click — no link pasting required.
               </div>
             </div>
+          )}
+
+          {tab === 'Gmail' && (
+            <div className="space-y-4">
+              <div className="rounded-xl p-4 flex items-center gap-3"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
+                  style={{ background: calendarConnected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                  {calendarConnected ? (
+                    <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-200">
+                    {calendarConnected ? 'Gmail connected via Google' : 'Gmail'}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {calendarConnected
+                      ? 'PrismAI can send and read emails using your Google account.'
+                      : 'Connect Google Calendar first — Gmail uses the same Google connection.'}
+                  </p>
+                </div>
+              </div>
+
+              {!calendarConnected && (
+                <button
+                  onClick={() => { onConnectCalendar?.(); onClose() }}
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01]"
+                  style={{ background: 'linear-gradient(135deg, #4285F4, #34A853)' }}>
+                  Connect Google Account
+                </button>
+              )}
+
+              <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                Gmail tools let PrismAI send follow-up emails and read your inbox when you ask in the chat. For example: "email the action items to the team" or "check my inbox for replies."
+              </div>
+            </div>
+          )}
+
+          {tab === 'Linear' && (
+            <>
+              <Field
+                label="Linear API Key"
+                placeholder="lin_api_..."
+                value={linearApiKey}
+                onChange={setLinearApiKey}
+                type="password"
+                hint="Create a personal API key at linear.app/settings/api. This lets PrismAI create issues from action items."
+              />
+              {linearApiKey.trim() && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Key configured
+                  </span>
+                </div>
+              )}
+              <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                With Linear connected, you can ask PrismAI to create issues directly from the chat. For example: "create a Linear issue for the auth bug we discussed."
+              </div>
+            </>
           )}
         </div>
 

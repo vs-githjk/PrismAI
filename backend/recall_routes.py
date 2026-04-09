@@ -1,11 +1,14 @@
 import asyncio
+import json
 import os
+import time
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from analysis_service import run_full_analysis
+from auth import supabase
 
 
 router = APIRouter(tags=["recall"])
@@ -14,8 +17,57 @@ RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
 
-# In-memory store: bot_id → { status, result, error, transcript }
+# In-memory cache (always used for fast access; synced to Supabase when available)
 bot_store: dict = {}
+
+
+def _db_save(bot_id: str, fields: dict):
+    """Persist bot state to Supabase (best-effort, non-blocking)."""
+    if not supabase:
+        return
+    try:
+        fields["updated_at"] = "now()"
+        existing = supabase.table("bot_sessions").select("bot_id").eq("bot_id", bot_id).maybe_single().execute()
+        if existing.data:
+            supabase.table("bot_sessions").update(fields).eq("bot_id", bot_id).execute()
+        else:
+            fields["bot_id"] = bot_id
+            supabase.table("bot_sessions").insert(fields).execute()
+    except Exception as exc:
+        print(f"[recall] db save failed for {bot_id}: {exc}")
+
+
+def _db_load(bot_id: str) -> dict | None:
+    """Load bot state from Supabase."""
+    if not supabase:
+        return None
+    try:
+        res = supabase.table("bot_sessions").select("*").eq("bot_id", bot_id).maybe_single().execute()
+        if res.data:
+            row = res.data
+            return {
+                "status": row.get("status", "joining"),
+                "result": row.get("result"),
+                "error": row.get("error"),
+                "transcript": row.get("transcript"),
+                "commands": row.get("commands") or [],
+            }
+    except Exception as exc:
+        print(f"[recall] db load failed for {bot_id}: {exc}")
+    return None
+
+
+def _db_append_command(bot_id: str, command: dict):
+    """Append a command log entry to the bot session."""
+    if not supabase:
+        return
+    try:
+        res = supabase.table("bot_sessions").select("commands").eq("bot_id", bot_id).maybe_single().execute()
+        commands = (res.data or {}).get("commands") or []
+        commands.append(command)
+        supabase.table("bot_sessions").update({"commands": commands, "updated_at": "now()"}).eq("bot_id", bot_id).execute()
+    except Exception as exc:
+        print(f"[recall] db append command failed: {exc}")
 
 STATUS_MAP = {
     "joining_call": "joining",
@@ -152,6 +204,7 @@ async def _process_bot_transcript(bot_id: str):
         if resp is None:
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = "Failed to fetch transcript from Recall.ai"
+            _db_save(bot_id, {"status": "error", "error": bot_store[bot_id]["error"]})
             print(f"[recall] ERROR: failed to fetch transcript")
             return
 
@@ -161,6 +214,7 @@ async def _process_bot_transcript(bot_id: str):
         if not transcript.strip():
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = "No transcript content found — the meeting may have been too short or had no speech"
+            _db_save(bot_id, {"status": "error", "error": bot_store[bot_id]["error"]})
             print(f"[recall] ERROR: empty transcript")
             return
 
@@ -168,10 +222,12 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = await run_full_analysis(transcript)
         bot_store[bot_id]["status"] = "done"
+        _db_save(bot_id, {"status": "done", "transcript": transcript, "result": bot_store[bot_id]["result"]})
         print(f"[recall] analysis complete for bot {bot_id}")
     except Exception as exc:
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = str(exc)
+        _db_save(bot_id, {"status": "error", "error": str(exc)})
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
 
 
@@ -224,7 +280,8 @@ async def join_meeting(req: JoinMeetingRequest):
 
     data = resp.json()
     bot_id = data["id"]
-    bot_store[bot_id] = {"status": "joining", "result": None, "error": None}
+    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": []}
+    _db_save(bot_id, {"status": "joining"})
     asyncio.create_task(_send_bot_intro(bot_id))
     return {"bot_id": bot_id, "status": "joining"}
 
@@ -261,6 +318,12 @@ async def bot_status(bot_id: str):
     if not RECALL_API_KEY:
         raise HTTPException(status_code=500, detail="Recall.ai API key not configured")
 
+    # Try loading from DB if not in memory (handles server restart)
+    if bot_id not in bot_store:
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
+
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{RECALL_API_BASE}/bot/{bot_id}/",
@@ -280,15 +343,16 @@ async def bot_status(bot_id: str):
 
     if recall_status in ("call_ended", "done"):
         if bot_id not in bot_store:
-            bot_store[bot_id] = {"status": "processing", "result": None, "error": None}
+            bot_store[bot_id] = {"status": "processing", "result": None, "error": None, "commands": []}
+            _db_save(bot_id, {"status": "processing"})
             asyncio.create_task(_process_bot_transcript(bot_id))
         elif bot_store[bot_id].get("status") not in ("processing", "done", "error"):
-            # Webhook never fired — trigger processing via polling fallback
             bot_store[bot_id]["status"] = "processing"
+            _db_save(bot_id, {"status": "processing"})
             asyncio.create_task(_process_bot_transcript(bot_id))
 
-    entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None})
-    # Don't let Recall's "done" override our internal "processing" — our analysis may still be running
+    entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None, "commands": []})
+    # Don't let Recall's "done" override our internal "processing"
     entry["status"] = our_status if entry.get("status") not in ("done", "error", "processing") else entry["status"]
     return entry
 
@@ -312,18 +376,22 @@ async def recall_webhook(request: Request):
         return {"ok": True}
 
     if bot_id not in bot_store:
-        bot_store[bot_id] = {"status": "unknown", "result": None, "error": None}
+        bot_store[bot_id] = {"status": "unknown", "result": None, "error": None, "commands": []}
 
     if event in ("bot.joining_call", "joining_call"):
         bot_store[bot_id]["status"] = "joining"
+        _db_save(bot_id, {"status": "joining"})
     elif event in ("bot.in_call_recording", "in_call_recording"):
         bot_store[bot_id]["status"] = "recording"
+        _db_save(bot_id, {"status": "recording"})
     elif event in ("bot.call_ended", "call_ended", "bot.done", "done"):
         if bot_store[bot_id].get("status") not in ("processing", "done"):
             bot_store[bot_id]["status"] = "processing"
+            _db_save(bot_id, {"status": "processing"})
             asyncio.create_task(_process_bot_transcript(bot_id))
     elif event in ("bot.fatal_error", "fatal_error"):
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = "Bot encountered a fatal error"
+        _db_save(bot_id, {"status": "error", "error": "Bot encountered a fatal error"})
 
     return {"ok": True}

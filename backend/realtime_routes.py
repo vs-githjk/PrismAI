@@ -15,6 +15,7 @@ from groq import AsyncGroq
 
 from tools.registry import get_available_tools, execute_tool, confirm_and_execute
 from tools.tts import text_to_speech
+from recall_routes import bot_store, _db_append_command
 
 router = APIRouter(tags=["realtime"])
 
@@ -193,6 +194,18 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             call_kwargs["messages"] = messages
         else:
             reply = "Done."
+
+        # Log command to bot_store and Supabase
+        cmd_entry = {
+            "command": command,
+            "speaker": speaker,
+            "tools": tools_used,
+            "reply": reply,
+            "ts": time.time(),
+        }
+        if bot_id in bot_store:
+            bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
+        _db_append_command(bot_id, cmd_entry)
 
         # Respond via voice + chat
         print(f"[realtime] command='{command}' tools={tools_used} reply='{reply}'")

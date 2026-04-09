@@ -1185,6 +1185,7 @@ export default function App() {
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
   const [activeBotId, setActiveBotId] = useState(null)
+  const [liveCommands, setLiveCommands] = useState([]) // commands executed during live meeting
   const pollRef = useRef(null)
 
   const [history, setHistory] = useState([])
@@ -1330,6 +1331,20 @@ export default function App() {
     auto_send_slack: localStorage.getItem('prism_auto_send_slack') === '1',
     auto_send_notion: localStorage.getItem('prism_auto_send_notion') === '1',
   }))
+  // Load tool settings from backend when signed in
+  useEffect(() => {
+    if (!user) return
+    apiFetch('/user-settings').then(async (res) => {
+      if (!res.ok) return
+      const data = await res.json()
+      setIntegrations(prev => ({
+        ...prev,
+        linear_api_key: data.linear_api_key || '',
+        slack_bot_token: data.slack_bot_token || '',
+      }))
+    }).catch(() => {})
+  }, [user])
+
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
   const [integrationToast, setIntegrationToast] = useState(null) // { type: 'ok'|'err', msg }
@@ -1637,6 +1652,7 @@ export default function App() {
     if (!meetingUrl.trim()) return
     setBotError(null)
     setBotTranscriptReady(false)
+    setLiveCommands([])
     setBotStatus('joining')
     try {
       const res = await apiFetch('/join-meeting', {
@@ -1674,6 +1690,7 @@ export default function App() {
         networkFailCount = 0
         const data = await res.json()
         setBotStatus(data.status)
+        if (data.commands?.length) setLiveCommands(data.commands)
         if (data.status === 'processing' && !processingStartTime) {
           processingStartTime = Date.now()
         }
@@ -2824,13 +2841,42 @@ export default function App() {
                         {botStatus === 'processing' && 'Meeting ended — analyzing transcript...'}
                       </p>
                       {botStatus === 'recording' && (
-                        <p className="text-[10px] text-gray-600 mt-0.5">Results will appear automatically when the meeting ends</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5">Listening for "Prism, ..." commands · Results when meeting ends</p>
                       )}
                     </div>
                     {botStatus === 'recording'
                       ? <span className="ml-auto w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></span>
                       : <button onClick={cancelBot} className="ml-auto text-[10px] px-2 py-1 rounded-lg flex-shrink-0 text-slate-400 hover:text-white transition-colors" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>Cancel</button>
                     }
+                  </div>
+                )}
+
+                {/* Live command log */}
+                {botStatus === 'recording' && liveCommands.length > 0 && (
+                  <div className="mt-2 rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <svg className="w-3 h-3 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      <span className="text-[10px] font-medium text-violet-300">Live commands</span>
+                      <span className="ml-auto text-[9px] text-gray-600">{liveCommands.length}</span>
+                    </div>
+                    <div className="max-h-28 overflow-y-auto">
+                      {liveCommands.slice(-5).map((cmd, i) => (
+                        <div key={i} className="px-3 py-1.5 flex items-start gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                          <svg className="w-2.5 h-2.5 text-emerald-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <div className="min-w-0">
+                            <p className="text-[10px] text-gray-300 truncate">"{cmd.command}"</p>
+                            <p className="text-[9px] text-gray-600 truncate">
+                              {cmd.speaker && <span>{cmd.speaker} · </span>}
+                              {cmd.tools?.length ? cmd.tools.join(', ') : 'responded'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -3406,6 +3452,7 @@ export default function App() {
             onDisconnectCalendar={disconnectCalendar}
             autoJoinSetting={autoJoinSetting}
             onAutoJoinChange={saveAutoJoinSetting}
+            isSignedIn={!!user}
           />
         </Suspense>
       )}
