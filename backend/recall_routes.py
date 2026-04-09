@@ -16,6 +16,7 @@ router = APIRouter(tags=["recall"])
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # In-memory cache (always used for fast access; synced to Supabase when available)
 bot_store: dict = {}
@@ -287,7 +288,9 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "recording_config": {
                     "transcript": {
                         "provider": {
-                            "recallai_streaming": {}
+                            "deepgram_streaming": {
+                                "api_key": DEEPGRAM_API_KEY,
+                            }
                         }
                     },
                     "realtime_endpoints": [
