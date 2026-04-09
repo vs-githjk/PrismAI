@@ -113,11 +113,11 @@ async def _send_bot_intro(bot_id: str):
 
 
 async def _fetch_transcript(bot_id: str):
-    """Fetch transcript via bot recordings → media_shortcuts → transcript download URL."""
+    """Fetch transcript — tries media_shortcuts download URL first (async providers),
+    then falls back to /bot/{id}/transcript/ (streaming providers like recallai_streaming)."""
     for attempt in range(12):
         print(f"[recall] fetch transcript attempt {attempt + 1}/12 for bot {bot_id}")
         async with httpx.AsyncClient() as client:
-            # Get bot details which include recordings
             resp = await client.get(
                 f"{RECALL_API_BASE}/bot/{bot_id}/",
                 headers={"Authorization": f"Token {RECALL_API_KEY}"},
@@ -132,7 +132,7 @@ async def _fetch_transcript(bot_id: str):
         recordings = bot_data.get("recordings") or []
         print(f"[recall] bot has {len(recordings)} recording(s)")
 
-        # Look for transcript download URL in recordings
+        # Path 1: async providers (assembly_ai, deepgram, etc.) — download URL in media_shortcuts
         download_url = None
         for rec in recordings:
             shortcuts = rec.get("media_shortcuts") or {}
@@ -140,21 +140,38 @@ async def _fetch_transcript(bot_id: str):
             if download_url:
                 break
 
-        if not download_url:
-            wait = min(10 * (attempt + 1), 60)
-            print(f"[recall] no transcript download URL yet, waiting {wait}s...")
-            await asyncio.sleep(wait)
+        if download_url:
+            print(f"[recall] downloading transcript from {download_url[:80]}...")
+            async with httpx.AsyncClient() as client:
+                transcript_resp = await client.get(download_url, timeout=30)
+            if transcript_resp.status_code == 200:
+                return transcript_resp
+            print(f"[recall] transcript download failed, status={transcript_resp.status_code}")
+            await asyncio.sleep(3 * (attempt + 1))
             continue
 
-        # Download the actual transcript data
-        print(f"[recall] downloading transcript from {download_url[:80]}...")
+        # Path 2: streaming providers (recallai_streaming, gladia_v2_streaming, etc.)
+        # Transcript is stored directly on the bot via /bot/{id}/transcript/
+        print(f"[recall] no download URL, trying /bot/{bot_id}/transcript/ (streaming provider)")
         async with httpx.AsyncClient() as client:
-            transcript_resp = await client.get(download_url, timeout=30)
+            t_resp = await client.get(
+                f"{RECALL_API_BASE}/bot/{bot_id}/transcript/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=30,
+            )
+        if t_resp.status_code == 200:
+            data = t_resp.json()
+            # Endpoint returns list of segments or empty list
+            if data:
+                print(f"[recall] got transcript from /transcript/ endpoint, {len(data)} segments")
+                return t_resp
+            print(f"[recall] /transcript/ endpoint returned empty list")
+        else:
+            print(f"[recall] /transcript/ endpoint returned {t_resp.status_code}")
 
-        if transcript_resp.status_code == 200:
-            return transcript_resp
-        print(f"[recall] transcript download failed, status={transcript_resp.status_code}")
-        await asyncio.sleep(3 * (attempt + 1))
+        wait = min(10 * (attempt + 1), 60)
+        print(f"[recall] no transcript yet, waiting {wait}s...")
+        await asyncio.sleep(wait)
 
     return None
 
