@@ -213,19 +213,21 @@ def _transcript_from_recall_data(raw) -> str:
 async def _process_bot_transcript(bot_id: str):
     try:
         print(f"[recall] starting transcript processing for bot {bot_id}")
-        await asyncio.sleep(15)
         resp = await _fetch_transcript(bot_id)
 
-        if resp is None:
-            bot_store[bot_id]["status"] = "error"
-            bot_store[bot_id]["error"] = "Failed to fetch transcript from Recall.ai"
-            _db_save(bot_id, {"status": "error", "error": bot_store[bot_id]["error"]})
-            print(f"[recall] ERROR: failed to fetch transcript")
-            return
+        transcript = ""
+        if resp is not None:
+            raw = resp.json()
+            print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:500]}")
+            transcript = _transcript_from_recall_data(raw)
 
-        raw = resp.json()
-        print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:500]}")
-        transcript = _transcript_from_recall_data(raw)
+        # Fallback: use realtime-streamed transcript lines accumulated during the meeting
+        if not transcript.strip():
+            rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
+            if rt_lines:
+                transcript = "\n".join(rt_lines)
+                print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
+
         if not transcript.strip():
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = "No transcript content found — the meeting may have been too short or had no speech"

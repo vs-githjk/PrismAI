@@ -257,8 +257,11 @@ async def realtime_events(request: Request):
             line = f"{speaker}: {text.strip()}"
             state["transcript_buffer"].append(line)
             # Keep buffer manageable
-            if len(state["transcript_buffer"]) > 100:
-                state["transcript_buffer"] = state["transcript_buffer"][-50:]
+            if len(state["transcript_buffer"]) > 500:
+                state["transcript_buffer"] = state["transcript_buffer"][-400:]
+            # Also write to bot_store so _process_bot_transcript can use it
+            if bot_id in bot_store:
+                bot_store[bot_id]["realtime_transcript_lines"] = state["transcript_buffer"]
 
             # Check for command trigger
             command = _detect_command(text)
