@@ -265,7 +265,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "recording_config": {
                     "transcript": {
                         "provider": {
-                            "gladia_v2_streaming": {}
+                            "recallai_streaming": {}
                         }
                     },
                     "realtime_endpoints": [
