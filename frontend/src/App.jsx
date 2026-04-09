@@ -1985,6 +1985,11 @@ export default function App() {
 
   const signOut = async () => {
     clearWorkspaceState()
+    clearInterval(pollRef.current)
+    setBotStatus(null)
+    setBotError(null)
+    setActiveBotId(null)
+    sessionStorage.removeItem('prism_active_bot_id')
     setDemoChatOpen(false)
     setIsDemoMode(false)
     setHistory([])
