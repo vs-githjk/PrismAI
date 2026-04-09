@@ -1184,7 +1184,7 @@ export default function App() {
   const [meetingUrl, setMeetingUrl] = useState('')
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
-  const [activeBotId, setActiveBotId] = useState(null)
+  const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
   const [liveCommands, setLiveCommands] = useState([]) // commands executed during live meeting
   const pollRef = useRef(null)
 
@@ -1664,6 +1664,7 @@ export default function App() {
       const data = await res.json()
       setBotStatus(data.status)
       setActiveBotId(data.bot_id)
+      sessionStorage.setItem('prism_active_bot_id', data.bot_id)
       startPolling(data.bot_id)
     } catch (e) {
       setBotStatus('error')
@@ -1703,6 +1704,7 @@ export default function App() {
         }
         if (data.status === 'done') {
           clearInterval(pollRef.current)
+          sessionStorage.removeItem('prism_active_bot_id')
           if (data.result) {
             setTranscriptForTab(data.transcript || '', 'paste')
             setSessionId(s => s + 1)
@@ -1722,6 +1724,7 @@ export default function App() {
           }
         } else if (data.status === 'error') {
           clearInterval(pollRef.current)
+          sessionStorage.removeItem('prism_active_bot_id')
           setBotError(data.error || 'Bot encountered an error')
         }
       } catch (err) {
@@ -1744,10 +1747,20 @@ export default function App() {
     setBotStatus(null)
     setBotError(null)
     setActiveBotId(null)
+    sessionStorage.removeItem('prism_active_bot_id')
   }
 
   // Clean up poll on unmount
   useEffect(() => () => clearInterval(pollRef.current), [])
+
+  // Resume polling if a bot was active before a page refresh
+  useEffect(() => {
+    const savedBotId = sessionStorage.getItem('prism_active_bot_id')
+    if (savedBotId && !pollRef.current) {
+      setBotStatus('joining')
+      startPolling(savedBotId)
+    }
+  }, [])
 
   // Consume pendingAutoJoinRef — fires joinMeeting once URL + flag are set
   useEffect(() => {
@@ -1779,6 +1792,7 @@ export default function App() {
       .then((data) => {
         setBotStatus(data.status)
         setActiveBotId(data.bot_id)
+        sessionStorage.setItem('prism_active_bot_id', data.bot_id)
         startPolling(data.bot_id)
       })
       .catch((e) => {
