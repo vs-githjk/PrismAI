@@ -2740,10 +2740,10 @@ export default function App() {
                   <span className="text-[11px] text-gray-600">
                     {transcript.length > 0 ? `${transcriptStats.words} words · ${transcriptSpeakerCount || 0} named speakers` : 'No transcript'}
                   </span>
-                  <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
+                  <button onClick={loading ? cancelActiveAnalysis : handleAnalyzeClick} disabled={!transcript.trim() && !loading}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
-                    style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
-                    {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
+                    style={{ background: loading ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: loading ? '0 4px 20px rgba(220,38,38,0.35)' : '0 4px 20px rgba(2,132,199,0.35)' }}>
+                    {loading ? (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Cancel</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                   </button>
                 </div>
               </div>
@@ -2770,10 +2770,10 @@ export default function App() {
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-2.5">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
-                      <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
+                      <button onClick={loading ? cancelActiveAnalysis : handleAnalyzeClick} disabled={!transcript.trim() && !loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
-                        style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
-                        {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
+                        style={{ background: loading ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: loading ? '0 4px 20px rgba(220,38,38,0.35)' : '0 4px 20px rgba(2,132,199,0.35)' }}>
+                        {loading ? (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Cancel</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                       </button>
                     </div>
                   </>
@@ -2804,10 +2804,10 @@ export default function App() {
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-2.5">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
-                      <button onClick={handleAnalyzeClick} disabled={!transcript.trim() || loading}
+                      <button onClick={loading ? cancelActiveAnalysis : handleAnalyzeClick} disabled={!transcript.trim() && !loading}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0"
-                        style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
-                        {loading ? (<><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Analyzing...</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
+                        style={{ background: loading ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: loading ? '0 4px 20px rgba(220,38,38,0.35)' : '0 4px 20px rgba(2,132,199,0.35)' }}>
+                        {loading ? (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Cancel</>) : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>Analyze Meeting</>)}
                       </button>
                     </div>
                   </>
@@ -3267,18 +3267,17 @@ export default function App() {
         {mobileTab === 'input' && inputTab !== 'join' && (
           <div className="lg:hidden fixed left-4 right-4 z-30" style={{ bottom: 'calc(3.25rem + env(safe-area-inset-bottom, 0px))' }}>
             <button
-              onClick={handleAnalyzeClick}
-              disabled={!transcript.trim() || loading}
+              onClick={loading ? cancelActiveAnalysis : handleAnalyzeClick}
+              disabled={!transcript.trim() && !loading}
               className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-2xl"
-              style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 30px rgba(2,132,199,0.35)' }}
+              style={{ background: loading ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: loading ? '0 8px 30px rgba(220,38,38,0.35)' : '0 8px 30px rgba(2,132,199,0.35)' }}
             >
               {loading ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                  Analyzing...
+                  Cancel
                 </>
               ) : (
                 <>
