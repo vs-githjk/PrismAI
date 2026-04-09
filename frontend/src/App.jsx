@@ -2403,7 +2403,7 @@ export default function App() {
                 </button>
 
                 {showHistory && (
-                  <div className="fixed right-4 top-14 w-[min(20rem,calc(100vw-2rem))] rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
+                  <div className="absolute right-0 top-[calc(100%+6px)] w-[min(20rem,calc(100vw-2rem))] rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
                     style={{ background: '#100c1e', border: '1px solid rgba(255,255,255,0.1)' }}>
                     <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                       <span className="text-xs font-semibold text-gray-300">Recent Meetings</span>
