@@ -26,13 +26,9 @@ def _db_save(bot_id: str, fields: dict):
     if not supabase:
         return
     try:
+        fields["bot_id"] = bot_id
         fields["updated_at"] = "now()"
-        existing = supabase.table("bot_sessions").select("bot_id").eq("bot_id", bot_id).maybe_single().execute()
-        if existing.data:
-            supabase.table("bot_sessions").update(fields).eq("bot_id", bot_id).execute()
-        else:
-            fields["bot_id"] = bot_id
-            supabase.table("bot_sessions").insert(fields).execute()
+        supabase.table("bot_sessions").upsert(fields, on_conflict="bot_id").execute()
     except Exception as exc:
         print(f"[recall] db save failed for {bot_id}: {exc}")
 
@@ -43,7 +39,7 @@ def _db_load(bot_id: str) -> dict | None:
         return None
     try:
         res = supabase.table("bot_sessions").select("*").eq("bot_id", bot_id).maybe_single().execute()
-        if res.data:
+        if res and res.data:
             row = res.data
             return {
                 "status": row.get("status", "joining"),
@@ -64,7 +60,7 @@ def _db_append_command(bot_id: str, command: dict):
         return
     try:
         res = supabase.table("bot_sessions").select("commands").eq("bot_id", bot_id).maybe_single().execute()
-        commands = (res.data or {}).get("commands") or []
+        commands = ((res.data if res else None) or {}).get("commands") or []
         commands.append(command)
         supabase.table("bot_sessions").update({"commands": commands, "updated_at": "now()"}).eq("bot_id", bot_id).execute()
     except Exception as exc:
@@ -118,8 +114,8 @@ async def _send_bot_intro(bot_id: str):
 
 async def _fetch_transcript(bot_id: str):
     """Fetch transcript via bot recordings → media_shortcuts → transcript download URL."""
-    for attempt in range(8):
-        print(f"[recall] fetch transcript attempt {attempt + 1}/8 for bot {bot_id}")
+    for attempt in range(12):
+        print(f"[recall] fetch transcript attempt {attempt + 1}/12 for bot {bot_id}")
         async with httpx.AsyncClient() as client:
             # Get bot details which include recordings
             resp = await client.get(
@@ -145,8 +141,9 @@ async def _fetch_transcript(bot_id: str):
                 break
 
         if not download_url:
-            print(f"[recall] no transcript download URL yet, waiting...")
-            await asyncio.sleep(3 * (attempt + 1))
+            wait = min(10 * (attempt + 1), 60)
+            print(f"[recall] no transcript download URL yet, waiting {wait}s...")
+            await asyncio.sleep(wait)
             continue
 
         # Download the actual transcript data
@@ -199,7 +196,7 @@ def _transcript_from_recall_data(raw) -> str:
 async def _process_bot_transcript(bot_id: str):
     try:
         print(f"[recall] starting transcript processing for bot {bot_id}")
-        await asyncio.sleep(5)
+        await asyncio.sleep(15)
         resp = await _fetch_transcript(bot_id)
 
         if resp is None:
