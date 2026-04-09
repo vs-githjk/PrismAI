@@ -239,9 +239,15 @@ async def realtime_events(request: Request):
     payload = await request.json()
 
     event_type = payload.get("event") or payload.get("type") or ""
-    bot_id = payload.get("bot_id") or payload.get("data", {}).get("bot_id") or ""
+    data_field = payload.get("data") or {}
+    bot_id = (
+        payload.get("bot_id")
+        or data_field.get("bot_id")
+        or (data_field.get("bot") or {}).get("id")
+        or ""
+    )
 
-    print(f"[realtime] event={event_type!r} bot={bot_id[:8] if bot_id else 'none'} keys={list(payload.keys())}")
+    print(f"[realtime] event={event_type!r} bot={bot_id[:8] if bot_id else 'none'} data_keys={list(data_field.keys()) if isinstance(data_field, dict) else type(data_field).__name__}")
 
     if not bot_id:
         return {"ok": True}

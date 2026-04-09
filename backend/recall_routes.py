@@ -136,12 +136,19 @@ async def _fetch_transcript(bot_id: str):
             shortcuts = rec.get("media_shortcuts") or {}
             print(f"[recall] recording[{i}] media_shortcuts keys={list(shortcuts.keys())} status={rec.get('status')}")
 
-        # Path 1: async providers (assembly_ai, deepgram, etc.) — download URL in media_shortcuts
+        # Path 1: download URL in media_shortcuts (try multiple known key names)
         download_url = None
         for rec in recordings:
             shortcuts = rec.get("media_shortcuts") or {}
-            download_url = shortcuts.get("transcript.data.download_url")
+            transcript_shortcut = shortcuts.get("transcript") or shortcuts.get("transcript.data")
+            if isinstance(transcript_shortcut, dict):
+                download_url = transcript_shortcut.get("download_url") or transcript_shortcut.get("data", {}).get("download_url")
+            elif isinstance(transcript_shortcut, str):
+                download_url = transcript_shortcut
+            if not download_url:
+                download_url = shortcuts.get("transcript.data.download_url")
             if download_url:
+                print(f"[recall] found transcript download URL")
                 break
 
         if download_url:
