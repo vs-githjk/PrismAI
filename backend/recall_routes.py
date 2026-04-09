@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from analysis_service import run_full_analysis
-from auth import supabase
+from auth import supabase, require_user_id
 
 
 router = APIRouter(tags=["recall"])
@@ -51,6 +51,7 @@ def _db_load(bot_id: str) -> dict | None:
                 "error": row.get("error"),
                 "transcript": row.get("transcript"),
                 "commands": row.get("commands") or [],
+                "user_id": row.get("user_id"),
             }
     except Exception as exc:
         print(f"[recall] db load failed for {bot_id}: {exc}")
@@ -231,12 +232,23 @@ async def _process_bot_transcript(bot_id: str):
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
 
 
+async def _optional_user_id(request: Request) -> str | None:
+    """Try to extract user_id from auth header, return None if not authenticated."""
+    try:
+        return await require_user_id(request)
+    except HTTPException:
+        return None
+
+
 @router.post("/join-meeting")
-async def join_meeting(req: JoinMeetingRequest):
+async def join_meeting(req: JoinMeetingRequest, request: Request):
     if not RECALL_API_KEY:
         raise HTTPException(status_code=500, detail="Recall.ai API key not configured")
     if not req.meeting_url.strip():
         raise HTTPException(status_code=400, detail="Meeting URL cannot be empty")
+
+    # Optionally link bot to authenticated user (enables live tool access)
+    user_id = await _optional_user_id(request)
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
 
@@ -280,8 +292,12 @@ async def join_meeting(req: JoinMeetingRequest):
 
     data = resp.json()
     bot_id = data["id"]
-    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": []}
-    _db_save(bot_id, {"status": "joining"})
+    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id}
+    _db_save(bot_id, {"status": "joining", "user_id": user_id})
+
+    from realtime_routes import init_bot_realtime
+    init_bot_realtime(bot_id)
+
     asyncio.create_task(_send_bot_intro(bot_id))
     return {"bot_id": bot_id, "status": "joining"}
 

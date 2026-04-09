@@ -1437,7 +1437,7 @@ export default function App() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/calendar.readonly',
+        scopes: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly',
         queryParams: { access_type: 'offline', prompt: 'consent' },
         redirectTo: `${window.location.origin}${window.location.pathname}`,
       },
@@ -1459,7 +1459,7 @@ export default function App() {
       client_id: clientId,
       redirect_uri: window.location.origin,
       response_type: 'code',
-      scope: 'https://www.googleapis.com/auth/calendar.readonly',
+      scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly',
       code_challenge: challenge,
       code_challenge_method: 'S256',
       access_type: 'offline',

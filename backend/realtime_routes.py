@@ -16,6 +16,7 @@ from groq import AsyncGroq
 from tools.registry import get_available_tools, execute_tool, confirm_and_execute
 from tools.tts import text_to_speech
 from recall_routes import bot_store, _db_append_command
+from auth import supabase
 
 router = APIRouter(tags=["realtime"])
 
@@ -55,17 +56,30 @@ def _detect_command(text: str) -> str | None:
 
 
 async def _get_settings_for_bot(bot_id: str) -> dict:
-    """Build user_settings dict from env vars for tool availability.
-    In the future, this could look up the user who started the bot.
-    """
+    """Look up the user who started this bot, then fetch their tool tokens from Supabase."""
     settings = {}
+
+    # Env-level fallbacks
     if SLACK_BOT_TOKEN:
         settings["slack_bot_token"] = SLACK_BOT_TOKEN
     if LINEAR_API_KEY:
         settings["linear_api_key"] = LINEAR_API_KEY
-    # Google tokens would come from the user who started the bot —
-    # for now, tools requiring google_access_token won't be available in live mode
-    # unless we store the user_id with the bot and look up their settings
+
+    # Look up user_id from the bot record, then fetch their per-user tokens
+    user_id = (bot_store.get(bot_id) or {}).get("user_id")
+    if user_id and supabase:
+        try:
+            resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
+            row = resp.data or {}
+            if row.get("google_access_token"):
+                settings["google_access_token"] = row["google_access_token"]
+            if row.get("slack_bot_token") and not settings.get("slack_bot_token"):
+                settings["slack_bot_token"] = row["slack_bot_token"]
+            if row.get("linear_api_key") and not settings.get("linear_api_key"):
+                settings["linear_api_key"] = row["linear_api_key"]
+        except Exception as exc:
+            print(f"[realtime] failed to load user settings for bot {bot_id}: {exc}")
+
     return settings
 
 

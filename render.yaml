@@ -17,5 +17,17 @@ services:
         sync: false
       - key: WEBHOOK_BASE_URL
         value: https://meeting-copilot-api.onrender.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: LINEAR_API_KEY
+        sync: false
       - key: PYTHON_VERSION
         value: 3.11.0

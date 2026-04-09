@@ -408,3 +408,79 @@ async def run(transcript: str) -> dict:
 - `frontend/src/components/UpcomingMeetings.jsx` — events panel
 - `backend/calendar_routes.py` — `POST /calendar/exchange-code` (PKCE token exchange), all other calendar routes
 - `supabase/calendar_migration.sql` — already applied
+
+---
+
+## Live Meeting Tools + Voice — Setup Checklist
+
+The agentic tool-calling system and live voice responses require several env vars and external service configs. Here's everything needed:
+
+### Render Dashboard — Environment Variables
+
+Add these in Render → `meeting-copilot-api` → Environment:
+
+| Variable | Required? | Where to get it | What it enables |
+|---|---|---|---|
+| `GROQ_API_KEY` | **Yes** | [console.groq.com](https://console.groq.com) | All LLM calls + Whisper transcription |
+| `RECALL_API_KEY` | **Yes** | [recall.ai dashboard](https://recall.ai) | Bot joining meetings |
+| `SUPABASE_URL` | **Yes** | Supabase → Settings → API | Database + auth |
+| `SUPABASE_KEY` | **Yes** | Supabase → Settings → API → `service_role` key | Backend DB access (never expose to frontend) |
+| `WEBHOOK_BASE_URL` | **Yes** | Already set: `https://meeting-copilot-api.onrender.com` | Recall.ai webhooks |
+| `GOOGLE_CLIENT_ID` | **Yes** | Google Cloud Console → Credentials | Calendar/Gmail OAuth |
+| `GOOGLE_CLIENT_SECRET` | **Yes** | Google Cloud Console → Credentials | Calendar/Gmail token exchange |
+| `ELEVENLABS_API_KEY` | For voice | [elevenlabs.io](https://elevenlabs.io) → Profile → API Keys | TTS voice responses in meetings |
+| `ELEVENLABS_VOICE_ID` | Optional | ElevenLabs → Voices → copy ID | Custom voice (default: `21m00Tcm4TlvDq8ikWAM` / Rachel) |
+| `SLACK_BOT_TOKEN` | For Slack | Slack App → OAuth & Permissions → Bot Token (`xoxb-...`) | Slack read/post/search tools |
+| `LINEAR_API_KEY` | For Linear | [linear.app/settings/api](https://linear.app/settings/api) | Linear issue creation tool |
+
+### Vercel Dashboard — Environment Variables
+
+Add these in Vercel → Project Settings → Environment Variables:
+
+| Variable | Value |
+|---|---|
+| `VITE_API_URL` | `https://meeting-copilot-api.onrender.com` |
+| `VITE_SUPABASE_URL` | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase `anon` key (safe for browser) |
+| `VITE_GOOGLE_CLIENT_ID` | Same Google Client ID as Render |
+
+### Google Cloud Console — Required Setup
+
+1. **OAuth Consent Screen** → Edit → Scopes → Add:
+   - `https://www.googleapis.com/auth/calendar.readonly`
+   - `https://www.googleapis.com/auth/calendar.events`
+   - `https://www.googleapis.com/auth/gmail.send`
+   - `https://www.googleapis.com/auth/gmail.readonly`
+2. **Credentials** → Your OAuth 2.0 Client → Authorized redirect URIs:
+   - `https://agentic-meeting-copilot.vercel.app`
+   - `http://localhost:5173` (for local dev)
+3. If the app is in "Testing" mode, add your Google account as a test user
+
+### Supabase — Migrations
+
+Run in **Supabase SQL Editor** (in order, skip if already applied):
+
+1. `supabase/auth_migration.sql` — creates `meetings` + `chats` tables
+2. `supabase/calendar_migration.sql` — creates `user_settings` table with Google token columns
+3. `supabase/tools_migration.sql` — adds `linear_api_key`, `slack_bot_token` columns + creates `bot_sessions` table
+
+### What works without optional env vars
+
+| Missing var | Impact |
+|---|---|
+| `ELEVENLABS_API_KEY` | Bot still works — responds via **meeting chat text** instead of voice. TTS silently falls back to chat. |
+| `SLACK_BOT_TOKEN` | Slack tools unavailable in chat. Users can still set per-user tokens via Integrations modal. |
+| `LINEAR_API_KEY` | Linear tool unavailable. Users can still set per-user keys via Integrations modal. |
+| `GOOGLE_CLIENT_ID/SECRET` | Calendar connect + Gmail tools disabled entirely. |
+
+### How live meeting commands work (end to end)
+
+1. User clicks "Join Meeting" → `POST /join-meeting` creates Recall.ai bot with `realtime_endpoints` webhook
+2. Recall.ai streams transcript chunks + chat messages to `POST /realtime-events` in real time
+3. `realtime_routes.py` watches for trigger phrase: **"Prism, ..."** or **"PrismAI, ..."**
+4. Detected command → LLM (Groq) picks tools from the user's available set → executes
+5. Response sent back via:
+   - Meeting chat: `POST /bot/{id}/send_chat_message/` (always works)
+   - Voice (if ElevenLabs configured): ElevenLabs TTS → `POST /bot/{id}/output_audio/`
+6. Command logged to `bot_sessions` table + shown in frontend command log
+7. After meeting ends → full transcript analysis runs as before (7 agents)
