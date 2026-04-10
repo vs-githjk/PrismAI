@@ -2656,17 +2656,17 @@ export default function App() {
 
           {/* Historical intelligence — collapsed by default */}
           {user && history.length > 1 && (
-            <div>
+            <div className="px-6">
               <button
-                className="w-full flex items-center justify-between px-1 py-1.5 rounded-lg hover:bg-white/[0.02] transition-colors"
+                className="w-full flex items-center justify-between py-1.5 hover:opacity-70 transition-opacity"
                 onClick={() => {
                   const next = !insightsCollapsed
                   setInsightsCollapsed(next)
                   try { localStorage.setItem('prism_insights_collapsed', String(next)) } catch {}
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <svg className="w-3 h-3 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                   </svg>
                   <span className="text-[11px] text-gray-600">Historical data · {history.length} meetings</span>
@@ -2677,7 +2677,7 @@ export default function App() {
                 </svg>
               </button>
               {!insightsCollapsed && (
-                <div className="flex flex-col gap-3 mt-2">
+                <div className="flex flex-col gap-3 mt-2 mb-2">
                   <Suspense fallback={null}>
                     <ScoreTrendChart history={history} onSelect={loadFromHistory} />
                   </Suspense>
