@@ -10,6 +10,11 @@ const STOP_WORDS = new Set([
   'across', 'still', 'again', 'there', 'where', 'what', 'when', 'been', 'being',
   'they', 'them', 'were', 'make', 'made', 'gets', 'getting', 'into', 'onto', 'over',
   'under', 'today', 'tomorrow', 'yesterday', 'week', 'weeks', 'month', 'months',
+  'january', 'february', 'march', 'april', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
 ])
 
 const BLOCKER_KEYWORDS = [

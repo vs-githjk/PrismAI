@@ -298,6 +298,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                               setChatHistory(prev => prev.filter(s => s.id !== session.id))
                               if (viewingSession?.id === session.id) setViewingSession(null)
                             }}
+                            aria-label="Delete chat session"
                             className="px-3 text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -493,6 +494,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
           style={{ background: 'rgba(0,0,0,0.3)' }}
         />
         <button onClick={() => send()} disabled={!input.trim() || loading}
+          aria-label="Send message"
           className="w-10 h-10 flex items-center justify-center rounded-xl text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
           style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
