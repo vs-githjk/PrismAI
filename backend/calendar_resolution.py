@@ -90,12 +90,34 @@ def resolve_relative_date(text: str, reference_date: date | None = None) -> dict
                 "resolved_day": resolved.strftime("%A"),
             }
 
+    WORD_TO_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                   "six": 6, "seven": 7, "a": 1, "an": 1}
+
     if match := re.search(r"\bin\s+(?P<count>\d+)\s+day", lowered):
         resolved = reference_date + timedelta(days=int(match.group("count")))
         return {"resolved_date": resolved.isoformat(), "resolved_day": resolved.strftime("%A")}
 
     if match := re.search(r"\bin\s+(?P<count>\d+)\s+week", lowered):
         resolved = reference_date + timedelta(weeks=int(match.group("count")))
+        return {"resolved_date": resolved.isoformat(), "resolved_day": resolved.strftime("%A")}
+
+    # "one week from now", "a week from now", "two weeks from now"
+    if match := re.search(r"\b(?P<word>a|an|one|two|three|four|five|six|seven|\d+)\s+week(?:s)?\s+from\s+(?:now|today)", lowered):
+        w = match.group("word")
+        count = int(w) if w.isdigit() else WORD_TO_NUM.get(w, 1)
+        resolved = reference_date + timedelta(weeks=count)
+        return {"resolved_date": resolved.isoformat(), "resolved_day": resolved.strftime("%A")}
+
+    # "one day from now", "a couple days from now"
+    if match := re.search(r"\b(?P<word>a|an|one|two|three|four|five|six|seven|\d+)\s+day(?:s)?\s+from\s+(?:now|today)", lowered):
+        w = match.group("word")
+        count = int(w) if w.isdigit() else WORD_TO_NUM.get(w, 1)
+        resolved = reference_date + timedelta(days=count)
+        return {"resolved_date": resolved.isoformat(), "resolved_day": resolved.strftime("%A")}
+
+    # "next week"
+    if "next week" in lowered:
+        resolved = reference_date + timedelta(weeks=1)
         return {"resolved_date": resolved.isoformat(), "resolved_day": resolved.strftime("%A")}
 
     if "tomorrow" in lowered:
