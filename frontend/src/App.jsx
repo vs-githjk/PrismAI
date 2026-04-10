@@ -1260,7 +1260,8 @@ export default function App() {
       })
       .catch(() => {})
     })()
-  }, [authReady, user, transcript, result, meetingId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, user])
 
   useEffect(() => {
     if (!user || history.length < 2) {

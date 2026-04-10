@@ -256,10 +256,19 @@ async def realtime_events(request: Request):
 
     # Handle transcript data
     if event_type in ("transcript.data", "transcript_data"):
-        data = payload.get("data", {})
-        words = data.get("words", [])
-        speaker = data.get("speaker") or "Speaker"
-        text = " ".join(w.get("text", "") for w in words) if words else data.get("text", "")
+        # Recall.ai wraps the actual segment in data_field["transcript"] or data_field["data"]
+        # Try both locations
+        segment = (
+            data_field.get("transcript")
+            or data_field.get("data")
+            or data_field
+        )
+        if isinstance(segment, dict):
+            words = segment.get("words", [])
+            speaker = segment.get("speaker") or (segment.get("participant") or {}).get("name") or "Speaker"
+            text = " ".join(w.get("text", "") for w in words) if words else segment.get("text", "")
+        else:
+            words, speaker, text = [], "Speaker", ""
 
         if text.strip():
             line = f"{speaker}: {text.strip()}"
