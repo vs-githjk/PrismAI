@@ -1131,6 +1131,9 @@ export default function App() {
   const [authReady, setAuthReady] = useState(() => !supabase)
   const [authSession, setAuthSession] = useState(null)
   const [crossMeetingInsights, setCrossMeetingInsights] = useState(null)
+  const [insightsCollapsed, setInsightsCollapsed] = useState(() => {
+    try { return localStorage.getItem('prism_insights_collapsed') !== 'false' } catch { return true }
+  })
   const [transcript, setTranscript] = useState('')
   const [transcriptDrafts, setTranscriptDrafts] = useState({ paste: '', record: '', upload: '' })
   const [loading, setLoading] = useState(false)
@@ -2651,16 +2654,40 @@ export default function App() {
             )}
           </div>
 
-          {/* Health trend chart — visible when 2+ meetings in history */}
+          {/* Historical intelligence — collapsed by default */}
           {user && history.length > 1 && (
-            <>
-              <Suspense fallback={null}>
-                <ScoreTrendChart history={history} onSelect={loadFromHistory} />
-              </Suspense>
-              <Suspense fallback={null}>
-                <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
-              </Suspense>
-            </>
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.015)' }}>
+              <button
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/[0.02] transition-colors"
+                onClick={() => {
+                  const next = !insightsCollapsed
+                  setInsightsCollapsed(next)
+                  try { localStorage.setItem('prism_insights_collapsed', String(next)) } catch {}
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 text-indigo-400/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                  <span className="text-[11px] font-medium text-gray-400">Historical data</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full text-indigo-400/70" style={{ background: 'rgba(99,102,241,0.1)' }}>{history.length} meetings</span>
+                </div>
+                <svg className={`w-3 h-3 text-gray-600 transition-transform ${insightsCollapsed ? '' : 'rotate-180'}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+              {!insightsCollapsed && (
+                <div className="flex flex-col gap-3 px-1 pb-2 pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <Suspense fallback={null}>
+                    <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+                  </Suspense>
+                  <Suspense fallback={null}>
+                    <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
+                  </Suspense>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Error */}
