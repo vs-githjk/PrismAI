@@ -2962,6 +2962,41 @@ export default function App() {
             )}
           </div>
 
+          {/* Historical intelligence — between transcript and chat */}
+          {user && history.length > 1 && (
+            <div className="mt-1 mb-1">
+              <button
+                className="w-full flex items-center justify-between px-6 py-1.5 hover:opacity-70 transition-opacity"
+                onClick={() => {
+                  const next = !insightsCollapsed
+                  setInsightsCollapsed(next)
+                  try { localStorage.setItem('prism_insights_collapsed', String(next)) } catch {}
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                  <span className="text-[11px] text-gray-600">Historical data · {history.length} meetings</span>
+                </div>
+                <svg className={`w-3 h-3 text-gray-700 transition-transform mr-6 ${insightsCollapsed ? '' : 'rotate-180'}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+              {!insightsCollapsed && (
+                <div className="flex flex-col gap-3 mt-1 mb-2">
+                  <Suspense fallback={null}>
+                    <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+                  </Suspense>
+                  <Suspense fallback={null}>
+                    <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
+                  </Suspense>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Chat panel */}
           <div className="mx-6 mb-4 flex-1 min-h-0">
             <div className="flex items-center gap-2 mb-2">
@@ -3045,40 +3080,6 @@ export default function App() {
               </div>
             )}
           </div>
-          {/* Historical intelligence — at the bottom, collapsed by default */}
-          {user && history.length > 1 && (
-            <div className="px-6 mt-2 mb-4">
-              <button
-                className="w-full flex items-center justify-between py-1.5 hover:opacity-70 transition-opacity"
-                onClick={() => {
-                  const next = !insightsCollapsed
-                  setInsightsCollapsed(next)
-                  try { localStorage.setItem('prism_insights_collapsed', String(next)) } catch {}
-                }}
-              >
-                <div className="flex items-center gap-1.5">
-                  <svg className="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                  </svg>
-                  <span className="text-[11px] text-gray-600">Historical data · {history.length} meetings</span>
-                </div>
-                <svg className={`w-3 h-3 text-gray-700 transition-transform ${insightsCollapsed ? '' : 'rotate-180'}`}
-                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="18 15 12 9 6 15"/>
-                </svg>
-              </button>
-              {!insightsCollapsed && (
-                <div className="flex flex-col gap-3 mt-2 mb-2">
-                  <Suspense fallback={null}>
-                    <ScoreTrendChart history={history} onSelect={loadFromHistory} />
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
-                  </Suspense>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* RIGHT PANEL — Results */}
