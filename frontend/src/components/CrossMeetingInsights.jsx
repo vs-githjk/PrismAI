@@ -386,13 +386,13 @@ export default function CrossMeetingInsights({ history, insights: insightsProp, 
               <div className="rounded-xl px-3 py-3"
                 style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.12)' }}>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-sky-400/75">Owners</p>
-                <p className="text-lg font-semibold text-white mt-1">{insights.topOwners.length || '—'}</p>
+                <p className="text-lg font-semibold text-white mt-1">{topOwners.length || '—'}</p>
                 <p className="text-[11px] text-gray-500 mt-1">repeat owners surfacing</p>
               </div>
               <div className="rounded-xl px-3 py-3"
                 style={{ background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.12)' }}>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-violet-400/75">Memory</p>
-                <p className="text-lg font-semibold text-white mt-1">{insights.recentDecisions.length}</p>
+                <p className="text-lg font-semibold text-white mt-1">{recentDecisions.length}</p>
                 <p className="text-[11px] text-gray-500 mt-1">recent decisions tracked</p>
               </div>
             </div>
