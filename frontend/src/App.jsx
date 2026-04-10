@@ -1264,7 +1264,7 @@ export default function App() {
       .catch(() => {})
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, user])
+  }, [authReady, user?.id])
 
   useEffect(() => {
     if (!user || history.length < 2) {
@@ -1278,7 +1278,7 @@ export default function App() {
         if (data && typeof data === 'object') setCrossMeetingInsights(data)
       })
       .catch(() => {})
-  }, [user, history])
+  }, [user?.id, history])
 
   useEffect(() => {
     if (!user) { setCalendarConnected(false); return }
@@ -1286,7 +1286,7 @@ export default function App() {
       .then(r => r.ok ? r.json() : { connected: false })
       .then(d => setCalendarConnected(Boolean(d.connected)))
       .catch(() => {})
-  }, [user])
+  }, [user?.id])
 
   useEffect(() => {
     if (!calendarConnected || !user) {
@@ -1315,7 +1315,7 @@ export default function App() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [calendarConnected, user])
+  }, [calendarConnected, user?.id])
 
   // pendingAutoJoinUrl: set by polling effect, consumed by an effect after joinMeeting is defined
   const pendingAutoJoinRef = useRef(null)
@@ -1347,7 +1347,7 @@ export default function App() {
         slack_bot_token: data.slack_bot_token || '',
       }))
     }).catch(() => {})
-  }, [user])
+  }, [user?.id])
 
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
@@ -1357,6 +1357,7 @@ export default function App() {
   )
   const [autoJoinPrompt, setAutoJoinPrompt] = useState(null) // { title, url, minsUntil }
   const autoJoinFiredRef = useRef(new Set()) // event IDs already acted on this session
+  const savedMeetingRef = useRef(null) // tracks ID of the meeting already saved for the current workspace
   const [workspaceToast, setWorkspaceToast] = useState(null)
   const [botTranscriptReady, setBotTranscriptReady] = useState(false)
   const transcriptStats = getTranscriptStats(transcript)
@@ -1396,7 +1397,9 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthSession(session || null)
       setAuthReady(true)
-      trySaveProviderToken(session)
+      if (_event === 'SIGNED_IN') {
+        trySaveProviderToken(session)
+      }
     })
 
     return () => data.subscription.unsubscribe()
@@ -1710,6 +1713,8 @@ export default function App() {
           clearInterval(pollRef.current)
           sessionStorage.removeItem('prism_active_bot_id')
           if (data.result) {
+            savedMeetingRef.current = null
+            sessionStorage.setItem('prism_new_meeting', '1')
             setTranscriptForTab(data.transcript || '', 'paste')
             setSessionId(s => s + 1)
             setResult(data.result)
@@ -1840,7 +1845,7 @@ export default function App() {
     checkImminent()
     const interval = setInterval(checkImminent, 60_000)
     return () => clearInterval(interval)
-  }, [calendarConnected, user, autoJoinSetting])
+  }, [calendarConnected, user?.id, autoJoinSetting])
 
   const mergeHistoryEntries = (entries) => {
     const seen = new Set()
@@ -1858,8 +1863,10 @@ export default function App() {
       return null
     }
     if (!hasMeaningfulResult(r)) return null
+    if (savedMeetingRef.current) return null  // already saved this workspace — prevent double-save
     sessionStorage.removeItem('prism_new_meeting')
     const id = (Date.now() * 1000) + Math.floor(Math.random() * 1000)
+    savedMeetingRef.current = id
     const share_token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
     const entry = {
       id,
@@ -1884,6 +1891,7 @@ export default function App() {
   const loadFromHistory = async (entry) => {
     cancelActiveAnalysis()
     sessionStorage.removeItem('prism_new_meeting')
+    savedMeetingRef.current = entry.id
     setTranscript(entry.transcript)
     setTranscriptDrafts((prev) => ({ ...prev, paste: entry.transcript || '' }))
     setResult(entry.result)
@@ -1985,6 +1993,7 @@ export default function App() {
     setInitialMessages([])
     setMobileTab('input')
     setSessionId(s => s + 1)
+    savedMeetingRef.current = null
   }
 
   const signOut = async () => {
@@ -2017,6 +2026,8 @@ export default function App() {
     setResult(null)
     setAnalysisTime(null)
     setShowTimeSaved(false)
+    savedMeetingRef.current = null
+    if (!isDemo) sessionStorage.setItem('prism_new_meeting', '1')
     analysisStartRef.current = Date.now()
     const runId = analysisRunIdRef.current
     const t = transcriptOverride ?? transcript
@@ -2654,41 +2665,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Historical intelligence — collapsed by default */}
-          {user && history.length > 1 && (
-            <div className="px-6">
-              <button
-                className="w-full flex items-center justify-between py-1.5 hover:opacity-70 transition-opacity"
-                onClick={() => {
-                  const next = !insightsCollapsed
-                  setInsightsCollapsed(next)
-                  try { localStorage.setItem('prism_insights_collapsed', String(next)) } catch {}
-                }}
-              >
-                <div className="flex items-center gap-1.5">
-                  <svg className="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                  </svg>
-                  <span className="text-[11px] text-gray-600">Historical data · {history.length} meetings</span>
-                </div>
-                <svg className={`w-3 h-3 text-gray-700 transition-transform ${insightsCollapsed ? '' : 'rotate-180'}`}
-                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="18 15 12 9 6 15"/>
-                </svg>
-              </button>
-              {!insightsCollapsed && (
-                <div className="flex flex-col gap-3 mt-2 mb-2">
-                  <Suspense fallback={null}>
-                    <ScoreTrendChart history={history} onSelect={loadFromHistory} />
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
-                  </Suspense>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Error */}
           {error && <ErrorCard message={error} onRetry={() => runAnalysis([])} />}
 
@@ -2739,7 +2715,7 @@ export default function App() {
                     onChange={(e) => setTranscriptForTab(e.target.value, 'paste')}
                     placeholder=""
                     rows={6}
-                    className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
+                    className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[28vh] lg:max-h-[32vh] overflow-y-auto"
                     style={{
                       background: 'rgba(0,0,0,0.35)',
                       border: transcript.trim() ? '1px solid rgba(255,255,255,0.06)' : '1px dashed rgba(125,211,252,0.22)',
@@ -2793,7 +2769,7 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'record')} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[28vh] lg:max-h-[32vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-2.5">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
@@ -2827,7 +2803,7 @@ export default function App() {
                 {transcript ? (
                   <>
                     <textarea value={transcript} onChange={(e) => setTranscriptForTab(e.target.value, 'upload')} rows={5}
-                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[14vh] lg:max-h-[16vh] overflow-y-auto"
+                      className="w-full rounded-xl px-3 py-3 text-xs font-mono text-gray-300 resize-none outline-none leading-relaxed min-h-[120px] max-h-[28vh] lg:max-h-[32vh] overflow-y-auto"
                       style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)' }} />
                     <div className="flex justify-between items-center gap-3 mt-2.5">
                       <span className="text-[11px] text-gray-600">{transcriptStats.words} words · {transcriptSpeakerCount || 0} named speakers</span>
@@ -3069,6 +3045,40 @@ export default function App() {
               </div>
             )}
           </div>
+          {/* Historical intelligence — at the bottom, collapsed by default */}
+          {user && history.length > 1 && (
+            <div className="px-6 mt-2 mb-4">
+              <button
+                className="w-full flex items-center justify-between py-1.5 hover:opacity-70 transition-opacity"
+                onClick={() => {
+                  const next = !insightsCollapsed
+                  setInsightsCollapsed(next)
+                  try { localStorage.setItem('prism_insights_collapsed', String(next)) } catch {}
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                  <span className="text-[11px] text-gray-600">Historical data · {history.length} meetings</span>
+                </div>
+                <svg className={`w-3 h-3 text-gray-700 transition-transform ${insightsCollapsed ? '' : 'rotate-180'}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+              {!insightsCollapsed && (
+                <div className="flex flex-col gap-3 mt-2 mb-2">
+                  <Suspense fallback={null}>
+                    <ScoreTrendChart history={history} onSelect={loadFromHistory} />
+                  </Suspense>
+                  <Suspense fallback={null}>
+                    <CrossMeetingInsights history={history} insights={crossMeetingInsights} onSelect={loadFromHistory} />
+                  </Suspense>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* RIGHT PANEL — Results */}

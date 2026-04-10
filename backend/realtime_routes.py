@@ -42,6 +42,7 @@ def _get_bot_state(bot_id: str) -> dict:
         _bot_state[bot_id] = {
             "transcript_buffer": [],
             "last_command_ts": 0,
+            "last_command_text": "",
             "processing": False,
         }
     return _bot_state[bot_id]
@@ -134,14 +135,19 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
     """Process a detected command: use LLM to pick tools, execute, respond."""
     state = _get_bot_state(bot_id)
 
-    # Debounce — don't process commands within 5 seconds of each other
+    # Debounce — don't process commands within 15 seconds of each other
     now = time.time()
-    if now - state["last_command_ts"] < 5:
+    if now - state["last_command_ts"] < 15:
         return
     if state["processing"]:
         return
+    # Dedup — skip if this command is just an extension of the last one (rolling transcript)
+    last_text = state.get("last_command_text", "")
+    if last_text and (command.startswith(last_text) or last_text.startswith(command)):
+        return
 
     state["last_command_ts"] = now
+    state["last_command_text"] = command
     state["processing"] = True
 
     try:
@@ -188,7 +194,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             choice = response.choices[0]
 
             if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
-                reply = choice.message.content or "Done."
+                reply = choice.message.content or f"Got it — {command}."
                 break
 
             messages.append(choice.message)
@@ -207,7 +213,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 })
             call_kwargs["messages"] = messages
         else:
-            reply = "Done."
+            reply = f"Done — completed {command}."
 
         # Log command to bot_store and Supabase
         cmd_entry = {
