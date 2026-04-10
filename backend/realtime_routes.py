@@ -268,7 +268,10 @@ async def realtime_events(request: Request):
             speaker = segment.get("speaker") or (segment.get("participant") or {}).get("name") or "Speaker"
             text = " ".join(w.get("text", "") for w in words) if words else segment.get("text", "")
         else:
+            print(f"[realtime] segment not a dict: type={type(segment).__name__} preview={str(segment)[:200]}")
             words, speaker, text = [], "Speaker", ""
+
+        print(f"[realtime] extracted speaker={speaker!r} text={text[:120]!r}")
 
         if text.strip():
             line = f"{speaker}: {text.strip()}"
@@ -283,7 +286,10 @@ async def realtime_events(request: Request):
             # Check for command trigger
             command = _detect_command(text)
             if command:
+                print(f"[realtime] command={command!r} detected from speaker={speaker!r}")
                 asyncio.create_task(_process_command(bot_id, command, speaker))
+            else:
+                print(f"[realtime] no command trigger in text")
 
     # Handle chat messages from the meeting
     elif event_type in ("participant_events.chat_message", "chat_message"):
