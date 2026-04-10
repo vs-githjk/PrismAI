@@ -401,7 +401,7 @@ export default function CrossMeetingInsights({ history, insights: insightsProp, 
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.12)' }}>
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-0.5">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-sky-300/80">Ownership Drift</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
@@ -426,7 +426,7 @@ export default function CrossMeetingInsights({ history, insights: insightsProp, 
 
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.12)' }}>
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-0.5">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300/80">Action Hygiene</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
@@ -455,7 +455,7 @@ export default function CrossMeetingInsights({ history, insights: insightsProp, 
 
                 <div className="rounded-xl px-3.5 py-3"
                   style={{ background: 'rgba(168,85,247,0.05)', border: '1px solid rgba(168,85,247,0.12)' }}>
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-0.5">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-violet-300/80">Unresolved Decisions</p>
                     <span className="text-[10px] text-gray-600">tap to inspect</span>
                   </div>
