@@ -20,6 +20,9 @@
 | Landing Refresh Persistence | User now stays on landing when refreshing from landing, and stays in-app when refreshing after entering the workspace. |
 | Join Meeting Completion UX | Bot flow now preserves the transcript on completion and gives a clearer next action (`view results` or `analyze now`). |
 | Vercel Frontend Migration | Frontend is now configured for Vercel deployment with `frontend/` as root and `VITE_API_URL` as the key frontend env var. |
+| CrossMeetingInsights 3-col overflow fix | OWNERSHIP DRIFT / ACTION HYGIENE / UNRESOLVED DECISIONS headers were overflowing narrow columns and getting clipped. Fixed by stacking label + "tap to inspect" vertically. |
+| Decision theme stop-words | Month/day names (`april`, `monday`, `jan`, etc.) were surfacing as recurring decision themes. Added full set of month/day names + abbreviations to `STOP_WORDS`. |
+| Aria-labels on icon-only buttons | Added `aria-label` to: send message (ChatPanel), delete chat session (ChatPanel), remove speaker (App.jsx). |
 
 ---
 
@@ -116,7 +119,6 @@ Add `workspace_id` to schema. Invite flow. Shared meeting history. Out of scope 
 
 | Bug | File | Fix |
 |---|---|---|
-| All icon-only buttons missing `aria-label` | Multiple | Add `aria-label` to export, share, history, delete buttons |
 | Landing page still overflows on some laptop heights | `App.jsx`, `index.css` | Continue height-aware compression and hide decorative content sooner |
 | Left panel still feels cramped on some desktop sizes | `App.jsx` | Refine transcript/chat vertical allocation and sticky action placement |
 | Vercel URL / docs branding still inconsistent in places | Docs + marketing copy | Replace legacy GitHub Pages references and unify public URL messaging |
