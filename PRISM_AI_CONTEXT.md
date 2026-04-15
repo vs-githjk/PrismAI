@@ -29,6 +29,8 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | Database | Supabase (Postgres) — meetings + chats + user scoping |
 | Frontend Hosting | Vercel |
 | Backend Hosting | Render.com free tier |
+| Landing WebGL | `ogl` (Prism component) + `three.js` (LightPillar component) |
+| Fonts | Space Grotesk + Manrope via Google Fonts |
 
 ---
 
@@ -81,6 +83,10 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │       ├── ScoreTrendChart.jsx       # Health score over time (recharts)
 │   │       ├── ProactiveSuggestions.jsx
 │   │       ├── IntegrationsModal.jsx     # Slack + Notion config
+│   │       ├── Prism.jsx                 # WebGL ray-marched prism background (ogl) — landing page bg
+│   │       ├── Prism.css                 # .prism-container — position:relative, 100% fill
+│   │       ├── LightPillar.jsx           # WebGL light pillar effect (three.js) — landing page corners
+│   │       ├── LightPillar.css           # .light-pillar-container — position:absolute, 100% fill
 │   │       ├── ErrorCard.jsx
 │   │       └── SkeletonCard.jsx
 │   ├── .env.example
@@ -265,6 +271,28 @@ Share links bypass the landing. Logo in the header navigates back to the landing
 
 **Height-aware CSS breakpoints** in `index.css`: at `max-height: 1000px` the hero scales to 0.78, agent grid hides, headline shrinks. At `max-height: 800px` more aggressive compression. This covers standard laptop viewports.
 
+### Landing Visual Layer (as of Apr 2026)
+
+Three layered WebGL effects sit behind all landing content, stacked in DOM order (all `position:absolute, inset:0, pointer-events:none`):
+
+1. **`<Prism />`** (`ogl`, `components/Prism.jsx`) — full-page ray-marched WebGL prism. `animationType="rotate"`, `scale=3.6`, `glow=1.4`, `bloom=1.2`, `colorFrequency=1.1`, `baseWidth=5.5`, `height=3.5`, `noise=0.04`. Transparent canvas — dark page bg shows through outside the prism shape.
+
+2. **Top vignette** (`<div>`) — `linear-gradient(to bottom, rgba(7,4,15,0.6) 0% → transparent 15%)` — keeps logo + badge readable.
+
+3. **Bottom fade** (`<div>`) — `linear-gradient(to bottom, transparent 60% → #07040f 100%)` — gives the prism a clean floor.
+
+4. **`<LightPillar />`** × 2 (`three.js`, `components/LightPillar.jsx`) — one on each side edge (width 22%, full height). Both use `topColor="#38bdf8"`, `intensity=0.7`, `glowAmount=0.004`, `mixBlendMode="screen"`. Left: `bottomColor="#0d9488"`, `pillarRotation=30`. Right: `bottomColor="#6366f1"`, `pillarRotation=-30`. Both have inner-edge `mask-image` gradient so they dissolve toward the center.
+
+**Tuning reference:**
+- Prism too dim → raise `glow` / `bloom` (never go above ~2.0/1.6 or it washes out)
+- Prism too wide/blurry → reduce `baseWidth`, raise `colorFrequency`
+- Pillars too visible → lower `intensity` or tighten the mask gradient stop from 15% toward 5%
+- Text unreadable → strengthen `text-shadow` on `.landing-screen h1/p` in `index.css` and/or deepen top vignette
+
+**Fonts:** Space Grotesk (headings) + Manrope (body) loaded via Google Fonts in `index.html`. Declared in `index.css` as `--font-display` / `--font-body`.
+
+**`gradient-text`** (used on "Clarity that lasts."): uses `background-clip: text` with a white→sky-blue gradient. Text-shadow doesn't work on clipped text — use `filter: drop-shadow()` instead.
+
 ---
 
 ## Environment Variables
@@ -310,6 +338,7 @@ Share links bypass the landing. Logo in the header navigates back to the landing
 3. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
 
 ### Recently fixed
+- **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Loaded Space Grotesk + Manrope fonts. Tuned gradient overlays, glass panel opacity, gradient-text contrast, and `filter: drop-shadow` for clipped text.
 - **CrossMeetingInsights 3-col header overflow** — OWNERSHIP DRIFT / ACTION HYGIENE / UNRESOLVED DECISIONS labels clipped by `overflow-hidden` container on narrow viewports. Headers now stack vertically.
 - **Decision theme noise** — Month/day names (`april`, `monday`, `jan`, etc.) were surfacing as recurring decision themes. Full set of month/day names + abbreviations added to `STOP_WORDS` in `CrossMeetingInsights.jsx`.
 - **Aria-labels** — send message (ChatPanel), delete chat session (ChatPanel), remove speaker (App.jsx).
