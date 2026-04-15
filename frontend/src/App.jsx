@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
+import Prism from './components/Prism'
+import LightPillar from './components/LightPillar'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -867,7 +869,7 @@ function LandingPrismHero() {
             {transcriptLines.map((line, i) => (
               <div
                 key={line}
-                className="rounded-2xl px-4 py-2.5 border border-white/8 bg-black/20 animate-fade-in-up"
+                className="rounded-2xl px-4 py-2.5 border border-white/10 bg-white/[0.06] animate-fade-in-up"
                 style={{ animationDelay: `${0.25 + i * 0.06}s` }}
               >
                 <p className="text-sm text-slate-200">{line}</p>
@@ -905,7 +907,7 @@ function LandingPrismHero() {
             {outputs.map((item, i) => (
               <div
                 key={item.label}
-                className="rounded-2xl px-4 py-3 border border-white/8 bg-white/[0.03] animate-fade-in-up landing-output-card"
+                className="rounded-2xl px-4 py-3 border border-white/10 bg-white/[0.05] animate-fade-in-up landing-output-card"
                 style={{ animationDelay: `${0.38 + i * 0.07}s` }}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -941,14 +943,68 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         transition: 'opacity 0.35s ease, transform 0.35s ease',
       }}
     >
-      {/* Animated background orbs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-15%] left-[-8%] w-[550px] h-[550px] rounded-full blur-3xl animate-orb-drift"
-          style={{ background: 'radial-gradient(circle, rgba(2,132,199,0.22) 0%, transparent 70%)' }} />
-        <div className="absolute bottom-[-10%] right-[-8%] w-[480px] h-[480px] rounded-full blur-3xl animate-orb-drift"
-          style={{ background: 'radial-gradient(circle, rgba(13,148,136,0.18) 0%, transparent 70%)', animationDelay: '3s' }} />
-        <div className="absolute top-[35%] right-[15%] w-[300px] h-[300px] rounded-full blur-3xl animate-orb-drift"
-          style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)', animationDelay: '6s' }} />
+      {/* WebGL Prism background */}
+      <div className="absolute inset-0 pointer-events-none">
+        <Prism
+          animationType="rotate"
+          timeScale={0.35}
+          height={3.5}
+          baseWidth={5.5}
+          scale={3.6}
+          glow={1.0}
+          bloom={1.0}
+          noise={0.04}
+          colorFrequency={1.0}
+          baseWidth={5.5}
+          height={3.5}
+          hueShift={0}
+          transparent={true}
+          suspendWhenOffscreen={true}
+        />
+      </div>
+
+      {/* Top vignette — just enough to keep logo + headline readable */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'linear-gradient(to bottom, rgba(7,4,15,0.75) 0%, rgba(7,4,15,0.3) 12%, transparent 22%)'
+      }} />
+
+      {/* Bottom fade — clean floor for the prism */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'linear-gradient(to bottom, transparent 60%, rgba(7,4,15,0.6) 75%, rgba(7,4,15,0.92) 88%, #07040f 100%)'
+      }} />
+
+      {/* Left pillar — hugs the left edge only */}
+      <div className="absolute pointer-events-none" style={{ width: '22%', height: '100%', top: 0, left: 0, maskImage: 'linear-gradient(to right, black 15%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 15%, transparent 100%)' }}>
+        <LightPillar
+          topColor="#38bdf8"
+          bottomColor="#0d9488"
+          intensity={0.55}
+          rotationSpeed={0.25}
+          glowAmount={0.004}
+          pillarWidth={2.0}
+          pillarHeight={0.35}
+          noiseIntensity={0.3}
+          pillarRotation={30}
+          mixBlendMode="screen"
+          quality="high"
+        />
+      </div>
+
+      {/* Right pillar — hugs the right edge only */}
+      <div className="absolute pointer-events-none" style={{ width: '22%', height: '100%', top: 0, right: 0, maskImage: 'linear-gradient(to left, black 15%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to left, black 15%, transparent 100%)' }}>
+        <LightPillar
+          topColor="#38bdf8"
+          bottomColor="#6366f1"
+          intensity={0.55}
+          rotationSpeed={0.25}
+          glowAmount={0.004}
+          pillarWidth={2.0}
+          pillarHeight={0.35}
+          noiseIntensity={0.3}
+          pillarRotation={-30}
+          mixBlendMode="screen"
+          quality="high"
+        />
       </div>
 
       {/* Logo */}
