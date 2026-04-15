@@ -951,10 +951,10 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
           height={3.5}
           baseWidth={5.5}
           scale={3.6}
-          glow={1.0}
-          bloom={1.0}
+          glow={1.4}
+          bloom={1.2}
           noise={0.04}
-          colorFrequency={1.0}
+          colorFrequency={1.1}
           baseWidth={5.5}
           height={3.5}
           hueShift={0}
@@ -965,7 +965,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       {/* Top vignette — just enough to keep logo + headline readable */}
       <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'linear-gradient(to bottom, rgba(7,4,15,0.75) 0%, rgba(7,4,15,0.3) 12%, transparent 22%)'
+        background: 'linear-gradient(to bottom, rgba(7,4,15,0.6) 0%, rgba(7,4,15,0.15) 8%, transparent 15%)'
       }} />
 
       {/* Bottom fade — clean floor for the prism */}
@@ -978,7 +978,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         <LightPillar
           topColor="#38bdf8"
           bottomColor="#0d9488"
-          intensity={0.55}
+          intensity={0.7}
           rotationSpeed={0.25}
           glowAmount={0.004}
           pillarWidth={2.0}
@@ -995,7 +995,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         <LightPillar
           topColor="#38bdf8"
           bottomColor="#6366f1"
-          intensity={0.55}
+          intensity={0.7}
           rotationSpeed={0.25}
           glowAmount={0.004}
           pillarWidth={2.0}
