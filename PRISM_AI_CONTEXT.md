@@ -4,6 +4,24 @@
 
 ---
 
+## Current State (as of Apr 15 2026) — Read First
+
+**Last session focus:** Landing page visual overhaul. Fully shipped and pushed to `main`.
+
+**Landing page is done.** Do not rework it unless the user explicitly asks. Current state the user signed off on:
+- WebGL Prism (`ogl`) as full-page background — `glow=1.4`, `bloom=1.2`, `scale=3.6`, `baseWidth=5.5`, `colorFrequency=1.1`
+- Two `LightPillar` (`three.js`) components in left/right edges, `intensity=0.7`, masked with gradient to dissolve toward center
+- Top vignette + bottom fade gradient overlays
+- Space Grotesk + Manrope fonts loaded
+- `gradient-text` ("Clarity that lasts.") uses `filter: drop-shadow` (NOT `text-shadow` — doesn't work on clipped text)
+- Glass panels at `rgba(7,4,15,0.68)` opacity
+
+**Known visual note (left intentionally as-is):** `UpcomingMeetings.jsx` panel in the Join tab uses a lighter `rgba(255,255,255,0.015)` background vs the "NEXT UP" banner which uses `rgba(14,165,233,0.08)`. User saw this disparity and decided to leave it unchanged.
+
+**Pending — user had "a few corrections" to make when session ended.** Ask them what the corrections are before doing anything.
+
+---
+
 ## What Is PrismAI
 
 A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 7 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
