@@ -353,13 +353,13 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 
 ## Remaining Roadmap (priority order)
 
-1. **Bot store persistence** — move `bot_store` to a `bots` Supabase table so restarts don't lose in-flight meetings
-2. **Voice output verification** — the 415 fix (multipart upload) is deployed but untested post-deploy. Next live meeting test will confirm if `output_audio` works or if Recall.ai requires a different format for the specific platform.
-3. **Gmail send UX** — currently requires user to state recipient's email in their voice command. Could be improved: (a) parse names from transcript and look up against a directory, or (b) show a confirmation UI in the frontend before sending.
-4. **Model fallback** — each agent catches Groq 429/errors, retries with `gpt-4o-mini` or `claude-haiku-4-5`. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to Render.
-5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
+1. **Voice output verification** — the 415 fix (multipart upload) is deployed but needs a live meeting test to confirm. If `output_audio` still fails, check Render logs for the new error code.
+2. **Add `ANTHROPIC_API_KEY` to Render** — model fallback is coded and deployed, but won't activate until this env var is set. Get key from console.anthropic.com.
+3. **Gmail send UX** — user must state full recipient email in command. Future: parse names from transcript or show a confirmation UI before sending.
+4. **Bot store persistence** — `bot_store` already syncs to `bot_sessions` Supabase table via `_db_save`/`_db_load` in `recall_routes.py`. Mostly solved. Remaining gap: in-memory `bot_store` still used as primary cache; if Render restarts between webhook and poll, the in-memory entry is missing but Supabase has it. `_db_load` is called as fallback in `/bot-status` — verify this path works.
+5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on single-user auth being stable first.
 
-### Recently fixed (Apr 19 2026 session)
+### Fixed later same session (Apr 19 2026)
 
 **Realtime / live meeting:**
 - **Double message bug** — `_send_voice_response` was falling back to `_send_chat_response` when voice failed, causing every response to appear twice. Removed the fallback — chat is always sent first (line 232), voice is additive only.
@@ -377,6 +377,10 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 
 **UI:**
 - **Transcript box truncated at 180 chars** — now `max-h-36 overflow-y-auto` with full transcript scrollable inside. `whitespace-pre-wrap` added so speaker line breaks render correctly.
+
+**Infrastructure / resilience:**
+- **Model fallback** — all 7 agents now use `llm_call()` in `agents/utils.py` instead of calling Groq directly. On 429/503/overload, falls back to `claude-haiku-4-5-20251001` if `ANTHROPIC_API_KEY` is set on Render. `anthropic>=0.40.0` added to `requirements.txt`.
+- **Calendar status endpoint** — was making two Supabase queries and had dead/contradictory logic. Replaced with single query: `connected = calendar_connected AND google_access_token is set`.
 
 ### Previously fixed
 - **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Loaded Space Grotesk + Manrope fonts. Tuned gradient overlays, glass panel opacity, gradient-text contrast, and `filter: drop-shadow` for clipped text.

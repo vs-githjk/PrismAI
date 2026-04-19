@@ -1,10 +1,6 @@
 import json
-import os
-from groq import AsyncGroq
 from fastapi import HTTPException
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
     "You are an email drafter. Based on the meeting transcript, write a follow-up email "
@@ -17,16 +13,8 @@ SYSTEM_PROMPT = (
 
 async def run(transcript: str) -> dict:
     for attempt in range(2):
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transcript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
         try:
+            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}", temperature=0.7)
             return json.loads(strip_fences(raw))
         except json.JSONDecodeError:
             if attempt == 1:
