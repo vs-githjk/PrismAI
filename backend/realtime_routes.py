@@ -146,8 +146,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
     try:
         user_settings = await _get_settings_for_bot(bot_id)
-        # exclude_confirm=True: never fire destructive tools (e.g. gmail_send) without human approval
-        tools = get_available_tools(user_settings, exclude_confirm=True)
+        tools = get_available_tools(user_settings)
 
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
@@ -165,10 +164,12 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 "content": (
                     "You are PrismAI, an AI meeting assistant that is LIVE in this meeting. "
                     "A participant just gave you a command. "
-                    "Answer directly from your knowledge whenever possible. "
-                    "Only call a tool if the command EXPLICITLY requires fetching external data "
-                    "(e.g. 'check my calendar', 'read my emails', 'create a Linear ticket'). "
-                    "NEVER call a tool just to answer a factual question you already know. "
+                    "Answer directly from your knowledge whenever possible — do NOT call a tool "
+                    "unless the command explicitly asks for an action that requires one "
+                    "(e.g. 'send an email', 'check my calendar', 'create a ticket'). "
+                    "For factual questions (date, time, summaries, definitions) answer immediately without tools. "
+                    "For gmail_send: ONLY send if the user explicitly states the recipient's full email address "
+                    "in their command. If no address is given, ask for it instead of guessing. "
                     "Be concise — you'll be speaking aloud. Keep responses under 2 sentences. "
                     f"Current date and time: {now_str}. "
                     f"\n\nRecent transcript for context:\n{recent_transcript}"
