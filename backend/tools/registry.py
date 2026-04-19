@@ -35,13 +35,16 @@ def register_tool(
     }
 
 
-def get_available_tools(user_settings: dict | None = None) -> list[dict]:
+def get_available_tools(user_settings: dict | None = None, exclude_confirm: bool = False) -> list[dict]:
     """Return Groq-compatible tool definitions for tools the user has access to."""
     settings = user_settings or {}
     tools = []
     for tool in _TOOLS.values():
         # Check if required credential is present
         if tool["requires"] and not settings.get(tool["requires"]):
+            continue
+        # In live meeting context, skip tools that require human confirmation
+        if exclude_confirm and tool.get("confirm"):
             continue
         tools.append({
             "type": "function",
