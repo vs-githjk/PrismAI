@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Request
@@ -107,28 +108,21 @@ async def _send_voice_response(bot_id: str, text: str):
     """Convert text to speech and play it in the meeting via Recall.ai bot."""
     audio_bytes = await text_to_speech(text)
     if not audio_bytes:
-        print(f"[realtime] TTS failed for bot {bot_id}, falling back to chat")
-        await _send_chat_response(bot_id, text)
+        print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
         return
 
     try:
         async with httpx.AsyncClient() as client:
-            # Recall.ai output_audio endpoint
             resp = await client.post(
                 f"{RECALL_API_BASE}/bot/{bot_id}/output_audio/",
-                headers={
-                    "Authorization": f"Token {RECALL_API_KEY}",
-                    "Content-Type": "audio/mpeg",
-                },
-                content=audio_bytes,
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                files={"file": ("audio.mp3", audio_bytes, "audio/mpeg")},
                 timeout=30,
             )
             if resp.status_code not in (200, 201):
-                print(f"[realtime] output_audio failed ({resp.status_code}), falling back to chat")
-                await _send_chat_response(bot_id, text)
+                print(f"[realtime] output_audio failed ({resp.status_code}): {resp.text[:200]}")
     except Exception as exc:
-        print(f"[realtime] voice response failed: {exc}, falling back to chat")
-        await _send_chat_response(bot_id, text)
+        print(f"[realtime] voice response failed: {exc}")
 
 
 async def _process_command(bot_id: str, command: str, speaker: str = ""):
@@ -162,16 +156,18 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
         # Build recent transcript context
         recent_transcript = "\n".join(state["transcript_buffer"][-30:])
+        now_str = datetime.now().strftime("%A, %B %-d, %Y at %-I:%M %p")
 
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are PrismAI, an AI meeting assistant that is LIVE in this meeting. "
-                    "A participant just gave you a command. Execute it using the available tools. "
+                    "A participant just gave you a command. Execute it using the available tools if needed. "
                     "Be concise in your response — you'll be speaking aloud in the meeting. "
                     "Keep responses under 2 sentences. "
                     "Do NOT ask for confirmation — the user gave a direct command, execute it. "
+                    f"Current date and time: {now_str}. "
                     f"\n\nRecent transcript for context:\n{recent_transcript}"
                 ),
             },
@@ -190,7 +186,18 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
         # Tool loop (max 3 iterations)
         for _ in range(3):
-            response = await groq_client.chat.completions.create(**call_kwargs)
+            try:
+                response = await groq_client.chat.completions.create(**call_kwargs)
+            except Exception as groq_exc:
+                # Llama sometimes generates malformed tool calls (400). Retry without tools.
+                if "400" in str(groq_exc) and "tools" in call_kwargs:
+                    print(f"[realtime] tool call format error, retrying without tools: {groq_exc}")
+                    call_kwargs.pop("tools", None)
+                    call_kwargs.pop("tool_choice", None)
+                    response = await groq_client.chat.completions.create(**call_kwargs)
+                else:
+                    raise
+
             choice = response.choices[0]
 
             if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
@@ -199,7 +206,6 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
             messages.append(choice.message)
             for tool_call in choice.message.tool_calls:
-                # In live mode, skip confirmation and execute directly
                 result = await confirm_and_execute(
                     tool_call.function.name,
                     tool_call.function.arguments,
