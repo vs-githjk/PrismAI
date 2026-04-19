@@ -378,6 +378,9 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 **UI:**
 - **Transcript box truncated at 180 chars** — now `max-h-36 overflow-y-auto` with full transcript scrollable inside. `whitespace-pre-wrap` added so speaker line breaks render correctly.
 
+**Agents:**
+- **Summarizer length** — was hardcoded to 2-3 sentences regardless of transcript size. Now scales: <500 words → 2-3 sentences, 500-2000 words → short paragraph, 2000+ words → 3-5 sentences covering all major topics.
+
 **Infrastructure / resilience:**
 - **Model fallback** — all 7 agents now use `llm_call()` in `agents/utils.py` instead of calling Groq directly. On 429/503/overload, falls back to `claude-haiku-4-5-20251001` if `ANTHROPIC_API_KEY` is set on Render. `anthropic>=0.40.0` added to `requirements.txt`.
 - **Calendar status endpoint** — was making two Supabase queries and had dead/contradictory logic. Replaced with single query: `connected = calendar_connected AND google_access_token is set`.
