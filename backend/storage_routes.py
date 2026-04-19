@@ -30,7 +30,8 @@ class MeetingEntry(BaseModel):
 
 
 class MeetingPatch(BaseModel):
-    result: dict
+    result: dict | None = None
+    share_token: str | None = None
 
 
 class ChatEntry(BaseModel):
@@ -133,7 +134,13 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
 @router.patch("/meetings/{meeting_id}")
 async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Depends(require_user_id)):
     client = _require_storage()
-    client.table("meetings").update({"result": patch.result}).eq("id", meeting_id).eq("user_id", user_id).execute()
+    update = {}
+    if patch.result is not None:
+        update["result"] = patch.result
+    if patch.share_token is not None:
+        update["share_token"] = patch.share_token
+    if update:
+        client.table("meetings").update(update).eq("id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 

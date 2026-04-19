@@ -507,10 +507,10 @@ function PrismSignatureScene({ transcript, result, loading }) {
                 {speakerCount} speaker{speakerCount !== 1 ? 's' : ''}
               </span>
             </div>
-            <div className="rounded-2xl px-3.5 py-3.5 border border-white/8 bg-black/20">
-              <p className="text-sm text-slate-200 leading-relaxed">
+            <div className="rounded-2xl px-3.5 py-3.5 border border-white/8 bg-black/20 max-h-36 overflow-y-auto">
+              <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
                 {transcript?.trim()
-                  ? transcript.trim().slice(0, 180) + (transcript.trim().length > 180 ? '…' : '')
+                  ? transcript.trim()
                   : 'Paste, upload, record, or capture a live meeting to begin.'}
               </p>
             </div>
@@ -1305,11 +1305,22 @@ export default function App() {
         setHistory(validHistory)
         if (validHistory.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
           const latest = validHistory[0]
+          savedMeetingRef.current = latest.id
           setTranscript(latest.transcript || '')
           setTranscriptDrafts((prev) => ({ ...prev, paste: latest.transcript || '' }))
           setResult(latest.result || null)
           setMeetingId(latest.id)
-          setShareToken(latest.share_token || null)
+          // Generate share token on the fly if missing (older meetings)
+          let token = latest.share_token || null
+          if (!token) {
+            token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+            apiFetch(`/meetings/${latest.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ share_token: token }),
+            }).catch(() => {})
+          }
+          setShareToken(token)
           try {
             const chatRes = await apiFetch(`/chats/${latest.id}`)
             const chat = chatRes.ok ? await chatRes.json() : { messages: [] }
@@ -1953,7 +1964,17 @@ export default function App() {
     setResult(entry.result)
     setMobileTab('results')
     setMeetingId(entry.id)
-    setShareToken(entry.share_token || null)
+    // Generate share token on the fly if missing (older meetings)
+    let token = entry.share_token || null
+    if (!token && user) {
+      token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      apiFetch(`/meetings/${entry.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ share_token: token }),
+      }).catch(() => {})
+    }
+    setShareToken(token)
     setSessionId(s => s + 1)
     setShowHistory(false)
     try {
@@ -2070,7 +2091,12 @@ export default function App() {
     setDemoChatOpen(false)
     setInputTab('paste')
     setShowHistory(false)
-    clearWorkspaceState()
+    if (user && history.length > 0) {
+      // Restore the most recent real meeting instead of leaving workspace blank
+      loadFromHistory(history[0])
+    } else {
+      clearWorkspaceState()
+    }
   }
 
   const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
