@@ -4,9 +4,9 @@
 
 ---
 
-## Current State (as of Apr 15 2026) — Read First
+## Current State (as of Apr 19 2026) — Read First
 
-**Last session focus:** Landing page visual overhaul. Fully shipped and pushed to `main`.
+**Last session focus:** Live meeting bug fixes, history/auth polish, realtime tool safety.
 
 **Landing page is done.** Do not rework it unless the user explicitly asks. Current state the user signed off on:
 - WebGL Prism (`ogl`) as full-page background — `glow=1.4`, `bloom=1.2`, `scale=3.6`, `baseWidth=5.5`, `colorFrequency=1.1`
@@ -17,8 +17,6 @@
 - Glass panels at `rgba(7,4,15,0.68)` opacity
 
 **Known visual note (left intentionally as-is):** `UpcomingMeetings.jsx` panel in the Join tab uses a lighter `rgba(255,255,255,0.015)` background vs the "NEXT UP" banner which uses `rgba(14,165,233,0.08)`. User saw this disparity and decided to leave it unchanged.
-
-**Pending — user had "a few corrections" to make when session ended.** Ask them what the corrections are before doing anything.
 
 ---
 
@@ -346,16 +344,41 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 - **Sentiment is conditional** — won't appear for neutral/positive meetings by design.
 - **`decisions` importance** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
 - **SSE buffering** — `X-Accel-Buffering: no` header is set to mitigate Render free tier SSE buffering.
+- **Meeting chat data structure** — `participant_events.chat_message` handler was fixed to read `data["data"]` but Recall.ai's payload shape may vary by platform (Google Meet vs Zoom vs Teams). If typed commands stop working, check Render logs for `[realtime] chat message` lines to verify the nesting. If blank, adjust the `outer.get("data") or outer.get("participant_events") or outer` fallback chain.
+- **`gmail_send` needs explicit recipient** — LLM will not guess email addresses. User must say the full address in their command, e.g. "prism, send a follow-up to john@company.com".
+- **Silent Supabase save failures** — `saveToHistory` POSTs to Supabase with `.catch(() => {})`. If Render is cold-starting at the exact moment a meeting finishes, the save can fail silently. Meeting exists in local state but is gone after sign-out. Low probability, not worth surfacing as a toast yet.
+- **Rate limiter uses `None` as user key** — `execute_tool()` in `tools/registry.py` tracks rate limits per `user_id`. Unauthenticated tool calls (from `/chat`) pass `user_id=None`, conflating all guest requests under one bucket. Not a security issue, minor fairness issue.
 
 ---
 
 ## Remaining Roadmap (priority order)
 
 1. **Bot store persistence** — move `bot_store` to a `bots` Supabase table so restarts don't lose in-flight meetings
-2. **Model fallback** — each agent catches Groq 429/errors, retries with `gpt-4o-mini` or `claude-haiku-4-5`. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to Render.
-3. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
+2. **Voice output verification** — the 415 fix (multipart upload) is deployed but untested post-deploy. Next live meeting test will confirm if `output_audio` works or if Recall.ai requires a different format for the specific platform.
+3. **Gmail send UX** — currently requires user to state recipient's email in their voice command. Could be improved: (a) parse names from transcript and look up against a directory, or (b) show a confirmation UI in the frontend before sending.
+4. **Model fallback** — each agent catches Groq 429/errors, retries with `gpt-4o-mini` or `claude-haiku-4-5`. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to Render.
+5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
 
-### Recently fixed
+### Recently fixed (Apr 19 2026 session)
+
+**Realtime / live meeting:**
+- **Double message bug** — `_send_voice_response` was falling back to `_send_chat_response` when voice failed, causing every response to appear twice. Removed the fallback — chat is always sent first (line 232), voice is additive only.
+- **Voice 415 error** — `output_audio/` endpoint was receiving raw bytes with `Content-Type: audio/mpeg`. Recall.ai expects multipart form-data. Fixed: `files={"file": ("audio.mp3", audio_bytes, "audio/mpeg")}`.
+- **Tool over-triggering** — LLM was calling `gmail_read` to answer "what's the day?". Two fixes: (1) injected current datetime into system prompt so factual questions need no tools, (2) tightened system prompt: only call a tool when the command explicitly requires external data.
+- **Tool call format error (400)** — Llama 3.3 70b occasionally generates malformed tool calls. Added try/except in the Groq tool loop: on 400, strips `tools` from call_kwargs and retries plain.
+- **`gmail_send` hallucinating `example.com`** — LLM was guessing recipient addresses. System prompt now: for `gmail_send`, only send if the user states a full email address in their command — otherwise ask for it.
+- **Meeting chat commands silently ignored** — `participant_events.chat_message` handler was reading message text from the wrong nesting level (`payload["data"]` root instead of `payload["data"]["data"]`). Commands typed in Google Meet/Zoom chat were never processed. Fixed to mirror transcript event pattern. Added logging.
+
+**History / auth:**
+- **Workspace blank after demo exit** — `exitDemoMode` called `clearWorkspaceState` leaving an empty workspace. Now calls `loadFromHistory(history[0])` if signed in with history, restoring the last real meeting.
+- **`savedMeetingRef` not set on auth auto-load** — when sign-in auto-loaded the latest meeting, `savedMeetingRef.current` stayed null, breaking the duplicate-save guard for subsequent actions. Now set on auto-load.
+- **Share button missing for older meetings** — `shareToken` was null for meetings saved before the share_token field existed. Both auth auto-load and `loadFromHistory` now generate a token on demand and silently PATCH it to Supabase.
+- **`PATCH /meetings/:id`** — extended to accept `share_token` in addition to `result`.
+
+**UI:**
+- **Transcript box truncated at 180 chars** — now `max-h-36 overflow-y-auto` with full transcript scrollable inside. `whitespace-pre-wrap` added so speaker line breaks render correctly.
+
+### Previously fixed
 - **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Loaded Space Grotesk + Manrope fonts. Tuned gradient overlays, glass panel opacity, gradient-text contrast, and `filter: drop-shadow` for clipped text.
 - **CrossMeetingInsights 3-col header overflow** — OWNERSHIP DRIFT / ACTION HYGIENE / UNRESOLVED DECISIONS labels clipped by `overflow-hidden` container on narrow viewports. Headers now stack vertically.
 - **Decision theme noise** — Month/day names (`april`, `monday`, `jan`, etc.) were surfacing as recurring decision themes. Full set of month/day names + abbreviations added to `STOP_WORDS` in `CrossMeetingInsights.jsx`.
