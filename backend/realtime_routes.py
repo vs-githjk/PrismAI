@@ -307,14 +307,20 @@ async def realtime_events(request: Request):
 
     # Handle chat messages from the meeting
     elif event_type in ("participant_events.chat_message", "chat_message"):
-        data = payload.get("data", {})
-        message_text = data.get("text") or data.get("message", "")
-        sender = data.get("sender", {}).get("name") or data.get("name") or "Someone"
+        outer = payload.get("data", {})
+        # Recall.ai nests the actual message inside data["data"] (same as transcript events)
+        inner = outer.get("data") or outer.get("participant_events") or outer
+        message_text = inner.get("text") or inner.get("message", "")
+        sender_obj = inner.get("sender") or inner.get("participant") or {}
+        sender = sender_obj.get("name") or inner.get("name") or "Someone"
+
+        print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
 
         if message_text.strip():
             # Check for command trigger in chat
             command = _detect_command(message_text)
             if command:
+                print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
 
     return {"ok": True}
