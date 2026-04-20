@@ -1601,9 +1601,9 @@ export default function App() {
 
   const autoDeliveryRef = useRef(new Set())
 
-  async function deliverMeetingRecap(meetingTitle, meetingResult) {
+  async function deliverMeetingRecap(meetingTitle, meetingResult, meetingId) {
     if (!meetingResult) return
-    const deliveryKey = `${meetingTitle}-${meetingResult.summary || ''}-${meetingResult.health_score?.score ?? 'na'}`
+    const deliveryKey = meetingId ? String(meetingId) : `${meetingTitle}-${meetingResult.health_score?.score ?? 'na'}`
     if (autoDeliveryRef.current.has(deliveryKey)) return
     autoDeliveryRef.current.add(deliveryKey)
 
