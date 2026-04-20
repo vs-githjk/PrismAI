@@ -160,11 +160,10 @@ async def get_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
 @router.post("/chats/{meeting_id}")
 async def save_chat(meeting_id: int, entry: ChatEntry, user_id: str = Depends(require_user_id)):
     client = _require_storage()
-    existing = client.table("chats").select("id").eq("meeting_id", meeting_id).eq("user_id", user_id).limit(1).execute()
-    if existing.data:
-        client.table("chats").update({"messages": entry.messages}).eq("meeting_id", meeting_id).eq("user_id", user_id).execute()
-    else:
-        client.table("chats").insert({"meeting_id": meeting_id, "user_id": user_id, "messages": entry.messages}).execute()
+    client.table("chats").upsert(
+        {"meeting_id": meeting_id, "user_id": user_id, "messages": entry.messages},
+        on_conflict="meeting_id,user_id",
+    ).execute()
     return {"ok": True}
 
 

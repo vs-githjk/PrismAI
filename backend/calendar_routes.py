@@ -93,11 +93,14 @@ async def get_valid_token(user_id: str) -> str:
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    resp = supabase.table("user_settings").select(
-        "google_access_token,google_refresh_token,google_token_expires_at"
-    ).eq("user_id", user_id).single().execute()
+    try:
+        resp = supabase.table("user_settings").select(
+            "google_access_token,google_refresh_token,google_token_expires_at"
+        ).eq("user_id", user_id).maybe_single().execute()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database error fetching calendar credentials")
 
-    row = resp.data
+    row = resp.data or {}
     if not row or not row.get("google_access_token"):
         raise HTTPException(status_code=404, detail="Google Calendar not connected")
 
