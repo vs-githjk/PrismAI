@@ -21,8 +21,8 @@ async def calendar_create_event(args: dict, user_settings: dict | None = None) -
 
     event_body = {
         "summary": args.get("title", "Untitled Meeting"),
-        "start": {"dateTime": args["start"], "timeZone": args.get("timezone", "America/New_York")},
-        "end": {"dateTime": args["end"], "timeZone": args.get("timezone", "America/New_York")},
+        "start": {"dateTime": args["start"], "timeZone": args.get("timezone", "UTC")},
+        "end": {"dateTime": args["end"], "timeZone": args.get("timezone", "UTC")},
     }
 
     if args.get("description"):

@@ -1787,7 +1787,7 @@ export default function App() {
             setResult(data.result)
             const entry = saveToHistory(data.transcript || '', data.result)
             const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
-            void deliverMeetingRecap(meetingTitle, data.result)
+            void deliverMeetingRecap(meetingTitle, data.result, entry?.id)
             setBotTranscriptReady(false)
             setMobileTab('results')
           } else if (data.transcript) {
@@ -1951,7 +1951,10 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entry),
-    }).catch(() => {})
+    }).catch(() => {
+      savedMeetingRef.current = null
+      setMeetingId(null)
+    })
     return entry
   }
 
@@ -2161,7 +2164,7 @@ export default function App() {
             if (!isDemo) {
               const entry = saveToHistory(t, accumulated)
               const meetingTitle = entry?.title || accumulated.summary?.slice(0, 65) || 'Meeting Analysis'
-              void deliverMeetingRecap(meetingTitle, accumulated)
+              void deliverMeetingRecap(meetingTitle, accumulated, entry?.id)
             }
             streamDone = true
             break

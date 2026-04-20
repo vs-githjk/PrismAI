@@ -128,32 +128,48 @@ async def export_to_notion(req: NotionExportRequest):
     raw = match.group(1)
     parent_id = f"{raw[:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
 
+    all_blocks = _build_notion_blocks(req.result)
     payload = {
         "parent": {"page_id": parent_id},
         "properties": {
             "title": {"title": [{"type": "text", "text": {"content": req.title or "Meeting Analysis"}}]}
         },
-        "children": _build_notion_blocks(req.result)[:100],
+        "children": all_blocks[:100],
+    }
+
+    notion_headers = {
+        "Authorization": f"Bearer {req.token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "https://api.notion.com/v1/pages",
-            headers={
-                "Authorization": f"Bearer {req.token}",
-                "Notion-Version": "2022-06-28",
-                "Content-Type": "application/json",
-            },
+            headers=notion_headers,
             json=payload,
             timeout=20.0,
         )
 
-    if resp.status_code not in (200, 201):
-        detail = _safe_json(resp).get("message", "Notion API error") if resp.content else "Notion API error"
-        raise HTTPException(status_code=resp.status_code, detail=detail)
+        if resp.status_code not in (200, 201):
+            detail = _safe_json(resp).get("message", "Notion API error") if resp.content else "Notion API error"
+            raise HTTPException(status_code=resp.status_code, detail=detail)
 
-    page = _safe_json(resp)
-    return {"url": page.get("url", ""), "page_id": page.get("id", "")}
+        page = _safe_json(resp)
+        page_id = page.get("id", "")
+
+        for i in range(100, len(all_blocks), 100):
+            chunk_resp = await client.patch(
+                f"https://api.notion.com/v1/blocks/{page_id}/children",
+                headers=notion_headers,
+                json={"children": all_blocks[i:i + 100]},
+                timeout=20.0,
+            )
+            if chunk_resp.status_code not in (200, 201):
+                detail = _safe_json(chunk_resp).get("message", "Notion API error") if chunk_resp.content else "Notion API error"
+                raise HTTPException(status_code=chunk_resp.status_code, detail=detail)
+
+    return {"url": page.get("url", ""), "page_id": page_id}
 
 
 @router.post("/export/slack")
