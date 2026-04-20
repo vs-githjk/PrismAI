@@ -360,6 +360,13 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 4. **Bot store persistence** — `bot_store` syncs to `bot_sessions` via `_db_save`/`_db_load`. `_db_load` is called as fallback in `/bot-status`. Mostly solved; verify the fallback path works in a live test.
 5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on single-user auth being stable first.
 
+### Fixed Apr 20 2026 (commit 33c5737) — Four follow-up bugs
+
+- **`autoDeliveryRef` key collision** — `deliverMeetingRecap()` now takes `meetingId` as third arg; dedup key is the ID (not title+score), so two meetings with the same title/score both deliver correctly.
+- **`savedMeetingRef` not reset on save failure** — `saveToHistory` `.catch()` now resets `savedMeetingRef.current = null` and `setMeetingId(null)`. If Render cold-starts and the POST fails, the user can retry.
+- **Notion export silent truncation** — export now chunks all blocks into sequential `PATCH /blocks/{page_id}/children` calls (100 per request) after the initial page create. Large meetings no longer silently lose content past block 100.
+- **`calendar_create_event` hardcoded `America/New_York`** — default timezone changed to `UTC`. LLM can still pass an explicit timezone if known; users outside ET no longer get wrong event times.
+
 ### Fixed Apr 20 2026 (commit 4c8877b) — Security hardening + reliability
 
 **Security:**
