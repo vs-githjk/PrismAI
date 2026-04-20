@@ -1,6 +1,6 @@
 # PrismAI QA Sweep Checklist
 
-Last updated: 2026-04-08
+Last updated: 2026-04-20
 
 This checklist is for a full product pass on the deployed app.
 
@@ -17,6 +17,16 @@ Recommended environments:
 Recommended accounts:
 - one signed-in Google account with Calendar connected
 - one signed-out / anonymous session
+
+### Before sweeping — run pending migrations
+
+Run these in Supabase SQL Editor if not already applied (in order):
+
+1. `supabase/auth_migration.sql`
+2. `supabase/calendar_migration.sql`
+3. `supabase/tools_migration.sql`
+4. `supabase/bot_commands_migration.sql` ✓ applied Apr 20
+5. `supabase/chats_unique_migration.sql` — **run before this sweep** (required for chat persistence fix)
 
 ---
 
@@ -246,6 +256,8 @@ Expected:
 Expected:
 - chat history persists for that meeting
 
+> **Requires `chats_unique_migration.sql` applied first.** If not run, chat saves will error silently.
+
 ### 7.3 Signed-out chat
 - Signed out: confirm chat behavior is appropriate for local-only use.
 
@@ -280,6 +292,14 @@ Expected:
 Expected:
 - export succeeds or fails clearly
 
+### 8.4 Notion export — large meeting
+- Export a meeting with a long transcript (ideally one with many action items, decisions, and a full summary).
+- Open the Notion page and scroll to the bottom.
+
+Expected:
+- all content is present, not truncated at roughly the first 100 blocks
+- previously large meetings would silently cut off here
+
 ---
 
 ## 9. Slack / Notion Auto-Send
@@ -300,6 +320,14 @@ Expected:
 - recap sends automatically after analysis completes
 - demo runs should not auto-send
 
+### 9.3 Auto-deliver dedup — same title, same score
+- Run two separate meetings that produce the same title and similar health score.
+- Both should trigger auto-delivery independently.
+
+Expected:
+- both deliveries fire (each meeting's ID is now used as the dedup key, not title+score)
+- previously the second delivery would be silently skipped
+
 ---
 
 ## 10. Google Calendar / Upcoming Meetings / Auto-Join
@@ -311,6 +339,13 @@ Expected:
 Expected:
 - connection succeeds
 - connected state is visible
+
+### 10.1a Calendar tool with calendar NOT connected
+- While calendar is disconnected, type a calendar command in chat (e.g. "schedule a follow-up for tomorrow").
+
+Expected:
+- receive a readable error message like "Calendar not connected"
+- previously this returned a silent 500 error
 
 ### 10.2 Next-up strip
 - With calendar connected and an upcoming meeting available, confirm the left panel shows a `Next up` strip.
@@ -332,6 +367,14 @@ Expected:
 
 Expected:
 - join flow starts without manually pasting a link
+
+### 10.4a Calendar event creation timezone
+- With calendar connected, ask Prism to create a calendar event via chat (e.g. "schedule a sync tomorrow at 2pm").
+- Check the created event in Google Calendar.
+
+Expected:
+- event time is correct — not shifted by Eastern Time offset
+- previously the default was hardcoded to America/New_York
 
 ### 10.5 Auto-join
 - If auto-join rules are enabled, verify behavior:
