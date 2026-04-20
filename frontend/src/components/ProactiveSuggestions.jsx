@@ -1,6 +1,5 @@
 import { useState } from 'react'
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+import { apiFetch } from '../lib/api'
 
 function computeSuggestions(result) {
   const suggestions = []
@@ -91,7 +90,7 @@ export default function ProactiveSuggestions({ result, transcript }) {
 
     setState(prev => ({ ...prev, [s.id]: { ...prev[s.id], loading: true, error: null } }))
     try {
-      const res = await fetch(`${API}/chat`, {
+      const res = await apiFetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: s.instruction, transcript: transcript || '' }),

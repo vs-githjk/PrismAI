@@ -1,12 +1,18 @@
 import asyncio
 import json
+import time
+from collections import defaultdict
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from groq import AsyncGroq
 from pydantic import BaseModel
 
 from analysis_service import AGENT_MAP, AGENT_RESULT_KEY, build_analysis_transcript, run_full_analysis
+
+# Simple IP-based rate limit for /transcribe (paid Whisper call, no auth required for demo)
+_transcribe_log: dict[str, list[float]] = defaultdict(list)
+_TRANSCRIBE_PER_MINUTE = 5
 
 
 class AnalyzeRequest(BaseModel):
@@ -70,7 +76,14 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
         )
 
     @router.post("/transcribe")
-    async def transcribe_audio(file: UploadFile = File(...)):
+    async def transcribe_audio(request: Request, file: UploadFile = File(...)):
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        _transcribe_log[client_ip] = [t for t in _transcribe_log[client_ip] if now - t < 60]
+        if len(_transcribe_log[client_ip]) >= _TRANSCRIBE_PER_MINUTE:
+            raise HTTPException(status_code=429, detail="Too many transcription requests — try again in a minute")
+        _transcribe_log[client_ip].append(now)
+
         content = await file.read()
         if len(content) > 25 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large. Max 25MB.")

@@ -1,5 +1,4 @@
 import json
-from fastapi import HTTPException
 from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
@@ -17,11 +16,15 @@ SYSTEM_PROMPT = (
 )
 
 
+_DEFAULT = {"sentiment": None}
+
+
 async def run(transcript: str) -> dict:
     for attempt in range(2):
         try:
             raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}")
             return json.loads(strip_fences(raw))
-        except json.JSONDecodeError:
+        except Exception:
             if attempt == 1:
-                raise HTTPException(status_code=500, detail="sentiment: failed to parse JSON after retry")
+                return _DEFAULT
+    return _DEFAULT

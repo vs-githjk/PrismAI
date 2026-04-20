@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -14,8 +16,9 @@ from auth import supabase, require_user_id
 router = APIRouter(tags=["recall"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # In-memory cache (always used for fast access; synced to Supabase when available)
@@ -56,14 +59,16 @@ def _db_load(bot_id: str) -> dict | None:
 
 
 def _db_append_command(bot_id: str, command: dict):
-    """Append a command log entry to the bot session."""
+    """Append a command log entry atomically using Postgres jsonb_insert."""
     if not supabase:
         return
     try:
-        res = supabase.table("bot_sessions").select("commands").eq("bot_id", bot_id).maybe_single().execute()
-        commands = ((res.data if res else None) or {}).get("commands") or []
-        commands.append(command)
-        supabase.table("bot_sessions").update({"commands": commands, "updated_at": "now()"}).eq("bot_id", bot_id).execute()
+        # Use rpc to atomically append — avoids read-modify-write race when two
+        # commands arrive simultaneously for the same bot.
+        supabase.rpc(
+            "append_bot_command",
+            {"p_bot_id": bot_id, "p_command": command},
+        ).execute()
     except Exception as exc:
         print(f"[recall] db append command failed: {exc}")
 
@@ -402,7 +407,13 @@ async def bot_status(bot_id: str):
 
 @router.post("/recall-webhook")
 async def recall_webhook(request: Request):
-    payload = await request.json()
+    body = await request.body()
+    if RECALL_WEBHOOK_SECRET:
+        sig = request.headers.get("x-recall-signature", "")
+        expected = hmac.new(RECALL_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    payload = json.loads(body)
 
     bot_id = (
         payload.get("data", {}).get("bot", {}).get("id")

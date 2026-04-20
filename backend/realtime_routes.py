@@ -14,7 +14,7 @@ import httpx
 from fastapi import APIRouter, Request
 from groq import AsyncGroq
 
-from tools.registry import get_available_tools, execute_tool, confirm_and_execute
+from tools.registry import get_available_tools, execute_tool
 from tools.tts import text_to_speech
 from recall_routes import bot_store, _db_append_command
 from auth import supabase
@@ -22,7 +22,7 @@ from auth import supabase
 router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
@@ -146,7 +146,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
     try:
         user_settings = await _get_settings_for_bot(bot_id)
-        tools = get_available_tools(user_settings)
+        # Exclude tools that require explicit user confirmation — no UI in a live meeting
+        tools = get_available_tools(user_settings, exclude_confirm=True)
 
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
@@ -209,12 +210,16 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 break
 
             messages.append(choice.message)
+            user_id = (bot_store.get(bot_id) or {}).get("user_id") or bot_id
             for tool_call in choice.message.tool_calls:
-                result = await confirm_and_execute(
+                result = await execute_tool(
                     tool_call.function.name,
                     tool_call.function.arguments,
+                    user_id=user_id,
                     user_settings=user_settings,
                 )
+                if result.get("requires_confirmation"):
+                    result = {"error": "This action requires confirmation — please use the PrismAI web app to authorize it."}
                 tools_used.append(tool_call.function.name)
                 messages.append({
                     "role": "tool",

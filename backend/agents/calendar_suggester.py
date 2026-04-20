@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from fastapi import HTTPException
 from calendar_resolution import resolve_relative_date
 from .utils import strip_fences, llm_call
 
@@ -11,6 +10,9 @@ SYSTEM_PROMPT = (
     "Keep suggested_timeframe as the natural language phrase from the meeting whenever possible. "
     "If the transcript contains a [User instruction: ...] line, follow it exactly — especially any specific date or timeframe the user requests."
 )
+
+
+_DEFAULT = {"calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "resolved_date": "", "resolved_day": ""}}
 
 
 async def run(transcript: str) -> dict:
@@ -26,6 +28,7 @@ async def run(transcript: str) -> dict:
             suggestion["resolved_day"] = resolved["resolved_day"]
             payload["calendar_suggestion"] = suggestion
             return payload
-        except json.JSONDecodeError:
+        except Exception:
             if attempt == 1:
-                raise HTTPException(status_code=500, detail="calendar_suggester: failed to parse JSON after retry")
+                return _DEFAULT
+    return _DEFAULT
