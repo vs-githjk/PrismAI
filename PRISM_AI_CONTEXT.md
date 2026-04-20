@@ -360,6 +360,11 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 4. **Bot store persistence** — `bot_store` syncs to `bot_sessions` via `_db_save`/`_db_load`. `_db_load` is called as fallback in `/bot-status`. Mostly solved; verify the fallback path works in a live test.
 5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on single-user auth being stable first.
 
+### Fixed Apr 20 2026 (commit 73e5097) — Two bugs from codebase audit
+
+- **`get_valid_token()` `.single()` crash** — `calendar_routes.py:98` used `.single()` (throws PostgREST error on 0 rows) instead of `.maybe_single()`. Any chat tool call for a user without a connected calendar would return 500 instead of a clean 404 "not connected" error. Fixed: `.maybe_single()` + try-except.
+- **`save_chat` TOCTOU race** — `storage_routes.py` used select+insert/update pattern (same race already fixed in `save_user_settings`). Two concurrent chat saves could both see an empty row and both insert, creating duplicate chat rows. Fixed: `upsert(on_conflict="meeting_id,user_id")`. Migration: `supabase/chats_unique_migration.sql` — run in Supabase SQL Editor before deploying.
+
 ### Fixed Apr 20 2026 (commit 33c5737) — Four follow-up bugs
 
 - **`autoDeliveryRef` key collision** — `deliverMeetingRecap()` now takes `meetingId` as third arg; dedup key is the ID (not title+score), so two meetings with the same title/score both deliver correctly.
