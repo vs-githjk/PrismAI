@@ -167,7 +167,7 @@ register_tool(
     },
     handler=calendar_create_event,
     requires="google_access_token",
-    confirm=True,
+    confirm=False,
 )
 
 register_tool(
