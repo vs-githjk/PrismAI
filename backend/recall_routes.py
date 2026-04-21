@@ -198,7 +198,7 @@ def _transcript_from_recall_data(raw) -> str:
     if isinstance(raw, list):
         transcript_lines = []
         for segment in raw:
-            speaker = segment.get("speaker") or "Speaker"
+            speaker = segment.get("speaker") or segment.get("participant", {}).get("name") or "Speaker"
             # New format: words as list of dicts with "text"
             words = segment.get("words") or []
             if words:

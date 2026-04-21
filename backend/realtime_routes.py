@@ -4,6 +4,7 @@ detects PrismAI commands, executes tools, and optionally responds via TTS.
 """
 
 import asyncio
+import base64
 import json
 import os
 import re
@@ -115,8 +116,8 @@ async def _send_voice_response(bot_id: str, text: str):
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 f"{RECALL_API_BASE}/bot/{bot_id}/output_audio/",
-                headers={"Authorization": f"Token {RECALL_API_KEY}"},
-                files={"file": ("audio.mp3", audio_bytes, "audio/mpeg")},
+                headers={"Authorization": f"Token {RECALL_API_KEY}", "Content-Type": "application/json"},
+                json={"kind": "mp3", "b64_data": base64.b64encode(audio_bytes).decode()},
                 timeout=30,
             )
             if resp.status_code not in (200, 201):

@@ -2335,7 +2335,6 @@ export default function App() {
           <ActionItemsCard actionItems={r.action_items} />
           <DecisionsCard decisions={r.decisions} />
           <SentimentCard sentiment={r.sentiment} />
-          <EmailCard email={r.follow_up_email} />
           <CalendarCard suggestion={r.calendar_suggestion} />
         </div>
 
