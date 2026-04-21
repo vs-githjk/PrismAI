@@ -3,6 +3,8 @@ from pydantic import BaseModel
 
 from auth import require_user_id, supabase
 from cross_meeting_service import derive_cross_meeting_insights, has_meaningful_result
+from calendar_routes import get_valid_token
+from tools.gmail import gmail_send
 
 
 router = APIRouter(tags=["storage"])
@@ -171,4 +173,24 @@ async def save_chat(meeting_id: int, entry: ChatEntry, user_id: str = Depends(re
 async def delete_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
     client.table("chats").delete().eq("meeting_id", meeting_id).eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
+class SendFollowupRequest(BaseModel):
+    to: list[str]
+    subject: str
+    body: str
+
+
+@router.post("/send-followup-email")
+async def send_followup_email(req: SendFollowupRequest, user_id: str = Depends(require_user_id)):
+    if not req.to:
+        raise HTTPException(status_code=400, detail="At least one recipient is required")
+    token = await get_valid_token(user_id)
+    result = await gmail_send(
+        {"to": req.to, "subject": req.subject, "body": req.body},
+        {"google_access_token": token},
+    )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     return {"ok": True}

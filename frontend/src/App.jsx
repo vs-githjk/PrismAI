@@ -3353,7 +3353,7 @@ export default function App() {
 
                 {/* Email + Calendar */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
+                  <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} gmailConnected={calendarConnected} /></div>
                   <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
                 </div>
               </ErrorBoundary>
@@ -3565,7 +3565,7 @@ export default function App() {
                 <div className="animate-fade-in-up card-delay-2"><ActionItemsCard actionItems={result.action_items} onToggle={toggleActionItem} /></div>
                 <div className="animate-fade-in-up card-delay-3"><DecisionsCard decisions={result.decisions} /></div>
                 <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
-                <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} /></div>
+                <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} gmailConnected={calendarConnected} /></div>
                 <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
               </ErrorBoundary>
             </div>
