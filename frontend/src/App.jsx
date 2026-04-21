@@ -1355,34 +1355,6 @@ export default function App() {
       .catch(() => {})
   }, [user?.id])
 
-  useEffect(() => {
-    if (!calendarConnected || !user) {
-      setNextUpcomingMeeting(null)
-      return
-    }
-
-    let cancelled = false
-
-    async function loadNextUpcomingMeeting() {
-      try {
-        const res = await apiFetch('/calendar/events?days_ahead=1')
-        if (!res.ok) throw new Error('calendar fetch failed')
-        const data = await res.json()
-        if (cancelled) return
-        const nextEvent = (data?.events || []).find((event) => event?.start)
-        setNextUpcomingMeeting(nextEvent || null)
-      } catch {
-        if (!cancelled) setNextUpcomingMeeting(null)
-      }
-    }
-
-    loadNextUpcomingMeeting()
-    const interval = setInterval(loadNextUpcomingMeeting, 60_000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [calendarConnected, user?.id])
 
   // pendingAutoJoinUrl: set by polling effect, consumed by an effect after joinMeeting is defined
   const pendingAutoJoinRef = useRef(null)
@@ -1877,41 +1849,54 @@ export default function App() {
       })
   }
 
-  // Auto-join polling — check every 60s for imminent meetings
+  // Calendar polling — next-up banner + auto-join check, one fetch per 60s
   useEffect(() => {
-    if (!calendarConnected || !user || autoJoinSetting === 'off') return
-
-    const markedIds = JSON.parse(localStorage.getItem('prism_marked_events') || '[]')
-
-    async function checkImminent() {
-      try {
-        const res = await apiFetch('/calendar/events?days_ahead=1')
-        if (!res.ok) return
-        const { events } = await res.json()
-        const now = new Date()
-        for (const ev of events) {
-          if (!ev.has_meeting_link || !ev.start) continue
-          if (autoJoinFiredRef.current.has(ev.id)) continue
-          const minsUntil = Math.round((new Date(ev.start) - now) / 60000)
-          if (minsUntil < -5 || minsUntil > 5) continue
-
-          if (autoJoinSetting === 'marked' && !markedIds.includes(ev.id)) continue
-
-          autoJoinFiredRef.current.add(ev.id)
-
-          if (autoJoinSetting === 'auto' || autoJoinSetting === 'marked') {
-            autoJoinDirect(ev.meeting_link)
-          } else if (autoJoinSetting === 'ask') {
-            setAutoJoinPrompt({ title: ev.title, url: ev.meeting_link, minsUntil })
-          }
-          break
-        }
-      } catch {}
+    if (!calendarConnected || !user) {
+      setNextUpcomingMeeting(null)
+      return
     }
 
-    checkImminent()
-    const interval = setInterval(checkImminent, 60_000)
-    return () => clearInterval(interval)
+    let cancelled = false
+
+    async function pollCalendarEvents() {
+      try {
+        const res = await apiFetch('/calendar/events?days_ahead=1')
+        if (!res.ok) throw new Error()
+        const data = await res.json()
+        if (cancelled) return
+        const events = data?.events || []
+
+        setNextUpcomingMeeting(events.find((e) => e?.start) || null)
+
+        if (autoJoinSetting !== 'off') {
+          const markedIds = JSON.parse(localStorage.getItem('prism_marked_events') || '[]')
+          const now = new Date()
+          for (const ev of events) {
+            if (!ev.has_meeting_link || !ev.start) continue
+            if (autoJoinFiredRef.current.has(ev.id)) continue
+            const minsUntil = Math.round((new Date(ev.start) - now) / 60000)
+            if (minsUntil < -5 || minsUntil > 5) continue
+            if (autoJoinSetting === 'marked' && !markedIds.includes(ev.id)) continue
+            autoJoinFiredRef.current.add(ev.id)
+            if (autoJoinSetting === 'auto' || autoJoinSetting === 'marked') {
+              autoJoinDirect(ev.meeting_link)
+            } else if (autoJoinSetting === 'ask') {
+              setAutoJoinPrompt({ title: ev.title, url: ev.meeting_link, minsUntil })
+            }
+            break
+          }
+        }
+      } catch {
+        if (!cancelled) setNextUpcomingMeeting(null)
+      }
+    }
+
+    pollCalendarEvents()
+    const interval = setInterval(pollCalendarEvents, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [calendarConnected, user?.id, autoJoinSetting])
 
   const mergeHistoryEntries = (entries) => {
@@ -2124,7 +2109,11 @@ export default function App() {
       const res = await apiFetch('/analyze-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: t, speakers: validSpeakers }),
+        body: JSON.stringify({
+          transcript: t,
+          speakers: validSpeakers,
+          owner_name: authSession?.user?.user_metadata?.full_name || null,
+        }),
         signal: controller.signal,
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Server error ${res.status}`)

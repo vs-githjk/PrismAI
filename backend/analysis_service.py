@@ -46,17 +46,20 @@ AGENT_RESULT_KEY = {
 }
 
 
-def build_analysis_transcript(transcript: str, speakers: list | None = None) -> str:
+def build_analysis_transcript(transcript: str, speakers: list | None = None, owner_name: str | None = None) -> str:
     speakers = speakers or []
-    if not speakers:
+    lines = []
+    if owner_name and owner_name.strip():
+        lines.append(f"[Meeting owner: {owner_name.strip()}]")
+    if speakers:
+        lines.append("Meeting participants:")
+        for speaker in speakers:
+            name = (speaker.get("name") or "").strip()
+            role = (speaker.get("role") or "").strip()
+            if name:
+                lines.append(f"  - {name}: {role}" if role else f"  - {name}")
+    if not lines:
         return transcript
-
-    lines = ["Meeting participants:"]
-    for speaker in speakers:
-        name = (speaker.get("name") or "").strip()
-        role = (speaker.get("role") or "").strip()
-        if name:
-            lines.append(f"  - {name}: {role}" if role else f"  - {name}")
     return "\n".join(lines) + "\n\n" + transcript
 
 

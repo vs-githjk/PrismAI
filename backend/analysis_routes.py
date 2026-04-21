@@ -18,6 +18,7 @@ _TRANSCRIBE_PER_MINUTE = 5
 class AnalyzeRequest(BaseModel):
     transcript: str
     speakers: list = []
+    owner_name: str | None = None
 
 
 def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
@@ -28,7 +29,7 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
         if not req.transcript.strip():
             raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
-        transcript = build_analysis_transcript(req.transcript, req.speakers)
+        transcript = build_analysis_transcript(req.transcript, req.speakers, req.owner_name)
         return await run_full_analysis(transcript)
 
     @router.post("/analyze-stream")
@@ -36,7 +37,7 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
         if not req.transcript.strip():
             raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
-        transcript = build_analysis_transcript(req.transcript, req.speakers)
+        transcript = build_analysis_transcript(req.transcript, req.speakers, req.owner_name)
         from agents import orchestrator
 
         agents_to_run = await orchestrator.run_orchestrator(transcript)
