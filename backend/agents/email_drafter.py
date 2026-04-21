@@ -22,7 +22,8 @@ async def run(transcript: str) -> dict:
             raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}", temperature=0.7)
             return json.loads(strip_fences(raw))
         except Exception as e:
-            print(f"[email_drafter] attempt {attempt} failed: {e!r} | raw={raw!r if 'raw' in dir() else 'no response'}")
+            raw_preview = locals().get('raw', 'no response')
+            print(f"[email_drafter] attempt {attempt} failed: {e!r} | raw={raw_preview!r}")
             if attempt == 1:
                 return _DEFAULT
     return _DEFAULT
