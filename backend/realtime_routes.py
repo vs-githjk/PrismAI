@@ -54,7 +54,10 @@ def _detect_command(text: str) -> str | None:
     """Check if text contains a PrismAI command trigger. Returns the command part or None."""
     match = TRIGGER_PATTERN.search(text)
     if match:
-        return match.group(1).strip()
+        cmd = match.group(1).strip()
+        # Require at least 3 word characters — rejects "Hey Prism." / "Prism,"
+        if len(re.sub(r'\W', '', cmd)) >= 3:
+            return cmd
     return None
 
 
@@ -249,6 +252,35 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         await _send_voice_response(bot_id, reply)
 
     except Exception as exc:
+        err_str = str(exc)
+        status_code = getattr(exc, "status_code", None)
+        is_transient = (
+            status_code in {429, 500, 502, 503, 504}
+            or any(kw in err_str for kw in ("rate_limit", "overloaded", "capacity"))
+        )
+        if is_transient:
+            from agents.utils import _get_anthropic
+            anthropic_client = _get_anthropic()
+            msgs = locals().get("messages")
+            if anthropic_client and msgs:
+                try:
+                    haiku_resp = await anthropic_client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=256,
+                        system=msgs[0]["content"],
+                        messages=[{"role": "user", "content": f"{speaker}: {command}" if speaker else command}],
+                    )
+                    reply = haiku_resp.content[0].text
+                    cmd_entry = {"command": command, "speaker": speaker, "tools": [], "reply": reply, "ts": time.time()}
+                    if bot_id in bot_store:
+                        bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
+                    _db_append_command(bot_id, cmd_entry)
+                    print(f"[realtime] haiku fallback reply={reply!r}")
+                    await _send_chat_response(bot_id, f"✓ {reply}")
+                    await _send_voice_response(bot_id, reply)
+                    return
+                except Exception as haiku_exc:
+                    print(f"[realtime] haiku fallback failed: {haiku_exc}")
         print(f"[realtime] command processing error: {exc}")
         await _send_chat_response(bot_id, f"Sorry, I ran into an error: {str(exc)[:100]}")
     finally:
