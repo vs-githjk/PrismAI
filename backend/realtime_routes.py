@@ -352,16 +352,14 @@ async def realtime_events(request: Request):
 
     # Handle chat messages from the meeting
     elif event_type in ("participant_events.chat_message", "chat_message"):
+        # Payload shape (Google Meet): data.data.action_obj, data.data.data.text, data.data.participant.name
         outer = payload.get("data", {})
-        # Recall.ai nests the actual message inside data["data"] (same as transcript events)
-        inner = outer.get("data") or outer.get("participant_events") or outer
-        message_text = inner.get("text") or inner.get("message", "")
-        sender_obj = inner.get("sender") or inner.get("participant") or {}
-        sender = sender_obj.get("name") or inner.get("name") or "Someone"
+        action_obj = outer.get("data") or outer  # {"action", "participant", "data": {"text":...}}
+        chat_data = action_obj.get("data") or {}
+        message_text = chat_data.get("text") or action_obj.get("text") or action_obj.get("message", "")
+        sender_obj = action_obj.get("participant") or action_obj.get("sender") or {}
+        sender = sender_obj.get("name") or action_obj.get("name") or "Someone"
 
-        if not message_text:
-            import json as _json
-            print(f"[realtime] chat message EMPTY — outer={_json.dumps(outer, default=str)[:500]}")
         print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
 
         if message_text.strip():
