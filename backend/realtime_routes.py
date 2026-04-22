@@ -182,6 +182,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                     "For factual questions (date, time, summaries, definitions) answer immediately without tools. "
                     "For gmail_send: ONLY send if the user explicitly states the recipient's full email address "
                     "in their command. If no address is given, ask for it instead of guessing. "
+                    "For calendar_create_event: ONLY create an event if the user has stated the title AND date/time. "
+                    "If any required detail is missing, ask for it — never invent a title, date, or time. "
                     "Be concise — you'll be speaking aloud. Keep responses under 2 sentences. "
                     f"Current date and time: {now_str}. "
                     f"\n\nRecent transcript for context:\n{recent_transcript}"
