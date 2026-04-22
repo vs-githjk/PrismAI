@@ -45,9 +45,14 @@ def _get_bot_state(bot_id: str) -> dict:
             "transcript_buffer": [],
             "last_command_ts": 0,
             "last_command_text": "",
+            "last_command_norm": "",
             "processing": False,
         }
     return _bot_state[bot_id]
+
+
+def _normalize_cmd(text: str) -> str:
+    return re.sub(r'\W+', ' ', text.lower()).strip()
 
 
 def _detect_command(text: str) -> str | None:
@@ -55,8 +60,8 @@ def _detect_command(text: str) -> str | None:
     match = TRIGGER_PATTERN.search(text)
     if match:
         cmd = match.group(1).strip()
-        # Require at least 3 word characters — rejects "Hey Prism." / "Prism,"
-        if len(re.sub(r'\W', '', cmd)) >= 3:
+        # Require at least 3 words — rejects "Hey Prism." / "Prism," / "what is"
+        if len(re.findall(r'\b\w+\b', cmd)) >= 3:
             return cmd
     return None
 
@@ -140,12 +145,14 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
     if state["processing"]:
         return
     # Dedup — skip if this command is just an extension of the last one (rolling transcript)
-    last_text = state.get("last_command_text", "")
-    if last_text and (command.startswith(last_text) or last_text.startswith(command)):
+    cmd_norm = _normalize_cmd(command)
+    last_norm = state.get("last_command_norm", "")
+    if last_norm and (cmd_norm.startswith(last_norm) or last_norm.startswith(cmd_norm)):
         return
 
     state["last_command_ts"] = now
     state["last_command_text"] = command
+    state["last_command_norm"] = cmd_norm
     state["processing"] = True
 
     try:
