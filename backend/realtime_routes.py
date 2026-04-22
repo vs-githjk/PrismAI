@@ -359,6 +359,9 @@ async def realtime_events(request: Request):
         sender_obj = inner.get("sender") or inner.get("participant") or {}
         sender = sender_obj.get("name") or inner.get("name") or "Someone"
 
+        if not message_text:
+            import json as _json
+            print(f"[realtime] chat message EMPTY — outer={_json.dumps(outer, default=str)[:500]}")
         print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
 
         if message_text.strip():
