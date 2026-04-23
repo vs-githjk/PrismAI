@@ -5,6 +5,8 @@ import LandingNav from './components/LandingNav'
 import RotatingText from './components/RotatingText'
 import HowItWorks from './components/HowItWorks'
 import AgentShowcase from './components/AgentShowcase'
+import PricingSection from './components/PricingSection'
+import TeamSection from './components/TeamSection'
 import SignupDialog from './components/SignupDialog'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
@@ -884,24 +886,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         transition: 'opacity 0.35s ease, transform 0.35s ease',
       }}
     >
-      <section ref={heroRef} className="landing-hero scroll-section">
-      {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
-      <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
-        <defs>
-          <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-            <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
-            <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
-            <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
-            <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
-            <feComponentTransfer in="blended">
-              <feFuncA type="linear" slope="1"/>
-            </feComponentTransfer>
-          </filter>
-        </defs>
-      </svg>
-
-      {/* Prism background */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Fixed prism — persists behind all sections */}
+      <div className="landing-bg-prism" aria-hidden="true">
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -48%)', width: 'max(1080px, 100vw)', height: 'max(1080px, 100vh)' }}>
           <Prism
             height={2}
@@ -917,15 +903,36 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
             inertia={0.04}
             bloom={0.9}
             timeScale={0.3}
-            suspendWhenOffscreen
           />
         </div>
       </div>
 
-      <LandingNav />
+      {/* Global blur overlay — activates when scrolled past hero */}
+      <div className={`landing-bg-blur${heroInView ? '' : ' active'}`} aria-hidden="true" />
+
+      {/* Sticky nav — sits above all sections while scrolling */}
+      <div className="landing-nav-sticky">
+        <LandingNav onSignup={() => setSignupOpen(true)} />
+      </div>
+
+      <section ref={heroRef} id="prism" className="landing-hero scroll-section">
+      {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
+      <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+        <defs>
+          <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
+            <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+            <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
+            <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
+            <feComponentTransfer in="blended">
+              <feFuncA type="linear" slope="1"/>
+            </feComponentTransfer>
+          </filter>
+        </defs>
+      </svg>
 
       {/* Hero content */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full">
+      <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
         {/* Rotating pain-point text */}
         <div className="w-full flex items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
           <RotatingText
@@ -955,7 +962,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </div>
 
         {/* CTA buttons */}
-        <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s' }}>
+        <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
           <button className="btn-primary" onClick={() => setSignupOpen(true)}>Get started</button>
           <span className="cta-or">or</span>
           <button className="btn-ghost" onClick={onDemo}>Try it out</button>
@@ -975,6 +982,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
       <HowItWorks />
       <AgentShowcase />
+      <PricingSection onGetStarted={() => setSignupOpen(true)} />
+      <TeamSection />
       {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
     </div>
   )

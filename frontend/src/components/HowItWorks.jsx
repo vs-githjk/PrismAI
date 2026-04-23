@@ -37,7 +37,7 @@ export default function HowItWorks() {
   }, [])
 
   return (
-    <section ref={sectionRef} className="how-it-works-section scroll-section" style={{ position: 'relative' }}>
+    <section ref={sectionRef} id="product" className="how-it-works-section scroll-section" style={{ position: 'relative' }}>
       <div className={`section-blur-overlay${inView ? '' : ' active'}`} aria-hidden="true" />
       <div className="section-inner">
         <p className="section-eyebrow">How it works</p>
