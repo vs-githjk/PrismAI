@@ -1,6 +1,13 @@
 import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
 import Prism from './components/Prism'
-import LightPillar from './components/LightPillar'
+import LogoIcon from './components/LogoIcon'
+import LandingNav from './components/LandingNav'
+import RotatingText from './components/RotatingText'
+import HowItWorks from './components/HowItWorks'
+import AgentShowcase from './components/AgentShowcase'
+import PricingSection from './components/PricingSection'
+import TeamSection from './components/TeamSection'
+import SignupDialog from './components/SignupDialog'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -836,335 +843,148 @@ const INITIAL_SHARE_TOKEN = (() => {
 const UI_SCREEN_KEY = 'prism_ui_screen'
 const VISITED_KEY = 'prism_visited'
 
-function LandingPrismHero() {
-  const transcriptLines = [
-    'Sarah: We need cleaner ownership before launch.',
-    'Mike: Let’s move analytics to Q3.',
-    'Lisa: I’ll send the client update by Wednesday.',
-  ]
-
-  const outputs = [
-    { label: 'Decision', value: 'Analytics moves to Q3', text: '#fde047' },
-    { label: 'Owner', value: 'Lisa owns client update', text: '#86efac' },
-    { label: 'Health', value: '82 / 100', text: '#d8b4fe' },
-    { label: 'Follow-up', value: 'Schedule in 2 weeks', text: '#7dd3fc' },
-  ]
-
-  return (
-    <div className="relative w-full max-w-6xl mx-auto mt-1 mb-4 px-2 landing-prism-hero">
-      <div className="absolute inset-x-[16%] top-[18%] h-40 rounded-full blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.12) 0%, rgba(168,85,247,0.08) 40%, transparent 72%)' }} />
-
-      <div className="grid lg:grid-cols-[1fr_112px_1fr] gap-3 lg:gap-4 items-center relative">
-        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up relative overflow-hidden" style={{ animationDelay: '0.18s' }}>
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Raw meeting input</p>
-              <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Conversation enters the prism</h3>
-            </div>
-            <span className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400">Unstructured</span>
-          </div>
-
-          <div className="space-y-2.5 relative z-10">
-            {transcriptLines.map((line, i) => (
-              <div
-                key={line}
-                className="rounded-2xl px-4 py-2.5 border border-white/10 bg-white/[0.06] animate-fade-in-up"
-                style={{ animationDelay: `${0.25 + i * 0.06}s` }}
-              >
-                <p className="text-sm text-slate-200">{line}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2 relative z-10">
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Multiple speakers</span>
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions buried in conversation</span>
-          </div>
-        </div>
-
-        <div className="hidden lg:flex items-center justify-center relative h-[300px] landing-prism-center animate-fade-in-up" style={{ animationDelay: '0.26s' }}>
-          <div className="landing-prism-column">
-            <div className="landing-prism-halo" />
-            <div className="landing-prism-beam landing-prism-beam-in" />
-            <div className="landing-prism-core">
-              <div className="landing-prism-facet" />
-            </div>
-            <div className="landing-prism-beam landing-prism-beam-out" />
-          </div>
-        </div>
-
-        <div className="landing-glass-panel rounded-[32px] p-4 sm:p-5 animate-fade-in-up relative overflow-hidden" style={{ animationDelay: '0.34s' }}>
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Structured intelligence</p>
-              <h3 className="text-sm sm:text-base font-semibold text-white mt-1">Accountable outputs stream back live</h3>
-            </div>
-            <span className="text-[11px] px-2.5 py-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">Streaming</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 relative z-10">
-            {outputs.map((item, i) => (
-              <div
-                key={item.label}
-                className="rounded-2xl px-4 py-3 border border-white/10 bg-white/[0.05] animate-fade-in-up landing-output-card"
-                style={{ animationDelay: `${0.38 + i * 0.07}s` }}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-2 h-2 rounded-full" style={{ background: item.text, boxShadow: `0 0 14px ${item.text}` }} />
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                </div>
-                <p className="text-sm font-semibold leading-snug" style={{ color: item.text }}>{item.value}</p>
-                <div className="mt-3 h-1 rounded-full" style={{ background: `${item.text}33` }} />
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2 relative z-10">
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Decisions stay visible</span>
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Owners don’t get lost</span>
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-slate-400">Follow-up leaves the meeting</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+const HERO_SENTENCES = [
+  "Your cleanup always outlasts the meeting itself.",
+  "Everyone left the call with different action items.",
+  "Nobody owns that decision from Tuesday anymore.",
+  "Back-to-backs all day. Notes happen at midnight.",
+  "Twelve open tabs, zero decisions documented.",
+  "The follow-up never made it out of your drafts.",
+]
 
 // ── Landing / Hero screen ────────────────────────────────────────
 function LandingScreen({ onDemo, onSkip, exiting }) {
+  const [signupOpen, setSignupOpen] = useState(false)
+  const [scrollCueVisible, setScrollCueVisible] = useState(true)
+  const [heroInView, setHeroInView] = useState(true)
+  const scrollContainerRef = useRef(null)
+  const heroRef = useRef(null)
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    const hero = heroRef.current
+    if (!container || !hero) return
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        const r = entry.intersectionRatio
+        setScrollCueVisible(r >= 0.7)
+        setHeroInView(r > 0.1)
+      },
+      { threshold: [0, 0.1, 0.5, 0.7, 1], root: container }
+    )
+    obs.observe(hero)
+    return () => obs.disconnect()
+  }, [])
+
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-6 py-8 lg:py-6 relative overflow-hidden landing-screen"
+      ref={scrollContainerRef}
+      className="landing-page"
       style={{
-        background: '#07040f',
         opacity: exiting ? 0 : 1,
         transform: exiting ? 'scale(0.97)' : 'scale(1)',
         transition: 'opacity 0.35s ease, transform 0.35s ease',
       }}
     >
-      {/* WebGL Prism background */}
-      <div className="absolute inset-0 pointer-events-none">
-        <Prism
-          animationType="rotate"
-          timeScale={0.35}
-          height={3.5}
-          baseWidth={5.5}
-          scale={3.6}
-          glow={1.4}
-          bloom={1.2}
-          noise={0.04}
-          colorFrequency={1.1}
-          baseWidth={5.5}
-          height={3.5}
-          hueShift={0}
-          transparent={true}
-          suspendWhenOffscreen={true}
-        />
-      </div>
-
-      {/* Top vignette — just enough to keep logo + headline readable */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'linear-gradient(to bottom, rgba(7,4,15,0.6) 0%, rgba(7,4,15,0.15) 8%, transparent 15%)'
-      }} />
-
-      {/* Bottom fade — clean floor for the prism */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'linear-gradient(to bottom, transparent 60%, rgba(7,4,15,0.6) 75%, rgba(7,4,15,0.92) 88%, #07040f 100%)'
-      }} />
-
-      {/* Left pillar — hugs the left edge only */}
-      <div className="absolute pointer-events-none" style={{ width: '22%', height: '100%', top: 0, left: 0, maskImage: 'linear-gradient(to right, black 15%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 15%, transparent 100%)' }}>
-        <LightPillar
-          topColor="#38bdf8"
-          bottomColor="#0d9488"
-          intensity={0.7}
-          rotationSpeed={0.25}
-          glowAmount={0.004}
-          pillarWidth={2.0}
-          pillarHeight={0.35}
-          noiseIntensity={0.3}
-          pillarRotation={30}
-          mixBlendMode="screen"
-          quality="high"
-        />
-      </div>
-
-      {/* Right pillar — hugs the right edge only */}
-      <div className="absolute pointer-events-none" style={{ width: '22%', height: '100%', top: 0, right: 0, maskImage: 'linear-gradient(to left, black 15%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to left, black 15%, transparent 100%)' }}>
-        <LightPillar
-          topColor="#38bdf8"
-          bottomColor="#6366f1"
-          intensity={0.7}
-          rotationSpeed={0.25}
-          glowAmount={0.004}
-          pillarWidth={2.0}
-          pillarHeight={0.35}
-          noiseIntensity={0.3}
-          pillarRotation={-30}
-          mixBlendMode="screen"
-          quality="high"
-        />
-      </div>
-
-      {/* Logo */}
-      <div className="flex items-center gap-3 mb-4 animate-fade-in-up relative landing-logo-lockup" style={{ animationDelay: '0s' }}>
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-          style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 40px rgba(2,132,199,0.5)' }}>
-          <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-          </svg>
-        </div>
-        <div>
-          <span className="text-3xl font-bold gradient-text">PrismAI</span>
-          <p className="text-xs text-gray-600 mt-0.5">meeting intelligence</p>
+      {/* Fixed prism — persists behind all sections */}
+      <div className="landing-bg-prism" aria-hidden="true">
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -48%)', width: 'max(1080px, 100vw)', height: 'max(1080px, 100vh)' }}>
+          <Prism
+            height={2}
+            baseWidth={3}
+            animationType="rotate3d"
+            glow={1.1}
+            noise={0.1}
+            transparent
+            scale={2.9}
+            hueShift={5.6}
+            colorFrequency={1}
+            hoverStrength={0}
+            inertia={0.04}
+            bloom={0.9}
+            timeScale={0.3}
+          />
         </div>
       </div>
 
-      {/* Badge */}
-      <div className="mb-3 animate-fade-in-up relative" style={{ animationDelay: '0.06s' }}>
-        <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[11px] font-medium text-sky-400"
-          style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)' }}>
-          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse flex-shrink-0" />
-          7 parallel AI agents · live streaming results · free
-        </span>
+      {/* Global blur overlay — activates when scrolled past hero */}
+      <div className={`landing-bg-blur${heroInView ? '' : ' active'}`} aria-hidden="true" />
+
+      {/* Sticky nav — sits above all sections while scrolling */}
+      <div className="landing-nav-sticky">
+        <LandingNav onSignup={() => setSignupOpen(true)} />
       </div>
 
-      {/* Headline */}
-      <div className="text-center mb-2 animate-fade-in-up relative landing-headline" style={{ animationDelay: '0.12s' }}>
-        <h1 className="text-[2.95rem] sm:text-[4.05rem] lg:text-[4.45rem] xl:text-[4.72rem] font-bold text-white leading-[0.91] mb-2 tracking-tight">
-          Meetings in.<br />
-          <span className="gradient-text">Clarity that lasts.</span>
-        </h1>
-        <p className="text-gray-400 max-w-3xl mx-auto leading-relaxed text-[15px] sm:text-[17px]">
-          PrismAI turns one messy conversation into structured meeting intelligence, then keeps the memory alive across follow-ups, owners, decisions, and recurring themes.
-        </p>
-      </div>
+      <section ref={heroRef} id="prism" className="landing-hero scroll-section">
+      {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
+      <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+        <defs>
+          <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
+            <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+            <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
+            <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
+            <feComponentTransfer in="blended">
+              <feFuncA type="linear" slope="1"/>
+            </feComponentTransfer>
+          </filter>
+        </defs>
+      </svg>
 
-      {/* Output pills — ROYGBIV */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mb-3 animate-fade-in-up relative landing-feature-pills" style={{ animationDelay: '0.18s' }}>
-        {[
-          { label: 'Summary',        bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.28)',   text: '#fca5a5' },
-          { label: 'Action Items',   bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.28)',  text: '#fdba74' },
-          { label: 'Decisions',      bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.28)',   text: '#fde047' },
-          { label: 'Sentiment',      bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.28)',   text: '#86efac' },
-          { label: 'Follow-up Email',bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.28)',  text: '#93c5fd' },
-          { label: 'Calendar',       bg: 'rgba(99,102,241,0.12)',  border: 'rgba(99,102,241,0.28)',  text: '#a5b4fc' },
-          { label: 'Health Score',   bg: 'rgba(168,85,247,0.12)',  border: 'rgba(168,85,247,0.28)',  text: '#d8b4fe' },
-        ].map(p => (
-          <span key={p.label} className="px-2.5 py-1 rounded-full text-[11px] font-medium"
-            style={{ background: p.bg, border: `1px solid ${p.border}`, color: p.text }}>
-            {p.label}
-          </span>
-        ))}
-      </div>
+      {/* Hero content */}
+      <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
+        {/* Rotating pain-point text */}
+        <div className="w-full flex items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+          <RotatingText
+            texts={HERO_SENTENCES}
+            rotationInterval={4000}
+            staggerFrom="last"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '-120%' }}
+            staggerDuration={0.012}
+            splitLevelClassName="overflow-hidden pb-0.5"
+            transition={{ type: 'spring', damping: 32, stiffness: 280 }}
+            mainClassName="text-4xl sm:text-5xl lg:text-6xl font-bold text-white/85 leading-tight tracking-tight justify-center"
+            elementLevelClassName="font-bold"
+            style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontWeight: 700 }}
+          />
+        </div>
 
-      <LandingPrismHero />
-
-      {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-2 animate-fade-in-up relative z-10 landing-cta-row" style={{ animationDelay: '0.24s' }}>
-        <button onClick={onDemo}
-          className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.98] landing-primary-cta"
-          style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 8px 32px rgba(2,132,199,0.45)' }}>
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          See it in action
-        </button>
-        <button onClick={onSkip}
-          className="flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-base font-medium text-gray-300 transition-all hover:text-white hover:scale-[1.02]"
-          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
-          Use my own transcript
-        </button>
-      </div>
-
-      <div className="mb-2 animate-fade-in-up relative z-10 landing-cta-bridge" style={{ animationDelay: '0.26s' }}>
-        <p className="text-[13px] sm:text-[14px] text-gray-500 text-center max-w-2xl mx-auto leading-relaxed">
-          PrismAI keeps decisions, owners, blockers, and follow-up visible so the next meeting starts with context, not catch-up.
-        </p>
-      </div>
-
-      <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 mb-2 animate-fade-in-up relative z-10 landing-capability-rail" style={{ animationDelay: '0.28s' }}>
-        {[
-          {
-            title: 'Sign in and sync',
-            body: 'Private meeting history',
-            accent: 'rgba(14,165,233,0.16)',
-            border: 'rgba(14,165,233,0.28)',
-            text: '#7dd3fc',
-            icon: '↗',
-          },
-          {
-            title: 'Join live meetings',
-            body: 'Bot joins and analyzes on finish',
-            accent: 'rgba(16,185,129,0.15)',
-            border: 'rgba(16,185,129,0.26)',
-            text: '#86efac',
-            icon: '◌',
-          },
-          {
-            title: 'Cross-meeting memory',
-            body: 'Recurring blockers and decisions',
-            accent: 'rgba(168,85,247,0.15)',
-            border: 'rgba(168,85,247,0.26)',
-            text: '#d8b4fe',
-            icon: '≈',
-          },
-          {
-            title: 'Export and share',
-            body: 'Calendar, email, Slack, Notion',
-            accent: 'rgba(249,115,22,0.15)',
-            border: 'rgba(249,115,22,0.26)',
-            text: '#fdba74',
-            icon: '→',
-          },
-        ].map((item) => (
-          <div
-            key={item.title}
-            className="rounded-[22px] px-4 py-2.5 landing-capability-card"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 14px 34px rgba(2,132,199,0.05)',
-            }}
+        {/* Tagline */}
+        <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
+          <p
+            className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
+            style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}
           >
-            <div className="flex items-center gap-3">
-              <span
-                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold flex-shrink-0"
-                style={{ background: item.accent, border: `1px solid ${item.border}`, color: item.text }}
-              >
-                {item.icon}
-              </span>
-              <div className="min-w-0">
-                <h3 className="text-[13px] font-semibold text-white leading-tight">{item.title}</h3>
-                <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5 truncate">{item.body}</p>
-              </div>
-            </div>
-          </div>
-        ))}
+            Let <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 300 }}>_prism</span> handle it.
+          </p>
+        </div>
+
+        {/* CTA buttons */}
+        <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
+          <button className="btn-primary" onClick={() => setSignupOpen(true)}>Get started</button>
+          <span className="cta-or">or</span>
+          <button className="btn-ghost" onClick={onDemo}>Try it out</button>
+        </div>
       </div>
 
-      {/* Agent grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 animate-fade-in-up relative w-full max-w-3xl landing-agent-grid" style={{ animationDelay: '0.34s' }}>
-        {AGENTS_META.map((a, i) => (
-          <div key={a.id}
-            className="flex flex-col items-center gap-2 px-3 py-4 rounded-2xl transition-all duration-200 hover:-translate-y-1 landing-agent-tile"
-            style={{
-              background: 'rgba(255,255,255,0.035)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              animationDelay: `${0.3 + i * 0.04}s`,
-            }}>
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-lg shadow-lg`}>{a.icon}</div>
-            <span className="text-[10px] text-gray-500 text-center leading-tight">{a.label}</span>
-          </div>
-        ))}
-      </div>
+      <div className={`section-blur-overlay${heroInView ? '' : ' active'}`} aria-hidden="true" />
 
-      {/* Bottom tagline */}
-      <p className="mt-5 text-[11px] text-gray-700 animate-fade-in-up relative landing-footnote" style={{ animationDelay: '0.54s' }}>
-        No login required · results stream in under 10 seconds
-      </p>
+      {/* Scroll cue */}
+      <div className={`scroll-cue${scrollCueVisible ? '' : ' hidden'}`} aria-hidden="true">
+        <span>see more below</span>
+        <svg className="scroll-cue-chevron" width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <polyline points="1,2 7,8 13,2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+      </section>
+
+      <HowItWorks />
+      <AgentShowcase />
+      <PricingSection onGetStarted={() => setSignupOpen(true)} />
+      <TeamSection />
+      {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
     </div>
   )
 }
