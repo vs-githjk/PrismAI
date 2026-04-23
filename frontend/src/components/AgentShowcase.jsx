@@ -10,6 +10,8 @@ const AGENTS = [
   { name: 'Health Score',       desc: 'Rates meeting quality 0–100 with a breakdown.' },
 ]
 
+const AGENT_ACCENTS = ['#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899']
+
 export default function AgentShowcase() {
   const [visible, setVisible] = useState(false)
   const [inView, setInView] = useState(false)
@@ -33,12 +35,13 @@ export default function AgentShowcase() {
       <div className={`section-blur-overlay${inView ? '' : ' active'}`} aria-hidden="true" />
       <div className="section-inner">
         <p className="section-eyebrow">Seven agents</p>
+        <div className={`spectrum-hairline${visible ? ' hairline-visible' : ''}`} aria-hidden="true" />
         <div className="agents-grid">
           {AGENTS.map((agent, i) => (
             <div
               key={agent.name}
               className={`agent-card${visible ? ' card-visible' : ''}`}
-              style={{ transitionDelay: visible ? `${i * 40}ms` : '0ms' }}
+              style={{ transitionDelay: visible ? `${i * 40}ms` : '0ms', '--card-accent': AGENT_ACCENTS[i] }}
             >
               <div className="agent-card-bg" />
               <div className="agent-card-content">

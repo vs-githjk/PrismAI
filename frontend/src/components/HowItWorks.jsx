@@ -55,7 +55,7 @@ export default function HowItWorks() {
             <polyline points="17,1 23,5 17,9" stroke="currentColor" strokeWidth="1.25" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
 
-          <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+          <svg className={`flow-diagram-prism${visible ? ' prism-shimmer' : ''}`} width="44" height="44" viewBox="0 0 44 44" fill="none">
             <polygon points="22,3 41,22 22,41 3,22" stroke="currentColor" strokeWidth="1.5" fill="none"/>
             <line x1="3" y1="22" x2="41" y2="22" stroke="currentColor" strokeWidth="0.75" opacity="0.4"/>
             <line x1="22" y1="3" x2="41" y2="22" stroke="currentColor" strokeWidth="0.75" opacity="0.3"/>
