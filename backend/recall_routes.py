@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
 
 import httpx
@@ -23,6 +24,9 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # In-memory cache (always used for fast access; synced to Supabase when available)
 bot_store: dict = {}
+
+# live_token → bot_id index for public live-share lookups
+_live_token_index: dict = {}
 
 
 def _db_save(bot_id: str, fields: dict):
@@ -324,14 +328,16 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
 
     data = resp.json()
     bot_id = data["id"]
-    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id}
-    _db_save(bot_id, {"status": "joining", "user_id": user_id})
+    live_token = secrets.token_hex(16)
+    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id, "live_token": live_token}
+    _live_token_index[live_token] = bot_id
+    _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
 
     from realtime_routes import init_bot_realtime
     init_bot_realtime(bot_id)
 
     asyncio.create_task(_send_bot_intro(bot_id))
-    return {"bot_id": bot_id, "status": "joining"}
+    return {"bot_id": bot_id, "status": "joining", "live_token": live_token}
 
 
 @router.delete("/remove-bot/{bot_id}")
@@ -403,6 +409,43 @@ async def bot_status(bot_id: str):
     # Don't let Recall's "done" override our internal "processing"
     entry["status"] = our_status if entry.get("status") not in ("done", "error", "processing") else entry["status"]
     return entry
+
+
+@router.get("/live/{live_token}")
+async def live_meeting(live_token: str):
+    """Public endpoint for live-share viewers. Returns safe bot state by live_token."""
+    bot_id = _live_token_index.get(live_token)
+
+    # Fall back to DB if server restarted and index was lost
+    if not bot_id and supabase:
+        try:
+            res = supabase.table("bot_sessions").select("bot_id").eq("live_token", live_token).maybe_single().execute()
+            if res.data:
+                bot_id = res.data["bot_id"]
+                _live_token_index[live_token] = bot_id
+        except Exception:
+            pass
+
+    if not bot_id:
+        raise HTTPException(status_code=404, detail="Live session not found")
+
+    # Load from DB into memory if needed
+    if bot_id not in bot_store:
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
+
+    entry = bot_store.get(bot_id, {})
+    from realtime_routes import _bot_state
+    rt = _bot_state.get(bot_id, {})
+
+    return {
+        "status": entry.get("status", "joining"),
+        "commands": entry.get("commands", []),
+        "transcript_lines": rt.get("transcript_buffer", [])[-100:],
+        "result": entry.get("result"),
+        "error": entry.get("error"),
+    }
 
 
 @router.post("/recall-webhook")
