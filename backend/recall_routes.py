@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from analysis_service import run_full_analysis
 from auth import supabase, require_user_id
+from cross_meeting_service import looks_like_blocker, build_blocker_snippet
 
 
 router = APIRouter(tags=["recall"])
@@ -103,6 +104,104 @@ def _extract_recall_error(resp: httpx.Response) -> str:
 
     text = (resp.text or "").strip()
     return text or f"Recall.ai request failed with status {resp.status_code}"
+
+
+def _build_pre_meeting_brief(user_id: str | None) -> dict | None:
+    """Return open action items, recent decisions, and blockers from the owner's meeting history.
+    Pure Python — no LLM. Returns None when there is nothing noteworthy to surface."""
+    if not supabase or not user_id:
+        return None
+    try:
+        res = (
+            supabase.table("meetings")
+            .select("date,title,result")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+        )
+        meetings = [r for r in (res.data or []) if r.get("result")]
+        if not meetings:
+            return None
+
+        open_items: list[dict] = []
+        recent_decisions: list[dict] = []
+        blockers: list[dict] = []
+
+        for meeting in meetings[:5]:
+            result = meeting.get("result") or {}
+            date = meeting.get("date") or "recent meeting"
+            title = meeting.get("title") or "Untitled"
+
+            for item in (result.get("action_items") or []):
+                if not item.get("completed") and item.get("task", "").strip():
+                    open_items.append({
+                        "task": item["task"].strip(),
+                        "owner": (item.get("owner") or "").strip(),
+                        "due": (item.get("due") or "").strip(),
+                        "meeting_date": date,
+                        "meeting_title": title,
+                    })
+
+            # Only pull decisions from the two most recent meetings
+            if len(recent_decisions) < 4:
+                for decision in (result.get("decisions") or [])[:3]:
+                    if decision.get("decision", "").strip():
+                        recent_decisions.append({
+                            "decision": decision["decision"].strip(),
+                            "owner": (decision.get("owner") or "").strip(),
+                            "meeting_date": date,
+                        })
+
+            for item in (result.get("action_items") or []):
+                if looks_like_blocker(item.get("task", "")) and item.get("task", "").strip():
+                    blockers.append({
+                        "snippet": build_blocker_snippet(item["task"]),
+                        "meeting_date": date,
+                    })
+            summary = result.get("summary", "")
+            if summary and looks_like_blocker(summary):
+                blockers.append({
+                    "snippet": build_blocker_snippet(summary),
+                    "meeting_date": date,
+                })
+
+        try:
+            refs = (
+                supabase.table("action_refs")
+                .select("action_item,tool,external_id,created_at")
+                .eq("user_id", user_id)
+                .eq("resolved", False)
+                .order("created_at", desc=True)
+                .limit(5)
+                .execute()
+            )
+            for ref in (refs.data or []):
+                open_items.append({
+                    "task": f"{ref['action_item']} [{ref['tool']}: {ref['external_id']}]",
+                    "owner": "",
+                    "due": "",
+                    "meeting_date": (ref.get("created_at") or "")[:10],
+                    "meeting_title": "",
+                })
+        except Exception:
+            pass
+
+        open_items = open_items[:5]
+        recent_decisions = recent_decisions[:4]
+        blockers = blockers[:3]
+
+        if not open_items and not recent_decisions and not blockers:
+            return None
+
+        return {
+            "open_items": open_items,
+            "recent_decisions": recent_decisions,
+            "blockers": blockers,
+        }
+    except Exception as exc:
+        print(f"[recall] pre-meeting brief failed for user {user_id}: {exc}")
+        return None
 
 
 async def _send_bot_intro(bot_id: str):
@@ -339,10 +438,11 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     _live_token_index[live_token] = bot_id
     _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
 
-    from realtime_routes import init_bot_realtime
+    from realtime_routes import init_bot_realtime, _run_proactive_checker
     init_bot_realtime(bot_id)
 
     asyncio.create_task(_send_bot_intro(bot_id))
+    asyncio.create_task(_run_proactive_checker(bot_id))
     return {"bot_id": bot_id, "status": "joining", "live_token": live_token}
 
 
@@ -445,12 +545,20 @@ async def live_meeting(live_token: str):
     from realtime_routes import _bot_state
     rt = _bot_state.get(bot_id, {})
 
+    # Build pre-meeting brief lazily — compute once, cache in bot_store
+    status = entry.get("status", "joining")
+    if bot_id in bot_store and "brief" not in bot_store[bot_id] and status not in ("done", "error"):
+        bot_store[bot_id]["brief"] = _build_pre_meeting_brief(entry.get("user_id"))
+
     return {
-        "status": entry.get("status", "joining"),
+        "status": status,
         "commands": entry.get("commands", []),
         "transcript_lines": rt.get("transcript_buffer", [])[-100:],
         "result": entry.get("result"),
         "error": entry.get("error"),
+        "brief": entry.get("brief"),
+        # Include transcript when done so signed-in viewers can save a copy
+        "transcript": entry.get("transcript") if status == "done" else None,
     }
 
 

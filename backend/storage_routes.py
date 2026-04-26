@@ -95,7 +95,7 @@ async def get_cross_meeting_insights(user_id: str = Depends(require_user_id)):
         .limit(50)
         .execute()
     )
-    return derive_cross_meeting_insights(res.data)
+    return derive_cross_meeting_insights(res.data, user_id=user_id)
 
 
 @router.post("/meetings")

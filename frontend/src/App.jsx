@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
 import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
@@ -16,6 +16,7 @@ import DecisionsCard from './components/DecisionsCard'
 import SentimentCard from './components/SentimentCard'
 import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
+import SpeakerCoachCard from './components/SpeakerCoachCard'
 import SkeletonCard from './components/SkeletonCard'
 import ErrorCard from './components/ErrorCard'
 import { supabase } from './lib/supabase'
@@ -272,6 +273,7 @@ const AGENTS_META = [
   { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-500 to-blue-400',       desc: 'Writes a polished follow-up email ready to send to all attendees.' },
   { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-500 to-indigo-400',   desc: 'Detects if a follow-up meeting is needed and suggests the best timeframe.' },
   { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
+  { id: 'speaker_coach',      label: 'Speaker Coach', icon: '🎤', grad: 'from-rose-500 to-pink-400',         desc: 'Shows each speaker\'s talk share, decisions and actions owned, and a one-line coaching note.' },
 ]
 
 const INPUT_MODE_META = {
@@ -317,6 +319,7 @@ const DEFAULT_RESULT = {
   follow_up_email: { subject: '', body: '' },
   calendar_suggestion: { recommended: false, reason: '', suggested_timeframe: '', resolved_date: '', resolved_day: '' },
   health_score: { score: 0, verdict: '', badges: [], breakdown: { clarity: 0, action_orientation: 0, engagement: 0 } },
+  speaker_coach: { speakers: [], balance_score: 100 },
   agents_run: [],
 }
 
@@ -834,11 +837,117 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
   )
 }
 
+// ── Pre-Meeting Brief ────────────────────────────────────────────
+function PreMeetingBrief({ brief }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!brief) return null
+  const totalCount = (brief.open_items?.length || 0) + (brief.recent_decisions?.length || 0) + (brief.blockers?.length || 0)
+  if (totalCount === 0) return null
+  return (
+    <div className="rounded-2xl overflow-hidden cursor-pointer"
+      style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.2)' }}
+      onClick={() => setExpanded(e => !e)}>
+      <div className="px-4 py-3 flex items-center gap-2">
+        <svg className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+        <span className="text-xs font-semibold text-sky-300">Pre-Meeting Brief</span>
+        <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full text-sky-200" style={{ background: 'rgba(14,165,233,0.15)' }}>
+          {totalCount} item{totalCount !== 1 ? 's' : ''}
+        </span>
+        <svg className={`w-3 h-3 text-sky-500 ml-auto transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3" style={{ borderTop: '1px solid rgba(14,165,233,0.12)' }}>
+          {brief.open_items?.length > 0 && (
+            <div className="pt-3">
+              <p className="text-[10px] font-semibold text-orange-400 mb-1.5">○ Open Action Items</p>
+              {brief.open_items.map((item, i) => (
+                <div key={i} className="flex items-start gap-1.5 mb-1">
+                  <span className="text-orange-500 text-[10px] mt-0.5 flex-shrink-0">○</span>
+                  <div>
+                    <p className="text-[11px] text-gray-300">{item.task}</p>
+                    {(item.owner || item.due || item.meeting_date) && (
+                      <p className="text-[10px] text-gray-600">{[item.owner, item.due, item.meeting_date].filter(Boolean).join(' · ')}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {brief.recent_decisions?.length > 0 && (
+            <div className={brief.open_items?.length > 0 ? '' : 'pt-3'}>
+              <p className="text-[10px] font-semibold text-yellow-400 mb-1.5">⚖ Recent Decisions</p>
+              {brief.recent_decisions.map((d, i) => (
+                <div key={i} className="flex items-start gap-1.5 mb-1">
+                  <span className="text-yellow-500 text-[10px] mt-0.5 flex-shrink-0">⚖</span>
+                  <div>
+                    <p className="text-[11px] text-gray-300">{d.decision}</p>
+                    {(d.owner || d.meeting_date) && (
+                      <p className="text-[10px] text-gray-600">{[d.owner, d.meeting_date].filter(Boolean).join(' · ')}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {brief.blockers?.length > 0 && (
+            <div className={(!brief.open_items?.length && !brief.recent_decisions?.length) ? 'pt-3' : ''}>
+              <p className="text-[10px] font-semibold text-red-400 mb-1.5">⚠ Recurring Blockers</p>
+              {brief.blockers.map((b, i) => (
+                <div key={i} className="flex items-start gap-1.5 mb-1">
+                  <span className="text-red-500 text-[10px] mt-0.5 flex-shrink-0">⚠</span>
+                  <div>
+                    <p className="text-[11px] text-gray-300">{b.snippet}</p>
+                    {b.meeting_date && <p className="text-[10px] text-gray-600">{b.meeting_date}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Live Meeting View ────────────────────────────────────────────
 function LiveMeetingView({ token }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [session, setSession] = useState(null)
+  const [saveState, setSaveState] = useState('idle')
   const intervalRef = useRef(null)
+
+  useEffect(() => {
+    supabase?.auth.getSession().then(({ data: s }) => setSession(s?.session ?? null))
+  }, [])
+
+  const handleSave = async () => {
+    if (saveState !== 'idle') return
+    setSaveState('saving')
+    const result = data?.result || {}
+    try {
+      await apiFetch('/meetings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: Date.now(),
+          date: new Date().toISOString().slice(0, 10),
+          title: result.summary?.slice(0, 80).split('.')[0] || 'Meeting',
+          score: result.health_score?.score || null,
+          transcript: data?.transcript || '',
+          result,
+          share_token: '',
+        }),
+      })
+      setSaveState('saved')
+    } catch {
+      setSaveState('error')
+    }
+  }
 
   const poll = useCallback(async () => {
     try {
@@ -908,6 +1017,7 @@ function LiveMeetingView({ token }) {
       </div>
 
       <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
+        {status !== 'done' && <PreMeetingBrief brief={data?.brief} />}
         {/* Prism commands log */}
         {commands.length > 0 && (
           <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -959,6 +1069,19 @@ function LiveMeetingView({ token }) {
             {result.sentiment && <SentimentCard sentiment={result.sentiment} />}
             <EmailCard email={result.follow_up_email} readOnly />
             <CalendarCard calendar={result.calendar_suggestion} />
+            <SpeakerCoachCard speakerCoach={result.speaker_coach} />
+            {session && (
+              <button
+                onClick={handleSave}
+                disabled={saveState !== 'idle'}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.25), rgba(13,148,136,0.2))', border: '1px solid rgba(14,165,233,0.35)', color: '#7dd3fc' }}>
+                {saveState === 'idle' && 'Save to my history'}
+                {saveState === 'saving' && 'Saving…'}
+                {saveState === 'saved' && '✓ Saved'}
+                {saveState === 'error' && 'Save failed — try again'}
+              </button>
+            )}
           </>
         )}
 
@@ -2317,6 +2440,7 @@ export default function App() {
           <DecisionsCard decisions={r.decisions} />
           <SentimentCard sentiment={r.sentiment} />
           <CalendarCard suggestion={r.calendar_suggestion} />
+          <SpeakerCoachCard speakerCoach={r.speaker_coach} />
         </div>
 
         {/* Bottom CTA */}
@@ -3351,6 +3475,9 @@ export default function App() {
                   <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} gmailConnected={calendarConnected} /></div>
                   <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
                 </div>
+
+                {/* Speaker Coaching — full width */}
+                <div className="animate-fade-in-up card-delay-6"><SpeakerCoachCard speakerCoach={result.speaker_coach} /></div>
               </ErrorBoundary>
             </div>
           ) : (
@@ -3562,6 +3689,7 @@ export default function App() {
                 <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
                 <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} gmailConnected={calendarConnected} /></div>
                 <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+                <div className="animate-fade-in-up card-delay-6"><SpeakerCoachCard speakerCoach={result.speaker_coach} /></div>
               </ErrorBoundary>
             </div>
           ) : (

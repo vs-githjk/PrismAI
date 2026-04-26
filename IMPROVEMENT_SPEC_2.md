@@ -65,153 +65,139 @@ Add this to Render → `meeting-copilot-api` → Environment if not set. The int
 
 ---
 
-## Feature 2 — Proactive Interventions 🔲 Not started
+## Feature 2 — Proactive Interventions ✅ Shipped
 
-**Status:** Planned
+**Status:** Implemented Apr 25 2026 — deployed on next push to main
 
 ### What it does
 
 Prism speaks up without being asked. During a live meeting it monitors for patterns and posts alerts to the meeting chat automatically — for example, if 30 minutes pass with no decision logged, or a topic has come up in previous meetings without resolution.
 
-### Planned implementation
+### Implementation
+
+**Backend (`realtime_routes.py` + `recall_routes.py`):**
+- `_run_proactive_checker(bot_id)` — `asyncio.Task` per bot, checks every 60s after a 2-minute grace period. Started via `asyncio.create_task` in `recall_routes.py` → `join_meeting`. Exits when `status` leaves `joining`/`recording`.
+- `_fetch_historical_blockers(user_id)` — fetches user's last 10 meetings, extracts incomplete action items + summaries that match `looks_like_blocker()` (reused from `cross_meeting_service.py`), returns `[{keywords, date}]`.
+- Transcript handler now sets `meeting_start_ts` on first transcript line and increments `decisions_detected`, `action_items_detected`, `owners_detected` per line.
+
+**Triggers (checked in this priority order):**
+| # | Trigger | Condition | Message | Once? |
+|---|---|---|---|---|
+| 3 | Long meeting | 55+ min elapsed | ⏱️ Approaching 1 hour, wrap up | ✅ |
+| 1 | No decisions | 30+ min, `decisions_detected == 0` | 📋 No decisions logged | ✅ |
+| 4 | No owners | 3+ action items, `owners_detected == 0`, 15+ min | 👤 Action items lack clear owners | ✅ |
+| 2 | Recurring blocker | 2+ keywords from a past blocked item appear in current transcript | ⚠️ Topic came up unresolved in [date] meeting | once per blocker |
+
+**Throttle:** max 1 proactive message per 10 minutes per bot.
+
+**State fields added to `_bot_state`:** `meeting_start_ts`, `intervention_last_ts`, `decisions_detected`, `action_items_detected`, `owners_detected`, `sent_30min_nudge`, `sent_55min_nudge`, `sent_no_owners_nudge`, `recurring_blocker_checked`, `historical_blockers`.
+
+### How to test
+
+1. Start a meeting, temporarily lower the 30-min threshold to 2 min in `_run_proactive_checker` (`elapsed_min >= 2`), stay silent → verify nudge appears in Google Meet chat
+2. For recurring blocker: ensure the user has a past meeting with a blocker-flagged action item, start a new meeting mentioning 2+ of the same keywords → verify alert fires
+3. Restore threshold to 30 min before shipping
+
+---
+
+## Feature 4 — Speaker Coaching Report ✅ Shipped
+
+**Status:** Implemented Apr 25 2026 — deployed on next push to main
+
+### What it does
+
+A new post-meeting card showing speaker-level stats: talk time percentage, decision ownership, action item ownership, and a one-line coaching note per speaker. Shown in all four layouts: desktop, mobile, share view, and live share view.
+
+### Implementation
+
+**Backend:**
+- `backend/agents/speaker_coach.py` — always-run agent (guardrailed in orchestrator). Returns `speakers: []` if fewer than 2 named speakers found (card hides itself).
+- Added to `AGENT_MAP`, `AGENT_RESULT_KEY`, `DEFAULT_RESULT`, `merge_agent_results` in `analysis_service.py`.
+- Added to `ALL_AGENTS` + always-include guardrail in `orchestrator.py`.
+
+**Frontend:**
+- `frontend/src/components/SpeakerCoachCard.jsx` — rose/pink color scheme. Shows: conversation balance bar (animated, color-coded green/amber/red), per-speaker rows with avatar initials, animated talk-time bar, decision/action-item ownership pills, coaching note.
+- Placed after Email + Calendar row in desktop; after CalendarCard in mobile, share, and live share views.
+- Added to `AGENTS_META` in `App.jsx` and `AGENT_CONFIG` in `AgentTags.jsx`.
+
+### How to test
+
+1. Run a multi-speaker transcript through `/analyze` — verify `speaker_coach` key is present in the JSON response
+2. Verify the `SpeakerCoachCard` renders with speaker rows and talk-time bars
+3. Verify talk percents sum to ~100% across all speakers
+4. Run a single-speaker transcript — verify the card is hidden (`speakers: []`)
+
+---
+
+## Feature 1 — Pre-Meeting Brief ✅ Shipped
+
+**Status:** Implemented Apr 25 2026 — deployed on next push to main
+
+### What it does
+
+When you open a live meeting link, Prism surfaces a collapsible brief at the top of the viewer: open action items from your last 5 meetings, recent decisions, and recurring blockers — before conversation starts.
+
+### Implementation
+
+**Backend (`recall_routes.py`):**
+- `_build_pre_meeting_brief(user_id)` — pure Python, no LLM. Fetches last 10 meetings, returns `{open_items, recent_decisions, blockers}` or `None` when nothing noteworthy.
+- `GET /live/{live_token}` response now includes `brief` (lazily computed + cached in `bot_store`) and `transcript` (when `status == done`).
+- Also pulls unresolved `action_refs` rows into `open_items` (Feature 3 integration).
+
+**Frontend (`App.jsx`):**
+- `PreMeetingBrief` component — sky-blue collapsible card. Sections: Open Action Items (○ orange), Recent Decisions (⚖ yellow), Recurring Blockers (⚠ red). Shows item count in header.
+- Rendered at top of `LiveMeetingView` content area when `status !== 'done'`. Hidden when brief is empty.
+- **Save to my history** button: appears in the live viewer when `status === 'done'` and user is logged in. POSTs full result + transcript to `/meetings` via `apiFetch`.
+
+### How to test
+
+1. Ensure you have at least one past saved meeting with action items or decisions
+2. Start a new meeting — open the `#live/{token}` URL
+3. Verify the Pre-Meeting Brief card appears at the top (collapsed by default)
+4. Expand it — verify open items, decisions, and/or blockers from past meetings appear
+5. End the meeting — verify the "Save to my history" button appears when logged in
+6. Click Save — verify the meeting appears in your history tab
+
+---
+
+## Feature 3 — Closed-Loop Action Items ✅ Shipped
+
+**Status:** Implemented Apr 25 2026 — deployed on next push to main
+
+### What it does
+
+When Prism creates a Linear ticket or Google Calendar event via a live command, it stores the external reference (ticket ID, event ID) in Supabase. Unresolved refs surface in the pre-meeting brief and cross-meeting insights on subsequent meetings.
+
+### Implementation
+
+**Supabase (`supabase/action_refs_migration.sql`):**
+- New `action_refs` table: `(user_id, meeting_id, action_item, tool, external_id, resolved, created_at)`. RLS enabled with per-user policy.
+
+**Backend (`tools/registry.py`):**
+- `execute_tool()` now injects `external_ref: {tool, external_id}` into the result whenever `linear_create_issue` (returns `issue_id`) or `calendar_create_event` (returns `event_id`) succeeds.
 
 **Backend (`realtime_routes.py`):**
-- Add a background periodic checker per bot (runs every 5 minutes while `status === 'recording'`).
-- Tracks: elapsed time since last command, number of decisions/action items detected in real-time transcript, whether any recurring topics from cross-meeting history are present.
-- Fires `_send_chat_response` with a proactive nudge if thresholds are crossed.
+- `_process_command`: after each `execute_tool` call, if result has `external_ref`, inserts a row into `action_refs` with the command text as `action_item`.
 
-**Triggers to implement (in priority order):**
-| Trigger | Condition | Message |
-|---|---|---|
-| No decisions in 30 min | 30+ min elapsed, no decision keywords seen | "📋 30 minutes in — no decisions logged yet. Say 'Prism, summarize what's been decided' to capture them." |
-| Recurring blocker | Topic matches a blocker from cross-meeting history | "⚠️ This topic came up unresolved in your [date] meeting. Say 'Prism, what happened last time?' to check." |
-| Long meeting approaching | 55 min elapsed | "⏱️ Meeting approaching 1 hour. Consider wrapping up with action items." |
-| No owners assigned | Action items detected but no speaker explicitly took ownership | "👤 Some action items may not have clear owners. Say 'Prism, who owns what?' to clarify." |
+**Backend (`cross_meeting_service.py`):**
+- `derive_cross_meeting_insights(history, user_id=None)` now accepts `user_id`, fetches unresolved `action_refs`, and returns them in a new `unresolved_action_refs` key.
 
-**State tracking needed:**
-- `state["intervention_last_ts"]` — timestamp of last proactive message (throttle: max 1 per 10 min)
-- `state["meeting_start_ts"]` — set when bot status transitions to `recording`
-- `state["decisions_detected"]` — count of lines containing decision keywords
+**Backend (`storage_routes.py`):**
+- `/insights` now passes `user_id` to `derive_cross_meeting_insights`.
 
-### How to test
+**Backend (`recall_routes.py`):**
+- `_build_pre_meeting_brief` pulls unresolved `action_refs` into `open_items` so they appear in the live viewer brief.
 
-1. Start a meeting, stay silent for 31 minutes (or temporarily lower threshold to 2 minutes for testing)
-2. Verify Prism posts the no-decisions nudge in the chat without being asked
-3. Start a second meeting on the same topic as a previous one — verify recurring topic alert fires
-
----
-
-## Feature 4 — Speaker Coaching Report 🔲 Not started
-
-**Status:** Planned
-
-### What it does
-
-A new post-meeting card showing speaker-level stats: talk time percentage, word count, decision ownership, and a one-line coaching note per speaker. Managers would pay for this alone for 1:1s and standups.
-
-### Planned implementation
-
-**Backend:**
-- New agent: `backend/agents/speaker_coach.py`
-- Input: full transcript (with speaker labels and word timestamps from Recall)
-- Output:
-```json
-{
-  "speakers": [
-    {
-      "name": "Vidyut Sriram",
-      "word_count": 312,
-      "talk_percent": 68,
-      "decisions_owned": 2,
-      "action_items_owned": 3,
-      "coaching_note": "Dominated the conversation — consider inviting more responses."
-    }
-  ],
-  "balance_score": 42
-}
-```
-- Follows the standard agent checklist (add to `AGENT_MAP`, `analysis_service.py`, etc.)
-
-**Frontend:**
-- New `SpeakerCoachCard.jsx`
-- Shows each speaker as a row: avatar initials, name, horizontal talk-time bar, owned items count, coaching note
-- `balance_score` shown as a gauge (0 = one person talked entirely, 100 = perfectly balanced)
-
-### How to test
-
-1. Run a multi-speaker transcript through `/analyze`
-2. Verify `speaker_coach` result appears in the response
-3. Check the card renders with correct percentages adding to ~100%
-
----
-
-## Feature 1 — Pre-Meeting Brief 🔲 Not started
-
-**Status:** Planned
-
-### What it does
-
-Before a meeting starts, Prism surfaces a brief: open action items from previous meetings with the same attendees, decisions previously made on the same topic, and recurring blockers. You walk in prepared instead of scrambling.
-
-### Planned implementation
-
-**Backend:**
-- New endpoint `GET /pre-meeting-brief?meeting_url={url}` (auth-gated)
-- Extracts the meeting title/attendees hint from the calendar event matched to the URL
-- Queries user's last 50 meetings from Supabase
-- Runs `cross_meeting_service.py`-style analysis: open action items, recent decisions, recurring themes
-- Returns structured brief (no LLM — pure Python, same as `/insights`)
-
-**Frontend:**
-- Shown in the Join tab when the user has a calendar event matched to the meeting URL
-- Appears as a compact panel above the Join button: "3 open items from your last meeting with this group"
-- Expandable to show full brief
-- Dismissed automatically when the bot joins
-
-### How to test
-
-1. Connect Google Calendar
-2. Paste a meeting URL that matches a calendar event
-3. Verify the brief panel appears with relevant context from previous meetings
-4. Join the meeting — verify the brief dismisses
-
----
-
-## Feature 3 — Closed-Loop Action Items 🔲 Not started
-
-**Status:** Planned (most complex — depends on Feature 4 being stable)
-
-### What it does
-
-When Prism creates a Linear ticket or Google Calendar event via a live command, it stores the external reference (ticket ID, event ID) against the action item. Subsequent meetings check whether those references are resolved and surface stale ones in the pre-meeting brief and cross-meeting insights.
-
-### Planned implementation
-
-**Backend:**
-- Extend `execute_tool()` return values to include an `external_ref` field when a resource is created (Linear ticket ID, Google Calendar event ID)
-- Store refs in a new `action_refs` Supabase table: `(meeting_id, action_item_text, tool, external_id, resolved)`
-- New background job: periodically poll Linear/Calendar to check resolution status, update `resolved` flag
-- Surface unresolved refs in `/insights` and `/pre-meeting-brief`
-
-**Supabase migration needed:**
-```sql
-create table action_refs (
-  id bigserial primary key,
-  meeting_id bigint references meetings(id) on delete cascade,
-  action_item text,
-  tool text,
-  external_id text,
-  resolved boolean default false,
-  created_at timestamptz default now()
-);
-```
+**Frontend (`ActionItemsCard.jsx`):**
+- If an action item has `external_ref`, shows a small pill with the Linear ID (⬡) or Calendar event ID (📅).
 
 ### How to test
 
 1. In a live meeting say `"Prism, create a Linear ticket for the API refactor"`
 2. Check Supabase `action_refs` table — should have a row with the Linear ticket ID
-3. Resolve the ticket in Linear
-4. Start a new meeting — verify the action item is marked resolved in the pre-meeting brief
+3. Start a new meeting — verify the unresolved ref appears in the Pre-Meeting Brief
+4. Check `/insights` response — should include `unresolved_action_refs` array
+5. Mark `resolved = true` in Supabase — verify it no longer appears in the brief
 
 ---
 
@@ -239,3 +225,7 @@ create table action_refs (
 | `b275772` | Apr 22 2026 | Guard calendar_create_event: ask for title/date/time if not stated |
 | `2763adf` | Apr 22 2026 | Add live share: #live/{token} viewer with real-time transcript and commands |
 | `7d1bc9c` | Apr 22 2026 | Include live share link in bot intro message |
+| TBD | Apr 25 2026 | Feature 2: proactive interventions (_run_proactive_checker, 4 triggers) |
+| TBD | Apr 25 2026 | Feature 4: speaker coaching (SpeakerCoachCard, speaker_coach agent) |
+| TBD | Apr 25 2026 | Feature 1: pre-meeting brief in live viewer + save to history button |
+| TBD | Apr 25 2026 | Feature 3: closed-loop action refs (action_refs table, external_ref injection) |
