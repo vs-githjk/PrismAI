@@ -107,6 +107,12 @@ def _extract_recall_error(resp: httpx.Response) -> str:
 
 async def _send_bot_intro(bot_id: str):
     await asyncio.sleep(20)
+    live_token = (bot_store.get(bot_id) or {}).get("live_token")
+    frontend_url = os.getenv("FRONTEND_URL", "https://agentic-meeting-copilot.vercel.app")
+    live_link = f"{frontend_url}/#live/{live_token}" if live_token else None
+    message = "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."
+    if live_link:
+        message += f"\n\nAnyone can follow along live: {live_link}"
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
@@ -115,7 +121,7 @@ async def _send_bot_intro(bot_id: str):
                     "Authorization": f"Token {RECALL_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                json={"message": "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."},
+                json={"message": message},
                 timeout=10,
             )
     except Exception:
