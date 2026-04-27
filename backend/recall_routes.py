@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import time
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -16,8 +17,8 @@ from auth import supabase, require_user_id
 router = APIRouter(tags=["recall"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
-WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-east-1.recall.ai/api/v1")
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8001")
 RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
@@ -31,7 +32,7 @@ def _db_save(bot_id: str, fields: dict):
         return
     try:
         fields["bot_id"] = bot_id
-        fields["updated_at"] = "now()"
+        fields["updated_at"] = datetime.now(timezone.utc).isoformat()
         supabase.table("bot_sessions").upsert(fields, on_conflict="bot_id").execute()
     except Exception as exc:
         print(f"[recall] db save failed for {bot_id}: {exc}")

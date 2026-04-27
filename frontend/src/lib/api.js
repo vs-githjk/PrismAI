@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-export const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+export const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 
 export async function getAccessToken() {
   if (!supabase) return null

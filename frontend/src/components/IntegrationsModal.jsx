@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { apiFetch } from '../lib/api'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint }) {

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -44,7 +46,7 @@ class ChatEntry(BaseModel):
 async def get_user_settings(user_id: str = Depends(require_user_id)):
     client = _require_storage()
     res = client.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
-    row = res.data or {}
+    row = (res.data if res is not None else None) or {}
     # Only return non-sensitive fields relevant to the frontend
     return {
         "linear_api_key": row.get("linear_api_key") or "",
@@ -56,7 +58,7 @@ async def get_user_settings(user_id: str = Depends(require_user_id)):
 @router.post("/user-settings")
 async def save_user_settings(settings: UserToolSettings, user_id: str = Depends(require_user_id)):
     client = _require_storage()
-    upsert_data: dict = {"user_id": user_id, "updated_at": "now()"}
+    upsert_data: dict = {"user_id": user_id, "updated_at": datetime.now(timezone.utc).isoformat()}
     if settings.linear_api_key is not None:
         upsert_data["linear_api_key"] = settings.linear_api_key or None
     if settings.slack_bot_token is not None:

@@ -15,7 +15,7 @@ import httpx
 from fastapi import APIRouter, Request
 from groq import AsyncGroq
 
-from tools.registry import get_available_tools, execute_tool
+from tools.registry import get_available_tools, execute_tool, confirm_and_execute
 from tools.tts import text_to_speech
 from recall_routes import bot_store, _db_append_command
 from auth import supabase
@@ -23,7 +23,7 @@ from auth import supabase
 router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-east-1.recall.ai/api/v1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
@@ -39,6 +39,12 @@ TRIGGER_PATTERN = re.compile(
 )
 
 
+TRIGGER_WORD_PATTERN = re.compile(r"\b(?:prism|prismai|prism ai)\b", re.IGNORECASE)
+
+# Seconds to wait for the command after a bare trigger word
+PENDING_TRIGGER_WINDOW = 8
+
+
 def _get_bot_state(bot_id: str) -> dict:
     if bot_id not in _bot_state:
         _bot_state[bot_id] = {
@@ -47,6 +53,9 @@ def _get_bot_state(bot_id: str) -> dict:
             "last_command_text": "",
             "last_command_norm": "",
             "processing": False,
+            "pending_trigger_ts": 0,
+            "pending_trigger_speaker": "",
+            "pending_command_parts": [],
         }
     return _bot_state[bot_id]
 
@@ -56,14 +65,18 @@ def _normalize_cmd(text: str) -> str:
 
 
 def _detect_command(text: str) -> str | None:
-    """Check if text contains a PrismAI command trigger. Returns the command part or None."""
+    """Return the command portion if text contains a trigger + actionable command, else None."""
     match = TRIGGER_PATTERN.search(text)
     if match:
         cmd = match.group(1).strip()
-        # Require at least 3 words — rejects "Hey Prism." / "Prism," / "what is"
         if len(re.findall(r'\b\w+\b', cmd)) >= 3:
             return cmd
     return None
+
+
+def _has_trigger_word(text: str) -> bool:
+    """Return True if text contains the trigger word but no full command."""
+    return bool(TRIGGER_WORD_PATTERN.search(text))
 
 
 async def _get_settings_for_bot(bot_id: str) -> dict:
@@ -157,8 +170,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
     try:
         user_settings = await _get_settings_for_bot(bot_id)
-        # Exclude tools that require explicit user confirmation — no UI in a live meeting
-        tools = get_available_tools(user_settings, exclude_confirm=True)
+        tools = get_available_tools(user_settings)
 
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
@@ -168,7 +180,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
         # Build recent transcript context
         recent_transcript = "\n".join(state["transcript_buffer"][-30:])
-        now_str = datetime.now().strftime("%A, %B %-d, %Y at %-I:%M %p")
+        now = datetime.now()
+        hour_12 = now.hour % 12 or 12
+        now_str = f"{now.strftime('%A, %B')} {now.day}, {now.year} at {hour_12}:{now.strftime('%M %p')}"
 
         messages = [
             {
@@ -232,7 +246,12 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                     user_settings=user_settings,
                 )
                 if result.get("requires_confirmation"):
-                    result = {"error": "This action requires confirmation — please use the PrismAI web app to authorize it."}
+                    # In live meeting context, the spoken/typed command is the confirmation
+                    result = await confirm_and_execute(
+                        tool_call.function.name,
+                        result["preview"],
+                        user_settings=user_settings,
+                    )
                 tools_used.append(tool_call.function.name)
                 messages.append({
                     "role": "tool",
@@ -348,8 +367,31 @@ async def realtime_events(request: Request):
             command = _detect_command(text)
             if command:
                 print(f"[realtime] command={command!r} detected from speaker={speaker!r}")
+                state["pending_trigger_ts"] = 0
+                state["pending_command_parts"] = []
                 asyncio.create_task(_process_command(bot_id, command, speaker))
+            elif _has_trigger_word(text):
+                # Trigger word seen but no command yet — wait for the next utterance
+                state["pending_trigger_ts"] = time.time()
+                state["pending_trigger_speaker"] = speaker
+                state["pending_command_parts"] = []
+                print(f"[realtime] trigger word detected, awaiting command from {speaker!r}")
+            elif state["pending_trigger_ts"] and time.time() - state["pending_trigger_ts"] < PENDING_TRIGGER_WINDOW:
+                # Within the wake-word window — accumulate parts until we have enough words
+                pending_speaker = state["pending_trigger_speaker"]
+                if not pending_speaker or pending_speaker == speaker:
+                    state["pending_command_parts"].append(text.strip())
+                    accumulated = " ".join(state["pending_command_parts"])
+                    if len(re.findall(r'\b\w+\b', accumulated)) >= 3:
+                        state["pending_trigger_ts"] = 0
+                        state["pending_command_parts"] = []
+                        print(f"[realtime] deferred command={accumulated!r} from speaker={speaker!r}")
+                        asyncio.create_task(_process_command(bot_id, accumulated, speaker))
+                    else:
+                        print(f"[realtime] accumulating deferred command: {accumulated!r}")
             else:
+                state["pending_trigger_ts"] = 0
+                state["pending_command_parts"] = []
                 print(f"[realtime] no command trigger in text")
 
     # Handle chat messages from the meeting

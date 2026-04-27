@@ -243,7 +243,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
             supabase.table("meetings")
             .select("id,title,date,score,result")
             .eq("user_id", user_id)
-            .order("created_at", desc=True)
+            .order("id", desc=True)
             .limit(limit)
             .execute()
         )
