@@ -19,6 +19,7 @@ from tools.registry import get_available_tools, execute_tool, confirm_and_execut
 from tools.tts import text_to_speech
 from recall_routes import bot_store, _db_append_command
 from auth import supabase
+from cross_meeting_service import looks_like_blocker, extract_significant_terms
 
 router = APIRouter(tags=["realtime"])
 
@@ -36,6 +37,20 @@ _bot_state: dict = {}
 TRIGGER_PATTERN = re.compile(
     r"\b(?:prism|prismai|prism ai)\b[,:]?\s*(.+)",
     re.IGNORECASE,
+)
+
+# Proactive intervention keyword patterns
+_DECISION_KEYWORDS = re.compile(
+    r"\b(decided|decision|agreed?|going with|resolved|confirmed|conclusion|finalized|chosen|we(?:'re| are) going to go with)\b",
+    re.IGNORECASE,
+)
+_ACTION_ITEM_KEYWORDS = re.compile(
+    r"\b(action item|follow[- ]?up|will handle|will take care|i'll|they'll|he'll|she'll|by (?:monday|tuesday|wednesday|thursday|friday|next week|eod|eow))\b",
+    re.IGNORECASE,
+)
+# Matches "[Name] will" or "I will/I'll" — explicit ownership
+_OWNER_PATTERN = re.compile(
+    r"\b(?:[A-Z][a-z]+|I) (?:will|'ll|is going to|am going to|are going to)\b"
 )
 
 
@@ -56,6 +71,17 @@ def _get_bot_state(bot_id: str) -> dict:
             "pending_trigger_ts": 0,
             "pending_trigger_speaker": "",
             "pending_command_parts": [],
+            # Proactive intervention state
+            "meeting_start_ts": None,
+            "intervention_last_ts": 0,
+            "decisions_detected": 0,
+            "action_items_detected": 0,
+            "owners_detected": 0,
+            "sent_30min_nudge": False,
+            "sent_55min_nudge": False,
+            "sent_no_owners_nudge": False,
+            "recurring_blocker_checked": False,
+            "historical_blockers": [],
         }
     return _bot_state[bot_id]
 
@@ -145,6 +171,116 @@ async def _send_voice_response(bot_id: str, text: str):
                 print(f"[realtime] output_audio failed ({resp.status_code}): {resp.text[:200]}")
     except Exception as exc:
         print(f"[realtime] voice response failed: {exc}")
+
+
+async def _fetch_historical_blockers(user_id: str | None) -> list[dict]:
+    """Pull blocker-flagged items from the user's last 10 meetings for recurring-topic detection."""
+    if not supabase or not user_id:
+        return []
+    try:
+        res = (
+            supabase.table("meetings")
+            .select("date,result")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+        )
+        blockers = []
+        for row in (res.data or []):
+            result = row.get("result") or {}
+            date = row.get("date") or "a previous meeting"
+            for item in (result.get("action_items") or []):
+                if not item.get("completed") and looks_like_blocker(item.get("task", "")):
+                    kws = extract_significant_terms(item.get("task", ""), minimum_length=4)
+                    if kws:
+                        blockers.append({"keywords": kws[:6], "date": date})
+            summary = result.get("summary", "")
+            if summary and looks_like_blocker(summary):
+                kws = extract_significant_terms(summary, minimum_length=5)
+                if kws:
+                    blockers.append({"keywords": kws[:5], "date": date})
+        return blockers[:10]
+    except Exception as exc:
+        print(f"[realtime] failed to fetch historical blockers for user {user_id}: {exc}")
+        return []
+
+
+async def _run_proactive_checker(bot_id: str):
+    """Background task: monitor triggers and post proactive nudges during a live meeting."""
+    await asyncio.sleep(120)  # grace period — let the bot settle before first check
+
+    while True:
+        await asyncio.sleep(60)
+
+        status = (bot_store.get(bot_id) or {}).get("status", "")
+        if status not in ("joining", "recording"):
+            break
+
+        state = _get_bot_state(bot_id)
+        if state["meeting_start_ts"] is None:
+            continue  # no transcript yet — meeting hasn't truly started
+
+        now = time.time()
+        elapsed_min = (now - state["meeting_start_ts"]) / 60
+
+        # Throttle: at most one proactive message per 10 minutes
+        if now - state["intervention_last_ts"] < 600:
+            continue
+
+        # Trigger 3: Meeting approaching 1 hour (check first — time-critical)
+        if elapsed_min >= 55 and not state["sent_55min_nudge"]:
+            state["sent_55min_nudge"] = True
+            state["intervention_last_ts"] = now
+            await _send_chat_response(
+                bot_id,
+                "⏱️ Meeting approaching 1 hour. Say 'Prism, list the action items so far' to make sure everything is captured before wrapping up.",
+            )
+            continue
+
+        # Trigger 1: No decisions logged after 30 minutes
+        if elapsed_min >= 30 and state["decisions_detected"] == 0 and not state["sent_30min_nudge"]:
+            state["sent_30min_nudge"] = True
+            state["intervention_last_ts"] = now
+            await _send_chat_response(
+                bot_id,
+                "📋 30 minutes in — no decisions logged yet. Say 'Prism, summarize what's been decided' to capture them.",
+            )
+            continue
+
+        # Trigger 4: Action items detected but no explicit owners
+        if (
+            state["action_items_detected"] >= 3
+            and state["owners_detected"] == 0
+            and elapsed_min >= 15
+            and not state["sent_no_owners_nudge"]
+        ):
+            state["sent_no_owners_nudge"] = True
+            state["intervention_last_ts"] = now
+            await _send_chat_response(
+                bot_id,
+                "👤 Some action items may not have clear owners yet. Say 'Prism, who owns what?' to clarify.",
+            )
+            continue
+
+        # Trigger 2: Recurring blocker — fetch history once, then match each loop
+        if not state["recurring_blocker_checked"]:
+            user_id = (bot_store.get(bot_id) or {}).get("user_id")
+            state["historical_blockers"] = await _fetch_historical_blockers(user_id)
+            state["recurring_blocker_checked"] = True
+
+        if state["historical_blockers"] and state["transcript_buffer"]:
+            recent_text = " ".join(state["transcript_buffer"][-50:]).lower()
+            for blocker in list(state["historical_blockers"]):
+                matched = [kw for kw in blocker["keywords"] if kw in recent_text]
+                if len(matched) >= 2:
+                    state["historical_blockers"].remove(blocker)
+                    state["intervention_last_ts"] = now
+                    await _send_chat_response(
+                        bot_id,
+                        f"⚠️ This topic came up unresolved in your {blocker['date']} meeting. Say 'Prism, what happened last time?' to check.",
+                    )
+                    break
 
 
 async def _process_command(bot_id: str, command: str, speaker: str = ""):
@@ -245,6 +381,16 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                     user_id=user_id,
                     user_settings=user_settings,
                 )
+                if result.get("external_ref") and supabase:
+                    try:
+                        supabase.table("action_refs").insert({
+                            "user_id": user_id,
+                            "action_item": command,
+                            "tool": result["external_ref"]["tool"],
+                            "external_id": result["external_ref"]["external_id"],
+                        }).execute()
+                    except Exception:
+                        pass
                 if result.get("requires_confirmation"):
                     # In live meeting context, the spoken/typed command is the confirmation
                     result = await confirm_and_execute(
@@ -362,6 +508,16 @@ async def realtime_events(request: Request):
             # Also write to bot_store so _process_bot_transcript can use it
             if bot_id in bot_store:
                 bot_store[bot_id]["realtime_transcript_lines"] = state["transcript_buffer"]
+
+            # Track proactive intervention metrics
+            if state["meeting_start_ts"] is None:
+                state["meeting_start_ts"] = time.time()
+            if _DECISION_KEYWORDS.search(text):
+                state["decisions_detected"] += 1
+            if _ACTION_ITEM_KEYWORDS.search(text):
+                state["action_items_detected"] += 1
+            if _OWNER_PATTERN.search(text):
+                state["owners_detected"] += 1
 
             # Check for command trigger
             command = _detect_command(text)

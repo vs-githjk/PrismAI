@@ -84,6 +84,13 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
                       <span className="text-purple-400/80">{item.due}</span>
                     </span>
                   )}
+                  {item.external_ref && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                      style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.25)', color: '#a78bfa' }}>
+                      {item.external_ref.tool === 'linear_create_issue' ? '⬡ ' : '📅 '}
+                      {item.external_ref.external_id}
+                    </span>
+                  )}
                 </div>
               </div>
             </li>

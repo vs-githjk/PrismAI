@@ -2,6 +2,11 @@ from collections import defaultdict
 from datetime import UTC, datetime
 import re
 
+try:
+    from auth import supabase
+except ImportError:
+    supabase = None
+
 
 STOP_WORDS = {
     "the", "and", "for", "with", "that", "this", "from", "have", "will", "into", "your",
@@ -76,7 +81,7 @@ def has_meaningful_result(result: dict | None) -> bool:
     return False
 
 
-def derive_cross_meeting_insights(history: list[dict]) -> dict:
+def derive_cross_meeting_insights(history: list[dict], user_id: str | None = None) -> dict:
     meetings = sorted(
         [entry for entry in history if has_meaningful_result(entry.get("result"))],
         key=lambda entry: entry.get("date") or "",
@@ -281,6 +286,22 @@ def derive_cross_meeting_insights(history: list[dict]) -> dict:
             "meeting_ids": decision["meeting_ids"],
         })
 
+    unresolved_action_refs: list[dict] = []
+    if supabase and user_id:
+        try:
+            refs = (
+                supabase.table("action_refs")
+                .select("id,action_item,tool,external_id,created_at")
+                .eq("user_id", user_id)
+                .eq("resolved", False)
+                .order("created_at", desc=True)
+                .limit(10)
+                .execute()
+            )
+            unresolved_action_refs = refs.data or []
+        except Exception:
+            pass
+
     return {
         "meeting_count": len(meetings),
         "avg_score": avg_score,
@@ -296,5 +317,6 @@ def derive_cross_meeting_insights(history: list[dict]) -> dict:
         "unresolved_decisions": unresolved_decisions,
         "recent_decisions": recent_decisions,
         "recommended_actions": recommended_actions,
+        "unresolved_action_refs": unresolved_action_refs,
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }

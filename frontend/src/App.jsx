@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
 import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
@@ -16,6 +16,7 @@ import DecisionsCard from './components/DecisionsCard'
 import SentimentCard from './components/SentimentCard'
 import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
+import SpeakerCoachCard from './components/SpeakerCoachCard'
 import SkeletonCard from './components/SkeletonCard'
 import ErrorCard from './components/ErrorCard'
 import { supabase } from './lib/supabase'
@@ -272,6 +273,7 @@ const AGENTS_META = [
   { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-500 to-blue-400',       desc: 'Writes a polished follow-up email ready to send to all attendees.' },
   { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-500 to-indigo-400',   desc: 'Detects if a follow-up meeting is needed and suggests the best timeframe.' },
   { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
+  { id: 'speaker_coach',      label: 'Speaker Coach', icon: '🎤', grad: 'from-rose-500 to-pink-400',         desc: 'Shows each speaker\'s talk share, decisions and actions owned, and a one-line coaching note.' },
 ]
 
 const INPUT_MODE_META = {
@@ -317,6 +319,7 @@ const DEFAULT_RESULT = {
   follow_up_email: { subject: '', body: '' },
   calendar_suggestion: { recommended: false, reason: '', suggested_timeframe: '', resolved_date: '', resolved_day: '' },
   health_score: { score: 0, verdict: '', badges: [], breakdown: { clarity: 0, action_orientation: 0, engagement: 0 } },
+  speaker_coach: { speakers: [], balance_score: 100 },
   agents_run: [],
 }
 
@@ -834,9 +837,290 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
   )
 }
 
+// ── Pre-Meeting Brief ────────────────────────────────────────────
+function PreMeetingBrief({ brief }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!brief) return null
+  const totalCount = (brief.open_items?.length || 0) + (brief.recent_decisions?.length || 0) + (brief.blockers?.length || 0)
+  if (totalCount === 0) return null
+  return (
+    <div className="rounded-2xl overflow-hidden cursor-pointer"
+      style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.2)' }}
+      onClick={() => setExpanded(e => !e)}>
+      <div className="px-4 py-3 flex items-center gap-2">
+        <svg className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+        <span className="text-xs font-semibold text-sky-300">Pre-Meeting Brief</span>
+        <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full text-sky-200" style={{ background: 'rgba(14,165,233,0.15)' }}>
+          {totalCount} item{totalCount !== 1 ? 's' : ''}
+        </span>
+        <svg className={`w-3 h-3 text-sky-500 ml-auto transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3" style={{ borderTop: '1px solid rgba(14,165,233,0.12)' }}>
+          {brief.open_items?.length > 0 && (
+            <div className="pt-3">
+              <p className="text-[10px] font-semibold text-orange-400 mb-1.5">○ Open Action Items</p>
+              {brief.open_items.map((item, i) => (
+                <div key={i} className="flex items-start gap-1.5 mb-1">
+                  <span className="text-orange-500 text-[10px] mt-0.5 flex-shrink-0">○</span>
+                  <div>
+                    <p className="text-[11px] text-gray-300">{item.task}</p>
+                    {(item.owner || item.due || item.meeting_date) && (
+                      <p className="text-[10px] text-gray-600">{[item.owner, item.due, item.meeting_date].filter(Boolean).join(' · ')}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {brief.recent_decisions?.length > 0 && (
+            <div className={brief.open_items?.length > 0 ? '' : 'pt-3'}>
+              <p className="text-[10px] font-semibold text-yellow-400 mb-1.5">⚖ Recent Decisions</p>
+              {brief.recent_decisions.map((d, i) => (
+                <div key={i} className="flex items-start gap-1.5 mb-1">
+                  <span className="text-yellow-500 text-[10px] mt-0.5 flex-shrink-0">⚖</span>
+                  <div>
+                    <p className="text-[11px] text-gray-300">{d.decision}</p>
+                    {(d.owner || d.meeting_date) && (
+                      <p className="text-[10px] text-gray-600">{[d.owner, d.meeting_date].filter(Boolean).join(' · ')}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {brief.blockers?.length > 0 && (
+            <div className={(!brief.open_items?.length && !brief.recent_decisions?.length) ? 'pt-3' : ''}>
+              <p className="text-[10px] font-semibold text-red-400 mb-1.5">⚠ Recurring Blockers</p>
+              {brief.blockers.map((b, i) => (
+                <div key={i} className="flex items-start gap-1.5 mb-1">
+                  <span className="text-red-500 text-[10px] mt-0.5 flex-shrink-0">⚠</span>
+                  <div>
+                    <p className="text-[11px] text-gray-300">{b.snippet}</p>
+                    {b.meeting_date && <p className="text-[10px] text-gray-600">{b.meeting_date}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Live Meeting View ────────────────────────────────────────────
+function LiveMeetingView({ token }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+  const [session, setSession] = useState(null)
+  const [saveState, setSaveState] = useState('idle')
+  const intervalRef = useRef(null)
+
+  useEffect(() => {
+    supabase?.auth.getSession().then(({ data: s }) => setSession(s?.session ?? null))
+  }, [])
+
+  const handleSave = async () => {
+    if (saveState !== 'idle') return
+    setSaveState('saving')
+    const result = data?.result || {}
+    try {
+      await apiFetch('/meetings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: Date.now(),
+          date: new Date().toISOString().slice(0, 10),
+          title: result.summary?.slice(0, 80).split('.')[0] || 'Meeting',
+          score: result.health_score?.score || null,
+          transcript: data?.transcript || '',
+          result,
+          share_token: '',
+        }),
+      })
+      setSaveState('saved')
+    } catch {
+      setSaveState('error')
+    }
+  }
+
+  const poll = useCallback(async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/live/${token}`)
+      if (res.status === 404) { setError('Live session not found or has expired.'); clearInterval(intervalRef.current); return }
+      if (!res.ok) return
+      const json = await res.json()
+      setData(json)
+      if (['done', 'error'].includes(json.status)) clearInterval(intervalRef.current)
+    } catch { /* network blip — keep polling */ }
+  }, [token])
+
+  useEffect(() => {
+    poll()
+    intervalRef.current = setInterval(poll, 3000)
+    return () => clearInterval(intervalRef.current)
+  }, [poll])
+
+  const appUrl = window.location.origin + window.location.pathname
+  const status = data?.status
+  const commands = data?.commands || []
+  const lines = data?.transcript_lines || []
+  const result = data?.result || {}
+
+  if (error) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
+      <p className="text-sm text-gray-500">{error}</p>
+    </div>
+  )
+
+  if (!data) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center animate-pulse" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        </div>
+        <p className="text-xs text-gray-500">Connecting to live meeting…</p>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen" style={{ background: '#07040f' }}>
+      {/* Header */}
+      <div className="sticky top-0 z-10 px-4 py-3 flex items-center justify-between"
+        style={{ background: 'rgba(7,4,15,0.92)', borderBottom: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(16px)' }}>
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 16px rgba(2,132,199,0.4)' }}>
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          </div>
+          <span className="text-sm font-bold gradient-text">PrismAI</span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
+            style={{ background: status === 'recording' ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${status === 'recording' ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`, color: status === 'recording' ? '#fca5a5' : '#6b7280' }}>
+            {status === 'recording' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+            {status === 'joining' && 'Joining…'}
+            {status === 'recording' && 'Live'}
+            {status === 'processing' && 'Analyzing…'}
+            {status === 'done' && 'Meeting ended'}
+            {status === 'error' && 'Error'}
+          </span>
+        </div>
+        <a href={appUrl} className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-105"
+          style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.2), rgba(13,148,136,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
+          Analyze your own →
+        </a>
+      </div>
+
+      <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
+        {status !== 'done' && <PreMeetingBrief brief={data?.brief} />}
+        {/* Prism commands log */}
+        {commands.length > 0 && (
+          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <svg className="w-3.5 h-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              <span className="text-xs font-semibold text-violet-300">Prism Commands</span>
+              <span className="ml-auto text-[10px] text-gray-600">{commands.length}</span>
+            </div>
+            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+              {commands.map((cmd, i) => (
+                <div key={i} className="px-4 py-3">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3 h-3 text-emerald-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-200">"{cmd.command}"</p>
+                      {cmd.speaker && <p className="text-[10px] text-gray-600 mt-0.5">{cmd.speaker}{cmd.tools?.length ? ` · ${cmd.tools.join(', ')}` : ''}</p>}
+                      {cmd.reply && <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">{cmd.reply}</p>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Live transcript */}
+        {lines.length > 0 && status !== 'done' && (
+          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-xs font-semibold text-gray-400">Live Transcript</span>
+            </div>
+            <div className="px-4 py-3 max-h-64 overflow-y-auto space-y-1">
+              {lines.slice(-30).map((line, i) => (
+                <p key={i} className="text-[11px] text-gray-400 leading-relaxed">{line}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Full results when done */}
+        {status === 'done' && result && (
+          <>
+            {result.agents_run?.length > 0 && <AgentTags agents={result.agents_run} />}
+            <HealthScoreCard healthScore={result.health_score} />
+            <SummaryCard summary={result.summary} />
+            <ActionItemsCard actionItems={result.action_items} readOnly />
+            <DecisionsCard decisions={result.decisions} />
+            {result.sentiment && <SentimentCard sentiment={result.sentiment} />}
+            <EmailCard email={result.follow_up_email} readOnly />
+            <CalendarCard calendar={result.calendar_suggestion} />
+            <SpeakerCoachCard speakerCoach={result.speaker_coach} />
+            {session && (
+              <button
+                onClick={handleSave}
+                disabled={saveState !== 'idle'}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.25), rgba(13,148,136,0.2))', border: '1px solid rgba(14,165,233,0.35)', color: '#7dd3fc' }}>
+                {saveState === 'idle' && 'Save to my history'}
+                {saveState === 'saving' && 'Saving…'}
+                {saveState === 'saved' && '✓ Saved'}
+                {saveState === 'error' && 'Save failed — try again'}
+              </button>
+            )}
+          </>
+        )}
+
+        {status === 'processing' && (
+          <div className="flex items-center gap-3 px-4 py-4 rounded-2xl" style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}>
+            <svg className="w-4 h-4 text-sky-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            <p className="text-xs text-sky-300">Meeting ended — running analysis across 7 agents…</p>
+          </div>
+        )}
+
+        {status === 'error' && data.error && (
+          <div className="px-4 py-3 rounded-2xl" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <p className="text-xs text-red-400">{data.error}</p>
+          </div>
+        )}
+
+        {!commands.length && !lines.length && ['joining', 'recording'].includes(status) && (
+          <div className="text-center py-12">
+            <div className="w-10 h-10 rounded-2xl mx-auto mb-3 flex items-center justify-center animate-pulse" style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.15)' }}>
+              <svg className="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+            </div>
+            <p className="text-xs text-gray-600">Waiting for conversation…</p>
+            <p className="text-[10px] text-gray-700 mt-1">Commands and transcript will appear here as the meeting progresses.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // Detect share token synchronously so first render already knows we're in share mode
 const INITIAL_SHARE_TOKEN = (() => {
   const match = window.location.hash.match(/^#share\/([a-f0-9]+)$/)
+  return match ? match[1] : null
+})()
+
+// Detect live-share token synchronously
+const INITIAL_LIVE_TOKEN = (() => {
+  const match = window.location.hash.match(/^#live\/([a-f0-9]+)$/)
   return match ? match[1] : null
 })()
 
@@ -1064,6 +1348,8 @@ export default function App() {
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
   const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
+  const [activeLiveToken, setActiveLiveToken] = useState(() => sessionStorage.getItem('prism_active_live_token') || null)
+  const [liveShareCopied, setLiveShareCopied] = useState(false)
   const [liveCommands, setLiveCommands] = useState([]) // commands executed during live meeting
   const pollRef = useRef(null)
 
@@ -1531,6 +1817,10 @@ export default function App() {
       setBotStatus(data.status)
       setActiveBotId(data.bot_id)
       sessionStorage.setItem('prism_active_bot_id', data.bot_id)
+      if (data.live_token) {
+        setActiveLiveToken(data.live_token)
+        sessionStorage.setItem('prism_active_live_token', data.live_token)
+      }
       startPolling(data.bot_id)
     } catch (e) {
       setBotStatus('error')
@@ -2079,6 +2369,11 @@ export default function App() {
     return <LandingScreen onDemo={() => exitLanding(true)} onSkip={() => exitLanding(false)} exiting={landingExiting} />
   }
 
+  // Live meeting view — shown when URL is #live/{token}
+  if (INITIAL_LIVE_TOKEN) {
+    return <LiveMeetingView token={INITIAL_LIVE_TOKEN} />
+  }
+
   // Share mode — loading state (token detected synchronously, waiting for fetch)
   if (shareMode === 'loading') {
     return (
@@ -2145,6 +2440,7 @@ export default function App() {
           <DecisionsCard decisions={r.decisions} />
           <SentimentCard sentiment={r.sentiment} />
           <CalendarCard suggestion={r.calendar_suggestion} />
+          <SpeakerCoachCard speakerCoach={r.speaker_coach} />
         </div>
 
         {/* Bottom CTA */}
@@ -2759,6 +3055,20 @@ export default function App() {
                       {botStatus === 'recording' && (
                         <p className="text-[10px] text-gray-600 mt-0.5">Listening for "Prism, ..." commands · Results when meeting ends</p>
                       )}
+                      {botStatus === 'recording' && activeLiveToken && (
+                        <button
+                          onClick={() => {
+                            const url = `${window.location.origin}${window.location.pathname}#live/${activeLiveToken}`
+                            navigator.clipboard.writeText(url).then(() => {
+                              setLiveShareCopied(true)
+                              setTimeout(() => setLiveShareCopied(false), 2000)
+                            })
+                          }}
+                          className="mt-1 text-[10px] px-2 py-0.5 rounded-md transition-colors"
+                          style={{ background: liveShareCopied ? 'rgba(14,165,233,0.15)' : 'rgba(255,255,255,0.05)', color: liveShareCopied ? '#7dd3fc' : '#6b7280', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          {liveShareCopied ? '✓ Copied!' : '⬡ Copy live link'}
+                        </button>
+                      )}
                     </div>
                     {botStatus === 'recording'
                       ? <span className="ml-auto w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></span>
@@ -3165,6 +3475,9 @@ export default function App() {
                   <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} gmailConnected={calendarConnected} /></div>
                   <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
                 </div>
+
+                {/* Speaker Coaching — full width */}
+                <div className="animate-fade-in-up card-delay-6"><SpeakerCoachCard speakerCoach={result.speaker_coach} /></div>
               </ErrorBoundary>
             </div>
           ) : (
@@ -3376,6 +3689,7 @@ export default function App() {
                 <div className="animate-fade-in-up card-delay-4"><SentimentCard sentiment={result.sentiment} /></div>
                 <div className="animate-fade-in-up card-delay-5"><EmailCard email={result.follow_up_email} gmailConnected={calendarConnected} /></div>
                 <div className="animate-fade-in-up card-delay-6"><CalendarCard suggestion={result.calendar_suggestion} /></div>
+                <div className="animate-fade-in-up card-delay-6"><SpeakerCoachCard speakerCoach={result.speaker_coach} /></div>
               </ErrorBoundary>
             </div>
           ) : (

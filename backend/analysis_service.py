@@ -8,6 +8,7 @@ from agents import (
     health_score,
     orchestrator,
     sentiment,
+    speaker_coach,
     summarizer,
 )
 
@@ -20,6 +21,7 @@ AGENT_MAP = {
     "email_drafter": email_drafter.run,
     "calendar_suggester": calendar_suggester.run,
     "health_score": health_score.run,
+    "speaker_coach": speaker_coach.run,
 }
 
 
@@ -31,6 +33,7 @@ DEFAULT_RESULT = {
     "follow_up_email": {"subject": "", "body": ""},
     "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "resolved_date": "", "resolved_day": ""},
     "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
+    "speaker_coach": {"speakers": [], "balance_score": 100},
     "agents_run": [],
 }
 
@@ -43,6 +46,7 @@ AGENT_RESULT_KEY = {
     "email_drafter": "follow_up_email",
     "calendar_suggester": "calendar_suggestion",
     "health_score": "health_score",
+    "speaker_coach": "speaker_coach",
 }
 
 
@@ -84,6 +88,8 @@ def merge_agent_results(valid_agents: list[str], results: list) -> dict:
             result["calendar_suggestion"] = agent_result.get("calendar_suggestion", DEFAULT_RESULT["calendar_suggestion"])
         elif agent_name == "health_score":
             result["health_score"] = agent_result.get("health_score", DEFAULT_RESULT["health_score"])
+        elif agent_name == "speaker_coach":
+            result["speaker_coach"] = agent_result.get("speaker_coach", DEFAULT_RESULT["speaker_coach"])
 
     return result
 
