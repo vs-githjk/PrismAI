@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import LogoIcon from './LogoIcon'
 
 const NAV_LINKS = [
@@ -15,6 +15,9 @@ function scrollTo(id) {
 
 export default function LandingNav({ onSignup }) {
   const [active, setActive] = useState('prism')
+  const [indicatorStyle, setIndicatorStyle] = useState({ width: 0, x: 0, ready: false })
+  const navRef = useRef(null)
+  const itemRefs = useRef({})
 
   useEffect(() => {
     const container = document.querySelector('.landing-page')
@@ -38,48 +41,92 @@ export default function LandingNav({ onSignup }) {
     return () => container.removeEventListener('scroll', update)
   }, [])
 
+  useEffect(() => {
+    function updateIndicator() {
+      const nav = navRef.current
+      const activeItem = itemRefs.current[active]
+      if (!nav || !activeItem) return
+
+      const navBox = nav.getBoundingClientRect()
+      const itemBox = activeItem.getBoundingClientRect()
+      const x = itemBox.left - navBox.left + nav.scrollLeft
+
+      setIndicatorStyle({
+        width: itemBox.width,
+        x,
+        ready: true,
+      })
+    }
+
+    updateIndicator()
+
+    const nav = navRef.current
+    if (!nav) return
+
+    const resizeObserver = new ResizeObserver(updateIndicator)
+    resizeObserver.observe(nav)
+    Object.values(itemRefs.current).forEach(item => item && resizeObserver.observe(item))
+    nav.addEventListener('scroll', updateIndicator, { passive: true })
+    window.addEventListener('resize', updateIndicator)
+
+    return () => {
+      resizeObserver.disconnect()
+      nav.removeEventListener('scroll', updateIndicator)
+      window.removeEventListener('resize', updateIndicator)
+    }
+  }, [active])
+
   return (
     <div
-      className="animate-fade-in-up"
-      style={{
-        position: 'absolute',
-        top: '24px',
-        left: '15%',
-        right: '15%',
-        zIndex: 10,
-        pointerEvents: 'none',
-      }}
+      className="landing-nav-frame animate-fade-in-up"
     >
       <div className="landing-nav-bar" style={{ pointerEvents: 'auto' }}>
 
         {/* Logo */}
         <button
           onClick={() => scrollTo('prism')}
-          className="logo-btn"
+          className="logo-btn landing-nav-logo"
+          type="button"
           style={{
             display: 'flex', alignItems: 'center', gap: '8px',
             background: 'none', border: 0, cursor: 'pointer',
             padding: '4px 0',
-            justifySelf: 'start',
           }}
           aria-label="Back to top"
         >
           <LogoIcon className="w-9 h-9" />
           <span
             className="prism-logo-text text-xl font-light tracking-wider"
-            data-text="_prism"
+            data-text="prism"
             style={{ lineHeight: 1 }}
           >
-            _prism
+            prism
           </span>
         </button>
 
         {/* Nav links */}
-        <nav aria-label="Main navigation" style={{ display: 'flex', gap: '2px' }}>
+        <nav
+          ref={navRef}
+          className="landing-nav-links"
+          aria-label="Main navigation"
+          style={{ display: 'flex', gap: '2px' }}
+        >
+          <span
+            className={`nav-pill-indicator${indicatorStyle.ready ? ' nav-pill-indicator--ready' : ''}`}
+            aria-hidden="true"
+            style={{
+              width: `${indicatorStyle.width}px`,
+              transform: `translateX(${indicatorStyle.x}px)`,
+            }}
+          />
           {NAV_LINKS.map(({ label, id }) => (
             <button
               key={id}
+              ref={el => {
+                if (el) itemRefs.current[id] = el
+              }}
               onClick={() => scrollTo(id)}
+              type="button"
               className={`nav-pill-item${active === id ? ' nav-pill-item--active' : ''}`}
             >
               {label}
@@ -88,9 +135,9 @@ export default function LandingNav({ onSignup }) {
         </nav>
 
         {/* Auth */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <button className="nav-auth-login" onClick={onSignup}>Log in</button>
-          <button className="nav-auth-signin" onClick={onSignup}>Sign up</button>
+        <div className="landing-nav-auth">
+          <button type="button" className="nav-auth-login" onClick={onSignup}>Log in</button>
+          <button type="button" className="nav-auth-signin landing-button-primary" onClick={onSignup}>Sign up</button>
         </div>
 
       </div>

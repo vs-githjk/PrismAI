@@ -36,7 +36,6 @@ function Check() {
 
 export default function PricingSection({ onGetStarted }) {
   const [visible, setVisible] = useState(false)
-  const [inView, setInView] = useState(false)
   const sectionRef = useRef(null)
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function PricingSection({ onGetStarted }) {
       ([entry]) => {
         const r = entry.intersectionRatio
         if (r > 0.08) setVisible(true)
-        setInView(r > 0.08)
       },
       { threshold: [0, 0.08, 1] }
     )
@@ -54,7 +52,6 @@ export default function PricingSection({ onGetStarted }) {
 
   return (
     <section ref={sectionRef} id="pricing" className="pricing-section scroll-section" style={{ position: 'relative' }}>
-      <div className={`section-blur-overlay${inView ? '' : ' active'}`} aria-hidden="true" />
       <div className="section-inner">
         <p className="section-eyebrow">Pricing</p>
         <h2 className={`pricing-heading${visible ? ' heading-visible' : ''}`}>
@@ -87,7 +84,11 @@ export default function PricingSection({ onGetStarted }) {
                 </li>
               ))}
             </ul>
-            <button className="pricing-cta pricing-cta-ghost" onClick={onGetStarted}>
+            <button
+              type="button"
+              className="pricing-cta pricing-cta-ghost landing-button-secondary"
+              onClick={onGetStarted}
+            >
               Get started free
             </button>
           </div>
@@ -115,7 +116,7 @@ export default function PricingSection({ onGetStarted }) {
                 </li>
               ))}
             </ul>
-            <button className="pricing-cta pricing-cta-accent">
+            <button type="button" className="pricing-cta pricing-cta-accent landing-button-primary">
               Book a demo
             </button>
           </div>

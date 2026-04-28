@@ -18,6 +18,7 @@ import EmailCard from './components/EmailCard'
 import CalendarCard from './components/CalendarCard'
 import SkeletonCard from './components/SkeletonCard'
 import ErrorCard from './components/ErrorCard'
+import DashboardMcpPage from './components/DashboardMcpPage'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
 
@@ -856,7 +857,6 @@ const HERO_SENTENCES = [
 function LandingScreen({ onDemo, onSkip, exiting }) {
   const [signupOpen, setSignupOpen] = useState(false)
   const [scrollCueVisible, setScrollCueVisible] = useState(true)
-  const [heroInView, setHeroInView] = useState(true)
   const scrollContainerRef = useRef(null)
   const heroRef = useRef(null)
 
@@ -868,7 +868,6 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       ([entry]) => {
         const r = entry.intersectionRatio
         setScrollCueVisible(r >= 0.7)
-        setHeroInView(r > 0.1)
       },
       { threshold: [0, 0.1, 0.5, 0.7, 1], root: container }
     )
@@ -878,8 +877,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
   return (
     <div
-      ref={scrollContainerRef}
-      className="landing-page"
+      className="landing-page-shell"
       style={{
         opacity: exiting ? 0 : 1,
         transform: exiting ? 'scale(0.97)' : 'scale(1)',
@@ -907,84 +905,86 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </div>
       </div>
 
-      {/* Global blur overlay — activates when scrolled past hero */}
-      <div className={`landing-bg-blur${heroInView ? '' : ' active'}`} aria-hidden="true" />
-
-      {/* Sticky nav — sits above all sections while scrolling */}
-      <div className="landing-nav-sticky">
-        <LandingNav onSignup={() => setSignupOpen(true)} />
-      </div>
-
-      <section ref={heroRef} id="prism" className="landing-hero scroll-section">
-      {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
-      <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
-        <defs>
-          <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-            <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
-            <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
-            <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
-            <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
-            <feComponentTransfer in="blended">
-              <feFuncA type="linear" slope="1"/>
-            </feComponentTransfer>
-          </filter>
-        </defs>
-      </svg>
-
-      {/* Hero content */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
-        {/* Rotating pain-point text */}
-        <div className="w-full flex items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-          <RotatingText
-            texts={HERO_SENTENCES}
-            rotationInterval={4000}
-            staggerFrom="last"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '-120%' }}
-            staggerDuration={0.012}
-            splitLevelClassName="overflow-hidden pb-0.5"
-            transition={{ type: 'spring', damping: 32, stiffness: 280 }}
-            mainClassName="text-4xl sm:text-5xl lg:text-6xl font-bold text-white/85 leading-tight tracking-tight justify-center"
-            elementLevelClassName="font-bold"
-            style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontWeight: 700 }}
-          />
+      <div
+        ref={scrollContainerRef}
+        className="landing-page"
+      >
+        {/* Sticky nav — sits above all sections while scrolling */}
+        <div className="landing-nav-sticky">
+          <LandingNav onSignup={() => setSignupOpen(true)} />
         </div>
 
-        {/* Tagline */}
-        <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
-          <p
-            className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
-            style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}
-          >
-            Let <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 300 }}>_prism</span> handle it.
-          </p>
-        </div>
-
-        {/* CTA buttons */}
-        <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
-          <button className="btn-primary" onClick={() => setSignupOpen(true)}>Get started</button>
-          <span className="cta-or">or</span>
-          <button className="btn-ghost" onClick={onDemo}>Try it out</button>
-        </div>
-      </div>
-
-      <div className={`section-blur-overlay${heroInView ? '' : ' active'}`} aria-hidden="true" />
-
-      {/* Scroll cue */}
-      <div className={`scroll-cue${scrollCueVisible ? '' : ' hidden'}`} aria-hidden="true">
-        <span>see more below</span>
-        <svg className="scroll-cue-chevron" width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
-          <polyline points="1,2 7,8 13,2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <section ref={heroRef} id="prism" className="landing-hero scroll-section">
+        {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
+        <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+          <defs>
+            <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+              <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
+              <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+              <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
+              <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
+              <feComponentTransfer in="blended">
+                <feFuncA type="linear" slope="1"/>
+              </feComponentTransfer>
+            </filter>
+          </defs>
         </svg>
-      </div>
-      </section>
 
-      <HowItWorks />
-      <AgentShowcase />
-      <PricingSection onGetStarted={() => setSignupOpen(true)} />
-      <TeamSection />
-      {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+        {/* Hero content */}
+        <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
+          {/* Rotating pain-point text */}
+          <div className="w-full flex items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            <RotatingText
+              texts={HERO_SENTENCES}
+              rotationInterval={4000}
+              staggerFrom="last"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '-120%' }}
+              staggerDuration={0.012}
+              splitLevelClassName="overflow-hidden pb-0.5"
+              transition={{ type: 'spring', damping: 32, stiffness: 280 }}
+              mainClassName="text-4xl sm:text-5xl lg:text-6xl font-bold text-white/85 leading-tight tracking-tight justify-center"
+              elementLevelClassName="font-bold"
+              style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontWeight: 700 }}
+            />
+          </div>
+
+          {/* Tagline */}
+          <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
+            <p
+              className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
+              style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}
+            >
+              Let <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 300 }}>prism</span> handle it.
+            </p>
+          </div>
+
+          {/* CTA buttons */}
+          <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
+            <button type="button" className="btn-primary landing-button-primary" onClick={() => setSignupOpen(true)}>Get started</button>
+            <span className="cta-or">or</span>
+            <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
+          </div>
+        </div>
+
+        {/* Scroll cue */}
+        <div className={`scroll-cue${scrollCueVisible ? '' : ' hidden'}`} aria-hidden="true">
+          <span>see more below</span>
+          <svg className="scroll-cue-chevron" width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+            <polyline points="1,2 7,8 13,2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        </section>
+
+        <div className="landing-post-hero">
+          <HowItWorks />
+          <AgentShowcase />
+          <PricingSection onGetStarted={() => setSignupOpen(true)} />
+          <TeamSection />
+        </div>
+        {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+      </div>
     </div>
   )
 }
@@ -1023,10 +1023,12 @@ export default function App() {
   const analysisRunIdRef = useRef(0)
   const [mobileTab, setMobileTab] = useState('input') // 'input' | 'results'
   const hasResultsView = loading || Boolean(result)
+  const isMcpDashboard = typeof window !== 'undefined' && window.location.pathname === '/dashboard-mcp'
 
   // Show landing only to first-time visitors (not returning users, not share links)
   const [showLanding, setShowLanding] = useState(
     () => {
+      if (typeof window !== 'undefined' && window.location.pathname === '/dashboard-mcp') return false
       if (INITIAL_SHARE_TOKEN) return false
       const persistedScreen = sessionStorage.getItem(UI_SCREEN_KEY)
       if (persistedScreen === 'landing') return true
@@ -2144,6 +2146,150 @@ export default function App() {
           </div>
         </div>
       </div>
+    )
+  }
+
+  if (isMcpDashboard) {
+    return (
+      <>
+        <DashboardMcpPage
+          authReady={authReady}
+          user={user}
+          signInWithGoogle={signInWithGoogle}
+          signOut={signOut}
+          isDemoMode={isDemoMode}
+          exitDemoMode={exitDemoMode}
+          inputTab={inputTab}
+          setInputTab={setInputTab}
+          inputModeMeta={inputModeMeta}
+          transcript={transcript}
+          setTranscriptForTab={setTranscriptForTab}
+          transcriptStats={transcriptStats}
+          transcriptSpeakerCount={transcriptSpeakerCount}
+          loading={loading}
+          result={result}
+          setResult={setResult}
+          error={error}
+          analysisTime={analysisTime}
+          showTimeSaved={showTimeSaved}
+          handleAnalyzeClick={handleAnalyzeClick}
+          cancelActiveAnalysis={cancelActiveAnalysis}
+          startDemo={startDemo}
+          clearWorkspaceState={clearWorkspaceState}
+          toggleActionItem={toggleActionItem}
+          history={history}
+          showHistory={showHistory}
+          setShowHistory={setShowHistory}
+          loadFromHistory={loadFromHistory}
+          crossMeetingInsights={crossMeetingInsights}
+          sessionId={sessionId}
+          meetingId={meetingId}
+          initialMessages={initialMessages}
+          meetingUrl={meetingUrl}
+          setMeetingUrl={setMeetingUrl}
+          joinMeeting={joinMeeting}
+          cancelBot={cancelBot}
+          botStatus={botStatus}
+          botError={botError}
+          botTranscriptReady={botTranscriptReady}
+          liveCommands={liveCommands}
+          calendarConnected={calendarConnected}
+          nextUpcomingMeeting={nextUpcomingMeeting}
+          recording={recording}
+          startRecording={startRecording}
+          stopRecording={stopRecording}
+          micSupported={micSupported}
+          transcribing={transcribing}
+          fileInputRef={fileInputRef}
+          handleAudioUpload={handleAudioUpload}
+          shareToken={shareToken}
+          shareCopied={shareCopied}
+          setShareCopied={setShareCopied}
+          showExportMenu={showExportMenu}
+          setShowExportMenu={setShowExportMenu}
+          copyMarkdown={copyMarkdown}
+          mdCopied={mdCopied}
+          exportMarkdown={exportMarkdown}
+          exportPDF={exportPDF}
+          exportToSlack={exportToSlack}
+          exportToNotion={exportToNotion}
+          exportingSlack={exportingSlack}
+          exportingNotion={exportingNotion}
+          integrations={integrations}
+          setShowIntegrations={setShowIntegrations}
+        />
+
+        {showSpeakerModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md overflow-hidden rounded-xl border border-black bg-white shadow-2xl">
+              <div className="border-b border-black/10 px-5 py-4">
+                <h3 className="text-sm font-bold text-[#191c1e]">Who was in this meeting?</h3>
+                <p className="mt-1 text-xs text-[#6b7280]">Add roles for stronger ownership and attribution.</p>
+              </div>
+              <div className="max-h-64 space-y-2 overflow-y-auto px-5 py-4">
+                {speakers.map((speaker, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      value={speaker.name}
+                      onChange={(event) => setSpeakers((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))}
+                      placeholder="Name"
+                      className="w-32 rounded-lg border border-black px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-black/20"
+                    />
+                    <input
+                      value={speaker.role}
+                      onChange={(event) => setSpeakers((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, role: event.target.value } : item))}
+                      placeholder="Role"
+                      className="flex-1 rounded-lg border border-black px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-black/20"
+                    />
+                    <button type="button" onClick={() => setSpeakers((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} className="min-h-9 rounded-lg border border-black px-2 text-xs">
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setSpeakers((prev) => [...prev, { name: '', role: '' }])} className="text-xs font-semibold text-[#191c1e]">
+                  Add person
+                </button>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-black/10 px-5 py-3">
+                <button type="button" onClick={() => runAnalysis([])} className="min-h-10 rounded-lg border border-black px-4 text-xs font-semibold">
+                  Skip
+                </button>
+                <button type="button" onClick={() => runAnalysis(speakers)} className="min-h-10 rounded-lg border border-black bg-black px-4 text-xs font-semibold text-white">
+                  Analyze
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showIntegrations && (
+          <Suspense fallback={null}>
+            <IntegrationsModal
+              integrations={integrations}
+              onSave={setIntegrations}
+              onClose={() => setShowIntegrations(false)}
+              calendarConnected={calendarConnected}
+              onConnectCalendar={connectGoogleCalendar}
+              onDisconnectCalendar={disconnectCalendar}
+              autoJoinSetting={autoJoinSetting}
+              onAutoJoinChange={saveAutoJoinSetting}
+              isSignedIn={!!user}
+            />
+          </Suspense>
+        )}
+
+        {workspaceToast && (
+          <div className="fixed right-6 top-20 z-50 rounded-xl border border-black bg-white px-4 py-3 text-xs font-semibold text-[#191c1e] shadow-xl">
+            {workspaceToast}
+          </div>
+        )}
+
+        {integrationToast && (
+          <div className="fixed bottom-28 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-black bg-white px-4 py-3 text-xs font-semibold text-[#191c1e] shadow-xl">
+            {integrationToast.msg}
+          </div>
+        )}
+      </>
     )
   }
 
