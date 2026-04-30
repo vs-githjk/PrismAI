@@ -12,7 +12,7 @@ function Block({ title, children }) {
   )
 }
 
-export default function ActionBoard({ result, insights }) {
+export default function ActionBoard({ result, insights, hideOpen = false }) {
   const openItems = (result?.action_items || []).filter((item) => !item.completed).slice(0, 5)
   const blockers = insights.recurringBlockers || []
   const nextSteps = insights.recommendedActions || []
@@ -27,21 +27,23 @@ export default function ActionBoard({ result, insights }) {
         <Zap className="h-5 w-5 text-cyan-200/80" aria-hidden="true" />
       </div>
 
-      <div className="grid gap-2 xl:grid-cols-3">
-        <Block title="Open">
-          {openItems.length ? (
-            <div className="space-y-1.5">
-              {openItems.map((item, index) => (
-                <div key={`${item.task}-${index}`} className="rounded-lg border border-white/[0.07] bg-black/20 px-2.5 py-1.5">
-                  <p className="line-clamp-1 text-sm font-medium text-white">{item.task}</p>
-                  <p className={subtleText}>{item.owner || 'Unowned'}{item.due ? ` · ${item.due}` : ''}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className={subtleText}>No open action items in the active meeting.</p>
-          )}
-        </Block>
+      <div className={`grid gap-2 ${hideOpen ? 'xl:grid-cols-2' : 'xl:grid-cols-3'}`}>
+        {!hideOpen && (
+          <Block title="Open">
+            {openItems.length ? (
+              <div className="space-y-1.5">
+                {openItems.map((item, index) => (
+                  <div key={`${item.task}-${index}`} className="rounded-lg border border-white/[0.07] bg-black/20 px-2.5 py-1.5">
+                    <p className="line-clamp-1 text-sm font-medium text-white">{item.task}</p>
+                    <p className={subtleText}>{item.owner || 'Unowned'}{item.due ? ` · ${item.due}` : ''}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className={subtleText}>No open action items in the active meeting.</p>
+            )}
+          </Block>
+        )}
 
         <Block title="Recurring blockers">
           {blockers.length ? (

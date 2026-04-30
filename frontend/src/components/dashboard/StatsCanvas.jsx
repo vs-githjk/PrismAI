@@ -1,16 +1,8 @@
-import { lazy, Suspense, useId, useMemo } from 'react'
+import { lazy, Suspense, useId } from 'react'
 import { motion } from 'motion/react'
-import { normalizeInsights } from '../../lib/insights'
 import SkeletonCard from '../SkeletonCard'
-import ActionBoard from './ActionBoard'
-import HealthTrend from './HealthTrend'
-import StatsHero from './StatsHero'
-import Vitals from './Vitals'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
-const OwnerLoad = lazy(() => import('./OwnerLoad'))
-const DecisionMemory = lazy(() => import('./DecisionMemory'))
-const ThemeChips = lazy(() => import('./ThemeChips'))
 const MeetingsRail = lazy(() => import('./MeetingsRail'))
 
 function GradientTracing({
@@ -28,12 +20,7 @@ function GradientTracing({
 
   return (
     <div className="relative" style={{ width, height }}>
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        fill="none"
-      >
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} fill="none">
         <path
           d={path}
           stroke={`url(#${gradientId})`}
@@ -53,15 +40,8 @@ function GradientTracing({
             <stop offset="1" stopColor="white" stopOpacity="0" />
           </linearGradient>
           <motion.linearGradient
-            animate={{
-              y1: [-height, height],
-              y2: [0, height * 2],
-            }}
-            transition={{
-              duration: animationDuration,
-              repeat: Infinity,
-              ease: 'linear',
-            }}
+            animate={{ y1: [-height, height], y2: [0, height * 2] }}
+            transition={{ duration: animationDuration, repeat: Infinity, ease: 'linear' }}
             id={gradientId}
             gradientUnits="userSpaceOnUse"
           >
@@ -92,7 +72,7 @@ function FirstMeetingPlaceholder({ onLoadSample }) {
       <button
         type="button"
         onClick={onLoadSample}
-        className="mt-12 inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#2f2f2f] bg-[#18181b] px-7 py-3 text-base font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40"
+        className="mt-12 inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#2f2f2f] bg-[#18181b] px-7 py-3 text-base font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
       >
         Load sample dashboard
       </button>
@@ -110,11 +90,12 @@ function SingleMeetingState({ history, onSelect }) {
   const entry = history[0]
   return (
     <div className="space-y-3">
-      <StatsHero insights={normalizeInsights(null, history)} />
-      <section className={`${glassCard} p-4`} style={cardGlowStyle}>
+      <section className={`${glassCard} p-5`} style={cardGlowStyle}>
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/80">One meeting saved</p>
         <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-white">More meetings unlock trends</h2>
-        <p className={`mt-2 ${subtleText}`}>Health trends, owner load, recurring decisions, and themes appear after at least two saved meetings.</p>
+        <p className={`mt-2 ${subtleText}`}>
+          Health trends, owner load, recurring decisions, and cross-meeting patterns appear after at least two saved meetings.
+        </p>
         {entry && (
           <button
             type="button"
@@ -122,7 +103,9 @@ function SingleMeetingState({ history, onSelect }) {
             className="mt-4 w-full rounded-2xl border border-white/[0.1] bg-white/[0.035] p-3 text-left transition hover:border-cyan-200/30 hover:bg-white/[0.06]"
           >
             <p className="text-sm font-semibold text-white">{entry.title || 'Meeting'}</p>
-            <p className="mt-2 text-xs leading-5 text-white/58">{entry.result?.health_score?.verdict || entry.result?.summary || 'Meeting saved.'}</p>
+            <p className="mt-2 text-xs leading-5 text-white/58">
+              {entry.result?.health_score?.verdict || entry.result?.summary || 'Meeting saved.'}
+            </p>
           </button>
         )}
       </section>
@@ -130,47 +113,28 @@ function SingleMeetingState({ history, onSelect }) {
   )
 }
 
-export default function StatsCanvas({ history, result, crossMeetingInsights, loadFromHistory, loadSample }) {
-  const safeHistory = history || []
-  const insights = useMemo(() => normalizeInsights(crossMeetingInsights, safeHistory), [crossMeetingInsights, safeHistory])
-  const latestMeeting = safeHistory[0] || null
-
-  if (safeHistory.length === 0) {
-    return <FirstMeetingPlaceholder onLoadSample={loadSample} />
-  }
-
-  if (safeHistory.length === 1) {
-    return <SingleMeetingState history={safeHistory} onSelect={loadFromHistory} />
-  }
-
+function MultiMeetingHome({ history, onSelect }) {
   return (
-    <div className="space-y-3">
-      <StatsHero insights={insights} />
-
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <HealthTrend history={safeHistory} onSelect={loadFromHistory} />
-        <Vitals insights={insights} latestMeeting={latestMeeting} />
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <ActionBoard result={result || latestMeeting?.result} insights={insights} />
-        <Suspense fallback={<SkeletonCard lines={3} />}>
-          <OwnerLoad insights={insights} />
-        </Suspense>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Suspense fallback={<SkeletonCard lines={3} />}>
-          <DecisionMemory insights={insights} onSelect={loadFromHistory} />
-        </Suspense>
-        <Suspense fallback={<SkeletonCard lines={2} />}>
-          <ThemeChips insights={insights} />
-        </Suspense>
-      </div>
-
+    <div className="space-y-6">
+      <section className="flex flex-col items-center justify-center px-6 py-10 text-center">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/76">Dashboard</p>
+        <h1 className="mt-3 w-full max-w-4xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.05] text-white">
+          Welcome back.
+        </h1>
+        <p className="mt-4 max-w-md text-lg leading-7 text-white/58">
+          Pick up where you left off, or tap the brain icon to explore patterns across all {history.length} meetings.
+        </p>
+      </section>
       <Suspense fallback={<SkeletonCard lines={2} />}>
-        <MeetingsRail history={safeHistory} onSelect={loadFromHistory} />
+        <MeetingsRail history={history} onSelect={onSelect} />
       </Suspense>
     </div>
   )
+}
+
+export default function StatsCanvas({ history, loadFromHistory, loadSample }) {
+  const safeHistory = history || []
+  if (safeHistory.length === 0) return <FirstMeetingPlaceholder onLoadSample={loadSample} />
+  if (safeHistory.length === 1) return <SingleMeetingState history={safeHistory} onSelect={loadFromHistory} />
+  return <MultiMeetingHome history={safeHistory} onSelect={loadFromHistory} />
 }

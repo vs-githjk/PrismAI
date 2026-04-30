@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUpDown,
   Bolt,
+  Brain,
   DoorOpen,
   History,
+  LayoutDashboard,
   LogIn,
   Plus,
   Search,
@@ -23,6 +24,17 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
+import SkeletonCard from './SkeletonCard'
+
+const MeetingView = lazy(() => import('./dashboard/MeetingView'))
+const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
 const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90'
@@ -247,6 +259,9 @@ export default function DashboardMcpPage(props) {
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
+  const [activeView, setActiveView] = useState('home')
+  const [showGateDialog, setShowGateDialog] = useState(false)
+
   const historyCount = props.history?.length || 0
   const profileCloseTimer = useRef(null)
   const profileAreaRef = useRef(null)
@@ -254,6 +269,16 @@ export default function DashboardMcpPage(props) {
   const historySearchInputRef = useRef(null)
   const profileTriggerHovered = useRef(false)
   const profileContentHovered = useRef(false)
+  const isFirstRender = useRef(true)
+
+  // Auto-switch to meeting view when a new result is loaded (not on initial mount)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    if (props.result) setActiveView('meeting')
+  }, [props.result])
 
   useEffect(() => {
     if (!profileMenuOpen) return undefined
@@ -375,6 +400,33 @@ export default function DashboardMcpPage(props) {
     props.loadFromHistory?.(entry)
   }
 
+  // Wrapped handler: load meeting AND switch to meeting view
+  function handleSelectMeeting(entry) {
+    props.setShowHistory?.(false)
+    props.loadFromHistory?.(entry)
+    setActiveView('meeting')
+  }
+
+  function handleSwitchView() {
+    if (activeView === 'intelligence') {
+      setActiveView(props.result ? 'meeting' : 'home')
+    } else {
+      if (historyCount < 2) {
+        setShowGateDialog(true)
+      } else {
+        setActiveView('intelligence')
+      }
+    }
+  }
+
+  // Find the currently loaded meeting metadata (for MeetingView title/date)
+  const currentMeeting = useMemo(
+    () => (props.meetingId ? (props.history || []).find((m) => m.id === props.meetingId) || null : null),
+    [props.meetingId, props.history],
+  )
+
+  const inIntelligence = activeView === 'intelligence'
+
   return (
     <div className="landing-page dashboard-mcp-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
       <div className="dashboard-dot-field-bg" aria-hidden="true">
@@ -468,7 +520,7 @@ export default function DashboardMcpPage(props) {
                       </DropdownMenuItem>
                       <DropdownMenuItem className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]">
                         <Bolt className="h-4 w-4 shrink-0 text-white/62" aria-hidden="true" />
-                        Setttings
+                        Settings
                       </DropdownMenuItem>
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
@@ -502,13 +554,27 @@ export default function DashboardMcpPage(props) {
       )}
 
       <main className="relative z-10 mx-auto max-w-[92rem] px-5 pb-28 pt-5 sm:px-8">
-        <StatsCanvas
-          history={props.history}
-          result={props.result}
-          crossMeetingInsights={props.crossMeetingInsights}
-          loadFromHistory={props.loadFromHistory}
-          loadSample={props.loadDashboardSample || props.startDemo}
-        />
+        {activeView === 'home' && (
+          <StatsCanvas
+            history={props.history}
+            loadFromHistory={handleSelectMeeting}
+            loadSample={props.loadDashboardSample || props.startDemo}
+          />
+        )}
+        {activeView === 'meeting' && (
+          <Suspense fallback={<SkeletonCard lines={4} tall />}>
+            <MeetingView result={props.result} meeting={currentMeeting} />
+          </Suspense>
+        )}
+        {activeView === 'intelligence' && (
+          <Suspense fallback={<SkeletonCard lines={4} tall />}>
+            <IntelligenceView
+              history={props.history}
+              crossMeetingInsights={props.crossMeetingInsights}
+              onSelectMeeting={handleSelectMeeting}
+            />
+          </Suspense>
+        )}
       </main>
 
       <nav className="fixed bottom-5 left-1/2 z-30 h-[96px] w-[154px] -translate-x-1/2" aria-label="Dashboard shortcuts" data-node-id="4590:266">
@@ -606,6 +672,7 @@ export default function DashboardMcpPage(props) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
         <DropdownMenu open={newMeetingOpen} onOpenChange={setNewMeetingOpen}>
           <DropdownMenuTrigger asChild>
             <button type="button" className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
@@ -623,11 +690,39 @@ export default function DashboardMcpPage(props) {
             <NewMeetingPanel {...props} onClose={() => setNewMeetingOpen(false)} />
           </DropdownMenuContent>
         </DropdownMenu>
-        <button type="button" onClick={() => { window.location.href = '/' }} className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10`} aria-label="Switch to classic dashboard">
-          <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
+
+        <button
+          type="button"
+          onClick={handleSwitchView}
+          className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10 ${inIntelligence ? 'border-cyan-300/30 bg-cyan-300/[0.08] text-cyan-100' : ''}`}
+          aria-label={inIntelligence ? 'Back to meeting view' : 'Switch to cross-meeting intelligence'}
+        >
+          {inIntelligence
+            ? <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+            : <Brain className="h-4 w-4" aria-hidden="true" />
+          }
         </button>
       </nav>
 
+      <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
+        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-white">More meetings needed</DialogTitle>
+            <DialogDescription className="mt-2 text-sm leading-5 text-white/58">
+              Cross-meeting intelligence unlocks after you save at least 2 meetings. Analyze another meeting to get started.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowGateDialog(false)}
+              className="rounded-full border border-white/[0.12] bg-white/[0.06] px-4 py-1.5 text-sm font-semibold text-white/80 transition hover:border-white/[0.22] hover:bg-white/[0.10]"
+            >
+              Got it
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
