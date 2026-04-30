@@ -9,6 +9,7 @@ import {
   Search,
   Trash2,
   UserCircle,
+  X,
 } from 'lucide-react'
 import DotField from './DotField'
 import LogoIcon from './LogoIcon'
@@ -21,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
 const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90'
@@ -44,10 +46,207 @@ function IntegrationsIcon({ className = '' }) {
   )
 }
 
+function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, transcript }) {
+  if (loading) {
+    return (
+      <button type="button" onClick={cancelActiveAnalysis} className="w-full rounded-full border border-white/[0.10] py-2.5 text-sm font-semibold text-white/60 transition hover:bg-white/[0.05]">
+        Analyzing… (cancel)
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleAnalyzeClick}
+      disabled={!transcript}
+      className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Analyze Meeting
+    </button>
+  )
+}
+
+function NewMeetingPanel(props) {
+  const activeTab = props.inputTab || 'paste'
+  const botActive = props.botStatus && !['done', 'error'].includes(props.botStatus)
+
+  return (
+    <div className="dashboard-body-font w-full overflow-hidden rounded-2xl">
+      <div className="flex items-center justify-between px-4 pb-3 pt-3.5">
+        <p className="text-[13px] font-semibold text-white/90">New Meeting</p>
+        <button
+          type="button"
+          onClick={props.onClose}
+          className="flex h-6 w-6 items-center justify-center rounded-full text-white/40 transition hover:bg-white/[0.07] hover:text-white/70"
+          aria-label="Close"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={props.setInputTab} className="w-full">
+        <div className="px-4 pb-3">
+          <TabsList className="w-full">
+            <TabsTrigger value="paste" className="flex-1">Paste</TabsTrigger>
+            {props.micSupported && <TabsTrigger value="record" className="flex-1">Record</TabsTrigger>}
+            <TabsTrigger value="upload" className="flex-1">Upload</TabsTrigger>
+            <TabsTrigger value="join" className="flex-1">Join</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <div className="px-4 pb-4">
+          <TabsContent value="paste">
+            <div className="space-y-3">
+              <textarea
+                value={props.transcript || ''}
+                onChange={(e) => props.setTranscriptForTab(e.target.value, 'paste')}
+                placeholder="Paste your meeting transcript here..."
+                rows={7}
+                className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
+              />
+              {props.transcriptStats?.words > 0 && (
+                <p className="text-[10.5px] text-white/38">
+                  {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
+                </p>
+              )}
+              <AnalyzeButton {...props} />
+            </div>
+          </TabsContent>
+
+          {props.micSupported && (
+            <TabsContent value="record">
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={props.recording ? props.stopRecording : props.startRecording}
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                    props.recording
+                      ? 'border-red-400/30 bg-red-400/[0.09] text-red-300 hover:bg-red-400/[0.13]'
+                      : 'border-white/[0.10] bg-white/[0.05] text-white/80 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  {props.recording ? '⏹ Stop Recording' : '⏺ Start Recording'}
+                </button>
+                {props.transcript && (
+                  <textarea
+                    value={props.transcript}
+                    onChange={(e) => props.setTranscriptForTab(e.target.value, 'record')}
+                    rows={5}
+                    className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none"
+                  />
+                )}
+                {props.transcriptStats?.words > 0 && (
+                  <p className="text-[10.5px] text-white/38">{props.transcriptStats.words} words</p>
+                )}
+                {props.transcript && <AnalyzeButton {...props} />}
+              </div>
+            </TabsContent>
+          )}
+
+          <TabsContent value="upload">
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => props.fileInputRef?.current?.click()}
+                disabled={props.transcribing}
+                className="w-full rounded-xl border border-white/[0.10] bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/[0.08] disabled:opacity-50"
+              >
+                {props.transcribing ? '⏳ Transcribing…' : '📎 Choose Audio File'}
+              </button>
+              {props.transcript && (
+                <>
+                  <textarea
+                    value={props.transcript}
+                    onChange={(e) => props.setTranscriptForTab(e.target.value, 'upload')}
+                    rows={5}
+                    className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none"
+                  />
+                  {props.transcriptStats?.words > 0 && (
+                    <p className="text-[10.5px] text-white/38">{props.transcriptStats.words} words</p>
+                  )}
+                  <AnalyzeButton {...props} />
+                </>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="join">
+            <div className="space-y-3">
+              <input
+                type="url"
+                value={props.meetingUrl || ''}
+                onChange={(e) => props.setMeetingUrl(e.target.value)}
+                placeholder="Paste Zoom / Meet / Teams link..."
+                disabled={botActive}
+                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 disabled:opacity-50"
+              />
+
+              {botActive && (
+                <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.04] px-3 py-2">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+                  <p className="text-xs text-white/70">
+                    {props.botStatus === 'joining' ? 'Bot is joining the meeting…' :
+                     props.botStatus === 'recording' ? 'Bot is recording…' :
+                     'Meeting ended — analyzing…'}
+                  </p>
+                  <button type="button" onClick={props.cancelBot} className="ml-auto text-[10px] text-white/36 hover:text-white/60">
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {props.liveCommands?.length > 0 && (
+                <div className="max-h-28 space-y-1 overflow-y-auto">
+                  {props.liveCommands.slice(-5).map((cmd, i) => (
+                    <div key={i} className="rounded-lg border border-white/[0.05] bg-white/[0.03] px-3 py-1.5">
+                      <p className="text-[10.5px] font-semibold text-cyan-300/80">{cmd.speaker || 'Prism'}</p>
+                      <p className="text-[11px] text-white/60">{cmd.reply || cmd.command}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {props.botError && (
+                <p className="rounded-xl border border-red-400/20 bg-red-400/[0.07] px-3 py-2 text-xs text-red-300">{props.botError}</p>
+              )}
+
+              {props.botStatus === 'done' && props.result && (
+                <p className="text-center text-xs font-semibold text-cyan-300">✓ Analysis complete — view results above</p>
+              )}
+              {props.botStatus === 'done' && props.botTranscriptReady && !props.result && (
+                <button
+                  type="button"
+                  onClick={() => { props.setInputTab('paste'); props.handleAnalyzeClick() }}
+                  className="w-full rounded-xl bg-cyan-400/[0.12] py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/[0.18]"
+                >
+                  Transcript ready — analyze now
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={props.joinMeeting}
+                disabled={!props.meetingUrl || botActive}
+                className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {props.botStatus === 'joining' ? 'Joining…' :
+                 props.botStatus === 'recording' ? 'Recording…' :
+                 props.botStatus === 'processing' ? 'Processing…' :
+                 'Join Meeting'}
+              </button>
+            </div>
+          </TabsContent>
+        </div>
+      </Tabs>
+    </div>
+  )
+}
+
 export default function DashboardMcpPage(props) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
+  const [newMeetingOpen, setNewMeetingOpen] = useState(false)
   const historyCount = props.history?.length || 0
   const profileCloseTimer = useRef(null)
   const profileAreaRef = useRef(null)
@@ -407,9 +606,23 @@ export default function DashboardMcpPage(props) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <button type="button" onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); props.clearWorkspaceState() }} className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
-          <Plus className="h-[19px] w-[19px]" aria-hidden="true" />
-        </button>
+        <DropdownMenu open={newMeetingOpen} onOpenChange={setNewMeetingOpen}>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
+              <Plus className="h-[19px] w-[19px]" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side="top"
+            align="center"
+            sideOffset={12}
+            modal={false}
+            className="dashboard-body-font w-[340px] rounded-2xl border border-white/[0.10] bg-[#0f0f11] p-0 shadow-2xl"
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <NewMeetingPanel {...props} onClose={() => setNewMeetingOpen(false)} />
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button type="button" onClick={() => { window.location.href = '/' }} className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10`} aria-label="Switch to classic dashboard">
           <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
         </button>
