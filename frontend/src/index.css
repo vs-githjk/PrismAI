@@ -3,6 +3,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/inter";
 @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -1060,6 +1061,15 @@ h1, h2, h3, .font-display {
 .dashboard-mcp-page {
   background: var(--landing-bg);
   background-image: none;
+  font-family: "General Sans", "Geist Variable", "Inter Variable", Inter, "Segoe UI", sans-serif;
+}
+
+.dashboard-mcp-page :is(h1, h2, h3, .dashboard-heading) {
+  font-family: "Rubik", "General Sans", "Geist Variable", "Inter Variable", Inter, sans-serif;
+}
+
+.dashboard-body-font {
+  font-family: "General Sans", "Geist Variable", "Inter Variable", Inter, "Segoe UI", sans-serif;
 }
 
 .dashboard-dot-field-bg {

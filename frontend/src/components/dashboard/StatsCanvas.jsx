@@ -1,4 +1,5 @@
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense, useId, useMemo } from 'react'
+import { motion } from 'motion/react'
 import { normalizeInsights } from '../../lib/insights'
 import SkeletonCard from '../SkeletonCard'
 import ActionBoard from './ActionBoard'
@@ -12,7 +13,74 @@ const DecisionMemory = lazy(() => import('./DecisionMemory'))
 const ThemeChips = lazy(() => import('./ThemeChips'))
 const MeetingsRail = lazy(() => import('./MeetingsRail'))
 
+function GradientTracing({
+  width,
+  height,
+  gradientColors = ['#22D3EE', '#22D3EE', '#22D3EE'],
+  animationDuration = 2,
+  strokeWidth = 2,
+  path = `M${width / 2},0 L${width / 2},${height}`,
+}) {
+  const id = useId().replace(/:/g, '')
+  const gradientId = `pulse-${id}`
+  const fadeId = `pulse-fade-${id}`
+  const maskId = `pulse-mask-${id}`
+
+  return (
+    <div className="relative" style={{ width, height }}>
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        fill="none"
+      >
+        <path
+          d={path}
+          stroke={`url(#${gradientId})`}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+          mask={`url(#${maskId})`}
+        />
+        <defs>
+          <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={width} height={height}>
+            <rect width={width} height={height} fill={`url(#${fadeId})`} />
+          </mask>
+          <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2={height} gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="white" stopOpacity="0" />
+            <stop offset="0.12" stopColor="white" stopOpacity="1" />
+            <stop offset="0.88" stopColor="white" stopOpacity="1" />
+            <stop offset="1" stopColor="white" stopOpacity="0" />
+          </linearGradient>
+          <motion.linearGradient
+            animate={{
+              y1: [-height, height],
+              y2: [0, height * 2],
+            }}
+            transition={{
+              duration: animationDuration,
+              repeat: Infinity,
+              ease: 'linear',
+            }}
+            id={gradientId}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0" stopColor={gradientColors[0]} stopOpacity="0" />
+            <stop offset="0.18" stopColor={gradientColors[0]} stopOpacity="0" />
+            <stop offset="0.5" stopColor={gradientColors[1]} stopOpacity="1" />
+            <stop offset="0.82" stopColor={gradientColors[2]} stopOpacity="0" />
+            <stop offset="1" stopColor={gradientColors[2]} stopOpacity="0" />
+          </motion.linearGradient>
+        </defs>
+      </svg>
+    </div>
+  )
+}
+
 function FirstMeetingPlaceholder({ onLoadSample }) {
+  const guideHeight = 300
+  const guidePath = `M12 0 L12 ${guideHeight}`
+
   return (
     <section className="flex min-h-[420px] flex-col items-center justify-center px-6 py-12 text-center">
       <h1 className="w-full max-w-6xl text-[clamp(2.35rem,5.6vw,4.75rem)] font-semibold leading-[1.02] text-white">
@@ -28,6 +96,12 @@ function FirstMeetingPlaceholder({ onLoadSample }) {
       >
         Load sample dashboard
       </button>
+      <div className="mt-5 flex flex-col items-center gap-2 text-sm font-medium text-cyan-50/78">
+        <span>Or start fresh with the + below</span>
+        <div className="flex justify-center">
+          <GradientTracing width={24} height={guideHeight} strokeWidth={1.25} path={guidePath} />
+        </div>
+      </div>
     </section>
   )
 }

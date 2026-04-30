@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowUpDown,
   Bolt,
   DoorOpen,
   History,
   LogIn,
   Plus,
-  RotateCcw,
+  Search,
+  Trash2,
   UserCircle,
 } from 'lucide-react'
 import DotField from './DotField'
@@ -22,6 +24,14 @@ import {
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
 const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90'
+const darkCircleButtonClass = 'flex items-center justify-center rounded-full border border-[#2f2f2f] bg-[#18181b] text-[#f2f2f2] shadow-xl transition-all hover:bg-[#27272a] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/18 data-[state=open]:bg-[#27272a]'
+
+function formatHistoryDate(date) {
+  if (!date) return 'Saved meeting'
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return 'Saved meeting'
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
 function IntegrationsIcon({ className = '' }) {
   return (
@@ -37,9 +47,12 @@ function IntegrationsIcon({ className = '' }) {
 export default function DashboardMcpPage(props) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
+  const [historySearchOpen, setHistorySearchOpen] = useState(false)
+  const historyCount = props.history?.length || 0
   const profileCloseTimer = useRef(null)
   const profileAreaRef = useRef(null)
   const profileContentRef = useRef(null)
+  const historySearchInputRef = useRef(null)
   const profileTriggerHovered = useRef(false)
   const profileContentHovered = useRef(false)
 
@@ -72,6 +85,45 @@ export default function DashboardMcpPage(props) {
     return () => window.removeEventListener('pointermove', handlePointerMove)
   }, [profileMenuOpen])
 
+  useEffect(() => {
+    if (!props.showHistory) setHistorySearchOpen(false)
+  }, [props.showHistory])
+
+  useEffect(() => {
+    if (props.showHistory && historySearchOpen) {
+      historySearchInputRef.current?.focus()
+    }
+  }, [historySearchOpen, props.showHistory])
+
+  const filteredHistory = useMemo(() => {
+    const query = `${props.historySearch || ''}`.trim().toLowerCase()
+    const entries = props.history || []
+    if (!query) return entries
+
+    return entries.filter((entry) => {
+      const result = entry?.result || {}
+      const actionItems = (result.action_items || [])
+        .map((item) => [item.task, item.owner, item.due].filter(Boolean).join(' '))
+        .join(' ')
+      const decisions = (result.decisions || [])
+        .map((item) => [item.decision, item.owner].filter(Boolean).join(' '))
+        .join(' ')
+      const searchable = [
+        entry?.title,
+        entry?.transcript,
+        formatHistoryDate(entry?.date),
+        result.summary,
+        result.health_score?.verdict,
+        result.sentiment?.overall,
+        result.sentiment?.notes,
+        actionItems,
+        decisions,
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      return searchable.includes(query)
+    })
+  }, [props.history, props.historySearch])
+
   function openProfileMenu() {
     if (profileCloseTimer.current) {
       clearTimeout(profileCloseTimer.current)
@@ -99,8 +151,33 @@ export default function DashboardMcpPage(props) {
     })
   }
 
+  function handleHistorySearchChange(event) {
+    props.setHistorySearch?.(event.target.value)
+  }
+
+  function toggleHistorySearch() {
+    setHistorySearchOpen((open) => {
+      if (open) props.setHistorySearch?.('')
+      return !open
+    })
+  }
+
+  function handleDeleteHistoryEntry(entry) {
+    props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
+    props.apiFetch?.(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+    if (entry.id === props.meetingId) {
+      sessionStorage.setItem('prism_new_meeting', '1')
+      props.clearWorkspaceState?.()
+    }
+  }
+
+  function handleSelectHistoryEntry(entry) {
+    props.setShowHistory?.(false)
+    props.loadFromHistory?.(entry)
+  }
+
   return (
-    <div className="landing-page dashboard-mcp-page min-h-dvh overflow-x-hidden font-['Rubik',sans-serif] text-[color:var(--landing-text)]">
+    <div className="landing-page dashboard-mcp-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
       <div className="dashboard-dot-field-bg" aria-hidden="true">
         <div className="dashboard-dot-field-frame">
           <DotField
@@ -165,7 +242,7 @@ export default function DashboardMcpPage(props) {
                         closeProfileMenuSoon()
                       }}
                       onPointerDown={toggleProfileMenuPinned}
-                      className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3f3f46] bg-[#27272a] text-[#f2f2f2] shadow-[0_10px_28px_rgba(0,0,0,0.3)] transition hover:bg-[#323238] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/18 data-[state=open]:bg-[#323238]"
+                      className={`${darkCircleButtonClass} h-9 w-9 shadow-[0_10px_28px_rgba(0,0,0,0.3)]`}
                       aria-label="Open profile menu"
                     >
                       <UserCircle className="h-5.5 w-5.5" aria-hidden="true" />
@@ -174,7 +251,7 @@ export default function DashboardMcpPage(props) {
                   <DropdownMenuContent
                     ref={profileContentRef}
                     align="end"
-                    className="w-52 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+                    className="dashboard-body-font w-52 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
                     onPointerEnter={() => {
                       profileContentHovered.current = true
                       openProfileMenu()
@@ -206,7 +283,7 @@ export default function DashboardMcpPage(props) {
             ) : (
               <button
                 type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3f3f46] bg-[#27272a] text-[#f2f2f2] shadow-[0_10px_28px_rgba(0,0,0,0.3)] transition hover:bg-[#323238] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/18"
+                className={`${darkCircleButtonClass} h-9 w-9 shadow-[0_10px_28px_rgba(0,0,0,0.3)]`}
                 aria-label="Profile"
               >
                 <UserCircle className="h-5.5 w-5.5" aria-hidden="true" />
@@ -236,20 +313,108 @@ export default function DashboardMcpPage(props) {
       </main>
 
       <nav className="fixed bottom-5 left-1/2 z-30 h-[96px] w-[154px] -translate-x-1/2" aria-label="Dashboard shortcuts" data-node-id="4590:266">
-        <button type="button" onClick={() => props.setShowHistory((value) => !value)} className="absolute bottom-4 left-1 flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.16] bg-[#101010]/95 text-white/72 shadow-xl transition hover:border-cyan-200/40 hover:bg-[#151515] hover:text-cyan-50" aria-label="Toggle history">
-          <History className="h-4 w-4" aria-hidden="true" />
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[132px] w-[190px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 blur-2xl"
+          style={{
+            background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.48) 38%, rgba(0,0,0,0.18) 64%, transparent 78%)',
+          }}
+          aria-hidden="true"
+        />
+        <div className="absolute bottom-4 left-1" data-history-panel>
+          <DropdownMenu modal={false} open={props.showHistory} onOpenChange={props.setShowHistory}>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className={`${darkCircleButtonClass} relative h-10 w-10`} aria-label="Open meeting history">
+                <History className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="left"
+              align="end"
+              alignOffset={52}
+              sideOffset={8}
+              collisionPadding={16}
+              className="dashboard-body-font w-[min(16.5rem,calc(100vw-2rem))] translate-x-1 -translate-y-4 overflow-hidden rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5 text-white shadow-2xl shadow-black/50"
+              data-history-panel
+              onCloseAutoFocus={(event) => event.preventDefault()}
+            >
+              <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-2">
+                <p className="text-[13px] font-semibold leading-5 text-white/90">History</p>
+                <button
+                  type="button"
+                  onClick={toggleHistorySearch}
+                  aria-expanded={historySearchOpen}
+                  aria-controls="dashboard-history-search-wrap"
+                  aria-label="Search history"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-white/48 transition hover:border-cyan-200/24 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/18 data-[state=open]:text-cyan-100"
+                  data-state={historySearchOpen ? 'open' : 'closed'}
+                >
+                  <Search className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+
+              {props.user ? (
+                <>
+                  {historySearchOpen && (
+                    <div id="dashboard-history-search-wrap" className="px-1.5 pb-1.5">
+                      <label className="sr-only" htmlFor="dashboard-history-search">Search meetings</label>
+                      <div className="flex h-7 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.035] px-2 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.05] focus-within:ring-2 focus-within:ring-cyan-300/10">
+                        <Search className="h-3 w-3 shrink-0 text-white/36" aria-hidden="true" />
+                        <input
+                          ref={historySearchInputRef}
+                          id="dashboard-history-search"
+                          value={props.historySearch || ''}
+                          onChange={handleHistorySearchChange}
+                          placeholder="Search meetings..."
+                          className="h-full min-w-0 flex-1 bg-transparent text-[11px] font-medium text-white/80 outline-none placeholder:font-normal placeholder:text-white/32"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="max-h-[min(12rem,calc(100dvh-15rem))] space-y-1 overflow-y-auto">
+                    {filteredHistory.length > 0 ? (
+                      filteredHistory.map((entry) => (
+                        <div key={entry.id} className="group flex items-center rounded-md pr-1 transition hover:bg-cyan-300/[0.055] focus-within:bg-cyan-300/[0.075]">
+                          <button type="button" onClick={() => handleSelectHistoryEntry(entry)} className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-left focus-visible:outline-none">
+                            <p className="truncate text-[13px] font-medium leading-5 text-white/88 group-hover:text-white">{entry.title || 'Meeting'}</p>
+                            <p className="text-[10.5px] font-normal leading-4 text-white/44">{formatHistoryDate(entry.date)}</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteHistoryEntry(entry)}
+                            aria-label={`Delete ${entry.title || 'meeting'}`}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center text-white/30 opacity-100 transition hover:text-red-300 focus-visible:text-red-300 focus-visible:outline-none sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="px-4 py-6 text-center text-xs leading-5 text-white/46">
+                        {props.historySearch ? 'No matching meetings.' : 'Saved meetings will appear here.'}
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="px-4 py-6 text-center">
+                  <p className="text-xs font-medium text-white/72">Sign in to view meeting history.</p>
+                  <button type="button" onClick={props.signInWithTestAccount || props.signInWithGoogle} className="mt-3 inline-flex h-9 items-center justify-center rounded-full border border-cyan-200/20 bg-cyan-300/[0.08] px-4 text-xs font-semibold text-cyan-100 transition hover:border-cyan-200/36 hover:bg-cyan-300/[0.12] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/18">
+                    Sign in
+                  </button>
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <button type="button" onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); props.clearWorkspaceState() }} className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
+          <Plus className="h-[19px] w-[19px]" aria-hidden="true" />
         </button>
-        <button type="button" onClick={() => { sessionStorage.setItem('prism_new_meeting', '1'); props.clearWorkspaceState() }} className="absolute bottom-7 left-1/2 flex h-16 w-16 -translate-x-1/2 items-center justify-center rounded-full border border-cyan-100/42 bg-cyan-300/18 text-cyan-50 shadow-xl shadow-cyan-950/35 transition hover:bg-cyan-300/26" aria-label="New meeting">
-          <Plus className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <button type="button" onClick={() => { window.location.href = '/' }} className="absolute bottom-4 right-1 flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.16] bg-[#101010]/95 text-white/72 shadow-xl transition hover:border-cyan-200/40 hover:bg-[#151515] hover:text-cyan-50" aria-label="Switch to classic dashboard">
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+        <button type="button" onClick={() => { window.location.href = '/' }} className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10`} aria-label="Switch to classic dashboard">
+          <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
         </button>
       </nav>
 
-      <div className="fixed bottom-4 right-4 z-30 hidden rounded-full border border-cyan-200/35 bg-cyan-300/16 px-3 py-2 text-xs font-semibold text-cyan-50 shadow-2xl backdrop-blur-xl lg:block">
-        Dashboard MCP
-      </div>
     </div>
   )
 }

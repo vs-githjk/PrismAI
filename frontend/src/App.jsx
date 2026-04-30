@@ -1986,7 +1986,18 @@ export default function App() {
       share_token: `sample${index}`,
     }))
 
-    setIsDemoMode(false)
+    setIsDemoMode(true)
+    setDemoChatOpen(false)
+    setInputTab('paste')
+    setMobileTab('results')
+    setLoading(false)
+    setError(null)
+    setAnalysisTime(null)
+    setShowTimeSaved(false)
+    setCrossMeetingInsights(null)
+    setShowHistory(false)
+    clearTimeout(historySearchDebounceRef.current)
+    setHistorySearch('')
     setHistory(entries)
     setTranscript(entries[0].transcript)
     setTranscriptDrafts((prev) => ({ ...prev, paste: entries[0].transcript }))
@@ -2334,7 +2345,13 @@ export default function App() {
           history={history}
           showHistory={showHistory}
           setShowHistory={setShowHistory}
+          historySearch={historySearch}
+          setHistorySearch={setHistorySearch}
+          historySearchDebounceRef={historySearchDebounceRef}
+          setHistory={setHistory}
           loadFromHistory={loadFromHistory}
+          apiFetch={apiFetch}
+          hasMeaningfulResult={hasMeaningfulResult}
           crossMeetingInsights={crossMeetingInsights}
           sessionId={sessionId}
           meetingId={meetingId}
