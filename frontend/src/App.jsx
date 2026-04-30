@@ -975,6 +975,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
             <button type="button" className="btn-primary landing-button-primary" onClick={() => setSignupOpen(true)}>Get started</button>
             <span className="cta-or">or</span>
             <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
+            <span className="cta-or">or</span>
+            <button type="button" className="btn-ghost landing-button-secondary" onClick={() => window.location.href = '/dashboard-mcp'}>View dashboard</button>
           </div>
         </div>
 
