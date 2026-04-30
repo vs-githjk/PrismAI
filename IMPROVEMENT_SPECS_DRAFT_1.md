@@ -15,7 +15,7 @@
 | Share Page Overhaul | Sticky branded header, meeting title/date/AgentTags, bottom CTA block. OG + Twitter meta tags injected on share load. `document.title` updated. |
 | Time Saved Banner | Dismissible emerald banner after `[DONE]`. Shows "~X min saved · analyzed in Ys". Share button copies pre-written tweet. |
 | Health Score Count-Up | `useCountUp` hook with rAF + ease-out cubic. Drives circle arc, number display, and all 3 breakdown bars simultaneously. |
-| Workspace Visual Pass | Premium glass surfaces, ambient backgrounds, richer result presentation, `PrismStoryPanel`, `PrismSignatureScene`, stronger motion language, and trust framing across cards. |
+| Workspace Visual Pass | Superseded visual direction: move away from site-wide glass surfaces and ambient glass backgrounds. Current target is shadcn-style dark surfaces with crisp borders, restrained elevation, and the existing cyan/sky accent used for primary actions, focus, active states, and selective CTA highlights. |
 | Landing Page Redesign | More cinematic prism metaphor, stronger hero composition, animated transcript-to-intelligence transformation, livelier CTA treatment, and laptop-height fit improvements. |
 | Landing Refresh Persistence | User now stays on landing when refreshing from landing, and stays in-app when refreshing after entering the workspace. |
 | Join Meeting Completion UX | Bot flow now preserves the transcript on completion and gives a clearer next action (`view results` or `analyze now`). |
@@ -31,6 +31,8 @@
 ### #1 — Final Frontend Fit & UX Sweep
 
 **What:** Finish the remaining rough edges in the frontend so the product feels consistent and fully intentional across real laptop/mobile usage.
+
+**Current visual target:** shadcn + the app's existing cyan/sky accent. Avoid full-site glassmorphism. Reserve any glass-like treatment for small accents such as CTA emphasis, selected/focused controls, or short-lived highlights.
 
 **Specific changes (in order of impact):**
 

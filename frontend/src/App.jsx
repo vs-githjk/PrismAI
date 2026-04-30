@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, Component, Suspense, lazy } from 'react'
 import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
-import RotatingText from './components/RotatingText'
+import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
 import AgentShowcase from './components/AgentShowcase'
 import PricingSection from './components/PricingSection'
@@ -56,6 +56,15 @@ class ErrorBoundary extends Component {
 }
 
 const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
+const TEST_AUTH_SESSION = {
+  access_token: 'local-test-session',
+  user: {
+    id: 'test-account',
+    email: 'test@prismai.local',
+    user_metadata: { name: 'Prism Test' },
+    app_metadata: { provider: 'test' },
+  },
+}
 
 function DeferredCardFallback({ lines = 2 }) {
   return (
@@ -933,18 +942,19 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         {/* Hero content */}
         <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
           {/* Rotating pain-point text */}
-          <div className="w-full flex items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-            <RotatingText
+          <div className="w-full flex translate-y-[5vh] items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            <TextRotate
               texts={HERO_SENTENCES}
-              rotationInterval={4000}
-              staggerFrom="last"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '-120%' }}
+              rotationInterval={3600}
+              staggerFrom="first"
               staggerDuration={0.012}
-              splitLevelClassName="overflow-hidden pb-0.5"
-              transition={{ type: 'spring', damping: 32, stiffness: 280 }}
-              mainClassName="text-4xl sm:text-5xl lg:text-6xl font-bold text-white/85 leading-tight tracking-tight justify-center"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+              splitBy="words"
+              mainClassName="min-h-[6.75rem] w-full max-w-[min(100%,84rem)] justify-center text-center text-[clamp(1.25rem,4.8vw,3.75rem)] font-bold leading-tight tracking-tight text-white/85 sm:min-h-[7.5rem] lg:min-h-[8.75rem]"
+              splitLevelClassName="overflow-hidden pb-1"
               elementLevelClassName="font-bold"
               style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontWeight: 700 }}
             />
@@ -1079,6 +1089,7 @@ export default function App() {
   const historySearchDebounceRef = useRef(null)
   const previousUserRef = useRef(null)
   const user = authSession?.user || null
+  const isTestAccount = user?.id === 'test-account'
 
   useEffect(() => {
     if (INITIAL_SHARE_TOKEN || !authReady) return // skip auto-load for shared links
@@ -1086,6 +1097,17 @@ export default function App() {
     previousUserRef.current = user
 
     if (!user) {
+      setHistory([])
+      setCrossMeetingInsights(null)
+      setInitialMessages([])
+      setMeetingId(null)
+      setShareToken(null)
+      setShowHistory(false)
+      setShareCopied(false)
+      return
+    }
+
+    if (isTestAccount) {
       setHistory([])
       setCrossMeetingInsights(null)
       setInitialMessages([])
@@ -1142,10 +1164,10 @@ export default function App() {
       .catch(() => {})
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, user?.id])
+  }, [authReady, user?.id, isTestAccount])
 
   useEffect(() => {
-    if (!user || history.length < 2) {
+    if (!user || isTestAccount || history.length < 2) {
       setCrossMeetingInsights(null)
       return
     }
@@ -1156,18 +1178,19 @@ export default function App() {
         if (data && typeof data === 'object') setCrossMeetingInsights(data)
       })
       .catch(() => {})
-  }, [user?.id, history])
+  }, [user?.id, isTestAccount, history])
 
   useEffect(() => {
     if (!user) { setCalendarConnected(false); return }
+    if (isTestAccount) { setCalendarConnected(false); return }
     apiFetch('/calendar/status')
       .then(r => r.ok ? r.json() : { connected: false })
       .then(d => setCalendarConnected(Boolean(d.connected)))
       .catch(() => {})
-  }, [user?.id])
+  }, [user?.id, isTestAccount])
 
   useEffect(() => {
-    if (!calendarConnected || !user) {
+    if (!calendarConnected || !user || isTestAccount) {
       setNextUpcomingMeeting(null)
       return
     }
@@ -1193,7 +1216,7 @@ export default function App() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [calendarConnected, user?.id])
+  }, [calendarConnected, user?.id, isTestAccount])
 
   // pendingAutoJoinUrl: set by polling effect, consumed by an effect after joinMeeting is defined
   const pendingAutoJoinRef = useRef(null)
@@ -1215,7 +1238,7 @@ export default function App() {
   }))
   // Load tool settings from backend when signed in
   useEffect(() => {
-    if (!user) return
+    if (!user || isTestAccount) return
     apiFetch('/user-settings').then(async (res) => {
       if (!res.ok) return
       const data = await res.json()
@@ -1225,7 +1248,7 @@ export default function App() {
         slack_bot_token: data.slack_bot_token || '',
       }))
     }).catch(() => {})
-  }, [user?.id])
+  }, [user?.id, isTestAccount])
 
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
@@ -1328,6 +1351,15 @@ export default function App() {
       },
     })
     if (authError) setError(authError.message)
+  }
+
+  const signInWithTestAccount = () => {
+    setError(null)
+    setAuthReady(true)
+    setAuthSession(TEST_AUTH_SESSION)
+    setCalendarConnected(false)
+    setWorkspaceToast('Loaded test account.')
+    setTimeout(() => setWorkspaceToast(null), 2500)
   }
 
   // Direct Google OAuth PKCE flow for calendar (bypasses Supabase session)
@@ -1852,6 +1884,121 @@ export default function App() {
     runAnalysis([], t, true)
   }
 
+  const loadDashboardSample = () => {
+    const now = Date.now()
+    const sampleResults = [
+      {
+        title: 'Q2 roadmap planning',
+        transcript: DEMO_TRANSCRIPTS[0],
+        result: {
+          summary: 'The team narrowed Q2 priorities to checkout improvements and mobile redesign, moving analytics to Q3. Follow-up ownership is clear across roadmap, client messaging, and feature specs.',
+          action_items: [
+            { task: 'Update the roadmap with analytics moved to Q3', owner: 'Mike', due: 'Thursday EOD' },
+            { task: 'Draft enterprise client message about mobile redesign timing', owner: 'Lisa', due: 'Wednesday' },
+            { task: 'Finalize feature specs for marketing launch campaign', owner: 'Mike', due: 'Next Friday' },
+          ],
+          decisions: [
+            { decision: 'Prioritize checkout improvements and mobile redesign for Q2', owner: 'Sarah', importance: 1 },
+            { decision: 'Move analytics dashboard to Q3', owner: 'Mike', importance: 2 },
+          ],
+          sentiment: { overall: 'positive', score: 78, arc: 'aligned', notes: 'Constructive disagreement resolved into clear tradeoffs.' },
+          health_score: { score: 84, verdict: 'Strong prioritization with clear owners and near-term follow-ups.', badges: ['Clear Decisions', 'Action-Oriented'], breakdown: { clarity: 88, action_orientation: 86, engagement: 78 } },
+        },
+      },
+      {
+        title: 'Payment outage postmortem',
+        transcript: DEMO_TRANSCRIPTS[1],
+        result: {
+          summary: 'The outage was traced to Redis connection pool exhaustion after an infra config change. The team agreed on alerting, review checklist updates, and a runbook.',
+          action_items: [
+            { task: 'Set alert for connection pool utilization above 70 percent', owner: 'Priya', due: 'End of week' },
+            { task: 'Update infra change review checklist', owner: 'Marcus', due: 'Thursday' },
+            { task: 'Draft runbook for connection pool exhaustion', owner: 'Priya', due: 'Next Monday' },
+          ],
+          decisions: [
+            { decision: 'Connection limit config changes require a second on-call reviewer', owner: 'Alex', importance: 1 },
+          ],
+          sentiment: { overall: 'tense', score: 58, arc: 'recovered', notes: 'The incident was preventable, but the group landed concrete safeguards.' },
+          health_score: { score: 72, verdict: 'Useful postmortem with specific safeguards, though tension was present.', badges: ['Clear Owners', 'Risk Surfaced'], breakdown: { clarity: 76, action_orientation: 82, engagement: 62 } },
+        },
+      },
+      {
+        title: 'Sales strategy pipeline review',
+        transcript: DEMO_TRANSCRIPTS[2],
+        result: {
+          summary: 'The team reviewed Q1 miss drivers and set Q2 sales improvements around legal templates, competitor battle cards, MEDDIC certification, and weekly pipeline reviews.',
+          action_items: [
+            { task: 'Work with legal on standard contract template', owner: 'Rachel', due: 'End of April' },
+            { task: 'Build competitive battle card for top two competitors', owner: 'Carlos', due: 'Next Friday' },
+            { task: 'Complete MEDDIC certification', owner: 'Carlos', due: 'April 30' },
+            { task: 'Complete MEDDIC certification', owner: 'Rachel', due: 'April 30' },
+          ],
+          decisions: [
+            { decision: 'Target 15 net-new enterprise logos in Q2', owner: 'Diana', importance: 1 },
+            { decision: 'Review pipeline health every Monday at 9am', owner: 'Diana', importance: 2 },
+          ],
+          sentiment: { overall: 'neutral', score: 66, arc: 'focused', notes: 'Clear pipeline pressure with pragmatic next steps.' },
+          health_score: { score: 78, verdict: 'Focused operational review with measurable goals and owners.', badges: ['Measurable Goals', 'Action-Oriented'], breakdown: { clarity: 80, action_orientation: 84, engagement: 70 } },
+        },
+      },
+      {
+        title: 'Q3 budget alignment',
+        transcript: DEMO_TRANSCRIPTS[3],
+        result: {
+          summary: 'The budget conversation exposed unclear data, a broken spreadsheet, missing distribution lists, and no concrete decision beyond reconvening later.',
+          action_items: [
+            { task: 'Fix the spreadsheet formula error', owner: 'Greg', due: '' },
+            { task: 'Forward prior budget scope-change email', owner: 'Kevin', due: '' },
+            { task: 'Review team spend before reconvening', owner: '', due: 'This week' },
+          ],
+          decisions: [],
+          sentiment: { overall: 'tense', score: 34, arc: 'frustrated', notes: 'Confusion and unclear ownership blocked useful alignment.' },
+          health_score: { score: 29, verdict: 'Low-clarity meeting with unresolved numbers, unclear agenda, and weak ownership.', badges: ['Needs Follow-Up', 'Unclear Decisions'], breakdown: { clarity: 22, action_orientation: 34, engagement: 38 } },
+        },
+      },
+      {
+        title: 'Onboarding research readout',
+        transcript: DEMO_TRANSCRIPTS[4],
+        result: {
+          summary: 'Research found onboarding drop-off around integration admin access. The team split immediate tooltip/email-template fixes from a later magic-link flow.',
+          action_items: [
+            { task: 'Scope magic link flow for admin invitations', owner: 'Sam', due: 'Next Wednesday' },
+            { task: 'Write tooltip copy and updated step 3 instructions', owner: 'Tyler', due: 'Friday' },
+            { task: 'Share pricing reassurance mockup in Figma', owner: 'Casey', due: 'Today' },
+          ],
+          decisions: [
+            { decision: 'Ship short-term admin help tooltip and email template', owner: 'Morgan', importance: 1 },
+            { decision: 'Retest with five users after tooltip change goes live', owner: 'Morgan', importance: 2 },
+          ],
+          sentiment: { overall: 'positive', score: 82, arc: 'collaborative', notes: 'Research translated into both quick wins and strategic follow-up.' },
+          health_score: { score: 88, verdict: 'Excellent research readout with clear evidence, sequencing, and owners.', badges: ['Evidence-Based', 'Clear Owners'], breakdown: { clarity: 90, action_orientation: 88, engagement: 86 } },
+        },
+      },
+    ]
+
+    const entries = sampleResults.map((item, index) => ({
+      id: now - index * 86400000,
+      date: new Date(now - index * 86400000).toISOString(),
+      transcript: item.transcript,
+      result: item.result,
+      title: item.title,
+      score: item.result.health_score.score,
+      share_token: `sample${index}`,
+    }))
+
+    setIsDemoMode(false)
+    setHistory(entries)
+    setTranscript(entries[0].transcript)
+    setTranscriptDrafts((prev) => ({ ...prev, paste: entries[0].transcript }))
+    setResult(entries[0].result)
+    setMeetingId(entries[0].id)
+    setShareToken(entries[0].share_token)
+    setInitialMessages([])
+    setSessionId((s) => s + 1)
+    setWorkspaceToast('Loaded sample dashboard.')
+    setTimeout(() => setWorkspaceToast(null), 2500)
+  }
+
   const cancelActiveAnalysis = () => {
     analysisRunIdRef.current += 1
     analysisAbortRef.current?.abort()
@@ -1884,7 +2031,12 @@ export default function App() {
     setDemoChatOpen(false)
     setIsDemoMode(false)
     setHistory([])
-    if (supabase) await supabase.auth.signOut()
+    if (isTestAccount) {
+      setAuthSession(null)
+      setAuthReady(true)
+    } else if (supabase) {
+      await supabase.auth.signOut()
+    }
   }
 
   const exitDemoMode = () => {
@@ -2156,7 +2308,9 @@ export default function App() {
           authReady={authReady}
           user={user}
           signInWithGoogle={signInWithGoogle}
+          signInWithTestAccount={signInWithTestAccount}
           signOut={signOut}
+          loadDashboardSample={loadDashboardSample}
           isDemoMode={isDemoMode}
           exitDemoMode={exitDemoMode}
           inputTab={inputTab}

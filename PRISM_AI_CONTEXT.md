@@ -30,7 +30,21 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | Frontend Hosting | Vercel |
 | Backend Hosting | Render.com free tier |
 | Landing WebGL | `ogl` (Prism component) + `three.js` (LightPillar component) |
-| Fonts | Space Grotesk + Manrope via Google Fonts |
+| Fonts | Inter/Nunito/Sora in the Vite app; Geist/Inter packages are also available |
+
+---
+
+## Current Design Direction
+
+PrismAI should read as a shadcn-style product UI with the existing cyan/sky accent, not as a glassmorphism website.
+
+**Core direction:**
+- Use shadcn/radix patterns first: solid dark surfaces, crisp borders, clear focus rings, consistent radius, restrained shadow, and predictable controls.
+- Keep the current cyan/sky accent family as the brand accent: `#22d3ee`, `#67e8f9`, Tailwind `cyan-*` / `sky-*`, and existing `rgba(14,165,233,...)` states.
+- Use the accent for primary CTAs, active navigation, selected states, focus rings, badges, and key data highlights.
+- Avoid frosted blur/glass as a default surface treatment for dashboard cards, modals, page sections, nav bars, or result cards.
+- Glass-like treatment is still allowed as an accent when it adds emphasis: primary CTA treatment, focused callouts, one-off highlights, or promotional moments.
+- The design should feel premium through clarity, spacing, alignment, typography, and specificity rather than heavy glow, blur, or ambient effects.
 
 ---
 
@@ -273,7 +287,9 @@ Share links bypass the landing. Logo in the header navigates back to the landing
 
 ### Landing Visual Layer (as of Apr 2026)
 
-Three layered WebGL effects sit behind all landing content, stacked in DOM order (all `position:absolute, inset:0, pointer-events:none`):
+The landing page may keep the prism metaphor and WebGL effects, but the surrounding UI should follow the current shadcn + cyan/sky direction. Use solid/near-solid surfaces and crisp borders for normal UI. Do not treat glass panels as the default landing or dashboard language.
+
+Three layered WebGL effects sit behind landing content, stacked in DOM order where used (all `position:absolute, inset:0, pointer-events:none`):
 
 1. **`<Prism />`** (`ogl`, `components/Prism.jsx`) — full-page ray-marched WebGL prism. `animationType="rotate"`, `scale=3.6`, `glow=1.4`, `bloom=1.2`, `colorFrequency=1.1`, `baseWidth=5.5`, `height=3.5`, `noise=0.04`. Transparent canvas — dark page bg shows through outside the prism shape.
 
@@ -289,7 +305,7 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 - Pillars too visible → lower `intensity` or tighten the mask gradient stop from 15% toward 5%
 - Text unreadable → strengthen `text-shadow` on `.landing-screen h1/p` in `index.css` and/or deepen top vignette
 
-**Fonts:** Space Grotesk (headings) + Manrope (body) loaded via Google Fonts in `index.html`. Declared in `index.css` as `--font-display` / `--font-body`.
+**Fonts:** The Vite app currently loads Inter, Nunito, and Sora via Google Fonts, with `@fontsource-variable/geist` and `@fontsource-variable/inter` also installed. Use the existing font variables/classes in `index.css`; do not introduce a new type system without updating this handoff.
 
 **`gradient-text`** (used on "Clarity that lasts."): uses `background-clip: text` with a white→sky-blue gradient. Text-shadow doesn't work on clipped text — use `filter: drop-shadow()` instead.
 
@@ -338,7 +354,8 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 3. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
 
 ### Recently fixed
-- **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Loaded Space Grotesk + Manrope fonts. Tuned gradient overlays, glass panel opacity, gradient-text contrast, and `filter: drop-shadow` for clipped text.
+- **Design direction clarified (Apr 2026)** — current target is shadcn-style dark surfaces with the existing cyan/sky accent. Avoid full-site glassmorphism; reserve glass-like treatment for accents such as CTAs or focused highlights.
+- **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Tuned gradient overlays, accent contrast, and `filter: drop-shadow` for clipped text.
 - **CrossMeetingInsights 3-col header overflow** — OWNERSHIP DRIFT / ACTION HYGIENE / UNRESOLVED DECISIONS labels clipped by `overflow-hidden` container on narrow viewports. Headers now stack vertically.
 - **Decision theme noise** — Month/day names (`april`, `monday`, `jan`, etc.) were surfacing as recurring decision themes. Full set of month/day names + abbreviations added to `STOP_WORDS` in `CrossMeetingInsights.jsx`.
 - **Aria-labels** — send message (ChatPanel), delete chat session (ChatPanel), remove speaker (App.jsx).

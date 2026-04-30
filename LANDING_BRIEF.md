@@ -80,13 +80,18 @@ Each card must have a **background layer div** (empty, dark, clearly classed e.g
 
 ## Design direction
 
-**Premium, reliable, precise.** Read `.impeccable.md` in the project root for full design context.
+**Premium, reliable, precise, and shadcn-native.** The current product direction is not full-site glassmorphism. Build the landing page and dashboard around shadcn-style surfaces: crisp cards, neutral dark backgrounds, clear borders, restrained shadows, predictable controls, and the existing cyan/sky accent already in the app (`#22d3ee`, `#67e8f9`, `sky-*` / `cyan-*` Tailwind tones).
+
+Glass-like treatment is allowed only as a selective accent for moments that should feel special: primary CTA buttons, focused accent states, small highlights, or short-lived promotional surfaces. Do not use frosted blur/glass as the default card, dashboard, modal, or page-section treatment.
 
 Key rules for this build:
 - No spring physics for scroll animations — ease-out-quint, 400–600ms
 - No glow effects on hover — subtle lift (transform: translateY(-2px)) + border opacity increase
 - No gradient text (existing `.gradient-text` usage in the hero stays, don't add more)
 - No left/right border stripes on cards
+- Prefer shadcn/radix patterns and tokens before custom visual systems
+- Use the current cyan/sky accent for primary actions, focus states, active nav, and selected states
+- Keep normal surfaces solid or near-solid, not blurred/frosted
 - Spacing is generous — sections breathe
 - Trust through specificity: agent names are real, descriptions are precise
 

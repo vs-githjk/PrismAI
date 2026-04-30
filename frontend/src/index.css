@@ -2,6 +2,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/inter";
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -73,6 +74,11 @@
 
 @keyframes bar-grow {
   from { width: 0%; }
+}
+
+@keyframes path-draw {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
 }
 
 /* Slow breathing gradient — opacity-only animation (GPU compositable) */
@@ -152,6 +158,10 @@
 .animate-spin-slow   { animation: spin-slow 3s linear infinite; }
 .animate-orb-drift   { animation: orb-drift 10s ease-in-out infinite; }
 .animate-bar-grow    { animation: bar-grow 1s ease-out both; }
+.path-draw {
+  stroke-dasharray: 1000;
+  animation: path-draw 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 
 .card-delay-0 { animation-delay: 0s; }
 .card-delay-1 { animation-delay: 0.06s; }
@@ -263,7 +273,8 @@ body::before {
   .animate-float,
   .animate-spin-slow,
   .animate-orb-drift,
-  .animate-bar-grow { animation: none; }
+  .animate-bar-grow,
+  .path-draw { animation: none; }
 
   .scroll-cue-chevron { animation: none; }
 
@@ -775,19 +786,24 @@ h1, h2, h3, .font-display {
 
 .nav-auth-signin {
   font-family: "Sora", sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: #dffcff;
+  color: #7dd3fc;
   min-height: 38px;
-  padding: 10px 22px;
+  padding: 10px 18px;
   margin-right: -2px;
-  border-radius: 9999px;
-  background: var(--landing-accent-surface);
-  border: 1px solid var(--landing-border-accent);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.12), rgba(14, 165, 233, 0.07));
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 8px 24px rgba(14, 165, 233, 0.08);
+  backdrop-filter: blur(10px) saturate(130%);
   cursor: pointer;
   transition: background-color var(--landing-transition-fast),
               border-color var(--landing-transition-fast),
               color var(--landing-transition-fast),
+              box-shadow var(--landing-transition-fast),
               opacity var(--landing-transition-fast),
               transform var(--landing-transition-fast);
   white-space: nowrap;
@@ -795,14 +811,18 @@ h1, h2, h3, .font-display {
 }
 
 .nav-auth-signin:hover {
-  background: rgba(34, 211, 238, 0.16);
-  border-color: rgba(103, 232, 249, 0.48);
-  color: #f0fdff;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.18), rgba(14, 165, 233, 0.1));
+  border-color: rgba(125, 211, 252, 0.34);
+  color: #bae6fd;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 10px 28px rgba(14, 165, 233, 0.12);
   transform: translateY(-1px);
 }
 
 .nav-auth-signin:active {
-  opacity: 0.75;
+  opacity: 0.85;
+  transform: translateY(0);
 }
 
 .landing-screen h1,
@@ -1037,6 +1057,55 @@ h1, h2, h3, .font-display {
   z-index: 1;
 }
 
+.dashboard-mcp-page {
+  background: var(--landing-bg);
+  background-image: none;
+}
+
+.dashboard-dot-field-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #000;
+}
+
+.dashboard-dot-field-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(1080px, 100vw);
+  height: max(1080px, 100vh);
+  transform: translate(-50%, -50%);
+  opacity: 0.9;
+}
+
+.dashboard-dot-field-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(0, 113, 220, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.66));
+}
+
+.dashboard-signin-button {
+  background: #082f3a;
+  border-color: rgba(103, 232, 249, 0.36);
+  color: #bae6fd;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 28px rgba(8, 145, 178, 0.12);
+}
+
+.dashboard-signin-button:hover {
+  background: #0f3f4b;
+  border-color: rgba(125, 211, 252, 0.5);
+  color: #e0fbff;
+}
+
 /* Fixed prism layer — always behind all sections */
 .landing-bg-prism {
   position: fixed;
@@ -1070,7 +1139,8 @@ h1, h2, h3, .font-display {
 .landing-hero {
   min-height: 100vh;
   position: relative;
-  overflow: hidden;
+  z-index: 3;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1083,23 +1153,38 @@ h1, h2, h3, .font-display {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: clamp(96px, 14vh, 164px);
+  bottom: clamp(-96px, -12vh, -64px);
+  height: clamp(180px, 26vh, 260px);
   pointer-events: none;
   z-index: 2;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  background: linear-gradient(180deg, rgba(2, 2, 2, 0) 0%, rgba(2, 2, 2, 0.14) 45%, rgba(2, 2, 2, 0.52) 100%);
-  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.5) 38%, #000 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.5) 38%, #000 100%);
+  background: linear-gradient(180deg, rgba(2, 2, 2, 0) 0%, rgba(2, 2, 2, 0.36) 46%, rgba(2, 2, 2, 0.16) 72%, rgba(2, 2, 2, 0) 100%);
 }
 
 .landing-post-hero {
   position: relative;
   z-index: 2;
-  background: linear-gradient(180deg, rgba(2, 2, 2, 0.2) 0%, rgba(2, 2, 2, 0.52) 14%, rgba(2, 2, 2, 0.68) 100%);
+  isolation: isolate;
+  margin-top: clamp(-96px, -12vh, -64px);
+  padding-top: clamp(64px, 12vh, 96px);
+  background: linear-gradient(180deg, rgba(2, 2, 2, 0) 0%, rgba(2, 2, 2, 0.18) 28%, rgba(2, 2, 2, 0.4) 100%);
+}
+
+.landing-post-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(2, 2, 2, 0) 0%, rgba(2, 2, 2, 0.08) 45vh, rgba(2, 2, 2, 0.18) 100vh, rgba(2, 2, 2, 0.18) 100%);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.35) 45vh, #000 100vh, #000 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.35) 45vh, #000 100vh, #000 100%);
+}
+
+.landing-post-hero > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── CTA buttons ─────────────────────────────────────────────── */
