@@ -21,7 +21,7 @@ export default function MeetingView({ result, meeting }) {
   const calendarEvent = result.calendar_event
 
   return (
-    <div className="animate-fade-in-up space-y-3">
+    <div className="space-y-3">
       {meeting && (
         <div className="px-0.5">
           <p className={eyebrow}>Current meeting</p>

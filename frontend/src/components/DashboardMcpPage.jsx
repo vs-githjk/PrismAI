@@ -553,7 +553,7 @@ export default function DashboardMcpPage(props) {
         </div>
       )}
 
-      <main className="relative z-10 mx-auto max-w-[92rem] px-5 pb-28 pt-5 sm:px-8">
+      <main className="relative z-10 mx-auto max-w-[92rem] -mt-3 px-5 pb-28 sm:px-8">
         {activeView === 'home' && (
           <StatsCanvas
             history={props.history}
@@ -578,13 +578,6 @@ export default function DashboardMcpPage(props) {
       </main>
 
       <nav className="fixed bottom-5 left-1/2 z-30 h-[96px] w-[154px] -translate-x-1/2" aria-label="Dashboard shortcuts" data-node-id="4590:266">
-        <div
-          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[132px] w-[190px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 blur-2xl"
-          style={{
-            background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.48) 38%, rgba(0,0,0,0.18) 64%, transparent 78%)',
-          }}
-          aria-hidden="true"
-        />
         <div className="absolute bottom-4 left-1" data-history-panel>
           <DropdownMenu modal={false} open={props.showHistory} onOpenChange={props.setShowHistory}>
             <DropdownMenuTrigger asChild>
@@ -694,7 +687,8 @@ export default function DashboardMcpPage(props) {
         <button
           type="button"
           onClick={handleSwitchView}
-          className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10 ${inIntelligence ? 'border-cyan-300/30 bg-cyan-300/[0.08] text-cyan-100' : ''}`}
+          className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10`}
+          style={inIntelligence ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
           aria-label={inIntelligence ? 'Back to meeting view' : 'Switch to cross-meeting intelligence'}
         >
           {inIntelligence
@@ -704,7 +698,21 @@ export default function DashboardMcpPage(props) {
         </button>
       </nav>
 
-      <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
+      <div
+        className="pointer-events-none fixed bottom-0 left-1/2 z-20 -translate-x-1/2"
+        style={{
+          width: '800px',
+          height: '400px',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          maskImage: 'radial-gradient(circle at 50% 90%, black 11%, transparent 25%)',
+          WebkitMaskImage: 'radial-gradient(circle at 50% 90%, black 11%, transparent 25%)',
+        }}
+        aria-hidden="true"
+      />
+
+
+<Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
         <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold text-white">More meetings needed</DialogTitle>
