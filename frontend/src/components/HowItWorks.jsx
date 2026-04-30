@@ -20,7 +20,6 @@ const STEPS = [
 
 export default function HowItWorks() {
   const [visible, setVisible] = useState(false)
-  const [inView, setInView] = useState(false)
   const sectionRef = useRef(null)
 
   useEffect(() => {
@@ -28,7 +27,6 @@ export default function HowItWorks() {
       ([entry]) => {
         const r = entry.intersectionRatio
         if (r > 0.15) setVisible(true)
-        setInView(r > 0.1)
       },
       { threshold: [0, 0.1, 0.15, 1] }
     )
@@ -38,7 +36,6 @@ export default function HowItWorks() {
 
   return (
     <section ref={sectionRef} id="product" className="how-it-works-section scroll-section" style={{ position: 'relative' }}>
-      <div className={`section-blur-overlay${inView ? '' : ' active'}`} aria-hidden="true" />
       <div className="section-inner">
         <p className="section-eyebrow">How it works</p>
 

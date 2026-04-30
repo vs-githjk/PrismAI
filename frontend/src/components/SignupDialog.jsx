@@ -8,7 +8,7 @@ export default function SignupDialog({ onClose }) {
         aria-modal="true"
         aria-labelledby="signup-title"
       >
-        <button className="signup-close" onClick={onClose} aria-label="Close dialog">
+        <button type="button" className="signup-close" onClick={onClose} aria-label="Close dialog">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             <line x1="14" y1="2" x2="2" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -24,10 +24,10 @@ export default function SignupDialog({ onClose }) {
         <input
           type="email"
           placeholder="you@company.com"
-          className="signup-email-input"
+          className="signup-email-input landing-input"
           autoFocus
         />
-        <button className="signup-submit">Join waitlist</button>
+        <button type="button" className="signup-submit landing-button-primary">Join waitlist</button>
       </div>
     </div>
   )
