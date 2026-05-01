@@ -21,7 +21,7 @@ def _get_token(user_settings: dict) -> str:
 async def slack_read_channel(args: dict, user_settings: dict | None = None) -> dict:
     token = _get_token(user_settings)
     channel = args.get("channel", "")
-    limit = min(args.get("limit", 20), 50)
+    limit = min(int(args.get("limit", 20)), 50)
 
     # Resolve channel name to ID if needed
     channel_id = channel
@@ -86,7 +86,7 @@ async def slack_post_message(args: dict, user_settings: dict | None = None) -> d
 async def slack_search(args: dict, user_settings: dict | None = None) -> dict:
     token = _get_token(user_settings)
     query = args.get("query", "")
-    limit = min(args.get("limit", 10), 20)
+    limit = min(int(args.get("limit", 10)), 20)
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(

@@ -35,13 +35,16 @@ def register_tool(
     }
 
 
-def get_available_tools(user_settings: dict | None = None) -> list[dict]:
+def get_available_tools(user_settings: dict | None = None, exclude_confirm: bool = False) -> list[dict]:
     """Return Groq-compatible tool definitions for tools the user has access to."""
     settings = user_settings or {}
     tools = []
     for tool in _TOOLS.values():
         # Check if required credential is present
         if tool["requires"] and not settings.get(tool["requires"]):
+            continue
+        # In live meeting context, skip tools that require human confirmation
+        if exclude_confirm and tool.get("confirm"):
             continue
         tools.append({
             "type": "function",
@@ -87,6 +90,12 @@ async def execute_tool(name: str, arguments: str | dict, user_id: str, user_sett
     # Execute
     try:
         result = await tool["handler"](arguments, user_settings=user_settings or {})
+        # Inject external_ref for resource-creating tools so callers can store the ref
+        if result.get("success"):
+            if result.get("issue_id"):
+                result["external_ref"] = {"tool": name, "external_id": str(result["issue_id"])}
+            elif result.get("event_id"):
+                result["external_ref"] = {"tool": name, "external_id": str(result["event_id"])}
         return result
     except Exception as exc:
         return {"error": f"Tool '{name}' failed: {str(exc)}"}

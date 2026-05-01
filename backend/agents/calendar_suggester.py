@@ -1,12 +1,7 @@
 import json
-import os
 from datetime import datetime
-from groq import AsyncGroq
-from fastapi import HTTPException
 from calendar_resolution import resolve_relative_date
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
     "You are a calendar scheduling assistant. Based on the meeting transcript, determine if a follow-up meeting is needed. "
@@ -17,19 +12,14 @@ SYSTEM_PROMPT = (
 )
 
 
+_DEFAULT = {"calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "resolved_date": "", "resolved_day": ""}}
+
+
 async def run(transcript: str) -> dict:
     reference_date = datetime.now().date()
     for attempt in range(2):
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Reference date: {reference_date.isoformat()}\nTranscript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
         try:
+            raw = await llm_call(SYSTEM_PROMPT, f"Reference date: {reference_date.isoformat()}\nTranscript:\n{transcript}")
             payload = json.loads(strip_fences(raw))
             suggestion = payload.get("calendar_suggestion", {}) or {}
             phrase = suggestion.get("suggested_timeframe") or suggestion.get("reason") or ""
@@ -38,6 +28,7 @@ async def run(transcript: str) -> dict:
             suggestion["resolved_day"] = resolved["resolved_day"]
             payload["calendar_suggestion"] = suggestion
             return payload
-        except json.JSONDecodeError:
+        except Exception:
             if attempt == 1:
-                raise HTTPException(status_code=500, detail="calendar_suggester: failed to parse JSON after retry")
+                return _DEFAULT
+    return _DEFAULT

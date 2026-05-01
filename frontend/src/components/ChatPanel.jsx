@@ -70,21 +70,24 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
   const prevResultRef = useRef(null)
   const historyRef = useRef(null)
   const bottomRef = useRef(null)
+  const persistTimerRef = useRef(null)
 
   // Load chat history on mount so the button visibility is correct
   useEffect(() => {
     fetchChatHistory(isSignedIn).then(setChatHistory)
   }, [isSignedIn])
 
-  // Persist messages to backend whenever they change
+  // Persist messages to backend — debounced so rapid state updates don't flood the API
   useEffect(() => {
-    if (meetingId && messages.length > 0) {
+    if (!meetingId || messages.length === 0) return
+    clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = setTimeout(() => {
       apiFetch(`/chats/${meetingId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages }),
       }).catch((err) => console.warn('[ChatPanel] Failed to persist chat:', err))
-    }
+    }, 800)
   }, [messages, meetingId])
 
   useEffect(() => {
@@ -398,7 +401,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                       style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
                       <p className="text-yellow-400 font-medium mb-1">{pc.message || `Confirm: ${pc.tool}`}</p>
                       <pre className="text-gray-400 text-[10px] whitespace-pre-wrap mb-2 max-h-24 overflow-y-auto">
-                        {typeof pc.arguments === 'object' ? JSON.stringify(pc.arguments, null, 2) : pc.arguments}
+                        {typeof pc.preview === 'object' ? JSON.stringify(pc.preview, null, 2) : pc.preview}
                       </pre>
                       <div className="flex gap-2">
                         <button
@@ -407,7 +410,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
                               const res = await apiFetch('/chat/confirm-tool', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ tool: pc.tool, arguments: pc.arguments }),
+                                body: JSON.stringify({ pending_id: pc.pending_id }),
                               })
                               if (!res.ok) throw new Error('Confirm failed')
                               const result = await res.json()

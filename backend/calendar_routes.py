@@ -93,11 +93,14 @@ async def get_valid_token(user_id: str) -> str:
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    resp = supabase.table("user_settings").select(
-        "google_access_token,google_refresh_token,google_token_expires_at"
-    ).eq("user_id", user_id).single().execute()
+    try:
+        resp = supabase.table("user_settings").select(
+            "google_access_token,google_refresh_token,google_token_expires_at"
+        ).eq("user_id", user_id).maybe_single().execute()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database error fetching calendar credentials")
 
-    row = resp.data
+    row = resp.data or {}
     if not row or not row.get("google_access_token"):
         raise HTTPException(status_code=404, detail="Google Calendar not connected")
 
@@ -242,19 +245,13 @@ async def calendar_status(user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    resp = supabase.table("user_settings").select(
-        "calendar_connected,google_token_expires_at"
-    ).eq("user_id", user_id).maybe_single().execute()
-
-    row = resp.data
-    connected = bool(row and row.get("calendar_connected") and row.get("google_token_expires_at") is not None or
-                     row and row.get("calendar_connected") and row.get("google_token_expires_at") is None and row.get("calendar_connected"))
-
-    # Actually: connected if calendar_connected is True AND access token exists
-    if row:
-        resp2 = supabase.table("user_settings").select("google_access_token").eq("user_id", user_id).maybe_single().execute()
-        connected = bool(resp2.data and resp2.data.get("google_access_token"))
-    else:
+    try:
+        resp = supabase.table("user_settings").select(
+            "calendar_connected,google_access_token"
+        ).eq("user_id", user_id).maybe_single().execute()
+        row = resp.data or {}
+        connected = bool(row.get("calendar_connected") and row.get("google_access_token"))
+    except Exception:
         connected = False
 
     return {"connected": connected}

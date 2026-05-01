@@ -1,5 +1,7 @@
 import json
 import os
+import secrets
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -7,6 +9,34 @@ from groq import AsyncGroq
 
 from auth import require_user_id, supabase
 from analysis_service import AGENT_MAP
+
+# Server-side store for tools awaiting confirmation.
+# Key: (user_id, pending_id) → {tool, arguments, expires_at}
+# Client only ever gets the pending_id back — args stay server-side.
+_pending_tools: dict[tuple[str, str], dict] = {}
+_PENDING_TTL = 300  # 5 minutes
+
+
+def _store_pending(user_id: str, tool: str, arguments: dict) -> str:
+    pending_id = secrets.token_urlsafe(16)
+    # Prune expired entries
+    now = time.time()
+    expired = [k for k, v in _pending_tools.items() if v["expires_at"] < now]
+    for k in expired:
+        del _pending_tools[k]
+    _pending_tools[(user_id, pending_id)] = {
+        "tool": tool,
+        "arguments": arguments,
+        "expires_at": now + _PENDING_TTL,
+    }
+    return pending_id
+
+
+def _pop_pending(user_id: str, pending_id: str) -> dict | None:
+    entry = _pending_tools.pop((user_id, pending_id), None)
+    if entry and entry["expires_at"] < time.time():
+        return None
+    return entry
 
 # Import tool modules to trigger registration
 import tools.gmail  # noqa: F401
@@ -38,8 +68,7 @@ class AgentRequest(BaseModel):
 
 
 class ConfirmToolRequest(BaseModel):
-    tool: str
-    arguments: dict
+    pending_id: str
 
 
 async def _get_user_settings(user_id: str) -> dict:
@@ -109,9 +138,11 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
             )
 
             if result.get("requires_confirmation"):
+                pending_id = _store_pending(user_id, tool_call.function.name, result["preview"])
                 pending_confirmations.append({
+                    "pending_id": pending_id,
                     "tool": tool_call.function.name,
-                    "arguments": result["preview"],
+                    "preview": result["preview"],
                     "message": result["message"],
                     "tool_call_id": tool_call.id,
                 })
@@ -300,8 +331,11 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
     @local_router.post("/chat/confirm-tool")
     async def confirm_tool(req: ConfirmToolRequest, user_id: str = Depends(require_user_id)):
         """Execute a tool that was previously held for user confirmation."""
+        entry = _pop_pending(user_id, req.pending_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Pending action not found or expired")
         user_settings = await _get_user_settings(user_id)
-        result = await confirm_and_execute(req.tool, req.arguments, user_settings=user_settings)
+        result = await confirm_and_execute(entry["tool"], entry["arguments"], user_settings=user_settings)
         return result
 
     return local_router

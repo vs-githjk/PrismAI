@@ -7,6 +7,7 @@ const AGENT_CONFIG = {
   email_drafter:      { label: 'Email Draft',  icon: '✉️', bg: 'bg-blue-500/20',   border: 'border-blue-500/40',   text: 'text-blue-300',   dot: 'bg-blue-400' },
   calendar_suggester: { label: 'Calendar',     icon: '📅', bg: 'bg-indigo-500/20', border: 'border-indigo-500/40', text: 'text-indigo-300', dot: 'bg-indigo-400' },
   health_score:       { label: 'Health Score', icon: '📊', bg: 'bg-violet-500/20', border: 'border-violet-500/40', text: 'text-violet-300', dot: 'bg-violet-400' },
+  speaker_coach:      { label: 'Speaker Coach', icon: '🎤', bg: 'bg-rose-500/20',   border: 'border-rose-500/40',   text: 'text-rose-300',   dot: 'bg-rose-400' },
 }
 
 export default function AgentTags({ agents }) {

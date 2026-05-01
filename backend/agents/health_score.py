@@ -1,9 +1,5 @@
 import json
-import os
-from groq import AsyncGroq
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
     "You are a meeting quality analyst. Rate this meeting transcript on effectiveness. "
@@ -22,35 +18,22 @@ SYSTEM_PROMPT = (
     "Inclusive, Ran Overtime, Unresolved Tension, No Clear Owners, Off-Track, Vague Outcomes."
 )
 
+_DEFAULT = {
+    "health_score": {
+        "score": 50,
+        "verdict": "Unable to analyze meeting quality.",
+        "badges": [],
+        "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
+    }
+}
+
 
 async def run(transcript: str) -> dict:
     for attempt in range(2):
         try:
-            response = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                temperature=0.1,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Transcript:\n{transcript}"},
-                ],
-            )
-            raw = response.choices[0].message.content
+            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}", temperature=0.1)
             return json.loads(strip_fences(raw))
         except Exception:
             if attempt == 1:
-                return {
-                    "health_score": {
-                        "score": 50,
-                        "verdict": "Unable to analyze meeting quality.",
-                        "badges": [],
-                        "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
-                    }
-                }
-    return {
-        "health_score": {
-            "score": 50,
-            "verdict": "Unable to analyze meeting quality.",
-            "badges": [],
-            "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
-        }
-    }
+                return _DEFAULT
+    return _DEFAULT

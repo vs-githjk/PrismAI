@@ -1,6 +1,9 @@
 import asyncio
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import time
 
 import httpx
@@ -9,17 +12,22 @@ from pydantic import BaseModel
 
 from analysis_service import run_full_analysis
 from auth import supabase, require_user_id
+from cross_meeting_service import looks_like_blocker, build_blocker_snippet
 
 
 router = APIRouter(tags=["recall"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = "https://us-west-2.recall.ai/api/v1"
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # In-memory cache (always used for fast access; synced to Supabase when available)
 bot_store: dict = {}
+
+# live_token → bot_id index for public live-share lookups
+_live_token_index: dict = {}
 
 
 def _db_save(bot_id: str, fields: dict):
@@ -56,14 +64,16 @@ def _db_load(bot_id: str) -> dict | None:
 
 
 def _db_append_command(bot_id: str, command: dict):
-    """Append a command log entry to the bot session."""
+    """Append a command log entry atomically using Postgres jsonb_insert."""
     if not supabase:
         return
     try:
-        res = supabase.table("bot_sessions").select("commands").eq("bot_id", bot_id).maybe_single().execute()
-        commands = ((res.data if res else None) or {}).get("commands") or []
-        commands.append(command)
-        supabase.table("bot_sessions").update({"commands": commands, "updated_at": "now()"}).eq("bot_id", bot_id).execute()
+        # Use rpc to atomically append — avoids read-modify-write race when two
+        # commands arrive simultaneously for the same bot.
+        supabase.rpc(
+            "append_bot_command",
+            {"p_bot_id": bot_id, "p_command": command},
+        ).execute()
     except Exception as exc:
         print(f"[recall] db append command failed: {exc}")
 
@@ -96,8 +106,112 @@ def _extract_recall_error(resp: httpx.Response) -> str:
     return text or f"Recall.ai request failed with status {resp.status_code}"
 
 
+def _build_pre_meeting_brief(user_id: str | None) -> dict | None:
+    """Return open action items, recent decisions, and blockers from the owner's meeting history.
+    Pure Python — no LLM. Returns None when there is nothing noteworthy to surface."""
+    if not supabase or not user_id:
+        return None
+    try:
+        res = (
+            supabase.table("meetings")
+            .select("date,title,result")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+        )
+        meetings = [r for r in (res.data or []) if r.get("result")]
+        if not meetings:
+            return None
+
+        open_items: list[dict] = []
+        recent_decisions: list[dict] = []
+        blockers: list[dict] = []
+
+        for meeting in meetings[:5]:
+            result = meeting.get("result") or {}
+            date = meeting.get("date") or "recent meeting"
+            title = meeting.get("title") or "Untitled"
+
+            for item in (result.get("action_items") or []):
+                if not item.get("completed") and item.get("task", "").strip():
+                    open_items.append({
+                        "task": item["task"].strip(),
+                        "owner": (item.get("owner") or "").strip(),
+                        "due": (item.get("due") or "").strip(),
+                        "meeting_date": date,
+                        "meeting_title": title,
+                    })
+
+            # Only pull decisions from the two most recent meetings
+            if len(recent_decisions) < 4:
+                for decision in (result.get("decisions") or [])[:3]:
+                    if decision.get("decision", "").strip():
+                        recent_decisions.append({
+                            "decision": decision["decision"].strip(),
+                            "owner": (decision.get("owner") or "").strip(),
+                            "meeting_date": date,
+                        })
+
+            for item in (result.get("action_items") or []):
+                if looks_like_blocker(item.get("task", "")) and item.get("task", "").strip():
+                    blockers.append({
+                        "snippet": build_blocker_snippet(item["task"]),
+                        "meeting_date": date,
+                    })
+            summary = result.get("summary", "")
+            if summary and looks_like_blocker(summary):
+                blockers.append({
+                    "snippet": build_blocker_snippet(summary),
+                    "meeting_date": date,
+                })
+
+        try:
+            refs = (
+                supabase.table("action_refs")
+                .select("action_item,tool,external_id,created_at")
+                .eq("user_id", user_id)
+                .eq("resolved", False)
+                .order("created_at", desc=True)
+                .limit(5)
+                .execute()
+            )
+            for ref in (refs.data or []):
+                open_items.append({
+                    "task": f"{ref['action_item']} [{ref['tool']}: {ref['external_id']}]",
+                    "owner": "",
+                    "due": "",
+                    "meeting_date": (ref.get("created_at") or "")[:10],
+                    "meeting_title": "",
+                })
+        except Exception:
+            pass
+
+        open_items = open_items[:5]
+        recent_decisions = recent_decisions[:4]
+        blockers = blockers[:3]
+
+        if not open_items and not recent_decisions and not blockers:
+            return None
+
+        return {
+            "open_items": open_items,
+            "recent_decisions": recent_decisions,
+            "blockers": blockers,
+        }
+    except Exception as exc:
+        print(f"[recall] pre-meeting brief failed for user {user_id}: {exc}")
+        return None
+
+
 async def _send_bot_intro(bot_id: str):
     await asyncio.sleep(20)
+    live_token = (bot_store.get(bot_id) or {}).get("live_token")
+    frontend_url = os.getenv("FRONTEND_URL", "https://agentic-meeting-copilot.vercel.app")
+    live_link = f"{frontend_url}/#live/{live_token}" if live_token else None
+    message = "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."
+    if live_link:
+        message += f"\n\nAnyone can follow along live: {live_link}"
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
@@ -106,7 +220,7 @@ async def _send_bot_intro(bot_id: str):
                     "Authorization": f"Token {RECALL_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                json={"message": "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."},
+                json={"message": message},
                 timeout=10,
             )
     except Exception:
@@ -193,7 +307,7 @@ def _transcript_from_recall_data(raw) -> str:
     if isinstance(raw, list):
         transcript_lines = []
         for segment in raw:
-            speaker = segment.get("speaker") or "Speaker"
+            speaker = segment.get("speaker") or segment.get("participant", {}).get("name") or "Speaker"
             # New format: words as list of dicts with "text"
             words = segment.get("words") or []
             if words:
@@ -319,14 +433,17 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
 
     data = resp.json()
     bot_id = data["id"]
-    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id}
-    _db_save(bot_id, {"status": "joining", "user_id": user_id})
+    live_token = secrets.token_hex(16)
+    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id, "live_token": live_token}
+    _live_token_index[live_token] = bot_id
+    _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
 
-    from realtime_routes import init_bot_realtime
+    from realtime_routes import init_bot_realtime, _run_proactive_checker
     init_bot_realtime(bot_id)
 
     asyncio.create_task(_send_bot_intro(bot_id))
-    return {"bot_id": bot_id, "status": "joining"}
+    asyncio.create_task(_run_proactive_checker(bot_id))
+    return {"bot_id": bot_id, "status": "joining", "live_token": live_token}
 
 
 @router.delete("/remove-bot/{bot_id}")
@@ -400,9 +517,60 @@ async def bot_status(bot_id: str):
     return entry
 
 
+@router.get("/live/{live_token}")
+async def live_meeting(live_token: str):
+    """Public endpoint for live-share viewers. Returns safe bot state by live_token."""
+    bot_id = _live_token_index.get(live_token)
+
+    # Fall back to DB if server restarted and index was lost
+    if not bot_id and supabase:
+        try:
+            res = supabase.table("bot_sessions").select("bot_id").eq("live_token", live_token).maybe_single().execute()
+            if res.data:
+                bot_id = res.data["bot_id"]
+                _live_token_index[live_token] = bot_id
+        except Exception:
+            pass
+
+    if not bot_id:
+        raise HTTPException(status_code=404, detail="Live session not found")
+
+    # Load from DB into memory if needed
+    if bot_id not in bot_store:
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
+
+    entry = bot_store.get(bot_id, {})
+    from realtime_routes import _bot_state
+    rt = _bot_state.get(bot_id, {})
+
+    # Build pre-meeting brief lazily — compute once, cache in bot_store
+    status = entry.get("status", "joining")
+    if bot_id in bot_store and "brief" not in bot_store[bot_id] and status not in ("done", "error"):
+        bot_store[bot_id]["brief"] = _build_pre_meeting_brief(entry.get("user_id"))
+
+    return {
+        "status": status,
+        "commands": entry.get("commands", []),
+        "transcript_lines": rt.get("transcript_buffer", [])[-100:],
+        "result": entry.get("result"),
+        "error": entry.get("error"),
+        "brief": entry.get("brief"),
+        # Include transcript when done so signed-in viewers can save a copy
+        "transcript": entry.get("transcript") if status == "done" else None,
+    }
+
+
 @router.post("/recall-webhook")
 async def recall_webhook(request: Request):
-    payload = await request.json()
+    body = await request.body()
+    if RECALL_WEBHOOK_SECRET:
+        sig = request.headers.get("x-recall-signature", "")
+        expected = hmac.new(RECALL_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    payload = json.loads(body)
 
     bot_id = (
         payload.get("data", {}).get("bot", {}).get("id")

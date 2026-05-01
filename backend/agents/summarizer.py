@@ -1,30 +1,24 @@
 import json
-import os
-from groq import AsyncGroq
-from fastapi import HTTPException
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
-    "You are a meeting summarizer. Given a meeting transcript, produce a concise 2-3 sentence TL;DR summary. "
+    "You are a meeting summarizer. Given a meeting transcript, produce a clear summary that covers: "
+    "who was in the meeting, what was discussed, key insights or advice shared, and any outcomes or takeaways. "
+    "Scale length to the meeting: short meetings (under 500 words) get 2-3 sentences; "
+    "medium meetings (500-2000 words) get a short paragraph; "
+    "long meetings (2000+ words) get 3-5 sentences covering all major topics. "
     'Return ONLY valid JSON: { "summary": "..." }'
 )
+
+_DEFAULT = {"summary": ""}
 
 
 async def run(transcript: str) -> dict:
     for attempt in range(2):
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transcript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
         try:
+            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}")
             return json.loads(strip_fences(raw))
-        except json.JSONDecodeError:
+        except Exception:
             if attempt == 1:
-                raise HTTPException(status_code=500, detail="summarizer: failed to parse JSON after retry")
+                return _DEFAULT
+    return _DEFAULT

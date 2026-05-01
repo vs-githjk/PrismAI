@@ -1,10 +1,5 @@
 import json
-import os
-from groq import AsyncGroq
-from fastapi import HTTPException
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
     "You are a meeting sentiment analyzer. Analyze the emotional tone of the meeting transcript in detail. "
@@ -21,19 +16,15 @@ SYSTEM_PROMPT = (
 )
 
 
+_DEFAULT = {"sentiment": None}
+
+
 async def run(transcript: str) -> dict:
     for attempt in range(2):
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transcript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
         try:
+            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}")
             return json.loads(strip_fences(raw))
-        except json.JSONDecodeError:
+        except Exception:
             if attempt == 1:
-                raise HTTPException(status_code=500, detail="sentiment: failed to parse JSON after retry")
+                return _DEFAULT
+    return _DEFAULT
