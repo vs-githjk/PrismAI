@@ -4,22 +4,6 @@
 
 ---
 
-## Current State (as of Apr 20 2026) — Read First
-
-**Last session focus:** Security hardening, reliability fixes, race condition patches (13 confirmed bugs fixed, pushed to main as commit `4c8877b`).
-
-**Landing page is done.** Do not rework it unless the user explicitly asks. Current state the user signed off on:
-- WebGL Prism (`ogl`) as full-page background — `glow=1.4`, `bloom=1.2`, `scale=3.6`, `baseWidth=5.5`, `colorFrequency=1.1`
-- Two `LightPillar` (`three.js`) components in left/right edges, `intensity=0.7`, masked with gradient to dissolve toward center
-- Top vignette + bottom fade gradient overlays
-- Space Grotesk + Manrope fonts loaded
-- `gradient-text` ("Clarity that lasts.") uses `filter: drop-shadow` (NOT `text-shadow` — doesn't work on clipped text)
-- Glass panels at `rgba(7,4,15,0.68)` opacity
-
-**Known visual note (left intentionally as-is):** `UpcomingMeetings.jsx` panel in the Join tab uses a lighter `rgba(255,255,255,0.015)` background vs the "NEXT UP" banner which uses `rgba(14,165,233,0.08)`. User saw this disparity and decided to leave it unchanged.
-
----
-
 ## What Is PrismAI
 
 A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 7 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
@@ -355,26 +339,19 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 ## Known Issues / Watch Out For
 
 - **Render free tier sleeps** — first request after inactivity is slow. Not a bug.
-- **`bot_store` is in-memory** — lost on Render restart. Syncs to `bot_sessions` via `_db_save`/`_db_load`; `/bot-status` falls back to DB on cache miss. Mostly solved.
+- **`bot_store` is in-memory** — lost on Render restart. Needs a `bots` Supabase table to fix properly.
 - **Bot endpoints are unauthenticated** — `/join-meeting`, `/bot-status`, `/recall-webhook` have no auth. Bot results aren't scoped to a user. Known limitation of the current bot architecture.
 - **Sentiment is conditional** — won't appear for neutral/positive meetings by design.
 - **`decisions` importance** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
 - **SSE buffering** — `X-Accel-Buffering: no` header is set to mitigate Render free tier SSE buffering.
-- **Meeting chat data structure** — `participant_events.chat_message` handler was fixed to read `data["data"]` but Recall.ai's payload shape may vary by platform (Google Meet vs Zoom vs Teams). If typed commands stop working, check Render logs for `[realtime] chat message` lines to verify the nesting. If blank, adjust the `outer.get("data") or outer.get("participant_events") or outer` fallback chain.
-- **`gmail_send` needs explicit recipient** — LLM will not guess email addresses. User must say the full address in their command, e.g. "prism, send a follow-up to john@company.com".
-- **`savedMeetingRef` on Render cold-start** — if the POST to `/meetings` fails (Render waking up), `savedMeetingRef` is now reset so retry is possible. Previously the guard stayed set and the meeting was silently lost.
-- **Rate limiter uses `None` as user key** — `execute_tool()` in `tools/registry.py` tracks rate limits per `user_id`. Unauthenticated tool calls (from `/chat`) pass `user_id=None`, conflating all guest requests under one bucket. Not a security issue, minor fairness issue.
-- **`RECALL_WEBHOOK_SECRET`** — HMAC webhook verification is in place but only active if this env var is set on Render. Recall.ai dashboard has no static webhook endpoint configured (webhooks are registered per-bot in the API call body), so no signing secret is available yet. Verification is effectively skipped.
 
 ---
 
 ## Remaining Roadmap (priority order)
 
-1. **Voice output verification** — the 415 fix (multipart upload) is deployed but needs a live meeting test to confirm. If `output_audio` still fails, check Render logs for the new error code.
-2. **`ANTHROPIC_API_KEY` on Render** ✓ — already set. Model fallback is active.
-3. **Gmail send UX** — user must state full recipient email in command. Future: parse names from transcript or show a confirmation UI before sending.
-4. **Bot store persistence** — `bot_store` syncs to `bot_sessions` via `_db_save`/`_db_load`. `_db_load` is called as fallback in `/bot-status`. Mostly solved; verify the fallback path works in a live test.
-5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on single-user auth being stable first.
+1. **Bot store persistence** — move `bot_store` to a `bots` Supabase table so restarts don't lose in-flight meetings
+2. **Model fallback** — each agent catches Groq 429/errors, retries with `gpt-4o-mini` or `claude-haiku-4-5`. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to Render.
+3. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
 
 ### Fixed Apr 20 2026 (commit 73e5097) — Two bugs from codebase audit
 
@@ -478,10 +455,9 @@ async def run(transcript: str) -> dict:
         raw = response.choices[0].message.content
         try:
             return json.loads(strip_fences(raw))
-        except Exception:
+        except json.JSONDecodeError:
             if attempt == 1:
-                return _DEFAULT  # never raise — streaming run must not be killed by one agent
-    return _DEFAULT
+                raise HTTPException(status_code=500, detail="agentname: failed to parse JSON after retry")
 ```
 
 ### Adding a New Agent — Checklist
@@ -568,10 +544,6 @@ Add these in Render → `meeting-copilot-api` → Environment:
 | `ELEVENLABS_VOICE_ID` | Optional | ElevenLabs → Voices → copy ID | Custom voice (default: `21m00Tcm4TlvDq8ikWAM` / Rachel) |
 | `SLACK_BOT_TOKEN` | For Slack | Slack App → OAuth & Permissions → Bot Token (`xoxb-...`) | Slack read/post/search tools |
 | `LINEAR_API_KEY` | For Linear | [linear.app/settings/api](https://linear.app/settings/api) | Linear issue creation tool |
-| `ALLOWED_ORIGINS` | **Yes** | `https://agentic-meeting-copilot.vercel.app,http://localhost:5173` | CORS allowlist — already set ✓ |
-| `ANTHROPIC_API_KEY` | **Yes** | console.anthropic.com | LLM fallback on Groq 429/503 — already set ✓ |
-| `RECALL_WEBHOOK_SECRET` | Optional | Recall.ai dashboard → Webhooks → signing secret | HMAC webhook verification (not yet available — webhooks are per-bot) |
-| `RECALL_API_BASE` | Optional | Default: `https://us-west-2.recall.ai/api/v1` | Override Recall region if needed |
 
 ### Vercel Dashboard — Environment Variables
 
@@ -603,7 +575,6 @@ Run in **Supabase SQL Editor** (in order, skip if already applied):
 1. `supabase/auth_migration.sql` — creates `meetings` + `chats` tables
 2. `supabase/calendar_migration.sql` — creates `user_settings` table with Google token columns
 3. `supabase/tools_migration.sql` — adds `linear_api_key`, `slack_bot_token` columns + creates `bot_sessions` table
-4. `supabase/bot_commands_migration.sql` — creates `append_bot_command(p_bot_id, p_command)` RPC for atomic command appends (**already run ✓ Apr 20 2026**)
 
 ### What works without optional env vars
 

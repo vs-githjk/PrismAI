@@ -7,7 +7,7 @@ export default function StatsHero({ insights }) {
   const status = delta > 0 ? 'Improving' : delta < 0 ? 'Needs attention' : 'Stable'
 
   return (
-    <section className={`${glassCard} animate-fade-in-up overflow-hidden`} style={cardGlowStyle}>
+    <section className={`${glassCard} overflow-hidden`} style={cardGlowStyle}>
       <div className="flex flex-col gap-3 border-b border-white/[0.08] px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200/76">Workspace overview</p>
