@@ -811,6 +811,10 @@ h1, h2, h3, .font-display {
   line-height: 1;
 }
 
+.nav-auth-signin.dashboard-signin-button {
+  border-radius: 9999px;
+}
+
 .nav-auth-signin:hover {
   background: linear-gradient(180deg, rgba(14, 165, 233, 0.18), rgba(14, 165, 233, 0.1));
   border-color: rgba(125, 211, 252, 0.34);
@@ -2090,4 +2094,14 @@ h1, h2, h3, .font-display {
   background: rgba(103, 232, 249, 0.6);
   flex-shrink: 0;
   margin-top: 0.5em;
+}
+
+/* Keep the landing page aligned with the Dashboard MCP font pairing. */
+.landing-page,
+.landing-page * {
+  font-family: "General Sans", "Geist Variable", "Inter Variable", Inter, "Segoe UI", sans-serif;
+}
+
+.landing-page :is(h1, h2, h3, .font-display, .prism-logo-text) {
+  font-family: "Rubik", "General Sans", "Geist Variable", "Inter Variable", Inter, sans-serif;
 }

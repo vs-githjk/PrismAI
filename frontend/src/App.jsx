@@ -1237,10 +1237,10 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
               exit={{ opacity: 0, x: -10 }}
               transition={{ type: 'spring', damping: 30, stiffness: 400 }}
               splitBy="words"
-              mainClassName="min-h-[6.75rem] w-full max-w-[min(100%,84rem)] justify-center text-center text-[clamp(1.25rem,4.8vw,3.75rem)] font-bold leading-tight tracking-tight text-white/85 sm:min-h-[7.5rem] lg:min-h-[8.75rem]"
+              mainClassName="min-h-[6.75rem] w-full max-w-[min(100%,84rem)] justify-center text-center text-[clamp(1.25rem,4.8vw,3.75rem)] font-medium leading-tight tracking-tight text-white/85 sm:min-h-[7.5rem] lg:min-h-[8.75rem]"
               splitLevelClassName="overflow-hidden pb-1"
-              elementLevelClassName="font-bold"
-              style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontWeight: 700 }}
+              elementLevelClassName="font-medium"
+              style={{ fontFamily: "'Rubik', 'General Sans', sans-serif", fontWeight: 500 }}
             />
           </div>
 
@@ -1248,9 +1248,8 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
           <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
             <p
               className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
-              style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}
             >
-              Let <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 300 }}>prism</span> handle it.
+              Let <span className="font-light">prism</span> handle it.
             </p>
           </div>
 
