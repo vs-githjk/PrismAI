@@ -1149,9 +1149,20 @@ const HERO_SENTENCES = [
 // ── Landing / Hero screen ────────────────────────────────────────
 function LandingScreen({ onDemo, onSkip, exiting }) {
   const [signupOpen, setSignupOpen] = useState(false)
+  const [signupMode, setSignupMode] = useState('signup')
   const [scrollCueVisible, setScrollCueVisible] = useState(true)
   const scrollContainerRef = useRef(null)
   const heroRef = useRef(null)
+
+  const openSignup = () => {
+    setSignupMode('signup')
+    setSignupOpen(true)
+  }
+
+  const openLogin = () => {
+    setSignupMode('login')
+    setSignupOpen(true)
+  }
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1204,7 +1215,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       >
         {/* Sticky nav — sits above all sections while scrolling */}
         <div className="landing-nav-sticky">
-          <LandingNav onSignup={() => setSignupOpen(true)} />
+          <LandingNav onSignup={openSignup} onLogin={openLogin} />
         </div>
 
         <section ref={heroRef} id="prism" className="landing-hero scroll-section">
@@ -1255,7 +1266,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
           {/* CTA buttons */}
           <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
-            <button type="button" className="btn-primary landing-button-primary" onClick={() => setSignupOpen(true)}>Get started</button>
+            <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
             <span className="cta-or">or</span>
             <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
             <span className="cta-or">or</span>
@@ -1275,10 +1286,16 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         <div className="landing-post-hero">
           <HowItWorks />
           <AgentShowcase />
-          <PricingSection onGetStarted={() => setSignupOpen(true)} />
+          <PricingSection onGetStarted={openSignup} />
           <TeamSection />
         </div>
-        {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+        {signupOpen && (
+          <SignupDialog
+            mode={signupMode}
+            onModeChange={setSignupMode}
+            onClose={() => setSignupOpen(false)}
+          />
+        )}
       </div>
     </div>
   )
@@ -1542,35 +1559,14 @@ export default function App() {
       return
     }
 
-    // Whenever we get a provider_token (Google access token), save it for Calendar API use
-    const trySaveProviderToken = (session) => {
-      console.log('[calendar] provider_token:', session?.provider_token, 'refresh:', session?.provider_refresh_token)
-      if (!session?.provider_token) return
-      apiFetch('/calendar/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          access_token: session.provider_token,
-          refresh_token: session.provider_refresh_token || null,
-          expires_in: session.expires_in || null,
-        }),
-      }).then(res => {
-        if (res.ok) setCalendarConnected(true)
-      }).catch(() => {})
-    }
-
     supabase.auth.getSession().then(({ data }) => {
       setAuthSession(data.session || null)
       setAuthReady(true)
-      trySaveProviderToken(data.session)
     })
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthSession(session || null)
       setAuthReady(true)
-      if (_event === 'SIGNED_IN') {
-        trySaveProviderToken(session)
-      }
     })
 
     return () => data.subscription.unsubscribe()
@@ -1615,9 +1611,7 @@ export default function App() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: `${window.location.origin}${window.location.pathname}`,
+        redirectTo: `${window.location.origin}/dashboard-mcp`,
       },
     })
     if (authError) setError(authError.message)
@@ -2627,13 +2621,16 @@ export default function App() {
   }
 
   if (isMcpDashboard) {
+    if (authReady && !user && !isTestAccount) {
+      window.location.replace('/')
+      return null
+    }
+
     return (
       <>
         <DashboardMcpPage
           authReady={authReady}
           user={user}
-          signInWithGoogle={signInWithGoogle}
-          signInWithTestAccount={signInWithTestAccount}
           signOut={signOut}
           loadDashboardSample={loadDashboardSample}
           isDemoMode={isDemoMode}

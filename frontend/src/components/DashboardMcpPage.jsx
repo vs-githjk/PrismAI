@@ -5,7 +5,6 @@ import {
   DoorOpen,
   History,
   LayoutDashboard,
-  LogIn,
   Plus,
   Search,
   Trash2,
@@ -464,12 +463,6 @@ export default function DashboardMcpPage(props) {
           </button>
 
           <div className="flex items-center gap-2">
-            {props.authReady && !props.user && (
-              <button type="button" onClick={props.signInWithTestAccount || props.signInWithGoogle} className="dashboard-signin-button landing-button-primary hidden items-center gap-1.5 px-3 text-[11px] font-semibold sm:inline-flex" style={{ minHeight: 36 }}>
-                <LogIn className="h-3.5 w-3.5" aria-hidden="true" />
-                Sign in
-              </button>
-            )}
             {props.authReady && props.user ? (
               <div ref={profileAreaRef}>
                 <DropdownMenu
@@ -656,10 +649,7 @@ export default function DashboardMcpPage(props) {
                 </>
               ) : (
                 <div className="px-4 py-6 text-center">
-                  <p className="text-xs font-medium text-white/72">Sign in to view meeting history.</p>
-                  <button type="button" onClick={props.signInWithTestAccount || props.signInWithGoogle} className="mt-3 inline-flex h-9 items-center justify-center rounded-full border border-cyan-200/20 bg-cyan-300/[0.08] px-4 text-xs font-semibold text-cyan-100 transition hover:border-cyan-200/36 hover:bg-cyan-300/[0.12] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/18">
-                    Sign in
-                  </button>
+                  <p className="text-xs font-medium text-white/72">Meeting history appears after you sign in from the landing page.</p>
                 </div>
               )}
             </DropdownMenuContent>
