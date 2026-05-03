@@ -6,7 +6,7 @@
 
 ## What Is PrismAI
 
-A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 7 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
+A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 8 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into colors (agents).
 
 **Live URLs:**
 - Frontend: Vercel (`https://agentic-meeting-copilot.vercel.app/`)
@@ -72,17 +72,19 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   │   ├── email_drafter.py
 │   │   ├── calendar_suggester.py
 │   │   ├── health_score.py
-│   │   └── utils.py               # strip_fences() — shared by all agents
+│   │   ├── speaker_coach.py       # 8th agent — talk-time % + coaching notes per speaker
+│   │   └── utils.py               # strip_fences(), llm_call() — shared by all agents
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                # Root: all state, input modes, results, landing, share
+│   │   ├── App.jsx                # Root: all state, input modes, results, landing, live share, dashboard routing
 │   │   ├── index.css              # Tailwind + custom animations + height-aware landing breakpoints
 │   │   ├── main.jsx
 │   │   ├── lib/
 │   │   │   ├── supabase.js        # Supabase client (from VITE_SUPABASE_* env vars, null if unconfigured)
-│   │   │   └── api.js             # apiFetch() — wraps fetch, auto-attaches Bearer token from session
+│   │   │   ├── api.js             # apiFetch() — wraps fetch, auto-attaches Bearer token from session
+│   │   │   └── insights.js        # Cross-meeting insights utility (dashboard)
 │   │   └── components/
 │   │       ├── ChatPanel.jsx      # Chat + agent intent + global intent + history dropdown
 │   │       ├── AgentTags.jsx
@@ -93,28 +95,50 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   │       ├── SentimentCard.jsx
 │   │       ├── EmailCard.jsx
 │   │       ├── CalendarCard.jsx
+│   │       ├── SpeakerCoachCard.jsx      # 8th agent card — talk-time bars, coaching notes (rose/pink)
 │   │       ├── CrossMeetingInsights.jsx  # Insights panel — shown when signed in with 2+ meetings
 │   │       ├── ScoreTrendChart.jsx       # Health score over time (recharts)
 │   │       ├── ProactiveSuggestions.jsx
 │   │       ├── IntegrationsModal.jsx     # Slack + Notion config
+│   │       ├── DashboardMcpPage.jsx      # Full dashboard at /dashboard-mcp — MeetingView + IntelligenceView
+│   │       ├── MagicBento.jsx            # Bento grid visual component (landing/dashboard)
+│   │       ├── DotField.jsx              # Animated dot field background
 │   │       ├── Prism.jsx                 # WebGL ray-marched prism background (ogl) — landing page bg
-│   │       ├── Prism.css                 # .prism-container — position:relative, 100% fill
+│   │       ├── Prism.css
 │   │       ├── LightPillar.jsx           # WebGL light pillar effect (three.js) — landing page corners
-│   │       ├── LightPillar.css           # .light-pillar-container — position:absolute, 100% fill
+│   │       ├── LightPillar.css
 │   │       ├── ErrorCard.jsx
-│   │       └── SkeletonCard.jsx
+│   │       ├── SkeletonCard.jsx
+│   │       ├── dashboard/                # Sub-components for DashboardMcpPage
+│   │       │   ├── MeetingView.jsx       # Single-meeting view tab
+│   │       │   ├── IntelligenceView.jsx  # Cross-meeting intelligence tab
+│   │       │   ├── ActionBoard.jsx, DecisionMemory.jsx, HealthTrend.jsx
+│   │       │   ├── MeetingsRail.jsx, MetricTile.jsx, OwnerLoad.jsx
+│   │       │   ├── StatsCanvas.jsx, StatsHero.jsx, ThemeChips.jsx, Vitals.jsx
+│   │       │   └── useCountUp.js, dashboardStyles.js
+│   │       └── ui/                       # shadcn primitives
+│   │           ├── tabs.jsx, dropdown-menu.jsx, button.tsx, dialog.tsx, text-rotate.tsx
+│   ├── vercel.json                # SPA catch-all rewrite — prevents /dashboard-mcp 404 on refresh
 │   ├── .env.example
 │   └── vite.config.js
+├── supabase/
+│   ├── action_refs_migration.sql  # action_refs table — closed-loop action item tracking
+│   ├── bot_commands_migration.sql
+│   ├── chats_unique_migration.sql
+│   ├── calendar_migration.sql
+│   ├── auth_migration.sql
+│   └── tools_migration.sql
 ├── render.yaml
 ├── PRISM_AI_CONTEXT.md            # This file
-└── IMPROVEMENT_SPECS_DRAFT_1.md   # Prioritized roadmap
+├── IMPROVEMENT_SPEC_2.md          # Feature spec — Features 1-5 status and test instructions
+└── IMPROVEMENT_SPECS_DRAFT_1.md   # Original prioritized roadmap
 ```
 
 > **For incoming LLMs:** Read both docs first, then read the specific source files for your task. Never assume the docs match the code exactly — the code is authoritative.
 
 ---
 
-## The 7 Agents (ROYGBIV)
+## The 8 Agents
 
 | Color | Agent | Runs | Output Key | Shape |
 |---|---|---|---|---|
@@ -125,6 +149,7 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 | 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` |
 | 🟣 Indigo | `calendar_suggester` | Only if follow-up discussed | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe, resolved_date, resolved_day }` |
 | 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, badges:[], breakdown:{clarity,action_orientation,engagement} }` |
+| 🩷 Pink | `speaker_coach` | Always | `speaker_coach` | `{ speakers:[{name,talk_pct,decisions_owned,actions_owned,coaching_note}] }` |
 
 `calendar_suggestion` now includes `resolved_date` and `resolved_day` — resolved by `calendar_resolution.py` from the agent's natural language timeframe before returning to the frontend.
 
@@ -414,6 +439,46 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 **Infrastructure / resilience:**
 - **Model fallback** — all 7 agents now use `llm_call()` in `agents/utils.py` instead of calling Groq directly. On 429/503/overload, falls back to `claude-haiku-4-5-20251001` if `ANTHROPIC_API_KEY` is set on Render. `anthropic>=0.40.0` added to `requirements.txt`.
 - **Calendar status endpoint** — was making two Supabase queries and had dead/contradictory logic. Replaced with single query: `connected = calendar_connected AND google_access_token is set`.
+
+### Shipped Apr–May 2026 — Features 1–5
+
+**Feature 5 — Shareable Live View** (commits `2763adf`, `7d1bc9c`)
+- `/join-meeting` generates a `live_token` (16-char hex) stored in `bot_store` + `_live_token_index`
+- Public endpoint `GET /live/{live_token}` returns status, commands, transcript_lines, result, brief, transcript
+- `LiveMeetingView` component in `App.jsx` — polls every 3s, renders full result cards when done
+- Bot intro message posts the live link in Meet chat 20s after joining (`FRONTEND_URL` env var)
+- `vercel.json` SPA catch-all rewrite prevents 404 on direct navigation to `/dashboard-mcp`
+
+**Feature 2 — Proactive Interventions** (commit `6d4b55b`)
+- `_run_proactive_checker(bot_id)` asyncio task started per bot on join, checks every 60s
+- 4 triggers: no decisions after 30 min, approaching 60 min, action items with no owners, recurring blocker keywords match past meetings
+- Throttled: max 1 proactive message per 10 minutes per bot
+
+**Feature 4 — Speaker Coaching** (commit `6d4b55b`)
+- `backend/agents/speaker_coach.py` — 8th agent, always runs, returns `[]` if <2 named speakers
+- `SpeakerCoachCard.jsx` — rose/pink, animated talk-time bars, per-speaker coaching note
+- Shown in all 4 layouts: desktop, mobile, share view, live share view
+
+**Feature 1 — Pre-Meeting Brief** (commit `6d4b55b`)
+- `_build_pre_meeting_brief(user_id)` in `recall_routes.py` — pure Python, no LLM, fetches last 10 meetings
+- Returns `{open_items, recent_decisions, blockers}` — included in `GET /live/{live_token}` response
+- Also pulls unresolved `action_refs` rows into open_items
+- `PreMeetingBrief` collapsible card in `LiveMeetingView` — sky-blue, hides when status=done
+- "Save to my history" button in live viewer — POSTs full result+transcript to `/meetings` when logged in
+
+**Feature 3 — Closed-Loop Action Items** (commit `6d4b55b`)
+- `supabase/action_refs_migration.sql` — `action_refs` table with RLS enabled
+- `execute_tool()` in `tools/registry.py` injects `external_ref: {tool, external_id}` when Linear or Calendar tools succeed
+- `_process_command` in `realtime_routes.py` saves a row to `action_refs` after each successful tool call
+- `derive_cross_meeting_insights()` in `cross_meeting_service.py` accepts `user_id`, returns `unresolved_action_refs`
+- `ActionItemsCard.jsx` shows Linear (⬡) or Calendar (📅) ID pill when `item.external_ref` present
+
+**Dashboard Redesign** (commits `e21a994`, `180f71a`)
+- New `DashboardMcpPage` at `/dashboard-mcp` — two views: MeetingView and IntelligenceView
+- `MagicBento`, `DotField`, `dashboard/` sub-components (ActionBoard, HealthTrend, OwnerLoad, etc.)
+- shadcn UI primitives: `tabs`, `dropdown-menu`, `button`, `dialog`, `text-rotate`
+- "View dashboard" button added to landing CTA row
+- `frontend/vercel.json` added to prevent SPA 404 on Vercel
 
 ### Previously fixed
 - **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Loaded Space Grotesk + Manrope fonts. Tuned gradient overlays, glass panel opacity, gradient-text contrast, and `filter: drop-shadow` for clipped text.
