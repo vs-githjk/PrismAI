@@ -44,7 +44,7 @@ class ChatEntry(BaseModel):
 async def get_user_settings(user_id: str = Depends(require_user_id)):
     client = _require_storage()
     res = client.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
-    row = res.data or {}
+    row = (res.data if res is not None else None) or {}
     # Only return non-sensitive fields relevant to the frontend
     return {
         "linear_api_key": row.get("linear_api_key") or "",
