@@ -19,30 +19,19 @@ const FOUNDERS = [
       'MS Machine Learning; prior research in NLP summarization',
     ],
   },
-  {
-    name: 'Founder Name',
-    role: 'Co-founder & Head of Product',
-    bullets: [
-      '10 years product at developer-tool companies, B2B SaaS',
-      'Led growth from $0 to $12M ARR at a previous company',
-      'Obsessed with reducing cognitive overhead for technical teams',
-    ],
-  },
 ]
 
 export default function TeamSection() {
   const [visible, setVisible] = useState(false)
-  const [inView, setInView] = useState(false)
-  const [cardsVisible, setCardsVisible] = useState([false, false, false])
+  const [cardsVisible, setCardsVisible] = useState(() => FOUNDERS.map(() => false))
   const sectionRef = useRef(null)
-  const cardRefs = useRef([null, null, null])
+  const cardRefs = useRef(FOUNDERS.map(() => null))
 
   useEffect(() => {
     const obs = new IntersectionObserver(
       ([entry]) => {
         const r = entry.intersectionRatio
         if (r > 0.05) setVisible(true)
-        setInView(r > 0.05)
       },
       { threshold: [0, 0.05, 0.15] }
     )
@@ -73,7 +62,6 @@ export default function TeamSection() {
 
   return (
     <section ref={sectionRef} id="people" className="team-section scroll-section" style={{ position: 'relative' }}>
-      <div className={`section-blur-overlay${inView ? '' : ' active'}`} aria-hidden="true" />
       <div className="section-inner">
         <p className="section-eyebrow">The team</p>
         <h2 className={`team-heading${visible ? ' heading-visible' : ''}`}>

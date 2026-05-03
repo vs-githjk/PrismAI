@@ -4,25 +4,9 @@
 
 ---
 
-## Current State (as of Apr 20 2026) — Read First
-
-**Last session focus:** Security hardening, reliability fixes, race condition patches (13 confirmed bugs fixed, pushed to main as commit `4c8877b`).
-
-**Landing page is done.** Do not rework it unless the user explicitly asks. Current state the user signed off on:
-- WebGL Prism (`ogl`) as full-page background — `glow=1.4`, `bloom=1.2`, `scale=3.6`, `baseWidth=5.5`, `colorFrequency=1.1`
-- Two `LightPillar` (`three.js`) components in left/right edges, `intensity=0.7`, masked with gradient to dissolve toward center
-- Top vignette + bottom fade gradient overlays
-- Space Grotesk + Manrope fonts loaded
-- `gradient-text` ("Clarity that lasts.") uses `filter: drop-shadow` (NOT `text-shadow` — doesn't work on clipped text)
-- Glass panels at `rgba(7,4,15,0.68)` opacity
-
-**Known visual note (left intentionally as-is):** `UpcomingMeetings.jsx` panel in the Join tab uses a lighter `rgba(255,255,255,0.015)` background vs the "NEXT UP" banner which uses `rgba(14,165,233,0.08)`. User saw this disparity and decided to leave it unchanged.
-
----
-
 ## What Is PrismAI
 
-A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 7 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
+A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 8 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into colors (agents).
 
 **Live URLs:**
 - Frontend: Vercel (`https://agentic-meeting-copilot.vercel.app/`)
@@ -46,7 +30,21 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | Frontend Hosting | Vercel |
 | Backend Hosting | Render.com free tier |
 | Landing WebGL | `ogl` (Prism component) + `three.js` (LightPillar component) |
-| Fonts | Space Grotesk + Manrope via Google Fonts |
+| Fonts | Inter/Nunito/Sora in the Vite app; Geist/Inter packages are also available |
+
+---
+
+## Current Design Direction
+
+PrismAI should read as a shadcn-style product UI with the existing cyan/sky accent, not as a glassmorphism website.
+
+**Core direction:**
+- Use shadcn/radix patterns first: solid dark surfaces, crisp borders, clear focus rings, consistent radius, restrained shadow, and predictable controls.
+- Keep the current cyan/sky accent family as the brand accent: `#22d3ee`, `#67e8f9`, Tailwind `cyan-*` / `sky-*`, and existing `rgba(14,165,233,...)` states.
+- Use the accent for primary CTAs, active navigation, selected states, focus rings, badges, and key data highlights.
+- Avoid frosted blur/glass as a default surface treatment for dashboard cards, modals, page sections, nav bars, or result cards.
+- Glass-like treatment is still allowed as an accent when it adds emphasis: primary CTA treatment, focused callouts, one-off highlights, or promotional moments.
+- The design should feel premium through clarity, spacing, alignment, typography, and specificity rather than heavy glow, blur, or ambient effects.
 
 ---
 
@@ -74,17 +72,19 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │   ├── email_drafter.py
 │   │   ├── calendar_suggester.py
 │   │   ├── health_score.py
-│   │   └── utils.py               # strip_fences() — shared by all agents
+│   │   ├── speaker_coach.py       # 8th agent — talk-time % + coaching notes per speaker
+│   │   └── utils.py               # strip_fences(), llm_call() — shared by all agents
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                # Root: all state, input modes, results, landing, share
+│   │   ├── App.jsx                # Root: all state, input modes, results, landing, live share, dashboard routing
 │   │   ├── index.css              # Tailwind + custom animations + height-aware landing breakpoints
 │   │   ├── main.jsx
 │   │   ├── lib/
 │   │   │   ├── supabase.js        # Supabase client (from VITE_SUPABASE_* env vars, null if unconfigured)
-│   │   │   └── api.js             # apiFetch() — wraps fetch, auto-attaches Bearer token from session
+│   │   │   ├── api.js             # apiFetch() — wraps fetch, auto-attaches Bearer token from session
+│   │   │   └── insights.js        # Cross-meeting insights utility (dashboard)
 │   │   └── components/
 │   │       ├── ChatPanel.jsx      # Chat + agent intent + global intent + history dropdown
 │   │       ├── AgentTags.jsx
@@ -95,28 +95,50 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 │   │       ├── SentimentCard.jsx
 │   │       ├── EmailCard.jsx
 │   │       ├── CalendarCard.jsx
+│   │       ├── SpeakerCoachCard.jsx      # 8th agent card — talk-time bars, coaching notes (rose/pink)
 │   │       ├── CrossMeetingInsights.jsx  # Insights panel — shown when signed in with 2+ meetings
 │   │       ├── ScoreTrendChart.jsx       # Health score over time (recharts)
 │   │       ├── ProactiveSuggestions.jsx
 │   │       ├── IntegrationsModal.jsx     # Slack + Notion config
+│   │       ├── DashboardMcpPage.jsx      # Full dashboard at /dashboard-mcp — MeetingView + IntelligenceView
+│   │       ├── MagicBento.jsx            # Bento grid visual component (landing/dashboard)
+│   │       ├── DotField.jsx              # Animated dot field background
 │   │       ├── Prism.jsx                 # WebGL ray-marched prism background (ogl) — landing page bg
-│   │       ├── Prism.css                 # .prism-container — position:relative, 100% fill
+│   │       ├── Prism.css
 │   │       ├── LightPillar.jsx           # WebGL light pillar effect (three.js) — landing page corners
-│   │       ├── LightPillar.css           # .light-pillar-container — position:absolute, 100% fill
+│   │       ├── LightPillar.css
 │   │       ├── ErrorCard.jsx
-│   │       └── SkeletonCard.jsx
+│   │       ├── SkeletonCard.jsx
+│   │       ├── dashboard/                # Sub-components for DashboardMcpPage
+│   │       │   ├── MeetingView.jsx       # Single-meeting view tab
+│   │       │   ├── IntelligenceView.jsx  # Cross-meeting intelligence tab
+│   │       │   ├── ActionBoard.jsx, DecisionMemory.jsx, HealthTrend.jsx
+│   │       │   ├── MeetingsRail.jsx, MetricTile.jsx, OwnerLoad.jsx
+│   │       │   ├── StatsCanvas.jsx, StatsHero.jsx, ThemeChips.jsx, Vitals.jsx
+│   │       │   └── useCountUp.js, dashboardStyles.js
+│   │       └── ui/                       # shadcn primitives
+│   │           ├── tabs.jsx, dropdown-menu.jsx, button.tsx, dialog.tsx, text-rotate.tsx
+│   ├── vercel.json                # SPA catch-all rewrite — prevents /dashboard-mcp 404 on refresh
 │   ├── .env.example
 │   └── vite.config.js
+├── supabase/
+│   ├── action_refs_migration.sql  # action_refs table — closed-loop action item tracking
+│   ├── bot_commands_migration.sql
+│   ├── chats_unique_migration.sql
+│   ├── calendar_migration.sql
+│   ├── auth_migration.sql
+│   └── tools_migration.sql
 ├── render.yaml
 ├── PRISM_AI_CONTEXT.md            # This file
-└── IMPROVEMENT_SPECS_DRAFT_1.md   # Prioritized roadmap
+├── IMPROVEMENT_SPEC_2.md          # Feature spec — Features 1-5 status and test instructions
+└── IMPROVEMENT_SPECS_DRAFT_1.md   # Original prioritized roadmap
 ```
 
 > **For incoming LLMs:** Read both docs first, then read the specific source files for your task. Never assume the docs match the code exactly — the code is authoritative.
 
 ---
 
-## The 7 Agents (ROYGBIV)
+## The 8 Agents
 
 | Color | Agent | Runs | Output Key | Shape |
 |---|---|---|---|---|
@@ -127,6 +149,7 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 | 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` |
 | 🟣 Indigo | `calendar_suggester` | Only if follow-up discussed | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe, resolved_date, resolved_day }` |
 | 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, badges:[], breakdown:{clarity,action_orientation,engagement} }` |
+| 🩷 Pink | `speaker_coach` | Always | `speaker_coach` | `{ speakers:[{name,talk_pct,decisions_owned,actions_owned,coaching_note}] }` |
 
 `calendar_suggestion` now includes `resolved_date` and `resolved_day` — resolved by `calendar_resolution.py` from the agent's natural language timeframe before returning to the frontend.
 
@@ -289,7 +312,9 @@ Share links bypass the landing. Logo in the header navigates back to the landing
 
 ### Landing Visual Layer (as of Apr 2026)
 
-Three layered WebGL effects sit behind all landing content, stacked in DOM order (all `position:absolute, inset:0, pointer-events:none`):
+The landing page may keep the prism metaphor and WebGL effects, but the surrounding UI should follow the current shadcn + cyan/sky direction. Use solid/near-solid surfaces and crisp borders for normal UI. Do not treat glass panels as the default landing or dashboard language.
+
+Three layered WebGL effects sit behind landing content, stacked in DOM order where used (all `position:absolute, inset:0, pointer-events:none`):
 
 1. **`<Prism />`** (`ogl`, `components/Prism.jsx`) — full-page ray-marched WebGL prism. `animationType="rotate"`, `scale=3.6`, `glow=1.4`, `bloom=1.2`, `colorFrequency=1.1`, `baseWidth=5.5`, `height=3.5`, `noise=0.04`. Transparent canvas — dark page bg shows through outside the prism shape.
 
@@ -305,7 +330,7 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 - Pillars too visible → lower `intensity` or tighten the mask gradient stop from 15% toward 5%
 - Text unreadable → strengthen `text-shadow` on `.landing-screen h1/p` in `index.css` and/or deepen top vignette
 
-**Fonts:** Space Grotesk (headings) + Manrope (body) loaded via Google Fonts in `index.html`. Declared in `index.css` as `--font-display` / `--font-body`.
+**Fonts:** The Vite app currently loads Inter, Nunito, and Sora via Google Fonts, with `@fontsource-variable/geist` and `@fontsource-variable/inter` also installed. Use the existing font variables/classes in `index.css`; do not introduce a new type system without updating this handoff.
 
 **`gradient-text`** (used on "Clarity that lasts."): uses `background-clip: text` with a white→sky-blue gradient. Text-shadow doesn't work on clipped text — use `filter: drop-shadow()` instead.
 
@@ -339,26 +364,19 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 ## Known Issues / Watch Out For
 
 - **Render free tier sleeps** — first request after inactivity is slow. Not a bug.
-- **`bot_store` is in-memory** — lost on Render restart. Syncs to `bot_sessions` via `_db_save`/`_db_load`; `/bot-status` falls back to DB on cache miss. Mostly solved.
+- **`bot_store` is in-memory** — lost on Render restart. Needs a `bots` Supabase table to fix properly.
 - **Bot endpoints are unauthenticated** — `/join-meeting`, `/bot-status`, `/recall-webhook` have no auth. Bot results aren't scoped to a user. Known limitation of the current bot architecture.
 - **Sentiment is conditional** — won't appear for neutral/positive meetings by design.
 - **`decisions` importance** — 1 = critical, 2 = significant, 3 = minor. Sorted ascending in `DecisionsCard.jsx`.
 - **SSE buffering** — `X-Accel-Buffering: no` header is set to mitigate Render free tier SSE buffering.
-- **Meeting chat data structure** — `participant_events.chat_message` handler was fixed to read `data["data"]` but Recall.ai's payload shape may vary by platform (Google Meet vs Zoom vs Teams). If typed commands stop working, check Render logs for `[realtime] chat message` lines to verify the nesting. If blank, adjust the `outer.get("data") or outer.get("participant_events") or outer` fallback chain.
-- **`gmail_send` needs explicit recipient** — LLM will not guess email addresses. User must say the full address in their command, e.g. "prism, send a follow-up to john@company.com".
-- **`savedMeetingRef` on Render cold-start** — if the POST to `/meetings` fails (Render waking up), `savedMeetingRef` is now reset so retry is possible. Previously the guard stayed set and the meeting was silently lost.
-- **Rate limiter uses `None` as user key** — `execute_tool()` in `tools/registry.py` tracks rate limits per `user_id`. Unauthenticated tool calls (from `/chat`) pass `user_id=None`, conflating all guest requests under one bucket. Not a security issue, minor fairness issue.
-- **`RECALL_WEBHOOK_SECRET`** — HMAC webhook verification is in place but only active if this env var is set on Render. Recall.ai dashboard has no static webhook endpoint configured (webhooks are registered per-bot in the API call body), so no signing secret is available yet. Verification is effectively skipped.
 
 ---
 
 ## Remaining Roadmap (priority order)
 
-1. **Voice output verification** — the 415 fix (multipart upload) is deployed but needs a live meeting test to confirm. If `output_audio` still fails, check Render logs for the new error code.
-2. **`ANTHROPIC_API_KEY` on Render** ✓ — already set. Model fallback is active.
-3. **Gmail send UX** — user must state full recipient email in command. Future: parse names from transcript or show a confirmation UI before sending.
-4. **Bot store persistence** — `bot_store` syncs to `bot_sessions` via `_db_save`/`_db_load`. `_db_load` is called as fallback in `/bot-status`. Mostly solved; verify the fallback path works in a live test.
-5. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on single-user auth being stable first.
+1. **Bot store persistence** — move `bot_store` to a `bots` Supabase table so restarts don't lose in-flight meetings
+2. **Model fallback** — each agent catches Groq 429/errors, retries with `gpt-4o-mini` or `claude-haiku-4-5`. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to Render.
+3. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
 
 ### Fixed Apr 20 2026 (commit 73e5097) — Two bugs from codebase audit
 
@@ -422,8 +440,49 @@ Three layered WebGL effects sit behind all landing content, stacked in DOM order
 - **Model fallback** — all 7 agents now use `llm_call()` in `agents/utils.py` instead of calling Groq directly. On 429/503/overload, falls back to `claude-haiku-4-5-20251001` if `ANTHROPIC_API_KEY` is set on Render. `anthropic>=0.40.0` added to `requirements.txt`.
 - **Calendar status endpoint** — was making two Supabase queries and had dead/contradictory logic. Replaced with single query: `connected = calendar_connected AND google_access_token is set`.
 
+### Shipped Apr–May 2026 — Features 1–5
+
+**Feature 5 — Shareable Live View** (commits `2763adf`, `7d1bc9c`)
+- `/join-meeting` generates a `live_token` (16-char hex) stored in `bot_store` + `_live_token_index`
+- Public endpoint `GET /live/{live_token}` returns status, commands, transcript_lines, result, brief, transcript
+- `LiveMeetingView` component in `App.jsx` — polls every 3s, renders full result cards when done
+- Bot intro message posts the live link in Meet chat 20s after joining (`FRONTEND_URL` env var)
+- `vercel.json` SPA catch-all rewrite prevents 404 on direct navigation to `/dashboard-mcp`
+
+**Feature 2 — Proactive Interventions** (commit `6d4b55b`)
+- `_run_proactive_checker(bot_id)` asyncio task started per bot on join, checks every 60s
+- 4 triggers: no decisions after 30 min, approaching 60 min, action items with no owners, recurring blocker keywords match past meetings
+- Throttled: max 1 proactive message per 10 minutes per bot
+
+**Feature 4 — Speaker Coaching** (commit `6d4b55b`)
+- `backend/agents/speaker_coach.py` — 8th agent, always runs, returns `[]` if <2 named speakers
+- `SpeakerCoachCard.jsx` — rose/pink, animated talk-time bars, per-speaker coaching note
+- Shown in all 4 layouts: desktop, mobile, share view, live share view
+
+**Feature 1 — Pre-Meeting Brief** (commit `6d4b55b`)
+- `_build_pre_meeting_brief(user_id)` in `recall_routes.py` — pure Python, no LLM, fetches last 10 meetings
+- Returns `{open_items, recent_decisions, blockers}` — included in `GET /live/{live_token}` response
+- Also pulls unresolved `action_refs` rows into open_items
+- `PreMeetingBrief` collapsible card in `LiveMeetingView` — sky-blue, hides when status=done
+- "Save to my history" button in live viewer — POSTs full result+transcript to `/meetings` when logged in
+
+**Feature 3 — Closed-Loop Action Items** (commit `6d4b55b`)
+- `supabase/action_refs_migration.sql` — `action_refs` table with RLS enabled
+- `execute_tool()` in `tools/registry.py` injects `external_ref: {tool, external_id}` when Linear or Calendar tools succeed
+- `_process_command` in `realtime_routes.py` saves a row to `action_refs` after each successful tool call
+- `derive_cross_meeting_insights()` in `cross_meeting_service.py` accepts `user_id`, returns `unresolved_action_refs`
+- `ActionItemsCard.jsx` shows Linear (⬡) or Calendar (📅) ID pill when `item.external_ref` present
+
+**Dashboard Redesign** (commits `e21a994`, `180f71a`)
+- New `DashboardMcpPage` at `/dashboard-mcp` — two views: MeetingView and IntelligenceView
+- `MagicBento`, `DotField`, `dashboard/` sub-components (ActionBoard, HealthTrend, OwnerLoad, etc.)
+- shadcn UI primitives: `tabs`, `dropdown-menu`, `button`, `dialog`, `text-rotate`
+- "View dashboard" button added to landing CTA row
+- `frontend/vercel.json` added to prevent SPA 404 on Vercel
+
 ### Previously fixed
 - **Landing page visual overhaul (Apr 2026)** — replaced CSS-only prism center element with full-page WebGL Prism background (`ogl`). Added LightPillar corner effects (`three.js`). Loaded Space Grotesk + Manrope fonts. Tuned gradient overlays, glass panel opacity, gradient-text contrast, and `filter: drop-shadow` for clipped text.
+- **Design direction clarified (Apr 2026)** — current target is shadcn-style dark surfaces with the existing cyan/sky accent. Avoid full-site glassmorphism; reserve glass-like treatment for accents such as CTAs or focused highlights.
 - **CrossMeetingInsights 3-col header overflow** — OWNERSHIP DRIFT / ACTION HYGIENE / UNRESOLVED DECISIONS labels clipped by `overflow-hidden` container on narrow viewports. Headers now stack vertically.
 - **Decision theme noise** — Month/day names (`april`, `monday`, `jan`, etc.) were surfacing as recurring decision themes. Full set of month/day names + abbreviations added to `STOP_WORDS` in `CrossMeetingInsights.jsx`.
 - **Aria-labels** — send message (ChatPanel), delete chat session (ChatPanel), remove speaker (App.jsx).
@@ -461,10 +520,9 @@ async def run(transcript: str) -> dict:
         raw = response.choices[0].message.content
         try:
             return json.loads(strip_fences(raw))
-        except Exception:
+        except json.JSONDecodeError:
             if attempt == 1:
-                return _DEFAULT  # never raise — streaming run must not be killed by one agent
-    return _DEFAULT
+                raise HTTPException(status_code=500, detail="agentname: failed to parse JSON after retry")
 ```
 
 ### Adding a New Agent — Checklist
@@ -551,10 +609,6 @@ Add these in Render → `meeting-copilot-api` → Environment:
 | `ELEVENLABS_VOICE_ID` | Optional | ElevenLabs → Voices → copy ID | Custom voice (default: `21m00Tcm4TlvDq8ikWAM` / Rachel) |
 | `SLACK_BOT_TOKEN` | For Slack | Slack App → OAuth & Permissions → Bot Token (`xoxb-...`) | Slack read/post/search tools |
 | `LINEAR_API_KEY` | For Linear | [linear.app/settings/api](https://linear.app/settings/api) | Linear issue creation tool |
-| `ALLOWED_ORIGINS` | **Yes** | `https://agentic-meeting-copilot.vercel.app,http://localhost:5173` | CORS allowlist — already set ✓ |
-| `ANTHROPIC_API_KEY` | **Yes** | console.anthropic.com | LLM fallback on Groq 429/503 — already set ✓ |
-| `RECALL_WEBHOOK_SECRET` | Optional | Recall.ai dashboard → Webhooks → signing secret | HMAC webhook verification (not yet available — webhooks are per-bot) |
-| `RECALL_API_BASE` | Optional | Default: `https://us-west-2.recall.ai/api/v1` | Override Recall region if needed |
 
 ### Vercel Dashboard — Environment Variables
 
@@ -586,7 +640,6 @@ Run in **Supabase SQL Editor** (in order, skip if already applied):
 1. `supabase/auth_migration.sql` — creates `meetings` + `chats` tables
 2. `supabase/calendar_migration.sql` — creates `user_settings` table with Google token columns
 3. `supabase/tools_migration.sql` — adds `linear_api_key`, `slack_bot_token` columns + creates `bot_sessions` table
-4. `supabase/bot_commands_migration.sql` — creates `append_bot_command(p_bot_id, p_command)` RPC for atomic command appends (**already run ✓ Apr 20 2026**)
 
 ### What works without optional env vars
 

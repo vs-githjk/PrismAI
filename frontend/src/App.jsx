@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } f
 import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
-import RotatingText from './components/RotatingText'
+import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
 import AgentShowcase from './components/AgentShowcase'
 import PricingSection from './components/PricingSection'
@@ -19,6 +19,7 @@ import CalendarCard from './components/CalendarCard'
 import SpeakerCoachCard from './components/SpeakerCoachCard'
 import SkeletonCard from './components/SkeletonCard'
 import ErrorCard from './components/ErrorCard'
+import DashboardMcpPage from './components/DashboardMcpPage'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
 
@@ -56,6 +57,15 @@ class ErrorBoundary extends Component {
 }
 
 const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
+const TEST_AUTH_SESSION = {
+  access_token: 'local-test-session',
+  user: {
+    id: 'test-account',
+    email: 'test@prismai.local',
+    user_metadata: { name: 'Prism Test' },
+    app_metadata: { provider: 'test' },
+  },
+}
 
 function DeferredCardFallback({ lines = 2 }) {
   return (
@@ -1140,7 +1150,6 @@ const HERO_SENTENCES = [
 function LandingScreen({ onDemo, onSkip, exiting }) {
   const [signupOpen, setSignupOpen] = useState(false)
   const [scrollCueVisible, setScrollCueVisible] = useState(true)
-  const [heroInView, setHeroInView] = useState(true)
   const scrollContainerRef = useRef(null)
   const heroRef = useRef(null)
 
@@ -1152,7 +1161,6 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       ([entry]) => {
         const r = entry.intersectionRatio
         setScrollCueVisible(r >= 0.7)
-        setHeroInView(r > 0.1)
       },
       { threshold: [0, 0.1, 0.5, 0.7, 1], root: container }
     )
@@ -1162,8 +1170,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
   return (
     <div
-      ref={scrollContainerRef}
-      className="landing-page"
+      className="landing-page-shell"
       style={{
         opacity: exiting ? 0 : 1,
         transform: exiting ? 'scale(0.97)' : 'scale(1)',
@@ -1191,84 +1198,88 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         </div>
       </div>
 
-      {/* Global blur overlay — activates when scrolled past hero */}
-      <div className={`landing-bg-blur${heroInView ? '' : ' active'}`} aria-hidden="true" />
-
-      {/* Sticky nav — sits above all sections while scrolling */}
-      <div className="landing-nav-sticky">
-        <LandingNav onSignup={() => setSignupOpen(true)} />
-      </div>
-
-      <section ref={heroRef} id="prism" className="landing-hero scroll-section">
-      {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
-      <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
-        <defs>
-          <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-            <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
-            <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
-            <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
-            <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
-            <feComponentTransfer in="blended">
-              <feFuncA type="linear" slope="1"/>
-            </feComponentTransfer>
-          </filter>
-        </defs>
-      </svg>
-
-      {/* Hero content */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
-        {/* Rotating pain-point text */}
-        <div className="w-full flex items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-          <RotatingText
-            texts={HERO_SENTENCES}
-            rotationInterval={4000}
-            staggerFrom="last"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '-120%' }}
-            staggerDuration={0.012}
-            splitLevelClassName="overflow-hidden pb-0.5"
-            transition={{ type: 'spring', damping: 32, stiffness: 280 }}
-            mainClassName="text-4xl sm:text-5xl lg:text-6xl font-bold text-white/85 leading-tight tracking-tight justify-center"
-            elementLevelClassName="font-bold"
-            style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontWeight: 700 }}
-          />
+      <div
+        ref={scrollContainerRef}
+        className="landing-page"
+      >
+        {/* Sticky nav — sits above all sections while scrolling */}
+        <div className="landing-nav-sticky">
+          <LandingNav onSignup={() => setSignupOpen(true)} />
         </div>
 
-        {/* Tagline */}
-        <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
-          <p
-            className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
-            style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}
-          >
-            Let <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 300 }}>_prism</span> handle it.
-          </p>
-        </div>
-
-        {/* CTA buttons */}
-        <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
-          <button className="btn-primary" onClick={() => setSignupOpen(true)}>Get started</button>
-          <span className="cta-or">or</span>
-          <button className="btn-ghost" onClick={onDemo}>Try it out</button>
-        </div>
-      </div>
-
-      <div className={`section-blur-overlay${heroInView ? '' : ' active'}`} aria-hidden="true" />
-
-      {/* Scroll cue */}
-      <div className={`scroll-cue${scrollCueVisible ? '' : ' hidden'}`} aria-hidden="true">
-        <span>see more below</span>
-        <svg className="scroll-cue-chevron" width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
-          <polyline points="1,2 7,8 13,2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <section ref={heroRef} id="prism" className="landing-hero scroll-section">
+        {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
+        <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+          <defs>
+            <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+              <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" seed="8" stitchTiles="stitch" result="noise"/>
+              <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+              <feComposite operator="in" in="grayNoise" in2="SourceGraphic" result="maskedNoise"/>
+              <feBlend in="SourceGraphic" in2="maskedNoise" mode="overlay" result="blended"/>
+              <feComponentTransfer in="blended">
+                <feFuncA type="linear" slope="1"/>
+              </feComponentTransfer>
+            </filter>
+          </defs>
         </svg>
-      </div>
-      </section>
 
-      <HowItWorks />
-      <AgentShowcase />
-      <PricingSection onGetStarted={() => setSignupOpen(true)} />
-      <TeamSection />
-      {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+        {/* Hero content */}
+        <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
+          {/* Rotating pain-point text */}
+          <div className="w-full flex translate-y-[5vh] items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            <TextRotate
+              texts={HERO_SENTENCES}
+              rotationInterval={3600}
+              staggerFrom="first"
+              staggerDuration={0.012}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+              splitBy="words"
+              mainClassName="min-h-[6.75rem] w-full max-w-[min(100%,84rem)] justify-center text-center text-[clamp(1.25rem,4.8vw,3.75rem)] font-medium leading-tight tracking-tight text-white/85 sm:min-h-[7.5rem] lg:min-h-[8.75rem]"
+              splitLevelClassName="overflow-hidden pb-1"
+              elementLevelClassName="font-medium"
+              style={{ fontFamily: "'Rubik', 'General Sans', sans-serif", fontWeight: 500 }}
+            />
+          </div>
+
+          {/* Tagline */}
+          <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
+            <p
+              className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
+            >
+              Let <span className="font-light">prism</span> handle it.
+            </p>
+          </div>
+
+          {/* CTA buttons */}
+          <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
+            <button type="button" className="btn-primary landing-button-primary" onClick={() => setSignupOpen(true)}>Get started</button>
+            <span className="cta-or">or</span>
+            <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
+            <span className="cta-or">or</span>
+            <button type="button" className="btn-ghost landing-button-secondary" onClick={() => window.location.href = '/dashboard-mcp'}>View dashboard</button>
+          </div>
+        </div>
+
+        {/* Scroll cue */}
+        <div className={`scroll-cue${scrollCueVisible ? '' : ' hidden'}`} aria-hidden="true">
+          <span>see more below</span>
+          <svg className="scroll-cue-chevron" width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+            <polyline points="1,2 7,8 13,2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        </section>
+
+        <div className="landing-post-hero">
+          <HowItWorks />
+          <AgentShowcase />
+          <PricingSection onGetStarted={() => setSignupOpen(true)} />
+          <TeamSection />
+        </div>
+        {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+      </div>
     </div>
   )
 }
@@ -1307,10 +1318,12 @@ export default function App() {
   const analysisRunIdRef = useRef(0)
   const [mobileTab, setMobileTab] = useState('input') // 'input' | 'results'
   const hasResultsView = loading || Boolean(result)
+  const isMcpDashboard = typeof window !== 'undefined' && window.location.pathname === '/dashboard-mcp'
 
   // Show landing only to first-time visitors (not returning users, not share links)
   const [showLanding, setShowLanding] = useState(
     () => {
+      if (typeof window !== 'undefined' && window.location.pathname === '/dashboard-mcp') return false
       if (INITIAL_SHARE_TOKEN) return false
       const persistedScreen = sessionStorage.getItem(UI_SCREEN_KEY)
       if (persistedScreen === 'landing') return true
@@ -1363,6 +1376,7 @@ export default function App() {
   const historySearchDebounceRef = useRef(null)
   const previousUserRef = useRef(null)
   const user = authSession?.user || null
+  const isTestAccount = user?.id === 'test-account'
 
   useEffect(() => {
     if (INITIAL_SHARE_TOKEN || !authReady) return // skip auto-load for shared links
@@ -1370,6 +1384,17 @@ export default function App() {
     previousUserRef.current = user
 
     if (!user) {
+      setHistory([])
+      setCrossMeetingInsights(null)
+      setInitialMessages([])
+      setMeetingId(null)
+      setShareToken(null)
+      setShowHistory(false)
+      setShareCopied(false)
+      return
+    }
+
+    if (isTestAccount) {
       setHistory([])
       setCrossMeetingInsights(null)
       setInitialMessages([])
@@ -1437,10 +1462,10 @@ export default function App() {
       .catch(() => {})
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, user?.id])
+  }, [authReady, user?.id, isTestAccount])
 
   useEffect(() => {
-    if (!user || history.length < 2) {
+    if (!user || isTestAccount || history.length < 2) {
       setCrossMeetingInsights(null)
       return
     }
@@ -1451,15 +1476,16 @@ export default function App() {
         if (data && typeof data === 'object') setCrossMeetingInsights(data)
       })
       .catch(() => {})
-  }, [user?.id, history])
+  }, [user?.id, isTestAccount, history])
 
   useEffect(() => {
     if (!user) { setCalendarConnected(false); return }
+    if (isTestAccount) { setCalendarConnected(false); return }
     apiFetch('/calendar/status')
       .then(r => r.ok ? r.json() : { connected: false })
       .then(d => setCalendarConnected(Boolean(d.connected)))
       .catch(() => {})
-  }, [user?.id])
+  }, [user?.id, isTestAccount])
 
 
   // pendingAutoJoinUrl: set by polling effect, consumed by an effect after joinMeeting is defined
@@ -1482,7 +1508,7 @@ export default function App() {
   }))
   // Load tool settings from backend when signed in
   useEffect(() => {
-    if (!user) return
+    if (!user || isTestAccount) return
     apiFetch('/user-settings').then(async (res) => {
       if (!res.ok) return
       const data = await res.json()
@@ -1492,7 +1518,7 @@ export default function App() {
         slack_bot_token: data.slack_bot_token || '',
       }))
     }).catch(() => {})
-  }, [user?.id])
+  }, [user?.id, isTestAccount])
 
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
@@ -1595,6 +1621,15 @@ export default function App() {
       },
     })
     if (authError) setError(authError.message)
+  }
+
+  const signInWithTestAccount = () => {
+    setError(null)
+    setAuthReady(true)
+    setAuthSession(TEST_AUTH_SESSION)
+    setCalendarConnected(false)
+    setWorkspaceToast('Loaded test account.')
+    setTimeout(() => setWorkspaceToast(null), 2500)
   }
 
   // Direct Google OAuth PKCE flow for calendar (bypasses Supabase session)
@@ -2149,6 +2184,132 @@ export default function App() {
     runAnalysis([], t, true)
   }
 
+  const loadDashboardSample = () => {
+    const now = Date.now()
+    const sampleResults = [
+      {
+        title: 'Q2 roadmap planning',
+        transcript: DEMO_TRANSCRIPTS[0],
+        result: {
+          summary: 'The team narrowed Q2 priorities to checkout improvements and mobile redesign, moving analytics to Q3. Follow-up ownership is clear across roadmap, client messaging, and feature specs.',
+          action_items: [
+            { task: 'Update the roadmap with analytics moved to Q3', owner: 'Mike', due: 'Thursday EOD' },
+            { task: 'Draft enterprise client message about mobile redesign timing', owner: 'Lisa', due: 'Wednesday' },
+            { task: 'Finalize feature specs for marketing launch campaign', owner: 'Mike', due: 'Next Friday' },
+          ],
+          decisions: [
+            { decision: 'Prioritize checkout improvements and mobile redesign for Q2', owner: 'Sarah', importance: 1 },
+            { decision: 'Move analytics dashboard to Q3', owner: 'Mike', importance: 2 },
+          ],
+          sentiment: { overall: 'positive', score: 78, arc: 'aligned', notes: 'Constructive disagreement resolved into clear tradeoffs.' },
+          health_score: { score: 84, verdict: 'Strong prioritization with clear owners and near-term follow-ups.', badges: ['Clear Decisions', 'Action-Oriented'], breakdown: { clarity: 88, action_orientation: 86, engagement: 78 } },
+        },
+      },
+      {
+        title: 'Payment outage postmortem',
+        transcript: DEMO_TRANSCRIPTS[1],
+        result: {
+          summary: 'The outage was traced to Redis connection pool exhaustion after an infra config change. The team agreed on alerting, review checklist updates, and a runbook.',
+          action_items: [
+            { task: 'Set alert for connection pool utilization above 70 percent', owner: 'Priya', due: 'End of week' },
+            { task: 'Update infra change review checklist', owner: 'Marcus', due: 'Thursday' },
+            { task: 'Draft runbook for connection pool exhaustion', owner: 'Priya', due: 'Next Monday' },
+          ],
+          decisions: [
+            { decision: 'Connection limit config changes require a second on-call reviewer', owner: 'Alex', importance: 1 },
+          ],
+          sentiment: { overall: 'tense', score: 58, arc: 'recovered', notes: 'The incident was preventable, but the group landed concrete safeguards.' },
+          health_score: { score: 72, verdict: 'Useful postmortem with specific safeguards, though tension was present.', badges: ['Clear Owners', 'Risk Surfaced'], breakdown: { clarity: 76, action_orientation: 82, engagement: 62 } },
+        },
+      },
+      {
+        title: 'Sales strategy pipeline review',
+        transcript: DEMO_TRANSCRIPTS[2],
+        result: {
+          summary: 'The team reviewed Q1 miss drivers and set Q2 sales improvements around legal templates, competitor battle cards, MEDDIC certification, and weekly pipeline reviews.',
+          action_items: [
+            { task: 'Work with legal on standard contract template', owner: 'Rachel', due: 'End of April' },
+            { task: 'Build competitive battle card for top two competitors', owner: 'Carlos', due: 'Next Friday' },
+            { task: 'Complete MEDDIC certification', owner: 'Carlos', due: 'April 30' },
+            { task: 'Complete MEDDIC certification', owner: 'Rachel', due: 'April 30' },
+          ],
+          decisions: [
+            { decision: 'Target 15 net-new enterprise logos in Q2', owner: 'Diana', importance: 1 },
+            { decision: 'Review pipeline health every Monday at 9am', owner: 'Diana', importance: 2 },
+          ],
+          sentiment: { overall: 'neutral', score: 66, arc: 'focused', notes: 'Clear pipeline pressure with pragmatic next steps.' },
+          health_score: { score: 78, verdict: 'Focused operational review with measurable goals and owners.', badges: ['Measurable Goals', 'Action-Oriented'], breakdown: { clarity: 80, action_orientation: 84, engagement: 70 } },
+        },
+      },
+      {
+        title: 'Q3 budget alignment',
+        transcript: DEMO_TRANSCRIPTS[3],
+        result: {
+          summary: 'The budget conversation exposed unclear data, a broken spreadsheet, missing distribution lists, and no concrete decision beyond reconvening later.',
+          action_items: [
+            { task: 'Fix the spreadsheet formula error', owner: 'Greg', due: '' },
+            { task: 'Forward prior budget scope-change email', owner: 'Kevin', due: '' },
+            { task: 'Review team spend before reconvening', owner: '', due: 'This week' },
+          ],
+          decisions: [],
+          sentiment: { overall: 'tense', score: 34, arc: 'frustrated', notes: 'Confusion and unclear ownership blocked useful alignment.' },
+          health_score: { score: 29, verdict: 'Low-clarity meeting with unresolved numbers, unclear agenda, and weak ownership.', badges: ['Needs Follow-Up', 'Unclear Decisions'], breakdown: { clarity: 22, action_orientation: 34, engagement: 38 } },
+        },
+      },
+      {
+        title: 'Onboarding research readout',
+        transcript: DEMO_TRANSCRIPTS[4],
+        result: {
+          summary: 'Research found onboarding drop-off around integration admin access. The team split immediate tooltip/email-template fixes from a later magic-link flow.',
+          action_items: [
+            { task: 'Scope magic link flow for admin invitations', owner: 'Sam', due: 'Next Wednesday' },
+            { task: 'Write tooltip copy and updated step 3 instructions', owner: 'Tyler', due: 'Friday' },
+            { task: 'Share pricing reassurance mockup in Figma', owner: 'Casey', due: 'Today' },
+          ],
+          decisions: [
+            { decision: 'Ship short-term admin help tooltip and email template', owner: 'Morgan', importance: 1 },
+            { decision: 'Retest with five users after tooltip change goes live', owner: 'Morgan', importance: 2 },
+          ],
+          sentiment: { overall: 'positive', score: 82, arc: 'collaborative', notes: 'Research translated into both quick wins and strategic follow-up.' },
+          health_score: { score: 88, verdict: 'Excellent research readout with clear evidence, sequencing, and owners.', badges: ['Evidence-Based', 'Clear Owners'], breakdown: { clarity: 90, action_orientation: 88, engagement: 86 } },
+        },
+      },
+    ]
+
+    const entries = sampleResults.map((item, index) => ({
+      id: now - index * 86400000,
+      date: new Date(now - index * 86400000).toISOString(),
+      transcript: item.transcript,
+      result: item.result,
+      title: item.title,
+      score: item.result.health_score.score,
+      share_token: `sample${index}`,
+    }))
+
+    setIsDemoMode(true)
+    setDemoChatOpen(false)
+    setInputTab('paste')
+    setMobileTab('results')
+    setLoading(false)
+    setError(null)
+    setAnalysisTime(null)
+    setShowTimeSaved(false)
+    setCrossMeetingInsights(null)
+    setShowHistory(false)
+    clearTimeout(historySearchDebounceRef.current)
+    setHistorySearch('')
+    setHistory(entries)
+    setTranscript(entries[0].transcript)
+    setTranscriptDrafts((prev) => ({ ...prev, paste: entries[0].transcript }))
+    setResult(entries[0].result)
+    setMeetingId(entries[0].id)
+    setShareToken(entries[0].share_token)
+    setInitialMessages([])
+    setSessionId((s) => s + 1)
+    setWorkspaceToast('Loaded sample dashboard.')
+    setTimeout(() => setWorkspaceToast(null), 2500)
+  }
+
   const cancelActiveAnalysis = () => {
     analysisRunIdRef.current += 1
     analysisAbortRef.current?.abort()
@@ -2181,7 +2342,12 @@ export default function App() {
     setDemoChatOpen(false)
     setIsDemoMode(false)
     setHistory([])
-    if (supabase) await supabase.auth.signOut()
+    if (isTestAccount) {
+      setAuthSession(null)
+      setAuthReady(true)
+    } else if (supabase) {
+      await supabase.auth.signOut()
+    }
   }
 
   const exitDemoMode = () => {
@@ -2457,6 +2623,158 @@ export default function App() {
           </div>
         </div>
       </div>
+    )
+  }
+
+  if (isMcpDashboard) {
+    return (
+      <>
+        <DashboardMcpPage
+          authReady={authReady}
+          user={user}
+          signInWithGoogle={signInWithGoogle}
+          signInWithTestAccount={signInWithTestAccount}
+          signOut={signOut}
+          loadDashboardSample={loadDashboardSample}
+          isDemoMode={isDemoMode}
+          exitDemoMode={exitDemoMode}
+          inputTab={inputTab}
+          setInputTab={setInputTab}
+          inputModeMeta={inputModeMeta}
+          transcript={transcript}
+          setTranscriptForTab={setTranscriptForTab}
+          transcriptStats={transcriptStats}
+          transcriptSpeakerCount={transcriptSpeakerCount}
+          loading={loading}
+          result={result}
+          setResult={setResult}
+          error={error}
+          analysisTime={analysisTime}
+          showTimeSaved={showTimeSaved}
+          handleAnalyzeClick={handleAnalyzeClick}
+          cancelActiveAnalysis={cancelActiveAnalysis}
+          startDemo={startDemo}
+          clearWorkspaceState={clearWorkspaceState}
+          toggleActionItem={toggleActionItem}
+          history={history}
+          showHistory={showHistory}
+          setShowHistory={setShowHistory}
+          historySearch={historySearch}
+          setHistorySearch={setHistorySearch}
+          historySearchDebounceRef={historySearchDebounceRef}
+          setHistory={setHistory}
+          loadFromHistory={loadFromHistory}
+          apiFetch={apiFetch}
+          hasMeaningfulResult={hasMeaningfulResult}
+          crossMeetingInsights={crossMeetingInsights}
+          sessionId={sessionId}
+          meetingId={meetingId}
+          initialMessages={initialMessages}
+          meetingUrl={meetingUrl}
+          setMeetingUrl={setMeetingUrl}
+          joinMeeting={joinMeeting}
+          cancelBot={cancelBot}
+          botStatus={botStatus}
+          botError={botError}
+          botTranscriptReady={botTranscriptReady}
+          liveCommands={liveCommands}
+          calendarConnected={calendarConnected}
+          nextUpcomingMeeting={nextUpcomingMeeting}
+          recording={recording}
+          startRecording={startRecording}
+          stopRecording={stopRecording}
+          micSupported={micSupported}
+          transcribing={transcribing}
+          fileInputRef={fileInputRef}
+          handleAudioUpload={handleAudioUpload}
+          shareToken={shareToken}
+          shareCopied={shareCopied}
+          setShareCopied={setShareCopied}
+          showExportMenu={showExportMenu}
+          setShowExportMenu={setShowExportMenu}
+          copyMarkdown={copyMarkdown}
+          mdCopied={mdCopied}
+          exportMarkdown={exportMarkdown}
+          exportPDF={exportPDF}
+          exportToSlack={exportToSlack}
+          exportToNotion={exportToNotion}
+          exportingSlack={exportingSlack}
+          exportingNotion={exportingNotion}
+          integrations={integrations}
+          setShowIntegrations={setShowIntegrations}
+        />
+
+        {showSpeakerModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md overflow-hidden rounded-xl border border-black bg-white shadow-2xl">
+              <div className="border-b border-black/10 px-5 py-4">
+                <h3 className="text-sm font-bold text-[#191c1e]">Who was in this meeting?</h3>
+                <p className="mt-1 text-xs text-[#6b7280]">Add roles for stronger ownership and attribution.</p>
+              </div>
+              <div className="max-h-64 space-y-2 overflow-y-auto px-5 py-4">
+                {speakers.map((speaker, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      value={speaker.name}
+                      onChange={(event) => setSpeakers((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))}
+                      placeholder="Name"
+                      className="w-32 rounded-lg border border-black px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-black/20"
+                    />
+                    <input
+                      value={speaker.role}
+                      onChange={(event) => setSpeakers((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, role: event.target.value } : item))}
+                      placeholder="Role"
+                      className="flex-1 rounded-lg border border-black px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-black/20"
+                    />
+                    <button type="button" onClick={() => setSpeakers((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} className="min-h-9 rounded-lg border border-black px-2 text-xs">
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setSpeakers((prev) => [...prev, { name: '', role: '' }])} className="text-xs font-semibold text-[#191c1e]">
+                  Add person
+                </button>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-black/10 px-5 py-3">
+                <button type="button" onClick={() => runAnalysis([])} className="min-h-10 rounded-lg border border-black px-4 text-xs font-semibold">
+                  Skip
+                </button>
+                <button type="button" onClick={() => runAnalysis(speakers)} className="min-h-10 rounded-lg border border-black bg-black px-4 text-xs font-semibold text-white">
+                  Analyze
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showIntegrations && (
+          <Suspense fallback={null}>
+            <IntegrationsModal
+              integrations={integrations}
+              onSave={setIntegrations}
+              onClose={() => setShowIntegrations(false)}
+              calendarConnected={calendarConnected}
+              onConnectCalendar={connectGoogleCalendar}
+              onDisconnectCalendar={disconnectCalendar}
+              autoJoinSetting={autoJoinSetting}
+              onAutoJoinChange={saveAutoJoinSetting}
+              isSignedIn={!!user}
+            />
+          </Suspense>
+        )}
+
+        {workspaceToast && (
+          <div className="fixed right-6 top-20 z-50 rounded-xl border border-black bg-white px-4 py-3 text-xs font-semibold text-[#191c1e] shadow-xl">
+            {workspaceToast}
+          </div>
+        )}
+
+        {integrationToast && (
+          <div className="fixed bottom-28 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-black bg-white px-4 py-3 text-xs font-semibold text-[#191c1e] shadow-xl">
+            {integrationToast.msg}
+          </div>
+        )}
+      </>
     )
   }
 
