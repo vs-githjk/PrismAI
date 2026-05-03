@@ -78,7 +78,7 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
 }
 
 function NewMeetingPanel(props) {
-  const activeTab = props.inputTab || 'paste'
+  const activeTab = props.isTestAccount && props.inputTab === 'join' ? 'paste' : (props.inputTab || 'paste')
   const botActive = props.botStatus && !['done', 'error'].includes(props.botStatus)
 
   return (
@@ -101,7 +101,7 @@ function NewMeetingPanel(props) {
             <TabsTrigger value="paste" className="flex-1">Paste</TabsTrigger>
             {props.micSupported && <TabsTrigger value="record" className="flex-1">Record</TabsTrigger>}
             <TabsTrigger value="upload" className="flex-1">Upload</TabsTrigger>
-            <TabsTrigger value="join" className="flex-1">Join</TabsTrigger>
+            {!props.isTestAccount && <TabsTrigger value="join" className="flex-1">Join</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -276,8 +276,20 @@ export default function DashboardMcpPage(props) {
       isFirstRender.current = false
       return
     }
-    if (props.result) setActiveView('meeting')
-  }, [props.result])
+    const latest = props.history?.[0]
+    const showingLatestSample =
+      props.isTestAccount &&
+      props.history?.length >= 2 &&
+      props.meetingId === latest?.id &&
+      String(latest?.share_token || '').startsWith('sample')
+    if (props.result) setActiveView(showingLatestSample ? 'home' : 'meeting')
+  }, [props.result, props.isTestAccount, props.meetingId, props.history])
+
+  useEffect(() => {
+    if (props.isTestAccount && props.inputTab === 'join') {
+      props.setInputTab?.('paste')
+    }
+  }, [props.isTestAccount, props.inputTab, props.setInputTab])
 
   useEffect(() => {
     if (!profileMenuOpen) return undefined
@@ -387,10 +399,13 @@ export default function DashboardMcpPage(props) {
 
   function handleDeleteHistoryEntry(entry) {
     props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
-    props.apiFetch?.(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+    if (!props.isTestAccount) {
+      props.apiFetch?.(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+    }
     if (entry.id === props.meetingId) {
       sessionStorage.setItem('prism_new_meeting', '1')
       props.clearWorkspaceState?.()
+      setActiveView('home')
     }
   }
 
@@ -519,7 +534,7 @@ export default function DashboardMcpPage(props) {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={props.signOut} variant="destructive" className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-red-400 focus:bg-red-400/[0.12] focus:text-red-300">
                       <DoorOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      Sign out
+                      {props.isTestAccount ? 'Exit test run' : 'Sign out'}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -552,6 +567,8 @@ export default function DashboardMcpPage(props) {
             history={props.history}
             loadFromHistory={handleSelectMeeting}
             loadSample={props.loadDashboardSample || props.startDemo}
+            canLoadSample={props.canLoadSample}
+            selectedMeetingId={props.selectedMeetingId}
           />
         )}
         {activeView === 'meeting' && (

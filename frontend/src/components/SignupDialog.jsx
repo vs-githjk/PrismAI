@@ -74,6 +74,7 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
   }
 
   const goToDashboard = () => {
+    sessionStorage.removeItem('prism_test_run')
     sessionStorage.setItem('prism_visited', '1')
     sessionStorage.setItem('prism_ui_screen', 'app')
     window.location.assign(DASHBOARD_PATH)
@@ -85,6 +86,7 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
       setSubmitError('Supabase auth is not configured yet.')
       return
     }
+    sessionStorage.removeItem('prism_test_run')
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
