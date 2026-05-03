@@ -1,14 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-
-const AGENTS = [
-  { name: 'Summarizer',         desc: 'Condenses the meeting into a 2–3 sentence TL;DR.' },
-  { name: 'Action Items',       desc: 'Extracts who owns what, with due dates.' },
-  { name: 'Decisions',          desc: 'Identifies what was actually agreed or resolved.' },
-  { name: 'Sentiment',          desc: 'Scores the tone and flags conflict or tension.' },
-  { name: 'Email Drafter',      desc: 'Writes a ready-to-send follow-up email.' },
-  { name: 'Calendar Suggester', desc: 'Recommends a follow-up meeting with timing.' },
-  { name: 'Health Score',       desc: 'Rates meeting quality 0–100 with a breakdown.' },
-]
+import { AGENTS } from '../lib/agents'
 
 export default function AgentShowcase() {
   const [visible, setVisible] = useState(false)
@@ -34,13 +25,13 @@ export default function AgentShowcase() {
         <div className="agents-grid">
           {AGENTS.map((agent, i) => (
             <div
-              key={agent.name}
+              key={agent.id}
               className={`agent-card${visible ? ' card-visible' : ''}`}
               style={{ transitionDelay: visible ? `${i * 40}ms` : '0ms' }}
             >
               <div className="agent-card-bg" />
               <div className="agent-card-content">
-                <h3 className="agent-name">{agent.name}</h3>
+                <h3 className="agent-name">{agent.label}</h3>
                 <p className="agent-desc">{agent.desc}</p>
               </div>
             </div>

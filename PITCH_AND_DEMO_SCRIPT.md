@@ -53,7 +53,7 @@ Other tools give you meeting records. PrismAI gives you meeting intelligence wit
 
 ## 3. 30-Second Pitch
 
-PrismAI takes a raw meeting transcript and runs it through seven specialized AI agents in parallel to generate a full operational picture: summary, action items, decisions, sentiment, follow-up email, calendar suggestion, and a meeting health score. But the real difference is that it does not stop at one meeting. PrismAI keeps memory across meetings, so teams can see recurring blockers, resurfacing decisions, and ownership drift instead of rediscovering the same problems every week.
+PrismAI takes a raw meeting transcript and runs it through eight specialized AI agents in parallel to generate a full operational picture: summary, action items, decisions, sentiment, follow-up email, calendar suggestion, a meeting health score, and speaker coaching. But the real difference is that it does not stop at one meeting. PrismAI keeps memory across meetings, so teams can see recurring blockers, resurfacing decisions, and ownership drift instead of rediscovering the same problems every week.
 
 ---
 
@@ -79,7 +79,7 @@ Say:
 “PrismAI starts with one raw meeting transcript, but the goal is not just to summarize it. The goal is to turn it into structured intelligence the team can actually work from.”
 
 Point out:
-- `7 parallel AI agents`
+- `8 parallel AI agents`
 - transcript-in / intelligence-out hero
 - sign in, live meeting, cross-meeting memory, export/share capability rail
 
@@ -113,6 +113,7 @@ Walk through:
 - email draft
 - calendar suggestion
 - health score
+- speaker coaching (talk share, ownership, per-speaker coaching note)
 
 Say:
 
@@ -186,8 +187,11 @@ Avoid:
 
 Use these lines during demos as needed.
 
-### On the 7-agent system
+### On the 8-agent system
 “PrismAI does not ask one model for one generic summary. It splits the meeting into specialized reads running in parallel.”
+
+### On live meeting commands
+“PrismAI can join a live call directly and take actions mid-meeting — read Slack, send emails, create tickets — not just after the fact.”
 
 ### On action items
 “Tasks are useful only if they have owners and follow-through. PrismAI makes that explicit.”

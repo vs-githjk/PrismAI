@@ -22,6 +22,18 @@ import ErrorCard from './components/ErrorCard'
 import DashboardMcpPage from './components/DashboardMcpPage'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
+import { AGENTS } from './lib/agents'
+import { DEMO_TRANSCRIPTS, getRandomDemoTranscript } from './lib/demoTranscripts'
+import {
+  extractSpeakers,
+  hasMeaningfulResult,
+  getTranscriptStats,
+  countNamedSpeakers,
+  formatRelativeMeetingDate,
+  formatMinutesUntil,
+  buildMarkdown,
+  buildPrintHTML,
+} from './lib/meeting'
 
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
 const ProactiveSuggestions = lazy(() => import('./components/ProactiveSuggestions'))
@@ -75,216 +87,6 @@ function DeferredCardFallback({ lines = 2 }) {
   )
 }
 
-const DEMO_TRANSCRIPTS = [
-  // Q2 roadmap planning
-  `Sarah: Alright everyone, let's get started. Today we need to finalize the Q2 roadmap and discuss the upcoming product launch.
-
-Mike: Sure. I've reviewed the feature list and I think we're overcommitting again. We have three major features slated for Q2 but engineering only has bandwidth for two.
-
-Sarah: That's a valid concern, Mike. Which feature would you prioritize dropping?
-
-Mike: Honestly, the analytics dashboard can wait. The core checkout improvements are more critical for revenue.
-
-Lisa: I agree with Mike on the analytics dashboard. But I'm worried about the mobile app redesign timeline — we promised that to our enterprise clients by end of April.
-
-Sarah: Okay, so we're agreed: checkout improvements and mobile redesign for Q2, analytics moves to Q3. Mike, can you update the roadmap by Thursday?
-
-Mike: Yes, I'll have it done by Thursday EOD.
-
-Sarah: Lisa, can you draft a message to the enterprise clients about the mobile redesign timeline confirmation?
-
-Lisa: Will do, I'll send it out by Wednesday.
-
-Sarah: Perfect. Also, we should schedule a follow-up sync in two weeks to check progress. Does the week of March 15th work for everyone?
-
-Mike: Works for me.
-
-Lisa: Same, I'll send a calendar invite.
-
-Sarah: Great. One more thing — the marketing team needs the feature specs by next Friday for the launch campaign.
-
-Mike: I'll loop in David from engineering to finalize specs. We'll get that done.
-
-Sarah: Excellent. I think we're in good shape. Thanks everyone.`,
-
-  // Engineering incident postmortem
-  `Alex: Let's get through this postmortem on the payment outage from Tuesday. We had roughly 40 minutes of degraded checkout.
-
-Jordan: So the root cause was a Redis connection pool exhaustion. We had a config change go out Monday night that lowered the max connections from 100 to 10. That's it.
-
-Priya: Who approved that config change? I don't see it in the deploy log.
-
-Jordan: It was bundled into the infra cost-optimization PR. It was reviewed but nobody caught the connection pool value change.
-
-Alex: Okay. So we need a couple things here. First, we need to restore the connection pool config — Jordan, is that already done?
-
-Jordan: Done Tuesday afternoon. We're back to 100 and I added a 20% headroom buffer.
-
-Alex: Good. Priya, can you set up an alert that fires if connection pool utilization exceeds 70 percent?
-
-Priya: Yes, I'll have that in by end of week.
-
-Alex: We also need to add connection pool values to our change review checklist. Marcus, can you own that doc update?
-
-Marcus: I'll update the checklist and send it to the eng channel by Thursday.
-
-Alex: And we need a runbook for this class of failure. Priya, can you draft that?
-
-Priya: Sure. I'll model it after the database failover runbook, should be done by next Monday.
-
-Alex: This one stings because it was totally preventable. Going forward, any infra config change touching connection limits needs a second reviewer from the on-call rotation. Agreed?
-
-Jordan: Agreed.
-
-Marcus: Makes sense.
-
-Priya: Yes, I'll add that to the on-call policy doc as well.
-
-Alex: Good. I think we have clear owners on everything. Let's do a quick check-in Friday to make sure the alert is in and the checklist is updated.`,
-
-  // Sales strategy and pipeline review
-  `Diana: Okay team, Q1 closed yesterday. Let's look at where we landed and what we're doing differently in Q2.
-
-Carlos: We hit 87% of target. The mid-market segment was strong — 112% — but enterprise dragged us down. We lost three deals in the final stage that we thought were locked.
-
-Diana: What happened on those enterprise deals?
-
-Carlos: Two of them went to a competitor on pricing. We were 20% higher with no compelling differentiation in the demo. The third ghosted us after legal review took six weeks.
-
-Rachel: The legal review time is a real problem. I've flagged this before. We need a pre-approved contract template for deals under $50k ARR.
-
-Diana: I agree. Rachel, can you work with legal to get a standard template ready before end of April?
-
-Rachel: I'll get on their calendar this week. Should be doable.
-
-Diana: On the pricing issue — Carlos, I want you to build a competitive battle card for our top two competitors. Focus on where we win and where we need to match.
-
-Carlos: I can have a first draft by next Friday.
-
-Diana: Good. Also we're piloting a new discovery call framework in Q2. Everyone should complete the MEDDIC certification on the learning portal by April 30th.
-
-Carlos: I'll block time this week.
-
-Rachel: Same.
-
-Diana: Last thing — we're targeting 15 net-new enterprise logos in Q2. That means we need pipeline coverage of at least 3x, so 45 active enterprise opportunities. Let's review pipeline health every Monday at 9am. I'll send a recurring invite.
-
-Carlos: Works for me.
-
-Rachel: Sounds good.`,
-
-  // Dysfunctional budget meeting — low health, tense sentiment
-  `Greg: Okay so I called this meeting because we need to talk about the Q3 budget. I sent around a spreadsheet last week. Did everyone look at it?
-
-Kevin: I glanced at it yeah.
-
-Tara: I didn't get it.
-
-Greg: I sent it to the whole team.
-
-Tara: I'm not on that distribution list. This keeps happening.
-
-Greg: Okay well, the point is we're over budget. Marketing is 40% over and I need to understand why.
-
-Kevin: That's not entirely fair. We ran two campaigns that weren't in the original plan because leadership asked us to.
-
-Greg: Leadership asked for the campaigns, not for 40% overspend.
-
-Kevin: The budget wasn't adjusted when the scope changed. I flagged this in June.
-
-Greg: I don't have any record of that.
-
-Kevin: I sent an email. I can forward it to you.
-
-Greg: Fine, forward it. But we still need to figure out how to get back on track.
-
-Tara: Can someone explain what the actual number is? The spreadsheet Greg mentioned had three different totals on different tabs and I don't know which one is right.
-
-Greg: The one on the summary tab.
-
-Tara: The summary tab has a formula error. It says REF.
-
-Greg: What? That can't be right. I just updated it.
-
-Kevin: Yeah it does say REF. I noticed that too but I assumed it was intentional for some reason.
-
-Greg: It's not intentional. Okay. I'll fix the spreadsheet. Can we just... can we move on?
-
-Tara: Move on to what? We don't know what the actual number is.
-
-Greg: We're roughly 40% over on marketing, maybe 15% over overall. I'm estimating.
-
-Kevin: And what do you want us to do about it?
-
-Greg: I want us to come up with a plan.
-
-Kevin: Okay what kind of plan? Cut spend? Move budget from another team?
-
-Greg: I don't know, that's why I called the meeting.
-
-Tara: So there's no agenda?
-
-Greg: The agenda is figuring out the budget.
-
-Tara: Right, but like, do you want ideas? Do you want someone to own a proposal? I'm not clear on what we're deciding today.
-
-Greg: I just want to get aligned.
-
-Kevin: I have a hard stop at 3. Are we going to actually decide anything?
-
-Greg: Let's just say everyone reviews their team spend this week and we reconvene.
-
-Tara: Reconvene when?
-
-Greg: I'll send something.
-
-Kevin: Okay. I have to drop.
-
-Greg: Fine, we'll figure it out async.`,
-
-  // Design review and user research readout
-  `Morgan: Alright, let's go through the user research findings from the onboarding study and figure out what we're changing.
-
-Tyler: We ran 12 sessions. The biggest drop-off point is step 3 — connecting the first integration. 8 out of 12 users either abandoned or needed help. The instructions assume you have admin access, but most users doing onboarding are not admins.
-
-Morgan: That's a real problem. What's the fix?
-
-Tyler: Two things. One, we add an explicit check at that step — if the user doesn't have admin access, we show them a flow to invite their admin via email with a magic link. Two, we rewrite the copy to explain why admin access is needed.
-
-Sam: The magic link idea is good but that's at least two sprints of work. Can we do a short-term fix?
-
-Tyler: Short-term we can just surface a 'get help from your admin' tooltip with a pre-written email template they can copy. That's a one-day frontend change.
-
-Morgan: Let's do both. Sam, can you scope the magic link flow for the sprint after next?
-
-Sam: Yes, I'll have a spec ready by next Wednesday.
-
-Morgan: Tyler, can you write the tooltip copy and updated step 3 instructions by end of this week?
-
-Tyler: Done by Friday.
-
-Morgan: We also saw confusion around pricing during onboarding — 5 users asked when they'd be charged. We should add a one-line reassurance at the start: 'Free for 14 days, no credit card required.' Casey, can you add that to the hero text?
-
-Casey: Already have a mockup, I'll share it in Figma today.
-
-Morgan: Perfect. Let's retest with 5 users after the tooltip change goes live. I'll schedule that for two weeks out.`,
-]
-
-function getRandomDemoTranscript() {
-  return DEMO_TRANSCRIPTS[Math.floor(Math.random() * DEMO_TRANSCRIPTS.length)]
-}
-
-// ROYGBIV — white = transcript/orchestrator input, then splits into 7 agent colors
-const AGENTS_META = [
-  { id: 'summarizer',         label: 'Summarizer',    icon: '📝', grad: 'from-red-500 to-red-400',         desc: 'Condenses the entire meeting into a clear summary of key topics and outcomes.' },
-  { id: 'action_items',       label: 'Action Items',  icon: '✅', grad: 'from-orange-500 to-amber-400',    desc: 'Extracts every task, assigns owners, and flags due dates so nothing falls through the cracks.' },
-  { id: 'decisions',          label: 'Decisions',     icon: '⚖️', grad: 'from-yellow-400 to-yellow-300',   desc: 'Logs every decision made in the meeting, ranked by importance, with the accountable owner.' },
-  { id: 'sentiment',          label: 'Sentiment',     icon: '💬', grad: 'from-emerald-500 to-green-400',   desc: 'Reads the emotional tone — per speaker, mood arc, and moments where tension spiked.' },
-  { id: 'email_drafter',      label: 'Email Draft',   icon: '✉️', grad: 'from-blue-500 to-blue-400',       desc: 'Writes a polished follow-up email ready to send to all attendees.' },
-  { id: 'calendar_suggester', label: 'Calendar',      icon: '📅', grad: 'from-indigo-500 to-indigo-400',   desc: 'Detects if a follow-up meeting is needed and suggests the best timeframe.' },
-  { id: 'health_score',       label: 'Health Score',  icon: '📊', grad: 'from-violet-500 to-purple-400',   desc: 'Scores the meeting out of 100 across clarity, engagement, and action-orientation.' },
-  { id: 'speaker_coach',      label: 'Speaker Coach', icon: '🎤', grad: 'from-rose-500 to-pink-400',         desc: 'Shows each speaker\'s talk share, decisions and actions owned, and a one-line coaching note.' },
-]
 
 const INPUT_MODE_META = {
   paste: {
@@ -333,14 +135,6 @@ const DEFAULT_RESULT = {
   agents_run: [],
 }
 
-function extractSpeakers(transcript) {
-  const matches = transcript.match(/^([A-Z][a-zA-Z\s]{1,30}?):/gm) || []
-  const names = [...new Set(matches.map(m => m.replace(/:$/, '').trim()))]
-  return names
-    .filter(n => !/^speaker\s*\d+$/i.test(n))
-    .slice(0, 10)
-    .map(name => ({ name, role: '' }))
-}
 
 const BG_STYLE = {
   background: 'linear-gradient(180deg, rgba(3,7,18,0.15) 0%, rgba(3,7,18,0.42) 100%)',
@@ -358,71 +152,6 @@ const CARD_STYLE = {
   boxShadow: '0 22px 60px rgba(2,132,199,0.08)',
 }
 
-function getTranscriptStats(text = '') {
-  const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0
-  const lines = text.trim() ? text.trim().split('\n').filter(Boolean).length : 0
-  return { words, lines }
-}
-
-function countNamedSpeakers(text = '') {
-  const matches = text.match(/^([A-Z][a-zA-Z\s]{1,30}?):/gm) || []
-  return [...new Set(matches.map((m) => m.replace(/:$/, '').trim()))].length
-}
-
-function hasMeaningfulResult(result) {
-  if (!result || typeof result !== 'object') return false
-  if (typeof result.summary === 'string' && result.summary.trim()) return true
-  if (Array.isArray(result.action_items) && result.action_items.length > 0) return true
-  if (Array.isArray(result.decisions) && result.decisions.length > 0) return true
-  if (result.health_score?.verdict) return true
-  if ((result.health_score?.score ?? 0) > 0) return true
-  if (result.sentiment?.notes) return true
-  if (result.follow_up_email?.subject || result.follow_up_email?.body) return true
-  if (result.calendar_suggestion?.recommended || result.calendar_suggestion?.reason) return true
-  return false
-}
-
-function formatRelativeMeetingDate(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const now = new Date()
-  const diffMs = now - date
-  const diffHours = Math.round(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-
-  if (Math.abs(diffHours) < 24) {
-    return diffHours <= 0 ? 'Just now' : `${diffHours}h ago`
-  }
-
-  if (Math.abs(diffDays) < 7) {
-    return diffDays <= 0 ? 'Today' : `${diffDays}d ago`
-  }
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function formatMinutesUntil(start, end) {
-  if (!start) return ''
-  const now = new Date()
-  const startDate = new Date(start)
-  if (Number.isNaN(startDate.getTime())) return ''
-  const mins = Math.round((startDate - now) / 60000)
-  // Meeting has started
-  if (mins <= 0) {
-    if (end) {
-      const endDate = new Date(end)
-      const minsLeft = Math.round((endDate - now) / 60000)
-      if (minsLeft <= 0) return 'ended'
-      return `in progress · ${minsLeft}m left`
-    }
-    return 'in progress'
-  }
-  if (mins < 60) return `in ${mins}m`
-  const hours = Math.floor(mins / 60)
-  const rem = mins % 60
-  return rem ? `in ${hours}h ${rem}m` : `in ${hours}h`
-}
 
 function PrismStoryPanel({ transcript, result, loading, analysisTime }) {
   const stats = getTranscriptStats(transcript)
@@ -598,95 +327,7 @@ function PrismSignatureScene({ transcript, result, loading }) {
   )
 }
 
-// ── Generate markdown ───────────────────────────────────────────
-function buildMarkdown(result) {
-  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const h = result.health_score
-  let md = `# Meeting Summary — ${date}\n\n`
-  if (h?.score) {
-    md += `## Meeting Health: ${h.score}/100 — ${h.verdict}\n`
-    if (h.badges?.length) md += h.badges.map(b => `\`${b}\``).join(' ') + '\n'
-    md += '\n'
-  }
-  if (result.summary) md += `## Summary\n\n${result.summary}\n\n`
-  if (result.action_items?.length) {
-    md += `## Action Items\n\n`
-    result.action_items.forEach(i => {
-      md += `- [ ] ${i.task}${i.owner && i.owner !== 'Unassigned' ? ` *(${i.owner})*` : ''}${i.due && i.due !== 'TBD' ? ` — due ${i.due}` : ''}\n`
-    })
-    md += '\n'
-  }
-  if (result.decisions?.length) {
-    md += `## Decisions\n\n`
-    result.decisions.forEach(d => {
-      const imp = d.importance === 1 ? 'Critical' : d.importance === 2 ? 'Significant' : 'Minor'
-      md += `- **${d.decision}**${d.owner && d.owner !== 'Team' ? ` *(${d.owner})*` : ''} — ${imp}\n`
-    })
-    md += '\n'
-  }
-  if (result.sentiment?.overall) {
-    md += `## Sentiment: ${result.sentiment.overall} (${result.sentiment.score ?? 50}/100)\n\n`
-    if (result.sentiment.notes) md += `${result.sentiment.notes}\n\n`
-  }
-  if (result.follow_up_email?.subject) {
-    md += `## Follow-up Email\n\n**Subject:** ${result.follow_up_email.subject}\n\n${result.follow_up_email.body}\n\n`
-  }
-  if (result.calendar_suggestion?.recommended) {
-    md += `## Calendar\n\n${result.calendar_suggestion.reason}`
-    if (result.calendar_suggestion.suggested_timeframe) md += ` — ${result.calendar_suggestion.suggested_timeframe}`
-    if (result.calendar_suggestion.resolved_day || result.calendar_suggestion.resolved_date) {
-      md += ` (${[result.calendar_suggestion.resolved_day, result.calendar_suggestion.resolved_date].filter(Boolean).join(', ')})`
-    }
-    md += `\n`
-  }
-  return md
-}
 
-function buildPrintHTML(result) {
-  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const h = result.health_score
-  let body = `<h1>Meeting Summary — ${date}</h1>`
-  if (h?.score) {
-    body += `<h2>Meeting Health: ${h.score}/100 — ${h.verdict}</h2>`
-    if (h.badges?.length) body += `<p>${h.badges.map(b => `<code>${b}</code>`).join(' ')}</p>`
-    if (h.breakdown) body += `<ul><li>Clarity: ${h.breakdown.clarity}/100</li><li>Action Orientation: ${h.breakdown.action_orientation}/100</li><li>Engagement: ${h.breakdown.engagement}/100</li></ul>`
-  }
-  if (result.summary) body += `<h2>Summary</h2><p>${result.summary}</p>`
-  if (result.action_items?.length) {
-    body += `<h2>Action Items</h2><ul>`
-    result.action_items.forEach(i => {
-      body += `<li>${i.task}${i.owner && i.owner !== 'Unassigned' ? ` <em>(${i.owner})</em>` : ''}${i.due && i.due !== 'TBD' ? ` — due ${i.due}` : ''}</li>`
-    })
-    body += `</ul>`
-  }
-  if (result.decisions?.length) {
-    body += `<h2>Decisions</h2><ul>`
-    result.decisions.forEach(d => {
-      const imp = d.importance === 1 ? 'Critical' : d.importance === 2 ? 'Significant' : 'Minor'
-      body += `<li><strong>${d.decision}</strong>${d.owner && d.owner !== 'Team' ? ` <em>(${d.owner})</em>` : ''} — ${imp}</li>`
-    })
-    body += `</ul>`
-  }
-  if (result.sentiment?.overall) {
-    body += `<h2>Sentiment: ${result.sentiment.overall} (${result.sentiment.score ?? 50}/100)</h2>`
-    if (result.sentiment.notes) body += `<p>${result.sentiment.notes}</p>`
-  }
-  if (result.follow_up_email?.subject) {
-    body += `<h2>Follow-up Email</h2><p><strong>Subject:</strong> ${result.follow_up_email.subject}</p><p style="white-space:pre-wrap">${result.follow_up_email.body}</p>`
-  }
-  if (result.calendar_suggestion?.recommended) {
-    const resolvedCalendar = [result.calendar_suggestion.resolved_day, result.calendar_suggestion.resolved_date].filter(Boolean).join(', ')
-    body += `<h2>Calendar</h2><p>${result.calendar_suggestion.reason}${result.calendar_suggestion.suggested_timeframe ? ` — ${result.calendar_suggestion.suggested_timeframe}` : ''}${resolvedCalendar ? ` (${resolvedCalendar})` : ''}</p>`
-  }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Meeting Summary — ${date}</title><style>
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:40px auto;color:#111;line-height:1.6}
-    h1{font-size:1.5rem;margin-bottom:.5rem}
-    h2{font-size:1.1rem;margin-top:1.5rem;margin-bottom:.5rem;border-bottom:1px solid #eee;padding-bottom:.25rem}
-    ul{padding-left:1.25rem}li{margin-bottom:.25rem}
-    code{background:#f0f0f0;padding:2px 6px;border-radius:3px;font-size:.85em}
-    p{margin:.5rem 0}
-  </style></head><body>${body}</body></html>`
-}
 
 // ── Prism background ─────────────────────────────────────────────
 // ── Agent pipeline loader ────────────────────────────────────────
@@ -720,7 +361,7 @@ function AgentPipelineLoader() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up card-delay-2">
-        {AGENTS_META.map((a, i) => (
+        {AGENTS.map((a, i) => (
           <div key={a.id} className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl animate-pulse"
             style={{ animationDelay: `${i * 0.18}s`, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${a.grad} flex items-center justify-center text-sm shadow-lg`}>{a.icon}</div>
@@ -820,7 +461,7 @@ function EmptyState({ onDemo, isDemoMode, onUseOwnTranscript, inputModeLabel }) 
       </div>
 
       <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-2xl">
-        {AGENTS_META.map((a) => {
+        {AGENTS.map((a) => {
           const isActive = active === a.id
           return (
             <button
@@ -2665,7 +2306,6 @@ export default function App() {
           setHistory={setHistory}
           loadFromHistory={loadFromHistory}
           apiFetch={apiFetch}
-          hasMeaningfulResult={hasMeaningfulResult}
           crossMeetingInsights={crossMeetingInsights}
           sessionId={sessionId}
           meetingId={meetingId}

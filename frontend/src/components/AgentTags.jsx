@@ -1,14 +1,4 @@
-// ROYGBIV — one color per agent, white = orchestrator/input
-const AGENT_CONFIG = {
-  summarizer:         { label: 'Summarizer',   icon: '📝', bg: 'bg-red-500/20',    border: 'border-red-500/40',    text: 'text-red-300',    dot: 'bg-red-400' },
-  action_items:       { label: 'Action Items', icon: '✅', bg: 'bg-orange-500/20', border: 'border-orange-500/40', text: 'text-orange-300', dot: 'bg-orange-400' },
-  decisions:          { label: 'Decisions',    icon: '⚖️', bg: 'bg-yellow-500/20', border: 'border-yellow-500/40', text: 'text-yellow-200', dot: 'bg-yellow-400' },
-  sentiment:          { label: 'Sentiment',    icon: '💬', bg: 'bg-emerald-500/20',border: 'border-emerald-500/40',text: 'text-emerald-300',dot: 'bg-emerald-400' },
-  email_drafter:      { label: 'Email Draft',  icon: '✉️', bg: 'bg-blue-500/20',   border: 'border-blue-500/40',   text: 'text-blue-300',   dot: 'bg-blue-400' },
-  calendar_suggester: { label: 'Calendar',     icon: '📅', bg: 'bg-indigo-500/20', border: 'border-indigo-500/40', text: 'text-indigo-300', dot: 'bg-indigo-400' },
-  health_score:       { label: 'Health Score', icon: '📊', bg: 'bg-violet-500/20', border: 'border-violet-500/40', text: 'text-violet-300', dot: 'bg-violet-400' },
-  speaker_coach:      { label: 'Speaker Coach', icon: '🎤', bg: 'bg-rose-500/20',   border: 'border-rose-500/40',   text: 'text-rose-300',   dot: 'bg-rose-400' },
-}
+import { AGENTS_BY_ID } from '../lib/agents'
 
 export default function AgentTags({ agents }) {
   if (!agents || agents.length === 0) return null
@@ -40,7 +30,7 @@ export default function AgentTags({ agents }) {
           {/* Agent tags */}
           <div className="flex flex-wrap gap-2">
             {agents.map((agent, i) => {
-              const config = AGENT_CONFIG[agent] || {
+              const config = AGENTS_BY_ID[agent] || {
                 label: agent, icon: '⚙️', bg: 'bg-gray-500/15', border: 'border-gray-500/35', text: 'text-gray-300', dot: 'bg-gray-400'
               }
               return (

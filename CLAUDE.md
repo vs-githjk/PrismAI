@@ -86,3 +86,11 @@ Frontend Supabase client (`lib/supabase.js`) returns `null` if env vars are miss
 - **Next.js app:** Not yet deployed.
 
 Supabase migrations must be run manually in the SQL editor (in order): `auth_migration.sql` → `calendar_migration.sql` → `tools_migration.sql`.
+
+---
+
+## Agent skills
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` at the repo root + `docs/adr/` for architectural decisions. See `docs/agents/domain.md`.

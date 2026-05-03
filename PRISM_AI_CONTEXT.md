@@ -6,7 +6,7 @@
 
 ## What Is PrismAI
 
-A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 7 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
+A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 8 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into 7 colors (agents).
 
 **Live URLs:**
 - Frontend: Vercel (`https://agentic-meeting-copilot.vercel.app/`)
@@ -59,7 +59,9 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   ├── analysis_routes.py         # /analyze, /analyze-stream, /transcribe
 │   ├── storage_routes.py          # /meetings, /chats, /share, /insights — all auth-gated
 │   ├── recall_routes.py           # /join-meeting, /bot-status/{id}, /recall-webhook — intentionally unauthenticated
-│   ├── chat_routes.py             # /chat, /chat/global (auth-gated), /agent (unauthenticated)
+│   ├── realtime_routes.py         # /realtime-events — receives Recall.ai real-time transcript chunks + chat commands
+│   ├── chat_routes.py             # /chat, /chat/global (auth-gated), /agent, /chat/confirm-tool
+│   ├── calendar_routes.py         # /calendar/connect, /exchange-code, /events, /status, /disconnect
 │   ├── export_routes.py           # /export/slack, /export/notion
 │   ├── cross_meeting_service.py   # Pure Python: derives insights from meeting history (no LLM)
 │   ├── calendar_resolution.py     # Resolves relative date phrases ("next Thursday") to ISO dates
@@ -72,7 +74,15 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   │   ├── email_drafter.py
 │   │   ├── calendar_suggester.py
 │   │   ├── health_score.py
-│   │   └── utils.py               # strip_fences() — shared by all agents
+│   │   ├── speaker_coach.py       # Talk share, balance_score, per-speaker coaching notes
+│   │   └── utils.py               # strip_fences(), llm_call() — shared by all agents
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── registry.py            # Tool registration, schema, dispatch, get_available_tools()
+│   │   ├── gmail.py               # gmail_send, gmail_read
+│   │   ├── slack.py               # slack_read_channel, slack_post_message, slack_search
+│   │   ├── calendar.py            # calendar_create_event, calendar_list_events
+│   │   └── linear.py              # linear_create_issue
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -96,7 +106,14 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   │       ├── CrossMeetingInsights.jsx  # Insights panel — shown when signed in with 2+ meetings
 │   │       ├── ScoreTrendChart.jsx       # Health score over time (recharts)
 │   │       ├── ProactiveSuggestions.jsx
-│   │       ├── IntegrationsModal.jsx     # Slack + Notion config
+│   │       ├── SpeakerCoachCard.jsx      # Talk share, balance score, per-speaker coaching notes
+│   │       ├── IntegrationsModal.jsx     # Slack + Notion + Calendar config
+│   │       ├── DashboardMcpPage.jsx      # Redesigned dashboard — MeetingView + IntelligenceView tabs
+│   │       ├── MagicBento.jsx            # Bento-grid UI component suite for the dashboard
+│   │       ├── LandingNav.jsx            # Landing page navigation bar
+│   │       ├── AgentShowcase.jsx         # Landing page agent feature showcase section
+│   │       ├── HowItWorks.jsx            # Landing page how-it-works section
+│   │       ├── GlassSurface.jsx          # Reusable glass-accent surface component
 │   │       ├── Prism.jsx                 # WebGL ray-marched prism background (ogl) — landing page bg
 │   │       ├── Prism.css                 # .prism-container — position:relative, 100% fill
 │   │       ├── LightPillar.jsx           # WebGL light pillar effect (three.js) — landing page corners
@@ -105,6 +122,11 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   │       └── SkeletonCard.jsx
 │   ├── .env.example
 │   └── vite.config.js
+├── next-app/                      # Next.js 16 + React 19 + Tailwind v4 + shadcn/ui — replacement landing (in progress, not yet deployed)
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   └── components/
 ├── render.yaml
 ├── PRISM_AI_CONTEXT.md            # This file
 └── IMPROVEMENT_SPECS_DRAFT_1.md   # Prioritized roadmap
@@ -114,7 +136,7 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 
 ---
 
-## The 7 Agents (ROYGBIV)
+## The 8 Agents (ROYGBIV+)
 
 | Color | Agent | Runs | Output Key | Shape |
 |---|---|---|---|---|
@@ -125,6 +147,7 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 | 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` |
 | 🟣 Indigo | `calendar_suggester` | Only if follow-up discussed | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe, resolved_date, resolved_day }` |
 | 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, badges:[], breakdown:{clarity,action_orientation,engagement} }` |
+| 🩷 Pink | `speaker_coach` | Always (skips if <2 named speakers) | `speaker_coach` | `{ speakers:[{name,word_count,talk_percent,decisions_owned,action_items_owned,coaching_note}], balance_score }` |
 
 `calendar_suggestion` now includes `resolved_date` and `resolved_day` — resolved by `calendar_resolution.py` from the agent's natural language timeframe before returning to the frontend.
 
@@ -185,9 +208,26 @@ create table chats (
 );
 
 create index on meetings(user_id);
+
+create table user_settings (
+  user_id uuid primary key references auth.users(id),
+  calendar_connected boolean default false,
+  google_access_token text,
+  google_refresh_token text,
+  slack_bot_token text,
+  linear_api_key text,
+  updated_at timestamptz default now()
+);
+
+create table bot_sessions (
+  bot_id text primary key,
+  user_id uuid references auth.users(id),
+  commands jsonb not null default '[]',
+  created_at timestamptz default now()
+);
 ```
 
-Both tables have `user_id`. All queries filter by it. `on delete cascade` means deleting a meeting automatically deletes its chat.
+All tables with `user_id` filter every query by it. `on delete cascade` on `chats` means deleting a meeting automatically deletes its chat. Run migrations in order: `auth_migration.sql` → `calendar_migration.sql` → `tools_migration.sql` → `bot_commands_migration.sql` (see `supabase/` directory).
 
 ---
 
@@ -242,6 +282,35 @@ Shown in `CrossMeetingInsights.jsx` when signed in with 2+ meetings.
 3. **Regular chat** — `POST /chat` with message + transcript context.
 
 **History dropdown:** Shows past meeting chats. "Viewing mode" shows a blue banner. Agent re-run intents are disabled in viewing mode.
+
+---
+
+## Agentic Chat / Tool Layer
+
+`/chat` and `/chat/global` both run a tool-calling loop: the LLM can call registered tools, receive results, and respond. Capped at 3 tool calls per turn.
+
+**Tool registry:** `backend/tools/registry.py` — `get_available_tools(user_settings)` returns tools matching what the user has connected. `execute_tool(name, args, user_id)` dispatches to the handler.
+
+**Available tools:**
+| Tool | Requires | Action |
+|---|---|---|
+| `gmail_send` | Google OAuth | Send email (always requires confirmation) |
+| `gmail_read` | Google OAuth | Read recent emails |
+| `slack_read_channel` | Slack bot token | Read channel messages |
+| `slack_post_message` | Slack bot token | Post to channel (requires confirmation) |
+| `slack_search` | Slack bot token | Search across channels |
+| `calendar_create_event` | Google OAuth | Create calendar event (requires confirmation) |
+| `calendar_list_events` | Google OAuth | List upcoming events |
+| `linear_create_issue` | Linear API key | Create issue |
+
+**Confirmation flow:** Destructive tools return `{ requires_confirmation: true, preview: {...}, pending_id: "..." }`. Frontend shows a confirmation card. User clicks confirm → `POST /chat/confirm-tool` with `pending_id`. Server stashes `{tool, arguments}` under the `pending_id` (5-min TTL in `_pending_tools` dict) — client cannot swap args between preview and execution.
+
+**Response format:**
+```json
+{ "reply": "...", "tools_used": [{ "tool": "gmail_send", "summary": "Sent email: ..." }] }
+```
+
+**Live meeting tools:** During a live bot session, `realtime_routes.py` also uses the tool registry via `_process_command`. Confirmation-requiring tools are excluded from the live meeting set (`get_available_tools(user_settings, exclude_confirm=True)`).
 
 ---
 
@@ -412,7 +481,7 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 - **Summarizer length** — was hardcoded to 2-3 sentences regardless of transcript size. Now scales: <500 words → 2-3 sentences, 500-2000 words → short paragraph, 2000+ words → 3-5 sentences covering all major topics.
 
 **Infrastructure / resilience:**
-- **Model fallback** — all 7 agents now use `llm_call()` in `agents/utils.py` instead of calling Groq directly. On 429/503/overload, falls back to `claude-haiku-4-5-20251001` if `ANTHROPIC_API_KEY` is set on Render. `anthropic>=0.40.0` added to `requirements.txt`.
+- **Model fallback** — all 8 agents now use `llm_call()` in `agents/utils.py` instead of calling Groq directly. On 429/503/overload, falls back to `claude-haiku-4-5-20251001` if `ANTHROPIC_API_KEY` is set on Render. `anthropic>=0.40.0` added to `requirements.txt`.
 - **Calendar status endpoint** — was making two Supabase queries and had dead/contradictory logic. Replaced with single query: `connected = calendar_connected AND google_access_token is set`.
 
 ### Previously fixed
@@ -595,4 +664,4 @@ Run in **Supabase SQL Editor** (in order, skip if already applied):
    - Meeting chat: `POST /bot/{id}/send_chat_message/` (always works)
    - Voice (if ElevenLabs configured): ElevenLabs TTS → `POST /bot/{id}/output_audio/`
 6. Command logged to `bot_sessions` table + shown in frontend command log
-7. After meeting ends → full transcript analysis runs as before (7 agents)
+7. After meeting ends → full transcript analysis runs as before (8 agents)

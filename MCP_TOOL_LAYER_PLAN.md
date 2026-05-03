@@ -1,5 +1,9 @@
 # PrismAI — MCP Tool-Calling Layer Implementation Plan
 
+> **Status: IMPLEMENTED** (as of Apr 2026). This document describes the original plan.
+> The implementation lives in `backend/tools/` (registry, gmail, slack, calendar, linear).
+> Read `PRISM_AI_CONTEXT.md` for current architecture.
+
 > Hand this to a new Claude session along with the codebase. Read PRISM_AI_CONTEXT.md first for full architecture context.
 
 ---
