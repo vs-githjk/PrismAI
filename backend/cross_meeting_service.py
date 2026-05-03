@@ -217,9 +217,14 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         if count > 1
     ][:3]
 
+    # Sort by importance ascending (1=Critical first), then by date descending (newest first).
+    # Negate the date integer so a later date sorts earlier within the same importance tier.
     recent_decisions = sorted(
         decision_memory,
-        key=lambda item: (item["importance"], item["date"] or ""),
+        key=lambda item: (
+            item["importance"],
+            -(int((item["date"] or "0000-00-00").replace("-", ""))),
+        ),
     )[:4]
 
     unresolved_decisions = []

@@ -1,9 +1,5 @@
 import json
-import os
-from groq import AsyncGroq
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
     'You are a meeting analysis orchestrator. Read this transcript and decide which agents are needed. '
@@ -18,29 +14,16 @@ ALL_AGENTS = ["summarizer", "action_items", "decisions", "sentiment", "email_dra
 
 async def run_orchestrator(transcript: str) -> list[str]:
     try:
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.1,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transcript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
+        raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}", temperature=0.1)
         cleaned = strip_fences(raw)
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError:
-            # retry once
-            response2 = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+            raw2 = await llm_call(
+                SYSTEM_PROMPT,
+                f"Transcript:\n{transcript}\n\nReturn ONLY raw JSON, no markdown.",
                 temperature=0.1,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Transcript:\n{transcript}\n\nReturn ONLY raw JSON, no markdown."},
-                ],
             )
-            raw2 = response2.choices[0].message.content
             data = json.loads(strip_fences(raw2))
 
         agents = data.get("agents", ALL_AGENTS)

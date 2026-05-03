@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from calendar_resolution import resolve_relative_date
 from .utils import strip_fences, llm_call
 
@@ -16,7 +16,7 @@ _DEFAULT = {"calendar_suggestion": {"recommended": False, "reason": "", "suggest
 
 
 async def run(transcript: str) -> dict:
-    reference_date = datetime.now().date()
+    reference_date = datetime.now(timezone.utc).date()
     for attempt in range(2):
         try:
             raw = await llm_call(SYSTEM_PROMPT, f"Reference date: {reference_date.isoformat()}\nTranscript:\n{transcript}")

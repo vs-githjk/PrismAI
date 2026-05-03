@@ -11,6 +11,8 @@ services:
         sync: false
       - key: RECALL_API_KEY
         sync: false
+      - key: RECALL_WEBHOOK_SECRET
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY

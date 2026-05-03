@@ -194,7 +194,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
 
         context = ""
         if req.transcript.strip():
-            context = f"\n\nMeeting transcript for context:\n{req.transcript[:3000]}"
+            context = f"\n\nMeeting transcript for context:\n{req.transcript[:15000]}"
 
         # Get available tools for this user
         tools = get_available_tools(user_settings) if user_id else []

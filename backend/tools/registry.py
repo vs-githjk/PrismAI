@@ -96,6 +96,8 @@ async def execute_tool(name: str, arguments: str | dict, user_id: str, user_sett
                 result["external_ref"] = {"tool": name, "external_id": str(result["issue_id"])}
             elif result.get("event_id"):
                 result["external_ref"] = {"tool": name, "external_id": str(result["event_id"])}
+            elif result.get("message_id"):
+                result["external_ref"] = {"tool": name, "external_id": str(result["message_id"])}
         return result
     except Exception as exc:
         return {"error": f"Tool '{name}' failed: {str(exc)}"}
@@ -117,6 +119,13 @@ async def confirm_and_execute(name: str, arguments: str | dict, user_settings: d
     tool = _TOOLS[name]
     try:
         result = await tool["handler"](arguments, user_settings=user_settings or {})
+        if result.get("success"):
+            if result.get("issue_id"):
+                result["external_ref"] = {"tool": name, "external_id": str(result["issue_id"])}
+            elif result.get("event_id"):
+                result["external_ref"] = {"tool": name, "external_id": str(result["event_id"])}
+            elif result.get("message_id"):
+                result["external_ref"] = {"tool": name, "external_id": str(result["message_id"])}
         return result
     except Exception as exc:
         return {"error": f"Tool '{name}' failed: {str(exc)}"}

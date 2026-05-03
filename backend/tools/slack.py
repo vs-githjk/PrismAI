@@ -1,10 +1,14 @@
 """Slack tools: read channels, post messages, search."""
 
 import os
+import re
 
 import httpx
 
 from .registry import register_tool
+
+# Slack channel/group/DM IDs are uppercase letter + alphanumerics (e.g. C012ABC, G01XY2Z)
+_SLACK_ID_RE = re.compile(r'^[A-Z][A-Z0-9]{5,}$')
 
 SLACK_API = "https://slack.com/api"
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
@@ -25,7 +29,7 @@ async def slack_read_channel(args: dict, user_settings: dict | None = None) -> d
 
     # Resolve channel name to ID if needed
     channel_id = channel
-    if not channel.startswith("C"):
+    if not _SLACK_ID_RE.match(channel):
         channel_id = await _resolve_channel(token, channel)
         if not channel_id:
             return {"error": f"Channel '{channel}' not found"}
@@ -63,7 +67,7 @@ async def slack_post_message(args: dict, user_settings: dict | None = None) -> d
 
     # Resolve channel name to ID if needed
     channel_id = channel
-    if not channel.startswith("C"):
+    if not _SLACK_ID_RE.match(channel):
         channel_id = await _resolve_channel(token, channel)
         if not channel_id:
             return {"error": f"Channel '{channel}' not found"}
@@ -76,9 +80,11 @@ async def slack_post_message(args: dict, user_settings: dict | None = None) -> d
             timeout=15,
         )
 
+    if resp.status_code != 200:
+        return {"error": f"Slack API error {resp.status_code}"}
     data = resp.json()
     if data.get("ok"):
-        return {"success": True, "summary": f"Posted message to {channel}"}
+        return {"success": True, "ts": data.get("ts"), "summary": f"Posted message to {channel}"}
     else:
         return {"error": f"Slack error: {data.get('error', 'unknown')}"}
 

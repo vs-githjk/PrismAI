@@ -51,6 +51,16 @@ def _db_load(bot_id: str) -> dict | None:
         res = supabase.table("bot_sessions").select("*").eq("bot_id", bot_id).maybe_single().execute()
         if res and res.data:
             row = res.data
+            # Restore memory state into _bot_state so live-share and command processing
+            # have the compressed summary after a server restart.
+            if row.get("memory_summary") or row.get("live_state"):
+                try:
+                    from realtime_routes import _get_bot_state
+                    import meeting_memory
+                    rt_state = _get_bot_state(bot_id)
+                    meeting_memory.restore_memory_state(row, rt_state)
+                except Exception as mem_exc:
+                    print(f"[recall] memory restore failed for {bot_id}: {mem_exc}")
             return {
                 "status": row.get("status", "joining"),
                 "result": row.get("result"),
@@ -62,6 +72,11 @@ def _db_load(bot_id: str) -> dict | None:
     except Exception as exc:
         print(f"[recall] db load failed for {bot_id}: {exc}")
     return None
+
+
+def _db_save_memory(bot_id: str, memory_summary: str, live_state: dict):
+    """Persist memory columns to bot_sessions after each successful compression cycle."""
+    _db_save(bot_id, {"memory_summary": memory_summary, "live_state": live_state})
 
 
 def _db_append_command(bot_id: str, command: dict):
@@ -117,7 +132,7 @@ def _build_pre_meeting_brief(user_id: str | None) -> dict | None:
             supabase.table("meetings")
             .select("date,title,result")
             .eq("user_id", user_id)
-            .order("created_at", desc=True)
+            .order("id", desc=True)
             .limit(10)
             .execute()
         )
@@ -337,6 +352,10 @@ def _transcript_from_recall_data(raw) -> str:
 
 
 async def _process_bot_transcript(bot_id: str):
+    # Guarantee bot_store[bot_id] exists for the full duration of processing.
+    # remove_bot() can pop the entry at any time; setdefault re-establishes it so
+    # the status writes below never raise KeyError inside the except block.
+    bot_store.setdefault(bot_id, {"status": "processing", "result": None, "error": None, "commands": []})
     try:
         print(f"[recall] starting transcript processing for bot {bot_id}")
         resp = await _fetch_transcript(bot_id)
@@ -355,17 +374,19 @@ async def _process_bot_transcript(bot_id: str):
                 print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
 
         if not transcript.strip():
+            error_msg = "No transcript content found — the meeting may have been too short or had no speech"
             bot_store[bot_id]["status"] = "error"
-            bot_store[bot_id]["error"] = "No transcript content found — the meeting may have been too short or had no speech"
-            _db_save(bot_id, {"status": "error", "error": bot_store[bot_id]["error"]})
+            bot_store[bot_id]["error"] = error_msg
+            _db_save(bot_id, {"status": "error", "error": error_msg})
             print(f"[recall] ERROR: empty transcript")
             return
 
         print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
+        result = await run_full_analysis(transcript)
         bot_store[bot_id]["transcript"] = transcript
-        bot_store[bot_id]["result"] = await run_full_analysis(transcript)
+        bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
-        _db_save(bot_id, {"status": "done", "transcript": transcript, "result": bot_store[bot_id]["result"]})
+        _db_save(bot_id, {"status": "done", "transcript": transcript, "result": result})
         print(f"[recall] analysis complete for bot {bot_id}")
     except Exception as exc:
         bot_store[bot_id]["status"] = "error"
@@ -549,7 +570,12 @@ async def live_meeting(live_token: str):
     # Build pre-meeting brief lazily — compute once, cache in bot_store
     status = entry.get("status", "joining")
     if bot_id in bot_store and "brief" not in bot_store[bot_id] and status not in ("done", "error"):
-        bot_store[bot_id]["brief"] = _build_pre_meeting_brief(entry.get("user_id"))
+        bot_store[bot_id]["brief"] = await asyncio.to_thread(
+            _build_pre_meeting_brief, entry.get("user_id")
+        )
+
+    import meeting_memory as _mm
+    memory_snapshot = _mm.get_memory_snapshot(rt) if rt else {}
 
     return {
         "status": status,
@@ -558,6 +584,12 @@ async def live_meeting(live_token: str):
         "result": entry.get("result"),
         "error": entry.get("error"),
         "brief": entry.get("brief"),
+        # Memory and idea engine fields — consumed by the live-share frontend panel
+        "memory_summary": memory_snapshot.get("memory_summary", ""),
+        "live_decisions": memory_snapshot.get("live_decisions", []),
+        "live_action_items": memory_snapshot.get("live_action_items", []),
+        "top_entities": memory_snapshot.get("top_entities", []),
+        "idea_history": memory_snapshot.get("idea_history", []),
         # Include transcript when done so signed-in viewers can save a copy
         "transcript": entry.get("transcript") if status == "done" else None,
     }
