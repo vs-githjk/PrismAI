@@ -1147,7 +1147,7 @@ const HERO_SENTENCES = [
 ]
 
 // ── Landing / Hero screen ────────────────────────────────────────
-function LandingScreen({ onDemo, onSkip, exiting }) {
+function LandingScreen({ onDemo, onSkip, exiting, signInWithGoogle, signInWithTestAccount }) {
   const [signupOpen, setSignupOpen] = useState(false)
   const [scrollCueVisible, setScrollCueVisible] = useState(true)
   const scrollContainerRef = useRef(null)
@@ -1204,7 +1204,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       >
         {/* Sticky nav — sits above all sections while scrolling */}
         <div className="landing-nav-sticky">
-          <LandingNav onSignup={() => setSignupOpen(true)} />
+          <LandingNav onSignup={() => setSignupOpen(true)} onLogin={signInWithGoogle} />
         </div>
 
         <section ref={heroRef} id="prism" className="landing-hero scroll-section">
@@ -1278,7 +1278,13 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
           <PricingSection onGetStarted={() => setSignupOpen(true)} />
           <TeamSection />
         </div>
-        {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+        {signupOpen && (
+          <SignupDialog
+            onClose={() => setSignupOpen(false)}
+            onGoogle={signInWithGoogle}
+            onTestAccount={signInWithTestAccount}
+          />
+        )}
       </div>
     </div>
   )
@@ -2547,7 +2553,7 @@ export default function App() {
 
   // Landing screen — shown to first-time visitors
   if (showLanding) {
-    return <LandingScreen onDemo={() => exitLanding(true)} onSkip={() => exitLanding(false)} exiting={landingExiting} />
+    return <LandingScreen onDemo={() => exitLanding(true)} onSkip={() => exitLanding(false)} exiting={landingExiting} signInWithGoogle={signInWithGoogle} signInWithTestAccount={signInWithTestAccount} />
   }
 
   // Live meeting view — shown when URL is #live/{token}
