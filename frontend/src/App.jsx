@@ -1576,6 +1576,11 @@ export default function App() {
       setAuthReady(true)
       if (_event === 'SIGNED_IN') {
         trySaveProviderToken(session)
+        if (window.location.pathname !== '/dashboard-mcp') {
+          sessionStorage.setItem(VISITED_KEY, '1')
+          sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+          window.location.replace('/dashboard-mcp')
+        }
       }
     })
 
