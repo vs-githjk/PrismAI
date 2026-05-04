@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
+import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from './lib/sessionKeys'
 import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
@@ -57,9 +58,6 @@ class ErrorBoundary extends Component {
 }
 
 const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
-const UI_SCREEN_KEY = 'prism_ui_screen'
-const VISITED_KEY = 'prism_visited'
-const TEST_RUN_SESSION_KEY = 'prism_test_run'
 const TEST_RUN_QUERY_PARAM = 'testRun'
 const isDashboardTestRunRequest =
   typeof window !== 'undefined' &&
@@ -70,7 +68,7 @@ if (isDashboardTestRunRequest) {
   sessionStorage.setItem(TEST_RUN_SESSION_KEY, '1')
 }
 
-const shouldRestoreTestRunSession =
+const isTestRunSession = () =>
   typeof window !== 'undefined' &&
   window.location.pathname === '/dashboard-mcp' &&
   sessionStorage.getItem(TEST_RUN_SESSION_KEY) === '1'
@@ -1555,7 +1553,7 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) {
-      if (shouldRestoreTestRunSession) {
+      if (isTestRunSession()) {
         setAuthSession(TEST_AUTH_SESSION)
       }
       setAuthReady(true)
@@ -1566,7 +1564,7 @@ export default function App() {
       if (data.session) {
         sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
         setAuthSession(data.session)
-      } else if (shouldRestoreTestRunSession) {
+      } else if (isTestRunSession()) {
         setAuthSession(TEST_AUTH_SESSION)
       } else {
         setAuthSession(null)
@@ -1576,11 +1574,7 @@ export default function App() {
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
-      const restoreTestRun =
-        typeof window !== 'undefined' &&
-        window.location.pathname === '/dashboard-mcp' &&
-        sessionStorage.getItem(TEST_RUN_SESSION_KEY) === '1'
-      setAuthSession(session || (restoreTestRun ? TEST_AUTH_SESSION : null))
+      setAuthSession(session || (isTestRunSession() ? TEST_AUTH_SESSION : null))
       setAuthReady(true)
     })
 

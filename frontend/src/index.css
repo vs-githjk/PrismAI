@@ -67,7 +67,7 @@
   to   { transform: rotate(360deg); }
 }
 
-@keyframes spin {
+@keyframes signup-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
@@ -1805,7 +1805,7 @@ h1, h2, h3, .font-display {
 .signup-spinner {
   width: 1rem;
   height: 1rem;
-  animation: spin 0.8s linear infinite;
+  animation: signup-spin 0.8s linear infinite;
 }
 
 .signup-mode-note {

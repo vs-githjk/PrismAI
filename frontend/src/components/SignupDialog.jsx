@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Loader2, MailCheck, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from '../lib/sessionKeys'
 
 const DASHBOARD_PATH = '/dashboard-mcp'
 
@@ -74,9 +75,9 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
   }
 
   const goToDashboard = () => {
-    sessionStorage.removeItem('prism_test_run')
-    sessionStorage.setItem('prism_visited', '1')
-    sessionStorage.setItem('prism_ui_screen', 'app')
+    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
+    sessionStorage.setItem(VISITED_KEY, '1')
+    sessionStorage.setItem(UI_SCREEN_KEY, 'app')
     window.location.assign(DASHBOARD_PATH)
   }
 
@@ -86,7 +87,7 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
       setSubmitError('Supabase auth is not configured yet.')
       return
     }
-    sessionStorage.removeItem('prism_test_run')
+    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

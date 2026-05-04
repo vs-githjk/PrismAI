@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from './ui/dialog'
 import SkeletonCard from './SkeletonCard'
+import { UI_SCREEN_KEY } from '../lib/sessionKeys'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
@@ -269,6 +270,7 @@ export default function DashboardMcpPage(props) {
   const profileTriggerHovered = useRef(false)
   const profileContentHovered = useRef(false)
   const isFirstRender = useRef(true)
+  const userSelectedMeetingRef = useRef(false)
 
   // Auto-switch to meeting view when a new result is loaded (not on initial mount)
   useEffect(() => {
@@ -282,7 +284,10 @@ export default function DashboardMcpPage(props) {
       props.history?.length >= 2 &&
       props.meetingId === latest?.id &&
       String(latest?.share_token || '').startsWith('sample')
-    if (props.result) setActiveView(showingLatestSample ? 'home' : 'meeting')
+    if (props.result) {
+      setActiveView(showingLatestSample && !userSelectedMeetingRef.current ? 'home' : 'meeting')
+      userSelectedMeetingRef.current = false
+    }
   }, [props.result, props.isTestAccount, props.meetingId, props.history])
 
   useEffect(() => {
@@ -416,6 +421,7 @@ export default function DashboardMcpPage(props) {
 
   // Wrapped handler: load meeting AND switch to meeting view
   function handleSelectMeeting(entry) {
+    userSelectedMeetingRef.current = true
     props.setShowHistory?.(false)
     props.loadFromHistory?.(entry)
     setActiveView('meeting')
@@ -467,7 +473,7 @@ export default function DashboardMcpPage(props) {
           <button
             type="button"
             onClick={() => {
-              sessionStorage.setItem('prism_ui_screen', 'landing')
+              sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
               window.location.href = '/'
             }}
             className="logo-btn flex items-center gap-2"
