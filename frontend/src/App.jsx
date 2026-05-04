@@ -57,6 +57,23 @@ class ErrorBoundary extends Component {
 }
 
 const APP_URL = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''
+const UI_SCREEN_KEY = 'prism_ui_screen'
+const VISITED_KEY = 'prism_visited'
+const TEST_RUN_SESSION_KEY = 'prism_test_run'
+const TEST_RUN_QUERY_PARAM = 'testRun'
+const isDashboardTestRunRequest =
+  typeof window !== 'undefined' &&
+  window.location.pathname === '/dashboard-mcp' &&
+  new URLSearchParams(window.location.search).get(TEST_RUN_QUERY_PARAM) === '1'
+
+if (isDashboardTestRunRequest) {
+  sessionStorage.setItem(TEST_RUN_SESSION_KEY, '1')
+}
+
+const shouldRestoreTestRunSession =
+  typeof window !== 'undefined' &&
+  window.location.pathname === '/dashboard-mcp' &&
+  sessionStorage.getItem(TEST_RUN_SESSION_KEY) === '1'
 const TEST_AUTH_SESSION = {
   access_token: 'local-test-session',
   user: {
@@ -1134,9 +1151,6 @@ const INITIAL_LIVE_TOKEN = (() => {
   return match ? match[1] : null
 })()
 
-const UI_SCREEN_KEY = 'prism_ui_screen'
-const VISITED_KEY = 'prism_visited'
-
 const HERO_SENTENCES = [
   "Your cleanup always outlasts the meeting itself.",
   "Everyone left the call with different action items.",
@@ -1147,11 +1161,22 @@ const HERO_SENTENCES = [
 ]
 
 // ── Landing / Hero screen ────────────────────────────────────────
-function LandingScreen({ onDemo, onSkip, exiting }) {
+function LandingScreen({ onDemo, onSkip, onViewDashboard, exiting }) {
   const [signupOpen, setSignupOpen] = useState(false)
+  const [signupMode, setSignupMode] = useState('signup')
   const [scrollCueVisible, setScrollCueVisible] = useState(true)
   const scrollContainerRef = useRef(null)
   const heroRef = useRef(null)
+
+  const openSignup = () => {
+    setSignupMode('signup')
+    setSignupOpen(true)
+  }
+
+  const openLogin = () => {
+    setSignupMode('login')
+    setSignupOpen(true)
+  }
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1204,7 +1229,7 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
       >
         {/* Sticky nav — sits above all sections while scrolling */}
         <div className="landing-nav-sticky">
-          <LandingNav onSignup={() => setSignupOpen(true)} />
+          <LandingNav onSignup={openSignup} onLogin={openLogin} />
         </div>
 
         <section ref={heroRef} id="prism" className="landing-hero scroll-section">
@@ -1255,11 +1280,11 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
 
           {/* CTA buttons */}
           <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
-            <button type="button" className="btn-primary landing-button-primary" onClick={() => setSignupOpen(true)}>Get started</button>
+            <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
             <span className="cta-or">or</span>
             <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
             <span className="cta-or">or</span>
-            <button type="button" className="btn-ghost landing-button-secondary" onClick={() => window.location.href = '/dashboard-mcp'}>View dashboard</button>
+            <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>View dashboard</button>
           </div>
         </div>
 
@@ -1275,10 +1300,16 @@ function LandingScreen({ onDemo, onSkip, exiting }) {
         <div className="landing-post-hero">
           <HowItWorks />
           <AgentShowcase />
-          <PricingSection onGetStarted={() => setSignupOpen(true)} />
+          <PricingSection onGetStarted={openSignup} />
           <TeamSection />
         </div>
-        {signupOpen && <SignupDialog onClose={() => setSignupOpen(false)} />}
+        {signupOpen && (
+          <SignupDialog
+            mode={signupMode}
+            onModeChange={setSignupMode}
+            onClose={() => setSignupOpen(false)}
+          />
+        )}
       </div>
     </div>
   )
@@ -1343,6 +1374,16 @@ export default function App() {
       setShowLanding(false)
       if (demo) startDemo()
     }, 370)
+  }
+
+  const enterDashboardTestRun = () => {
+    sessionStorage.setItem(TEST_RUN_SESSION_KEY, '1')
+    sessionStorage.setItem(VISITED_KEY, '1')
+    sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+    sessionStorage.removeItem('prism_active_bot_id')
+    sessionStorage.removeItem('prism_active_live_token')
+    sessionStorage.removeItem('prism_new_meeting')
+    window.location.href = `/dashboard-mcp?${TEST_RUN_QUERY_PARAM}=1`
   }
 
   const [sessionId, setSessionId] = useState(0)
@@ -1434,30 +1475,6 @@ export default function App() {
         if (!Array.isArray(data)) return
         const validHistory = data.filter((entry) => hasMeaningfulResult(entry?.result))
         setHistory(validHistory)
-        if (validHistory.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
-          const latest = validHistory[0]
-          savedMeetingRef.current = latest.id
-          setTranscript(latest.transcript || '')
-          setTranscriptDrafts((prev) => ({ ...prev, paste: latest.transcript || '' }))
-          setResult(latest.result || null)
-          setMeetingId(latest.id)
-          // Generate share token on the fly if missing (older meetings)
-          let token = latest.share_token || null
-          if (!token) {
-            token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-            apiFetch(`/meetings/${latest.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ share_token: token }),
-            }).catch(() => {})
-          }
-          setShareToken(token)
-          try {
-            const chatRes = await apiFetch(`/chats/${latest.id}`)
-            const chat = chatRes.ok ? await chatRes.json() : { messages: [] }
-            setInitialMessages(chat.messages || [])
-          } catch { /* no chat saved yet */ }
-        }
       })
       .catch(() => {})
     })()
@@ -1538,43 +1555,56 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) {
+      if (shouldRestoreTestRunSession) {
+        setAuthSession(TEST_AUTH_SESSION)
+      }
       setAuthReady(true)
       return
     }
 
-    // Whenever we get a provider_token (Google access token), save it for Calendar API use
-    const trySaveProviderToken = (session) => {
-      console.log('[calendar] provider_token:', session?.provider_token, 'refresh:', session?.provider_refresh_token)
-      if (!session?.provider_token) return
-      apiFetch('/calendar/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          access_token: session.provider_token,
-          refresh_token: session.provider_refresh_token || null,
-          expires_in: session.expires_in || null,
-        }),
-      }).then(res => {
-        if (res.ok) setCalendarConnected(true)
-      }).catch(() => {})
-    }
-
     supabase.auth.getSession().then(({ data }) => {
-      setAuthSession(data.session || null)
+      if (data.session) {
+        sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
+        setAuthSession(data.session)
+      } else if (shouldRestoreTestRunSession) {
+        setAuthSession(TEST_AUTH_SESSION)
+      } else {
+        setAuthSession(null)
+      }
       setAuthReady(true)
-      trySaveProviderToken(data.session)
     })
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthSession(session || null)
+      if (session) sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
+      const restoreTestRun =
+        typeof window !== 'undefined' &&
+        window.location.pathname === '/dashboard-mcp' &&
+        sessionStorage.getItem(TEST_RUN_SESSION_KEY) === '1'
+      setAuthSession(session || (restoreTestRun ? TEST_AUTH_SESSION : null))
       setAuthReady(true)
-      if (_event === 'SIGNED_IN') {
-        trySaveProviderToken(session)
-      }
     })
 
     return () => data.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!authReady || INITIAL_SHARE_TOKEN || isMcpDashboard) return
+    if (user && !isTestAccount) {
+      sessionStorage.setItem(VISITED_KEY, '1')
+      sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+      window.location.replace('/dashboard-mcp')
+    }
+  }, [authReady, user?.id, isTestAccount, isMcpDashboard])
+
+  useEffect(() => {
+    if (!authReady || !isMcpDashboard || !isTestAccount) return
+    if (new URLSearchParams(window.location.search).get(TEST_RUN_QUERY_PARAM) === '1') {
+      window.history.replaceState({}, '', '/dashboard-mcp')
+    }
+    setWorkspaceToast('Test account loaded.')
+    const timeoutId = setTimeout(() => setWorkspaceToast(null), 2500)
+    return () => clearTimeout(timeoutId)
+  }, [authReady, isMcpDashboard, isTestAccount])
 
   // Detect Google Calendar OAuth callback (?code=...&state=calendar_connect)
   useEffect(() => {
@@ -1615,9 +1645,7 @@ export default function App() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-        redirectTo: `${window.location.origin}${window.location.pathname}`,
+        redirectTo: `${window.location.origin}/dashboard-mcp`,
       },
     })
     if (authError) setError(authError.message)
@@ -1634,6 +1662,11 @@ export default function App() {
 
   // Direct Google OAuth PKCE flow for calendar (bypasses Supabase session)
   const connectGoogleCalendar = async () => {
+    if (isTestAccount) {
+      setIntegrationToast({ type: 'err', msg: 'Connect a real account to enable Google integrations.' })
+      setTimeout(() => setIntegrationToast(null), 3000)
+      return
+    }
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
     if (!clientId) {
       setError('Google Client ID is not configured (VITE_GOOGLE_CLIENT_ID missing).')
@@ -1664,6 +1697,7 @@ export default function App() {
   }
 
   const saveAutoJoinSetting = (val) => {
+    if (isTestAccount) return
     setAutoJoinSetting(val)
     localStorage.setItem('prism_autojoin', val)
   }
@@ -1690,6 +1724,11 @@ export default function App() {
   }, [inputTab, transcriptDrafts])
 
   async function exportToSlack() {
+    if (isTestAccount) {
+      setIntegrationToast({ type: 'err', msg: 'Connect a real account to export to Slack.' })
+      setTimeout(() => setIntegrationToast(null), 3000)
+      return
+    }
     if (!integrations.slack_webhook) { setShowIntegrations(true); return }
     setExportingSlack(true)
     try {
@@ -1715,6 +1754,7 @@ export default function App() {
   const autoDeliveryRef = useRef(new Set())
 
   async function deliverMeetingRecap(meetingTitle, meetingResult, meetingId) {
+    if (isTestAccount) return
     if (!meetingResult) return
     const deliveryKey = meetingId ? String(meetingId) : `${meetingTitle}-${meetingResult.health_score?.score ?? 'na'}`
     if (autoDeliveryRef.current.has(deliveryKey)) return
@@ -1778,6 +1818,11 @@ export default function App() {
   }
 
   async function exportToNotion() {
+    if (isTestAccount) {
+      setIntegrationToast({ type: 'err', msg: 'Connect a real account to export to Notion.' })
+      setTimeout(() => setIntegrationToast(null), 3000)
+      return
+    }
     if (!integrations.notion_token || !integrations.notion_page_id) { setShowIntegrations(true); return }
     setExportingNotion(true)
     try {
@@ -1836,6 +1881,10 @@ export default function App() {
   }, [])
 
   const joinMeeting = async () => {
+    if (isTestAccount) {
+      setBotError('Meeting bot join is disabled in test run.')
+      return
+    }
     if (!meetingUrl.trim()) return
     setBotError(null)
     setBotTranscriptReady(false)
@@ -1941,6 +1990,7 @@ export default function App() {
     setBotError(null)
     setActiveBotId(null)
     sessionStorage.removeItem('prism_active_bot_id')
+    sessionStorage.removeItem('prism_active_live_token')
   }
 
   // Clean up poll on unmount
@@ -2077,6 +2127,9 @@ export default function App() {
     setHistory(prev => mergeHistoryEntries([entry, ...prev]))
     setMeetingId(id)
     setShareToken(share_token)
+    if (isTestAccount) {
+      return entry
+    }
     apiFetch('/meetings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2099,7 +2152,7 @@ export default function App() {
     setMeetingId(entry.id)
     // Generate share token on the fly if missing (older meetings)
     let token = entry.share_token || null
-    if (!token && user) {
+    if (!token && user && !isTestAccount) {
       token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
       apiFetch(`/meetings/${entry.id}`, {
         method: 'PATCH',
@@ -2110,6 +2163,10 @@ export default function App() {
     setShareToken(token)
     setSessionId(s => s + 1)
     setShowHistory(false)
+    if (isTestAccount) {
+      setInitialMessages([])
+      return
+    }
     try {
       const res = await apiFetch(`/chats/${entry.id}`)
       const data = await res.json()
@@ -2286,7 +2343,7 @@ export default function App() {
       share_token: `sample${index}`,
     }))
 
-    setIsDemoMode(true)
+    setIsDemoMode(false)
     setDemoChatOpen(false)
     setInputTab('paste')
     setMobileTab('results')
@@ -2303,6 +2360,7 @@ export default function App() {
     setTranscriptDrafts((prev) => ({ ...prev, paste: entries[0].transcript }))
     setResult(entries[0].result)
     setMeetingId(entries[0].id)
+    savedMeetingRef.current = entries[0].id
     setShareToken(entries[0].share_token)
     setInitialMessages([])
     setSessionId((s) => s + 1)
@@ -2343,8 +2401,11 @@ export default function App() {
     setIsDemoMode(false)
     setHistory([])
     if (isTestAccount) {
+      sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
+      sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
       setAuthSession(null)
       setAuthReady(true)
+      window.location.href = '/'
     } else if (supabase) {
       await supabase.auth.signOut()
     }
@@ -2532,7 +2593,7 @@ export default function App() {
 
   // Landing screen — shown to first-time visitors
   if (showLanding) {
-    return <LandingScreen onDemo={() => exitLanding(true)} onSkip={() => exitLanding(false)} exiting={landingExiting} />
+    return <LandingScreen onDemo={() => exitLanding(true)} onSkip={() => exitLanding(false)} onViewDashboard={enterDashboardTestRun} exiting={landingExiting} />
   }
 
   // Live meeting view — shown when URL is #live/{token}
@@ -2627,15 +2688,21 @@ export default function App() {
   }
 
   if (isMcpDashboard) {
+    if (authReady && !user && !isTestAccount) {
+      window.location.replace('/')
+      return null
+    }
+
     return (
       <>
         <DashboardMcpPage
           authReady={authReady}
           user={user}
-          signInWithGoogle={signInWithGoogle}
-          signInWithTestAccount={signInWithTestAccount}
+          isTestAccount={isTestAccount}
           signOut={signOut}
           loadDashboardSample={loadDashboardSample}
+          canLoadSample={isTestAccount}
+          selectedMeetingId={meetingId ?? history?.[0]?.id}
           isDemoMode={isDemoMode}
           exitDemoMode={exitDemoMode}
           inputTab={inputTab}
@@ -2759,6 +2826,7 @@ export default function App() {
               autoJoinSetting={autoJoinSetting}
               onAutoJoinChange={saveAutoJoinSetting}
               isSignedIn={!!user}
+              isTestAccount={isTestAccount}
             />
           </Suspense>
         )}
@@ -4035,6 +4103,7 @@ export default function App() {
             autoJoinSetting={autoJoinSetting}
             onAutoJoinChange={saveAutoJoinSetting}
             isSignedIn={!!user}
+            isTestAccount={isTestAccount}
           />
         </Suspense>
       )}

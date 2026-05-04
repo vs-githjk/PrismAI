@@ -13,7 +13,7 @@ function scrollTo(id) {
   if (el) el.scrollIntoView({ behavior: 'smooth' })
 }
 
-export default function LandingNav({ onSignup }) {
+export default function LandingNav({ onSignup, onLogin }) {
   const [active, setActive] = useState('prism')
   const [indicatorStyle, setIndicatorStyle] = useState({ width: 0, x: 0, ready: false })
   const navRef = useRef(null)
@@ -136,7 +136,7 @@ export default function LandingNav({ onSignup }) {
 
         {/* Auth */}
         <div className="landing-nav-auth">
-          <button type="button" className="nav-auth-login" onClick={onSignup}>Log in</button>
+          <button type="button" className="nav-auth-login" onClick={onLogin || onSignup}>Log in</button>
           <button type="button" className="nav-auth-signin dashboard-signin-button landing-button-primary" onClick={onSignup}>Sign up</button>
         </div>
 
