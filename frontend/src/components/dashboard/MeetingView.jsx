@@ -1,8 +1,11 @@
-import { Calendar, CheckCircle2, FileText, Mail } from 'lucide-react'
+import { CheckCircle2, FileText } from 'lucide-react'
+import CalendarCard from '../CalendarCard'
+import EmailCard from '../EmailCard'
+import SpeakerCoachCard from '../SpeakerCoachCard'
 import { formatMeetingDate, scoreBand } from '../../lib/insights'
 import { cardGlowStyle, cardTitle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
-export default function MeetingView({ result, meeting }) {
+export default function MeetingView({ result, meeting, gmailConnected = false }) {
   if (!result) {
     return (
       <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 text-center">
@@ -17,8 +20,6 @@ export default function MeetingView({ result, meeting }) {
   const openItems = (result.action_items || []).filter((item) => !item.completed)
   const decisions = result.decisions || []
   const sentiment = result.sentiment
-  const emailDraft = result.email_draft
-  const calendarEvent = result.calendar_event
 
   return (
     <div className="space-y-3">
@@ -134,26 +135,9 @@ export default function MeetingView({ result, meeting }) {
         </section>
       )}
 
-      {emailDraft && (
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <div className="mb-3 flex items-center gap-2">
-            <Mail className="h-4 w-4 text-cyan-200/70" aria-hidden="true" />
-            <p className={eyebrow}>Email draft</p>
-          </div>
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-white/68">{emailDraft}</pre>
-        </section>
-      )}
-
-      {calendarEvent?.title && (
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <div className="mb-3 flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-cyan-200/70" aria-hidden="true" />
-            <p className={eyebrow}>Calendar suggestion</p>
-          </div>
-          <p className="text-sm font-semibold text-white">{calendarEvent.title}</p>
-          {calendarEvent.description && <p className={`mt-1 ${subtleText}`}>{calendarEvent.description}</p>}
-        </section>
-      )}
+      <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />
+      <CalendarCard suggestion={result.calendar_suggestion} />
+      <SpeakerCoachCard speakerCoach={result.speaker_coach} />
     </div>
   )
 }

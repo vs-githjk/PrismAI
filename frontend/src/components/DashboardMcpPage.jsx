@@ -35,6 +35,7 @@ import SkeletonCard from './SkeletonCard'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
+const ChatPanel = lazy(() => import('./ChatPanel'))
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
 const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90'
@@ -157,6 +158,13 @@ function NewMeetingPanel(props) {
 
           <TabsContent value="upload">
             <div className="space-y-3">
+              <input
+                ref={props.fileInputRef}
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
+                className="hidden"
+                onChange={props.handleAudioUpload}
+              />
               <button
                 type="button"
                 onClick={() => props.fileInputRef?.current?.click()}
@@ -254,6 +262,76 @@ function NewMeetingPanel(props) {
   )
 }
 
+const ANALYZING_AGENTS = [
+  { id: 'summarizer',         label: 'Summary',   icon: '📝', done: 'bg-red-500/20 border-red-500/40 text-red-300',           dot: 'bg-red-400' },
+  { id: 'action_items',       label: 'Actions',   icon: '✅', done: 'bg-orange-500/20 border-orange-500/40 text-orange-300',   dot: 'bg-orange-400' },
+  { id: 'decisions',          label: 'Decisions', icon: '⚖️', done: 'bg-yellow-500/20 border-yellow-500/40 text-yellow-200',   dot: 'bg-yellow-400' },
+  { id: 'sentiment',          label: 'Sentiment', icon: '💬', done: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300', dot: 'bg-emerald-400' },
+  { id: 'email_drafter',      label: 'Email',     icon: '✉️', done: 'bg-blue-500/20 border-blue-500/40 text-blue-300',         dot: 'bg-blue-400' },
+  { id: 'calendar_suggester', label: 'Calendar',  icon: '📅', done: 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300',   dot: 'bg-indigo-400' },
+  { id: 'health_score',       label: 'Health',    icon: '📊', done: 'bg-violet-500/20 border-violet-500/40 text-violet-300',   dot: 'bg-violet-400' },
+  { id: 'speaker_coach',      label: 'Coach',     icon: '🎤', done: 'bg-rose-500/20 border-rose-500/40 text-rose-300',         dot: 'bg-rose-400' },
+]
+
+function MeetingViewSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2 px-0.5">
+        <div className="h-2 w-20 animate-pulse rounded-full bg-white/[0.06]" />
+        <div className="h-7 w-56 animate-pulse rounded-xl bg-white/[0.08]" style={{ animationDelay: '60ms' }} />
+        <div className="h-2 w-28 animate-pulse rounded-full bg-white/[0.05]" style={{ animationDelay: '120ms' }} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_minmax(0,2fr)]">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={5} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={3} />
+      </div>
+      <SkeletonCard lines={1} />
+      <SkeletonCard lines={5} />
+      <SkeletonCard lines={2} />
+      <SkeletonCard lines={4} />
+    </div>
+  )
+}
+
+function AnalyzingBanner({ result }) {
+  const agentsRun = result?.agents_run || []
+  const doneCount = agentsRun.length
+
+  return (
+    <div className="mb-3 overflow-hidden rounded-2xl border border-cyan-400/[0.18]" style={{ background: 'rgba(34,211,238,0.04)' }}>
+      <div className="prism-spectrum-bar h-0.5 w-full" />
+      <div className="p-4">
+        <div className="mb-3 flex items-center gap-2.5">
+          <span className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-cyan-400" />
+          <p className="text-sm font-semibold text-white">Prism is analyzing your meeting</p>
+          <span className="ml-auto text-[11px] text-white/38">{doneCount} / {ANALYZING_AGENTS.length}</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {ANALYZING_AGENTS.map((agent) => {
+            const isDone = agentsRun.includes(agent.id)
+            return (
+              <div
+                key={agent.id}
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-300 ${
+                  isDone ? agent.done : 'animate-pulse border-white/[0.09] bg-white/[0.04] text-white/38'
+                }`}
+              >
+                <span className="text-sm leading-none">{agent.icon}</span>
+                {agent.label}
+                <span className={`h-1.5 w-1.5 rounded-full ${isDone ? agent.dot : 'bg-white/20'}`} />
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardMcpPage(props) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
@@ -270,6 +348,11 @@ export default function DashboardMcpPage(props) {
   const profileTriggerHovered = useRef(false)
   const profileContentHovered = useRef(false)
   const isFirstRender = useRef(true)
+
+  // Switch to meeting view immediately when analysis starts
+  useEffect(() => {
+    if (props.loading) setActiveView('meeting')
+  }, [props.loading])
 
   // Auto-switch to meeting view when a new result is loaded (not on initial mount)
   useEffect(() => {
@@ -562,9 +645,29 @@ export default function DashboardMcpPage(props) {
           />
         )}
         {activeView === 'meeting' && (
-          <Suspense fallback={<SkeletonCard lines={4} tall />}>
-            <MeetingView result={props.result} meeting={currentMeeting} />
-          </Suspense>
+          <>
+            {props.loading && <AnalyzingBanner result={props.result} />}
+            {props.loading && !props.result ? (
+              <MeetingViewSkeleton />
+            ) : (
+              <Suspense fallback={<SkeletonCard lines={4} tall />}>
+                <MeetingView result={props.result} meeting={currentMeeting} gmailConnected={props.calendarConnected} />
+              </Suspense>
+            )}
+            {props.result && !props.loading && (
+              <Suspense fallback={null}>
+                <ChatPanel
+                  key={props.sessionId}
+                  meetingId={props.meetingId}
+                  initialMessages={props.initialMessages}
+                  transcript={props.transcript}
+                  result={props.result}
+                  onResultUpdate={props.setResult}
+                  isSignedIn={!!props.user}
+                />
+              </Suspense>
+            )}
+          </>
         )}
         {activeView === 'intelligence' && (
           <Suspense fallback={<SkeletonCard lines={4} tall />}>
@@ -610,7 +713,7 @@ export default function DashboardMcpPage(props) {
                 </button>
               </div>
 
-              {props.user ? (
+              {(props.user || props.isDemoMode) ? (
                 <>
                   {historySearchOpen && (
                     <div id="dashboard-history-search-wrap" className="px-1.5 pb-1.5">
@@ -633,7 +736,7 @@ export default function DashboardMcpPage(props) {
                     {filteredHistory.length > 0 ? (
                       filteredHistory.map((entry) => (
                         <div key={entry.id} className="group flex items-center rounded-md pr-1 transition hover:bg-cyan-300/[0.055] focus-within:bg-cyan-300/[0.075]">
-                          <button type="button" onClick={() => handleSelectHistoryEntry(entry)} className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-left focus-visible:outline-none">
+                          <button type="button" onClick={() => handleSelectMeeting(entry)} className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-left focus-visible:outline-none">
                             <p className="truncate text-[13px] font-medium leading-5 text-white/88 group-hover:text-white">{entry.title || 'Meeting'}</p>
                             <p className="text-[10.5px] font-normal leading-4 text-white/44">{formatHistoryDate(entry.date)}</p>
                           </button>

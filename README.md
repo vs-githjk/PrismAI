@@ -44,13 +44,15 @@ Plus a **Chat** interface to ask questions about any meeting in natural language
 ```bash
 # Backend
 cp backend/.env.example backend/.env   # add your GROQ_API_KEY
-cd backend && pip install -r requirements.txt && uvicorn main:app --reload
+cd backend && pip install -r requirements.txt && uvicorn main:app --reload --port 8001
 
 # Frontend (new terminal)
 cd frontend && npm install && npm run dev
 ```
 
 Get a free Groq API key at https://console.groq.com
+
+For the live meeting bot, local backend testing also needs a public HTTPS webhook URL for `POST /recall-webhook` and `POST /realtime-events`. Set `WEBHOOK_BASE_URL` in `backend/.env` to that public URL before using the bot flow.
 
 ## Deploy frontend to Vercel
 

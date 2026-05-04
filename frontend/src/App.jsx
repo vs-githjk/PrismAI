@@ -2203,6 +2203,9 @@ export default function App() {
           ],
           sentiment: { overall: 'positive', score: 78, arc: 'aligned', notes: 'Constructive disagreement resolved into clear tradeoffs.' },
           health_score: { score: 84, verdict: 'Strong prioritization with clear owners and near-term follow-ups.', badges: ['Clear Decisions', 'Action-Oriented'], breakdown: { clarity: 88, action_orientation: 86, engagement: 78 } },
+          follow_up_email: { subject: 'Q2 Roadmap — follow-up & next steps', body: 'Hi team,\n\nThanks for a productive planning session. Quick recap of what we landed on:\n\n• Checkout improvements and mobile redesign are locked for Q2.\n• Analytics dashboard moves to Q3 — Mike will update the roadmap by Thursday EOD.\n• Lisa will draft the enterprise client message by Wednesday.\n• Mike to finalize feature specs for the marketing launch by next Friday.\n\nLet me know if anything needs revisiting before then.\n\nBest,\nSarah' },
+          calendar_suggestion: { recommended: true, reason: 'A short check-in next week will confirm roadmap updates are complete before sprint planning.', suggested_timeframe: 'Next Thursday', resolved_date: '', resolved_day: 'Thursday' },
+          speaker_coach: { speakers: [{ name: 'Sarah', talk_percent: 38, decisions_owned: 2, action_items_owned: 0, coaching_note: 'Strong facilitation — consider inviting quieter voices earlier to surface blockers faster.' }, { name: 'Mike', talk_percent: 32, decisions_owned: 1, action_items_owned: 2, coaching_note: 'Good ownership of follow-ups; watch for over-qualifying estimates when time is short.' }, { name: 'Lisa', talk_percent: 30, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Solid contributions — bringing client context earlier would strengthen prioritisation decisions.' }], balance_score: 96 },
         },
       },
       {
@@ -2220,6 +2223,9 @@ export default function App() {
           ],
           sentiment: { overall: 'tense', score: 58, arc: 'recovered', notes: 'The incident was preventable, but the group landed concrete safeguards.' },
           health_score: { score: 72, verdict: 'Useful postmortem with specific safeguards, though tension was present.', badges: ['Clear Owners', 'Risk Surfaced'], breakdown: { clarity: 76, action_orientation: 82, engagement: 62 } },
+          follow_up_email: { subject: 'Payment outage postmortem — action items & safeguards', body: 'Hi everyone,\n\nThank you for a thorough postmortem. Here is what we committed to:\n\n• Priya: alert on connection pool utilization above 70% by end of week.\n• Marcus: update the infra change review checklist by Thursday.\n• Priya: draft runbook for connection pool exhaustion by next Monday.\n\nGoing forward, all connection limit config changes require a second on-call reviewer sign-off.\n\nLet me know if I missed anything.\n\nBest,\nAlex' },
+          calendar_suggestion: { recommended: false, reason: 'All action items have owners and due dates — no follow-up meeting is needed at this stage.', suggested_timeframe: '', resolved_date: '', resolved_day: '' },
+          speaker_coach: { speakers: [{ name: 'Alex', talk_percent: 42, decisions_owned: 1, action_items_owned: 0, coaching_note: 'Effective at driving conclusions — allow more space after tense moments before pressing for decisions.' }, { name: 'Priya', talk_percent: 35, decisions_owned: 0, action_items_owned: 2, coaching_note: 'High ownership and strong technical depth; summarising findings upfront would save time.' }, { name: 'Marcus', talk_percent: 23, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Concise and direct — adding more context around the checklist gap would strengthen accountability.' }], balance_score: 78 },
         },
       },
       {
@@ -2239,6 +2245,9 @@ export default function App() {
           ],
           sentiment: { overall: 'neutral', score: 66, arc: 'focused', notes: 'Clear pipeline pressure with pragmatic next steps.' },
           health_score: { score: 78, verdict: 'Focused operational review with measurable goals and owners.', badges: ['Measurable Goals', 'Action-Oriented'], breakdown: { clarity: 80, action_orientation: 84, engagement: 70 } },
+          follow_up_email: { subject: 'Q2 Sales strategy — commitments and targets', body: 'Hi team,\n\nGreat session today. Here is what we are driving toward in Q2:\n\n• Target: 15 net-new enterprise logos.\n• Weekly pipeline review every Monday at 9am starting next week.\n• Rachel: standard contract template with legal by end of April.\n• Carlos & Rachel: MEDDIC certification by April 30.\n• Carlos: competitive battle cards for top two competitors by next Friday.\n\nLet\'s make Q2 the turnaround quarter.\n\nBest,\nDiana' },
+          calendar_suggestion: { recommended: true, reason: 'A pipeline review cadence was agreed — the first session should be confirmed on the calendar.', suggested_timeframe: 'Next Monday at 9am', resolved_date: '', resolved_day: 'Monday' },
+          speaker_coach: { speakers: [{ name: 'Diana', talk_percent: 44, decisions_owned: 2, action_items_owned: 0, coaching_note: 'Strong direction-setting — leaving more room for Rachel and Carlos to problem-solve would increase buy-in.' }, { name: 'Rachel', talk_percent: 30, decisions_owned: 0, action_items_owned: 2, coaching_note: 'Good on execution detail; raising risks earlier in the discussion would improve planning.' }, { name: 'Carlos', talk_percent: 26, decisions_owned: 0, action_items_owned: 2, coaching_note: 'Practical and accountable — sharing competitive intelligence proactively would add more value.' }], balance_score: 82 },
         },
       },
       {
@@ -2254,6 +2263,9 @@ export default function App() {
           decisions: [],
           sentiment: { overall: 'tense', score: 34, arc: 'frustrated', notes: 'Confusion and unclear ownership blocked useful alignment.' },
           health_score: { score: 29, verdict: 'Low-clarity meeting with unresolved numbers, unclear agenda, and weak ownership.', badges: ['Needs Follow-Up', 'Unclear Decisions'], breakdown: { clarity: 22, action_orientation: 34, engagement: 38 } },
+          follow_up_email: { subject: 'Q3 Budget — next steps before we reconvene', body: 'Hi Greg, Kevin, and Tara,\n\nFollowing up on today\'s session. We did not reach a budget decision, but here is what needs to happen before we meet again:\n\n• Greg: fix the spreadsheet formula error.\n• Kevin: forward the prior budget scope-change email.\n• Everyone: review team spend before we reconvene this week.\n\nOnce those are done we should be in a better position to align. I will send a calendar invite for a follow-up.\n\nBest,\nAbhinav' },
+          calendar_suggestion: { recommended: true, reason: 'No decisions were made and the spreadsheet data was incorrect — a follow-up is essential before the quarter closes.', suggested_timeframe: 'Later this week', resolved_date: '', resolved_day: '' },
+          speaker_coach: { speakers: [{ name: 'Greg', talk_percent: 36, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Brought technical clarity on the spreadsheet — leading with the data issue earlier would have saved time.' }, { name: 'Kevin', talk_percent: 34, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Good at surfacing context; follow up on the email distribution gap more assertively.' }, { name: 'Tara', talk_percent: 30, decisions_owned: 0, action_items_owned: 0, coaching_note: 'Flagged a real access gap early — pushing for a resolution or clear owner in the moment would help move things forward.' }], balance_score: 95 },
         },
       },
       {
@@ -2272,6 +2284,9 @@ export default function App() {
           ],
           sentiment: { overall: 'positive', score: 82, arc: 'collaborative', notes: 'Research translated into both quick wins and strategic follow-up.' },
           health_score: { score: 88, verdict: 'Excellent research readout with clear evidence, sequencing, and owners.', badges: ['Evidence-Based', 'Clear Owners'], breakdown: { clarity: 90, action_orientation: 88, engagement: 86 } },
+          follow_up_email: { subject: 'Onboarding research readout — next steps', body: 'Hi team,\n\nThanks for a great session. The research surfaced a clear drop-off point and we have a solid plan to address it:\n\nShort term:\n• Tyler: tooltip copy and updated step 3 instructions by Friday.\n• Casey: pricing reassurance mockup in Figma today.\n\nLonger term:\n• Sam: scope the magic link flow for admin invitations by next Wednesday.\n\nDecision: ship the tooltip and email template fix as the immediate win, then revisit the magic link flow once scoped.\n\nExcited about this one.\n\nBest,\nMorgan' },
+          calendar_suggestion: { recommended: true, reason: 'A retest with five users was agreed after the tooltip change ships — that session should be scheduled now.', suggested_timeframe: 'Two weeks out', resolved_date: '', resolved_day: '' },
+          speaker_coach: { speakers: [{ name: 'Morgan', talk_percent: 40, decisions_owned: 2, action_items_owned: 0, coaching_note: 'Clear decision-maker and good at sequencing — giving the team more space to debate tradeoffs would strengthen alignment.' }, { name: 'Sam', talk_percent: 25, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Solid on the technical scope; sharing complexity estimates earlier helps the group prioritise.' }, { name: 'Tyler', talk_percent: 20, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Concise and reliable — proactively flagging copy dependencies would prevent last-minute bottlenecks.' }, { name: 'Casey', talk_percent: 15, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Strong visual contributions — narrating design decisions as you share mockups helps non-designers follow the reasoning.' }], balance_score: 68 },
         },
       },
     ]
