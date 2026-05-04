@@ -1475,30 +1475,6 @@ export default function App() {
         if (!Array.isArray(data)) return
         const validHistory = data.filter((entry) => hasMeaningfulResult(entry?.result))
         setHistory(validHistory)
-        if (validHistory.length > 0 && !sessionStorage.getItem('prism_new_meeting')) {
-          const latest = validHistory[0]
-          savedMeetingRef.current = latest.id
-          setTranscript(latest.transcript || '')
-          setTranscriptDrafts((prev) => ({ ...prev, paste: latest.transcript || '' }))
-          setResult(latest.result || null)
-          setMeetingId(latest.id)
-          // Generate share token on the fly if missing (older meetings)
-          let token = latest.share_token || null
-          if (!token) {
-            token = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-            apiFetch(`/meetings/${latest.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ share_token: token }),
-            }).catch(() => {})
-          }
-          setShareToken(token)
-          try {
-            const chatRes = await apiFetch(`/chats/${latest.id}`)
-            const chat = chatRes.ok ? await chatRes.json() : { messages: [] }
-            setInitialMessages(chat.messages || [])
-          } catch { /* no chat saved yet */ }
-        }
       })
       .catch(() => {})
     })()
@@ -2726,7 +2702,7 @@ export default function App() {
           signOut={signOut}
           loadDashboardSample={loadDashboardSample}
           canLoadSample={isTestAccount}
-          selectedMeetingId={meetingId}
+          selectedMeetingId={meetingId ?? history?.[0]?.id}
           isDemoMode={isDemoMode}
           exitDemoMode={exitDemoMode}
           inputTab={inputTab}
