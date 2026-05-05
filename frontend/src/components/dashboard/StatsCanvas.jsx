@@ -57,7 +57,7 @@ function GradientTracing({
   )
 }
 
-function FirstMeetingPlaceholder({ onLoadSample }) {
+function FirstMeetingPlaceholder({ onLoadSample, canLoadSample }) {
   const guideHeight = 300
   const guidePath = `M12 0 L12 ${guideHeight}`
 
@@ -69,13 +69,15 @@ function FirstMeetingPlaceholder({ onLoadSample }) {
         into momentum.
       </h1>
       <p className="mt-5 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl">Start a new meeting or upload a transcript.</p>
-      <button
-        type="button"
-        onClick={onLoadSample}
-        className="mt-12 inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#2f2f2f] bg-[#18181b] px-7 py-3 text-base font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
-      >
-        Load sample dashboard
-      </button>
+      {canLoadSample && (
+        <button
+          type="button"
+          onClick={onLoadSample}
+          className="mt-12 inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#2f2f2f] bg-[#18181b] px-7 py-3 text-base font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+        >
+          Load sample dashboard
+        </button>
+      )}
       <div className="mt-5 flex flex-col items-center gap-2 text-sm font-medium text-cyan-50/78">
         <span>Or start fresh with the + below</span>
         <div className="flex justify-center">
@@ -113,7 +115,7 @@ function SingleMeetingState({ history, onSelect }) {
   )
 }
 
-function MultiMeetingHome({ history, onSelect }) {
+function MultiMeetingHome({ history, onSelect, selectedMeetingId }) {
   return (
     <div className="space-y-6">
       <section className="flex flex-col items-center justify-center px-6 py-10 text-center">
@@ -126,15 +128,15 @@ function MultiMeetingHome({ history, onSelect }) {
         </p>
       </section>
       <Suspense fallback={<SkeletonCard lines={2} />}>
-        <MeetingsRail history={history} onSelect={onSelect} />
+        <MeetingsRail history={history} onSelect={onSelect} selectedMeetingId={selectedMeetingId} />
       </Suspense>
     </div>
   )
 }
 
-export default function StatsCanvas({ history, loadFromHistory, loadSample }) {
+export default function StatsCanvas({ history, loadFromHistory, loadSample, canLoadSample = false, selectedMeetingId = null }) {
   const safeHistory = history || []
-  if (safeHistory.length === 0) return <FirstMeetingPlaceholder onLoadSample={loadSample} />
+  if (safeHistory.length === 0) return <FirstMeetingPlaceholder onLoadSample={loadSample} canLoadSample={canLoadSample} />
   if (safeHistory.length === 1) return <SingleMeetingState history={safeHistory} onSelect={loadFromHistory} />
-  return <MultiMeetingHome history={safeHistory} onSelect={loadFromHistory} />
+  return <MultiMeetingHome history={safeHistory} onSelect={loadFromHistory} selectedMeetingId={selectedMeetingId} />
 }

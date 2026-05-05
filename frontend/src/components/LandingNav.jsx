@@ -136,7 +136,7 @@ export default function LandingNav({ onSignup, onLogin }) {
 
         {/* Auth */}
         <div className="landing-nav-auth">
-          <button type="button" className="nav-auth-login" onClick={onLogin ?? onSignup}>Log in</button>
+          <button type="button" className="nav-auth-login" onClick={onLogin || onSignup}>Log in</button>
           <button type="button" className="nav-auth-signin dashboard-signin-button landing-button-primary" onClick={onSignup}>Sign up</button>
         </div>
 

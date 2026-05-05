@@ -4,7 +4,7 @@ import { apiFetch } from '../lib/api'
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear']
 
-function Field({ label, placeholder, value, onChange, type = 'text', hint }) {
+function Field({ label, placeholder, value, onChange, type = 'text', hint, disabled = false }) {
   return (
     <div>
       <label className="block text-xs font-medium text-gray-400 mb-1.5">{label}</label>
@@ -13,15 +13,16 @@ function Field({ label, placeholder, value, onChange, type = 'text', hint }) {
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
         className="w-full rounded-xl px-3 py-2.5 text-xs text-gray-200 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
-        style={{ background: 'rgba(0,0,0,0.35)' }}
+        style={{ background: 'rgba(0,0,0,0.35)', opacity: disabled ? 0.55 : 1 }}
       />
       {hint && <p className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">{hint}</p>}
     </div>
   )
 }
 
-function Toggle({ label, checked, onChange, hint }) {
+function Toggle({ label, checked, onChange, hint, disabled = false }) {
   return (
     <div className="rounded-xl p-3 flex items-start justify-between gap-3"
       style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -32,8 +33,9 @@ function Toggle({ label, checked, onChange, hint }) {
       <button
         type="button"
         aria-pressed={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+        className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
         style={{ background: checked ? 'linear-gradient(135deg, #0284c7, #0d9488)' : 'rgba(255,255,255,0.08)' }}>
         <span
           className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform"
@@ -51,7 +53,7 @@ const AUTO_JOIN_OPTIONS = [
   { value: 'marked', label: 'Auto-join starred',  hint: 'Only auto-join meetings you\'ve starred in the panel.' },
 ]
 
-export default function IntegrationsModal({ integrations, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false }) {
+export default function IntegrationsModal({ integrations, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
   const [tab, setTab] = useState('Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
@@ -68,6 +70,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
   const [toolSaveResult, setToolSaveResult] = useState(null) // 'ok' | 'err'
 
   async function save() {
+    if (isTestAccount) return
     const updated = {
       slack_webhook: slackWebhook,
       notion_token: notionToken,
@@ -104,6 +107,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
   }
 
   async function testSlack() {
+    if (isTestAccount) return
     if (!slackWebhook.trim()) return
     setTestingSlack(true)
     setSlackTestResult(null)
@@ -191,6 +195,12 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
 
         {/* Tab content */}
         <div className="px-5 py-4 space-y-4">
+          {isTestAccount && (
+            <div className="rounded-xl p-3 text-[11px] leading-relaxed text-cyan-100/78"
+              style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.18)' }}>
+              Integrations are disabled in test run. Create or log in to a real account to connect external tools.
+            </div>
+          )}
           {tab === 'Slack' && (
             <>
               <Field
@@ -198,13 +208,14 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 placeholder="https://hooks.slack.com/services/..."
                 value={slackWebhook}
                 onChange={setSlackWebhook}
+                disabled={isTestAccount}
                 hint="Create an incoming webhook in your Slack app settings. Tokens are saved only in your browser."
               />
               {slackWebhook.trim() && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={testSlack}
-                    disabled={testingSlack}
+                    disabled={testingSlack || isTestAccount}
                     className="text-xs px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
                     style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
                     {testingSlack ? 'Sending...' : 'Send test message'}
@@ -221,6 +232,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 label="Auto-send recap after every meeting"
                 checked={autoSendSlack}
                 onChange={setAutoSendSlack}
+                disabled={isTestAccount}
                 hint="When enabled, PrismAI will post the meeting recap to Slack automatically after analysis finishes."
               />
             </>
@@ -234,6 +246,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 value={notionToken}
                 onChange={setNotionToken}
                 type="password"
+                disabled={isTestAccount}
                 hint="Create a Notion integration at notion.so/my-integrations and copy the secret token."
               />
               <Field
@@ -241,6 +254,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 placeholder="32-character page ID or full page URL"
                 value={notionPageId}
                 onChange={setNotionPageId}
+                disabled={isTestAccount}
                 hint="The page where meeting analyses will be created. Share that page with your integration first."
               />
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
@@ -251,6 +265,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 label="Auto-create a Notion page after every meeting"
                 checked={autoSendNotion}
                 onChange={setAutoSendNotion}
+                disabled={isTestAccount}
                 hint="When enabled, PrismAI will create a Notion recap page automatically as soon as the analysis completes."
               />
             </>
@@ -292,6 +307,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
               {calendarConnected ? (
                 <button
                   onClick={() => { onDisconnectCalendar?.(); onClose() }}
+                  disabled={isTestAccount}
                   className="w-full text-xs py-2.5 rounded-xl transition-all text-red-400 hover:text-red-300"
                   style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)' }}>
                   Disconnect Google Calendar
@@ -299,7 +315,8 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
               ) : (
                 <button
                   onClick={() => { onConnectCalendar?.(); onClose() }}
-                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01]"
+                  disabled={isTestAccount}
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #4285F4, #34A853)' }}>
                   Connect Google Calendar
                 </button>
@@ -313,6 +330,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                     <button
                       key={opt.value}
                       onClick={() => onAutoJoinChange?.(opt.value)}
+                      disabled={isTestAccount}
                       className="w-full flex items-start gap-3 rounded-xl p-3 text-left transition-all"
                       style={autoJoinSetting === opt.value
                         ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)' }
@@ -369,7 +387,8 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
               {!calendarConnected && (
                 <button
                   onClick={() => { onConnectCalendar?.(); onClose() }}
-                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01]"
+                  disabled={isTestAccount}
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #4285F4, #34A853)' }}>
                   Connect Google Account
                 </button>
@@ -390,6 +409,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
                 value={linearApiKey}
                 onChange={setLinearApiKey}
                 type="password"
+                disabled={isTestAccount}
                 hint="Create a personal API key at linear.app/settings/api. This lets PrismAI create issues from action items."
               />
               {linearApiKey.trim() && (
@@ -419,7 +439,8 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
             Cancel
           </button>
           <button onClick={save}
-            className="text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all hover:scale-[1.02]"
+            disabled={isTestAccount}
+            className="text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
             Save
           </button>
