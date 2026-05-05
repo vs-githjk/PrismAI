@@ -157,6 +157,8 @@ async def export_to_notion(req: NotionExportRequest):
 
         page = _safe_json(resp)
         page_id = page.get("id", "")
+        if not page_id:
+            raise HTTPException(status_code=502, detail="Notion did not return a page id")
 
         for i in range(100, len(all_blocks), 100):
             chunk_resp = await client.patch(

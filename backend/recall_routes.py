@@ -30,6 +30,10 @@ bot_store: dict = {}
 # live_token → bot_id index for public live-share lookups
 _live_token_index: dict = {}
 
+# Tracks bots whose proactive checker has been re-spawned after a server restart,
+# so repeated /bot-status polls don't keep creating new tasks.
+_proactive_respawned: set[str] = set()
+
 
 def _db_save(bot_id: str, fields: dict):
     """Persist bot state to Supabase (best-effort, non-blocking)."""
@@ -61,6 +65,13 @@ def _db_load(bot_id: str) -> dict | None:
                     meeting_memory.restore_memory_state(row, rt_state)
                 except Exception as mem_exc:
                     print(f"[recall] memory restore failed for {bot_id}: {mem_exc}")
+            if row.get("status") in ("joining", "recording") and bot_id not in _proactive_respawned:
+                _proactive_respawned.add(bot_id)
+                try:
+                    from realtime_routes import _run_proactive_checker
+                    asyncio.create_task(_run_proactive_checker(bot_id))
+                except Exception as exc:
+                    print(f"[recall] failed to re-spawn proactive checker: {exc}")
             return {
                 "status": row.get("status", "joining"),
                 "result": row.get("result"),
@@ -388,11 +399,15 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["status"] = "done"
         _db_save(bot_id, {"status": "done", "transcript": transcript, "result": result})
         print(f"[recall] analysis complete for bot {bot_id}")
+        from realtime_routes import cleanup_bot_state
+        cleanup_bot_state(bot_id)
     except Exception as exc:
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = str(exc)
         _db_save(bot_id, {"status": "error", "error": str(exc)})
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
+        from realtime_routes import cleanup_bot_state
+        cleanup_bot_state(bot_id)
 
 
 async def _optional_user_id(request: Request) -> str | None:
@@ -492,6 +507,8 @@ async def remove_bot(bot_id: str):
     except httpx.HTTPError:
         pass  # Best-effort — don't block the client reset
     bot_store.pop(bot_id, None)
+    from realtime_routes import cleanup_bot_state
+    cleanup_bot_state(bot_id)
     return {"ok": True}
 
 

@@ -97,7 +97,7 @@ export default function ProactiveSuggestions({ result, transcript }) {
       })
       if (!res.ok) throw new Error('Request failed')
       const data = await res.json()
-      setState(prev => ({ ...prev, [s.id]: { ...prev[s.id], loading: false, response: data.response } }))
+      setState(prev => ({ ...prev, [s.id]: { ...prev[s.id], loading: false, response: data.response ?? 'No response from server.' } }))
     } catch {
       setState(prev => ({ ...prev, [s.id]: { ...prev[s.id], loading: false, error: 'Something went wrong — try again.' } }))
     }

@@ -192,7 +192,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         const data = await res.json()
         appendMsg({
           role: 'assistant',
-          content: data.response,
+          content: data.response ?? 'No response from server.',
           globalSearch: true,
           toolsUsed: data.tools_used || [],
           pendingConfirmations: data.pending_confirmations || [],
@@ -207,7 +207,7 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
         const data = await res.json()
         appendMsg({
           role: 'assistant',
-          content: data.response,
+          content: data.response ?? 'No response from server.',
           toolsUsed: data.tools_used || [],
           pendingConfirmations: data.pending_confirmations || [],
         })

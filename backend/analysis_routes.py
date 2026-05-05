@@ -64,8 +64,9 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
                             payload = {"agent": agent_name, key: agent_result[key]}
                             yield f"data: {json.dumps(payload)}\n\n"
                             succeeded_agents.append(agent_name)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[analyze] agent failed: {e}")
+                        yield f"data: {json.dumps({'agent_error': str(e)})}\n\n"
 
             yield f"data: {json.dumps({'agents_run': succeeded_agents})}\n\n"
             yield "data: [DONE]\n\n"

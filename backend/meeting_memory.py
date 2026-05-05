@@ -245,10 +245,14 @@ async def _compress_segment(lines: list[str], existing_summary: str) -> str:
 
     segment_text = "\n".join(lines)
 
-    # Condense the summary if it has grown too long (runs once; the recursive call
-    # passes "" as existing_summary so it cannot recurse again).
     if len((existing_summary or "").split()) > MAX_SUMMARY_WORDS:
-        existing_summary = await _compress_segment(existing_summary.splitlines(), "")
+        existing_summary = await llm_call(
+            "Condense this meeting summary to under 500 words. Keep every "
+            "decision, action item, name, number, and date. Past tense, "
+            "third person, dense prose.",
+            existing_summary,
+            temperature=0.1,
+        )
 
     if existing_summary.strip():
         system = (
@@ -523,12 +527,15 @@ def get_memory_snapshot(state: dict) -> dict:
         "live_state_payload": {
             "live_decisions": state.get("live_decisions") or [],
             "live_action_items": state.get("live_action_items") or [],
-            "live_entities": dict(state.get("live_entities") or {}),
+            "live_entities": dict(
+                (state.get("live_entities") or Counter()).most_common(50)
+            ),
             "compression_cursor": state.get("compression_cursor") or 0,
             "idea_history": state.get("idea_history") or [],
             "previous_idea_summaries": state.get("previous_idea_summaries") or [],
             # sets are JSON-unserializable — store as a sorted list, restore as set
             "gaps_flagged": sorted(state.get("gaps_flagged") or []),
+            "meeting_start_ts": state.get("meeting_start_ts"),
         },
     }
 
@@ -543,7 +550,8 @@ def restore_memory_state(db_row: dict, state: dict) -> None:
     state["memory_summary"] = db_row.get("memory_summary") or ""
     state["live_decisions"] = live_state.get("live_decisions") or []
     state["live_action_items"] = live_state.get("live_action_items") or []
-    state["compression_cursor"] = live_state.get("compression_cursor") or 0
+    # transcript_buffer is not persisted, so the old cursor would skip new lines
+    state["compression_cursor"] = 0
     # Restore Counter from the {word: count} dict stored in JSONB
     raw_entities = live_state.get("live_entities") or {}
     state["live_entities"] = Counter(raw_entities)
@@ -551,3 +559,4 @@ def restore_memory_state(db_row: dict, state: dict) -> None:
     state["idea_history"] = live_state.get("idea_history") or []
     state["previous_idea_summaries"] = live_state.get("previous_idea_summaries") or []
     state["gaps_flagged"] = set(live_state.get("gaps_flagged") or [])
+    state["meeting_start_ts"] = live_state.get("meeting_start_ts")

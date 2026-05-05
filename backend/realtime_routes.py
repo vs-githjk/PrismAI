@@ -521,6 +521,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         user_settings = await _get_settings_for_bot(bot_id)
         tools = get_available_tools(user_settings)
 
+        tool_names = [t["function"]["name"] for t in tools]
+        print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
+
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
             return
@@ -533,6 +536,25 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         hour_12 = now.hour % 12 or 12
         now_str = f"{now.strftime('%A, %B')} {now.day}, {now.year} at {hour_12}:{now.strftime('%M %p')}"
 
+        has_gmail = any(t["function"]["name"].startswith("gmail") for t in tools)
+        has_calendar = any(t["function"]["name"].startswith("calendar") for t in tools)
+
+        email_note = (
+            "For gmail_send: call the tool when the user provides a recipient email address and "
+            "an intent (you may draft the subject and body from meeting context — e.g. "
+            "'ask him to join the meeting' is enough context to compose the body). "
+        ) if has_gmail else (
+            "You do NOT have Gmail access right now. If the user asks you to send an email, "
+            "respond: 'I need Google access to send emails — please connect Google in your account settings.' "
+        )
+
+        calendar_note = (
+            "For calendar_create_event: ONLY create an event if the user has stated the title AND date/time. "
+        ) if has_calendar else (
+            "You do NOT have Calendar access right now. If asked about calendar, "
+            "respond: 'I need Google access — please connect Google in your account settings.' "
+        )
+
         messages = [
             {
                 "role": "system",
@@ -544,8 +566,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                     "Answer directly from the meeting memory or your knowledge whenever possible. "
                     "Do NOT call a tool unless the command explicitly asks for an external action "
                     "(e.g. 'send an email', 'check my calendar', 'create a ticket'). "
-                    "For gmail_send: ONLY send if the user explicitly states the recipient's full email address. "
-                    "For calendar_create_event: ONLY create an event if the user has stated the title AND date/time. "
+                    f"{email_note}"
+                    f"{calendar_note}"
                     "Be concise — responses will be spoken aloud. Keep responses under 3 sentences.\n"
                     f"Current date and time: {now_str}.\n\n"
                     f"{memory_context}"
@@ -693,6 +715,10 @@ async def realtime_events(request: Request):
     if not bot_id:
         return {"ok": True}
 
+    if bot_id and bot_id not in _bot_state and bot_id not in bot_store:
+        from recall_routes import _db_load
+        _db_load(bot_id)
+
     state = _get_bot_state(bot_id)
 
     # Handle transcript data
@@ -790,3 +816,7 @@ async def realtime_events(request: Request):
 def init_bot_realtime(bot_id: str):
     """Initialize real-time state for a bot. Called when a bot is created."""
     _get_bot_state(bot_id)
+
+
+def cleanup_bot_state(bot_id: str) -> None:
+    _bot_state.pop(bot_id, None)

@@ -36,6 +36,7 @@ async def _get_team_id(key: str, team_name: str | None = None) -> str | None:
         for t in teams:
             if t["name"].lower() == team_name.lower():
                 return t["id"]
+        return None
     return teams[0]["id"]
 
 
