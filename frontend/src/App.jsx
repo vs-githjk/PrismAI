@@ -1577,7 +1577,7 @@ export default function App() {
       setAuthSession(session || (isTestRunSession() ? TEST_AUTH_SESSION : null))
       setAuthReady(true)
       if (_event === 'SIGNED_IN') {
-        if (window.location.pathname !== '/dashboard-mcp') {
+        if (window.location.pathname !== '/dashboard-mcp' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing') {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard-mcp')
