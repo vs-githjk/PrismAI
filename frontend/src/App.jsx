@@ -1590,6 +1590,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authReady || INITIAL_SHARE_TOKEN || isMcpDashboard) return
+    if (sessionStorage.getItem(UI_SCREEN_KEY) === 'landing') return
     if (user && !isTestAccount) {
       sessionStorage.setItem(VISITED_KEY, '1')
       sessionStorage.setItem(UI_SCREEN_KEY, 'app')
