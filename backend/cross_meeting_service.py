@@ -223,7 +223,7 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         decision_memory,
         key=lambda item: (
             item["importance"],
-            -(int((item["date"] or "0000-00-00").replace("-", ""))),
+            -(int(re.sub(r"[^0-9]", "", item["date"] or "00000000")[:8] or "0")),
         ),
     )[:4]
 
