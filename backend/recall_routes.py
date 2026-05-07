@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from analysis_service import run_full_analysis
+from analysis_service import build_analysis_transcript, run_full_analysis
 from auth import supabase, require_user_id
 from cross_meeting_service import looks_like_blocker, build_blocker_snippet
 
@@ -116,6 +116,7 @@ STATUS_MAP = {
 
 class JoinMeetingRequest(BaseModel):
     meeting_url: str
+    owner_name: str | None = None
 
 
 def _extract_recall_error(resp: httpx.Response) -> str:
@@ -233,12 +234,15 @@ def _build_pre_meeting_brief(user_id: str | None) -> dict | None:
 
 async def _send_bot_intro(bot_id: str):
     await asyncio.sleep(20)
-    live_token = (bot_store.get(bot_id) or {}).get("live_token")
+    bot_state = bot_store.get(bot_id) or {}
+    live_token = bot_state.get("live_token")
+    owner_name = bot_state.get("owner_name") or "the meeting owner"
     frontend_url = os.getenv("FRONTEND_URL", "https://agentic-meeting-copilot.vercel.app")
     live_link = f"{frontend_url}/#live/{live_token}" if live_token else None
     message = "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."
     if live_link:
         message += f"\n\nAnyone can follow along live: {live_link}"
+    message += f"\n\n⚠️ If you don't consent to being recorded, please let {owner_name} know or leave the meeting."
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
@@ -393,7 +397,9 @@ async def _process_bot_transcript(bot_id: str):
             return
 
         print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
-        result = await run_full_analysis(transcript)
+        owner_name = (bot_store.get(bot_id) or {}).get("owner_name")
+        analysis_transcript = build_analysis_transcript(transcript, owner_name=owner_name)
+        result = await run_full_analysis(analysis_transcript)
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
@@ -471,7 +477,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     data = resp.json()
     bot_id = data["id"]
     live_token = secrets.token_hex(16)
-    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id, "live_token": live_token}
+    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id, "live_token": live_token, "owner_name": req.owner_name}
     _live_token_index[live_token] = bot_id
     _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
 

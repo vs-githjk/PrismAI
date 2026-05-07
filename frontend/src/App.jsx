@@ -1896,7 +1896,10 @@ export default function App() {
       const res = await apiFetch('/join-meeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_url: meetingUrl }),
+        body: JSON.stringify({
+          meeting_url: meetingUrl,
+          owner_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || null,
+        }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
       const data = await res.json()
@@ -2028,7 +2031,10 @@ export default function App() {
     apiFetch('/join-meeting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ meeting_url: url }),
+      body: JSON.stringify({
+        meeting_url: url,
+        owner_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || null,
+      }),
     })
       .then(async (res) => {
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')

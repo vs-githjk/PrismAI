@@ -10,6 +10,7 @@ import os
 import re
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Request
@@ -532,24 +533,28 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
         # Build full three-layer memory context for this command
         memory_context = meeting_memory.build_memory_context(state, command)
-        now = datetime.now()
+        now = datetime.now(ZoneInfo("America/New_York"))
         hour_12 = now.hour % 12 or 12
-        now_str = f"{now.strftime('%A, %B')} {now.day}, {now.year} at {hour_12}:{now.strftime('%M %p')}"
+        tz_abbr = now.strftime("%Z")  # "EST" or "EDT"
+        now_str = f"{now.strftime('%A, %B')} {now.day}, {now.year} at {hour_12}:{now.strftime('%M %p')} {tz_abbr}"
 
         has_gmail = any(t["function"]["name"].startswith("gmail") for t in tools)
         has_calendar = any(t["function"]["name"].startswith("calendar") for t in tools)
 
         email_note = (
-            "For gmail_send: call the tool when the user provides a recipient email address and "
-            "an intent (you may draft the subject and body from meeting context — e.g. "
-            "'ask him to join the meeting' is enough context to compose the body). "
+            "You have Gmail access. Only call gmail_send when the user explicitly says to send an email and "
+            "provides a recipient and intent. If asked whether you can send emails, answer YES directly — "
+            "do not call a tool just to answer that question. "
         ) if has_gmail else (
             "You do NOT have Gmail access right now. If the user asks you to send an email, "
             "respond: 'I need Google access to send emails — please connect Google in your account settings.' "
         )
 
         calendar_note = (
-            "For calendar_create_event: ONLY create an event if the user has stated the title AND date/time. "
+            "You have full Google Calendar access: use calendar_list_events to read/check upcoming events, "
+            "calendar_create_event to schedule (only if the user provides title AND date/time), "
+            "and calendar_update_event to reschedule. "
+            "If asked whether you can access the calendar, answer YES directly — do not call a tool just to answer that question. "
         ) if has_calendar else (
             "You do NOT have Calendar access right now. If asked about calendar, "
             "respond: 'I need Google access — please connect Google in your account settings.' "
@@ -564,8 +569,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                     "You have access to the full meeting memory below — use it to answer questions "
                     "about anything discussed during the meeting, no matter how long ago it was said. "
                     "Answer directly from the meeting memory or your knowledge whenever possible. "
-                    "Do NOT call a tool unless the command explicitly asks for an external action "
-                    "(e.g. 'send an email', 'check my calendar', 'create a ticket'). "
+                    "NEVER call a tool unless the user is explicitly asking you to perform that action right now "
+                    "(e.g. 'send an email to X', 'check my calendar', 'create a ticket'). "
+                    "Questions about your capabilities, access, or what you can do must be answered in words — never by calling a tool. "
                     f"{email_note}"
                     f"{calendar_note}"
                     "Be concise — responses will be spoken aloud. Keep responses under 3 sentences.\n"
