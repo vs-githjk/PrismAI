@@ -647,7 +647,16 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 })
             call_kwargs["messages"] = messages
         else:
-            reply = f"Done — completed {command}."
+            # Tool loop exhausted without a text summary — ask LLM to summarise what was done
+            try:
+                summary_resp = await groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.3,
+                    messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
+                )
+                reply = summary_resp.choices[0].message.content or "Done."
+            except Exception:
+                reply = "Done."
 
         # Log command to bot_store and Supabase
         cmd_entry = {

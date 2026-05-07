@@ -100,7 +100,7 @@ async def get_valid_token(user_id: str) -> str:
     except Exception:
         raise HTTPException(status_code=503, detail="Database error fetching calendar credentials")
 
-    row = resp.data or {}
+    row = (resp.data if resp is not None else None) or {}
     if not row or not row.get("google_access_token"):
         raise HTTPException(status_code=404, detail="Google Calendar not connected")
 

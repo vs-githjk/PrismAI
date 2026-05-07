@@ -125,7 +125,7 @@ async def calendar_update_event(args: dict, user_settings: dict | None = None) -
     event_id = match["id"]
     patch = {}
     if args.get("new_start"):
-        tz = args.get("timezone", "UTC")
+        tz = args.get("timezone", "America/New_York")
         patch["start"] = {"dateTime": args["new_start"], "timeZone": tz}
         patch["end"] = {"dateTime": args["new_end"], "timeZone": tz} if args.get("new_end") else match["end"]
     if args.get("new_title"):
@@ -195,7 +195,7 @@ register_tool(
             "new_title": {"type": "string", "description": "New event title (optional)"},
             "new_start": {"type": "string", "description": "New start time in ISO 8601 format"},
             "new_end": {"type": "string", "description": "New end time in ISO 8601 format"},
-            "timezone": {"type": "string", "description": "Timezone for the new times (default: UTC)"},
+            "timezone": {"type": "string", "description": "Timezone for the new times (default: America/New_York)"},
         },
         "required": ["title"],
     },

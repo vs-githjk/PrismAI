@@ -77,7 +77,7 @@ async def _get_user_settings(user_id: str) -> dict:
         return {}
     try:
         resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
-        row = resp.data or {}
+        row = (resp.data if resp is not None else None) or {}
         # Merge env-level tokens so tools that use env fallback are available
         if SLACK_BOT_TOKEN and not row.get("slack_bot_token"):
             row["slack_bot_token"] = SLACK_BOT_TOKEN
