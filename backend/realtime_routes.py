@@ -26,7 +26,7 @@ from cross_meeting_service import looks_like_blocker, extract_significant_terms
 router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-east-1.recall.ai/api/v1")
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")

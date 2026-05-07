@@ -19,7 +19,7 @@ from cross_meeting_service import looks_like_blocker, build_blocker_snippet
 router = APIRouter(tags=["recall"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-east-1.recall.ai/api/v1")
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8001")
 RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
