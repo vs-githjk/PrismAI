@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -20,7 +21,7 @@ from storage_routes import router as storage_router
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    run_migrations()
+    await asyncio.to_thread(run_migrations)
     yield
 
 
