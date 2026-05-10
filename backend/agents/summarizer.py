@@ -7,10 +7,13 @@ SYSTEM_PROMPT = (
     "Scale length to the meeting: short meetings (under 500 words) get 2-3 sentences; "
     "medium meetings (500-2000 words) get a short paragraph; "
     "long meetings (2000+ words) get 3-5 sentences covering all major topics. "
-    'Return ONLY valid JSON: { "summary": "..." }'
+    "Also produce a title: 4-7 words that capture the core topic or purpose of the meeting "
+    "(e.g. 'Q3 Budget Alignment', 'Onboarding Research Readout', 'API Integration Planning'). "
+    "Do not start the title with 'The meeting' or 'A meeting'. "
+    'Return ONLY valid JSON: { "title": "...", "summary": "..." }'
 )
 
-_DEFAULT = {"summary": ""}
+_DEFAULT = {"title": "", "summary": ""}
 
 
 async def run(transcript: str) -> dict:

@@ -408,6 +408,8 @@ async def _process_bot_transcript(bot_id: str):
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:
+        # re-establish entry in case remove_bot() popped it during an await
+        bot_store.setdefault(bot_id, {"status": "error", "result": None, "error": None, "commands": []})
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = str(exc)
         _db_save(bot_id, {"status": "error", "error": str(exc)})
@@ -626,7 +628,10 @@ async def recall_webhook(request: Request):
         expected = hmac.new(RECALL_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
-    payload = json.loads(body)
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return {"ok": True}
 
     bot_id = (
         payload.get("data", {}).get("bot", {}).get("id")

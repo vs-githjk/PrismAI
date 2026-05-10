@@ -176,6 +176,8 @@ async def export_to_notion(req: NotionExportRequest):
 
 @router.post("/export/slack")
 async def export_to_slack(req: SlackExportRequest):
+    if not req.webhook_url.startswith("https://hooks.slack.com/"):
+        raise HTTPException(status_code=400, detail="Invalid Slack webhook URL")
     result = req.result
     health = result.get("health_score") or {}
     items = result.get("action_items") or []

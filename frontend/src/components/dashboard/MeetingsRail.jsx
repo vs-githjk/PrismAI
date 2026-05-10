@@ -1,4 +1,4 @@
-import { formatMeetingDate, scoreBand } from '../../lib/insights'
+import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
 
 export default function MeetingsRail({ history, onSelect, selectedMeetingId = null }) {
@@ -36,7 +36,7 @@ export default function MeetingsRail({ history, onSelect, selectedMeetingId = nu
                     </span>
                   )}
                 </div>
-                <p className="mt-2 line-clamp-1 text-sm font-semibold leading-5 text-white">{entry.title || 'Meeting'}</p>
+                <p className="mt-2 line-clamp-1 text-sm font-semibold leading-5 text-white">{deriveDisplayTitle(entry)}</p>
                 <p className="mt-1 text-[11px] text-white/45">{formatMeetingDate(entry.date)}</p>
                 <p className="mt-2 line-clamp-1 text-xs leading-5 text-white/58">{entry.result?.health_score?.verdict || entry.result?.summary || 'No verdict recorded.'}</p>
                 {badges.length > 0 && (

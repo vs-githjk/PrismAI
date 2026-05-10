@@ -1,6 +1,7 @@
 import { lazy, Suspense, useId } from 'react'
 import { motion } from 'motion/react'
 import SkeletonCard from '../SkeletonCard'
+import { deriveDisplayTitle } from '../../lib/insights'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 const MeetingsRail = lazy(() => import('./MeetingsRail'))
@@ -104,7 +105,7 @@ function SingleMeetingState({ history, onSelect }) {
             onClick={() => onSelect?.(entry)}
             className="mt-4 w-full rounded-2xl border border-white/[0.1] bg-white/[0.035] p-3 text-left transition hover:border-cyan-200/30 hover:bg-white/[0.06]"
           >
-            <p className="text-sm font-semibold text-white">{entry.title || 'Meeting'}</p>
+            <p className="text-sm font-semibold text-white">{deriveDisplayTitle(entry)}</p>
             <p className="mt-2 text-xs leading-5 text-white/58">
               {entry.result?.health_score?.verdict || entry.result?.summary || 'Meeting saved.'}
             </p>

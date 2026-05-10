@@ -263,6 +263,32 @@ export function normalizeInsights(insights = {}, history = []) {
   }
 }
 
+export function deriveDisplayTitle(entry) {
+  const resultTitle = entry?.result?.title
+  if (resultTitle) return resultTitle
+  const stored = entry?.title || ''
+  if (stored && !/^the meeting\b/i.test(stored)) return stored
+  const summary = entry?.result?.summary || ''
+  if (summary) {
+    const stripped = summary
+      .replace(/^the meeting[^,]*(?:,[^,]*)?,\s*/i, '')
+      .replace(/^(?:appeared to be|was|seemed to be|is|seemed)\s+/i, '')
+      .trim()
+    const text = stripped || summary
+    const atComma = text.split(',')[0].trim()
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+    if (atComma.length >= 8 && atComma.length <= 60) return cap(atComma)
+    const words = text.split(/\s+/)
+    let title = ''
+    for (const word of words) {
+      if ((title + ' ' + word).trim().length > 55) break
+      title = (title + ' ' + word).trim()
+    }
+    if (title.length >= 8) return cap(title)
+  }
+  return stored || 'Meeting'
+}
+
 export function scoreBand(score) {
   const value = Number(score)
   if (!Number.isFinite(value)) return { color: '#94a3b8', label: 'No score', tone: 'slate' }

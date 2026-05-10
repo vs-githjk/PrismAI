@@ -2,7 +2,7 @@ import { CheckCircle2, FileText } from 'lucide-react'
 import CalendarCard from '../CalendarCard'
 import EmailCard from '../EmailCard'
 import SpeakerCoachCard from '../SpeakerCoachCard'
-import { formatMeetingDate, scoreBand } from '../../lib/insights'
+import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
 import { cardGlowStyle, cardTitle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 export default function MeetingView({ result, meeting, gmailConnected = false }) {
@@ -20,13 +20,14 @@ export default function MeetingView({ result, meeting, gmailConnected = false })
   const openItems = (result.action_items || []).filter((item) => !item.completed)
   const decisions = result.decisions || []
   const sentiment = result.sentiment
+  const displayTitle = deriveDisplayTitle({ title: meeting?.title, result })
 
   return (
     <div className="space-y-3">
       {meeting && (
         <div className="px-0.5">
           <p className={eyebrow}>Current meeting</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{meeting.title || 'Meeting'}</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{displayTitle}</h1>
           {meeting.date && <p className={`mt-0.5 ${subtleText}`}>{formatMeetingDate(meeting.date)}</p>}
         </div>
       )}

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from './lib/sessionKeys'
+import { deriveDisplayTitle } from './lib/insights'
 import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
@@ -961,7 +962,7 @@ function LiveMeetingView({ token }) {
         body: JSON.stringify({
           id: Date.now(),
           date: new Date().toISOString().slice(0, 10),
-          title: result.summary?.slice(0, 80).split('.')[0] || 'Meeting',
+          title: result.title || result.summary?.slice(0, 80).split('.')[0] || 'Meeting',
           score: result.health_score?.score || null,
           transcript: data?.transcript || '',
           result,
@@ -1479,6 +1480,29 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, user?.id, isTestAccount])
 
+  const titleBackfillDone = useRef(false)
+  useEffect(() => {
+    if (!user || isTestAccount || history.length === 0 || titleBackfillDone.current) return
+    const stale = history.filter((e) => /^the meeting\b/i.test(e.title || ''))
+    if (stale.length === 0) { titleBackfillDone.current = true; return }
+    titleBackfillDone.current = true
+    const updates = stale
+      .map((e) => ({ id: e.id, title: deriveDisplayTitle(e) }))
+      .filter((u) => u.title && u.title !== stale.find((e) => e.id === u.id)?.title)
+    if (updates.length === 0) return
+    setHistory((prev) => prev.map((e) => {
+      const u = updates.find((x) => x.id === e.id)
+      return u ? { ...e, title: u.title } : e
+    }))
+    updates.forEach(({ id, title }) => {
+      apiFetch(`/meetings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      }).catch(() => {})
+    })
+  }, [history, user, isTestAccount])
+
   useEffect(() => {
     if (!user || isTestAccount || history.length < 2) {
       setCrossMeetingInsights(null)
@@ -1577,7 +1601,7 @@ export default function App() {
       setAuthSession(session || (isTestRunSession() ? TEST_AUTH_SESSION : null))
       setAuthReady(true)
       if (_event === 'SIGNED_IN') {
-        if (window.location.pathname !== '/dashboard-mcp' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing') {
+        if (window.location.pathname !== '/dashboard-mcp') {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard-mcp')
@@ -2128,7 +2152,7 @@ export default function App() {
       date: new Date().toISOString(),
       transcript: t,
       result: r,
-      title: r.summary?.slice(0, 65) || 'Meeting',
+      title: r.title || r.summary?.slice(0, 65) || 'Meeting',
       score: r.health_score?.score,
       share_token,
     }
@@ -2711,7 +2735,9 @@ export default function App() {
   }
 
   if (isMcpDashboard) {
-    if (authReady && !user && !isTestAccount) {
+    const hasPendingOAuthCode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('code')
+    if (authReady && !user && !isTestAccount && !hasPendingOAuthCode) {
+      sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
       window.location.replace('/')
       return null
     }
@@ -3056,7 +3082,7 @@ export default function App() {
                           <button onClick={() => loadFromHistory(entry)}
                             className="flex-1 text-left px-4 py-3 hover:bg-white/5 transition-colors">
                             <div className="flex items-start gap-2">
-                              <p className="text-xs text-gray-300 group-hover:text-white flex-1 line-clamp-2">{entry.title}</p>
+                              <p className="text-xs text-gray-300 group-hover:text-white flex-1 line-clamp-2">{deriveDisplayTitle(entry)}</p>
                               {entry.score !== undefined && (
                                 <span className={`text-[11px] font-bold flex-shrink-0 ${entry.score >= 80 ? 'text-emerald-400' : entry.score >= 60 ? 'text-cyan-400' : entry.score >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
                                   {entry.score}
@@ -3225,7 +3251,7 @@ export default function App() {
                       {entry.score ? `${entry.score}` : 'Saved'}
                     </span>
                     <span className="text-[11px] text-slate-200 max-w-[120px] truncate">
-                      {entry.title || 'Meeting'}
+                      {deriveDisplayTitle(entry)}
                     </span>
                     <span className="text-[10px] text-slate-500">
                       {formatRelativeMeetingDate(entry.date)}

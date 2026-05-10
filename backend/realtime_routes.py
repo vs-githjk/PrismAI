@@ -157,9 +157,15 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
     if user_id and supabase:
         try:
             resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
-            row = resp.data or {}
+            row = (resp.data if resp is not None else None) or {}
             if row.get("google_access_token"):
-                settings["google_access_token"] = row["google_access_token"]
+                # Use get_valid_token to refresh if expired (tokens last 1 hour)
+                from calendar_routes import get_valid_token
+                try:
+                    fresh_token = await get_valid_token(user_id)
+                    settings["google_access_token"] = fresh_token
+                except Exception:
+                    settings["google_access_token"] = row["google_access_token"]
             if row.get("slack_bot_token") and not settings.get("slack_bot_token"):
                 settings["slack_bot_token"] = row["slack_bot_token"]
             if row.get("linear_api_key") and not settings.get("linear_api_key"):
@@ -732,7 +738,9 @@ async def realtime_events(request: Request):
 
     if bot_id and bot_id not in _bot_state and bot_id not in bot_store:
         from recall_routes import _db_load
-        _db_load(bot_id)
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
 
     state = _get_bot_state(bot_id)
 

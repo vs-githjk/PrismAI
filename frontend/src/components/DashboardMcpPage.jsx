@@ -11,6 +11,7 @@ import {
   UserCircle,
   X,
 } from 'lucide-react'
+import { deriveDisplayTitle } from '../lib/insights'
 import DotField from './DotField'
 import LogoIcon from './LogoIcon'
 import StatsCanvas from './dashboard/StatsCanvas'
@@ -36,6 +37,7 @@ import { UI_SCREEN_KEY } from '../lib/sessionKeys'
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
+const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
 const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90'
@@ -192,6 +194,11 @@ function NewMeetingPanel(props) {
 
           <TabsContent value="join">
             <div className="space-y-3">
+              {props.calendarConnected && props.user && !props.isTestAccount && (
+                <Suspense fallback={null}>
+                  <UpcomingMeetings onJoin={(url) => props.setMeetingUrl(url)} />
+                </Suspense>
+              )}
               <input
                 type="url"
                 value={props.meetingUrl || ''}
@@ -678,7 +685,7 @@ export default function DashboardMcpPage(props) {
                   initialMessages={props.initialMessages}
                   transcript={props.transcript}
                   result={props.result}
-                  onResultUpdate={props.setResult}
+                  onResultUpdate={(updated) => props.setResult(r => ({ ...r, ...updated }))}
                   isSignedIn={!!props.user}
                 />
               </Suspense>
@@ -753,13 +760,13 @@ export default function DashboardMcpPage(props) {
                       filteredHistory.map((entry) => (
                         <div key={entry.id} className="group flex items-center rounded-md pr-1 transition hover:bg-cyan-300/[0.055] focus-within:bg-cyan-300/[0.075]">
                           <button type="button" onClick={() => handleSelectMeeting(entry)} className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-left focus-visible:outline-none">
-                            <p className="truncate text-[13px] font-medium leading-5 text-white/88 group-hover:text-white">{entry.title || 'Meeting'}</p>
+                            <p className="truncate text-[13px] font-medium leading-5 text-white/88 group-hover:text-white">{deriveDisplayTitle(entry)}</p>
                             <p className="text-[10.5px] font-normal leading-4 text-white/44">{formatHistoryDate(entry.date)}</p>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteHistoryEntry(entry)}
-                            aria-label={`Delete ${entry.title || 'meeting'}`}
+                            aria-label={`Delete ${deriveDisplayTitle(entry)}`}
                             className="flex h-7 w-7 shrink-0 items-center justify-center text-white/30 opacity-100 transition hover:text-red-300 focus-visible:text-red-300 focus-visible:outline-none sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                           >
                             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />

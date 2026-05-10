@@ -36,6 +36,7 @@ class MeetingEntry(BaseModel):
 class MeetingPatch(BaseModel):
     result: dict | None = None
     share_token: str | None = None
+    title: str | None = None
 
 
 class ChatEntry(BaseModel):
@@ -140,6 +141,8 @@ async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Dep
         update["result"] = patch.result
     if patch.share_token is not None:
         update["share_token"] = patch.share_token
+    if patch.title is not None:
+        update["title"] = patch.title
     if update:
         client.table("meetings").update(update).eq("id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { scoreBand, formatMeetingDate } from '../../lib/insights'
+import { deriveDisplayTitle, scoreBand, formatMeetingDate } from '../../lib/insights'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
 
 function buildPath(points, width, height, pad) {
@@ -19,7 +19,7 @@ export default function HealthTrend({ history, onSelect }) {
     .reverse()
     .map((entry) => ({
       id: entry.id,
-      title: entry.title || 'Meeting',
+      title: deriveDisplayTitle(entry),
       date: formatMeetingDate(entry.date),
       score: Number(entry.result.health_score.score),
       badges: entry.result.health_score.badges || [],

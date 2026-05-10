@@ -186,14 +186,18 @@ async def calendar_exchange_code(
     if expires_in:
         expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
 
-    row = {
+    row: dict = {
         "user_id": user_id,
         "google_access_token": access_token,
-        "google_refresh_token": refresh_token,
         "google_token_expires_at": expires_at,
         "calendar_connected": True,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    # Google only returns refresh_token on first authorization (or after revoke+reconnect).
+    # Only overwrite the stored refresh_token when a new one is actually provided,
+    # otherwise the user loses the ability to refresh tokens until they fully revoke access.
+    if refresh_token:
+        row["google_refresh_token"] = refresh_token
     supabase.table("user_settings").upsert(row, on_conflict="user_id").execute()
     return {"ok": True}
 

@@ -65,6 +65,7 @@ class AgentRequest(BaseModel):
     agent: str
     transcript: str
     instruction: str = ""
+    existing_items: list | None = None
 
 
 class ConfirmToolRequest(BaseModel):
@@ -182,6 +183,12 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
         if req.agent not in AGENT_MAP:
             raise HTTPException(status_code=400, detail=f"Unknown agent: {req.agent}")
         augmented = req.transcript
+        if req.existing_items is not None:
+            try:
+                existing_json = json.dumps(req.existing_items, ensure_ascii=False)
+                augmented += f"\n\n[EXISTING ITEMS — preserve these and merge with any additions/removals the user requests: {existing_json}]"
+            except Exception:
+                pass
         if req.instruction:
             augmented += f"\n\n[User instruction: {req.instruction}]"
         result = await AGENT_MAP[req.agent](augmented)

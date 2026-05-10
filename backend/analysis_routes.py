@@ -61,9 +61,13 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
                         agent_name, agent_result = task.result()
                         key = AGENT_RESULT_KEY.get(agent_name)
                         if key and key in agent_result:
-                            payload = {"agent": agent_name, key: agent_result[key]}
+                            payload = {"agent": agent_name, **agent_result}
                             yield f"data: {json.dumps(payload)}\n\n"
                             succeeded_agents.append(agent_name)
+                        elif key:
+                            # Agent ran without raising but returned no usable data
+                            print(f"[analyze] agent {agent_name} returned no '{key}' key")
+                            yield f"data: {json.dumps({'agent_error': f'{agent_name}: missing result key'})}\n\n"
                     except Exception as e:
                         print(f"[analyze] agent failed: {e}")
                         yield f"data: {json.dumps({'agent_error': str(e)})}\n\n"

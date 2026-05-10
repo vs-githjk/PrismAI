@@ -147,10 +147,17 @@ export default function ChatPanel({ meetingId, initialMessages = [], transcript,
           setMessages(prev => [...prev, { role: 'assistant', content: 'Nothing to undo — no changes have been made yet.' }])
         }
       } else if (agentIntent) {
+        const agentKeyForExisting = {
+          action_items: 'action_items',
+          decisions: 'decisions',
+        }[agentIntent]
+        const existingItems = agentKeyForExisting && result?.[agentKeyForExisting]
+          ? result[agentKeyForExisting]
+          : undefined
         const res = await apiFetch('/agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agent: agentIntent, transcript, instruction: msg }),
+          body: JSON.stringify({ agent: agentIntent, transcript, instruction: msg, existing_items: existingItems }),
         })
         if (!res.ok) throw new Error('Agent call failed')
         const data = await res.json()
