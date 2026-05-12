@@ -1231,7 +1231,7 @@ function LandingScreen({ onDemo, onSkip, onViewDashboard, exiting }) {
         </div>
 
         <section ref={heroRef} id="prism" className="landing-hero scroll-section">
-        {/* SVG filter defs — hidden, used by .prism-logo-text hover */}
+{/* SVG filter defs — hidden, used by .prism-logo-text hover */}
         <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
           <defs>
             <filter id="prism-text-noise" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
@@ -1247,51 +1247,47 @@ function LandingScreen({ onDemo, onSkip, onViewDashboard, exiting }) {
         </svg>
 
         {/* Hero content */}
-        <div className="relative z-10 flex flex-col items-center text-center px-6 pt-16 pb-20 gap-14 w-full" style={{ marginTop: '14vh' }}>
-          {/* Rotating pain-point text */}
-          <div className="w-full flex translate-y-[5vh] items-center justify-center animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-            <TextRotate
-              texts={HERO_SENTENCES}
-              rotationInterval={3600}
-              staggerFrom="first"
-              staggerDuration={0.012}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
-              splitBy="words"
-              mainClassName="min-h-[6.75rem] w-full max-w-[min(100%,84rem)] justify-center text-center text-[clamp(1.25rem,4.8vw,3.75rem)] font-medium leading-tight tracking-tight text-white/85 sm:min-h-[7.5rem] lg:min-h-[8.75rem]"
-              splitLevelClassName="overflow-hidden pb-1"
-              elementLevelClassName="font-medium"
-              style={{ fontFamily: "'Rubik', 'General Sans', sans-serif", fontWeight: 500 }}
-            />
+        <div className="relative z-10 w-full" style={{ height: '100vh' }}>
+          {/* Rotating pain-point text — top edge at 17% */}
+          <div className="absolute w-full flex justify-center px-6 animate-fade-in-up" style={{ top: '17%', animationDelay: '0.2s' }}>
+            <div className="w-full max-w-[min(100%,67rem)] h-[5rem] sm:h-[7rem] lg:h-[12rem] flex items-center justify-center">
+              <TextRotate
+                texts={HERO_SENTENCES}
+                rotationInterval={3600}
+                staggerFrom="first"
+                staggerDuration={0.012}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+                splitBy="words"
+                mainClassName="w-full justify-center text-center text-[clamp(1.5rem,5.5vw,4.5rem)] font-medium leading-tight tracking-tight text-white/85"
+                splitLevelClassName="overflow-hidden pb-1"
+                elementLevelClassName="font-medium"
+                style={{ fontFamily: "'Rubik', 'General Sans', sans-serif", fontWeight: 500 }}
+              />
+            </div>
           </div>
 
-          {/* Tagline */}
-          <div className="animate-fade-in-up mt-24" style={{ animationDelay: '0.45s' }}>
-            <p
-              className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white"
-            >
-              Let <span className="font-light">prism</span> handle it.
-            </p>
+          {/* Tagline — centerline at 50% */}
+          <div style={{ position: 'absolute', top: '55%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'center', padding: '0 1.5rem' }}>
+            <div className="animate-fade-in-up" style={{ animationDelay: '0.45s' }}>
+              <p className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white text-center">
+                Let <span className="font-light">prism</span> handle it.
+              </p>
+            </div>
           </div>
 
-          {/* CTA buttons */}
-          <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s', marginTop: '9rem' }}>
-            <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
-            <span className="cta-or">or</span>
-            <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
-            <span className="cta-or">or</span>
-            <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>View dashboard</button>
+          {/* CTA buttons — centerline at 69% */}
+          <div style={{ position: 'absolute', top: '69%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'center', padding: '0 1.5rem' }}>
+            <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s' }}>
+              <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
+              <span className="cta-or">or</span>
+              <button type="button" className="btn-ghost landing-button-secondary" onClick={onDemo}>Try it out</button>
+              <span className="cta-or">or</span>
+              <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>View dashboard</button>
+            </div>
           </div>
-        </div>
-
-        {/* Scroll cue */}
-        <div className={`scroll-cue${scrollCueVisible ? '' : ' hidden'}`} aria-hidden="true">
-          <span>see more below</span>
-          <svg className="scroll-cue-chevron" width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
-            <polyline points="1,2 7,8 13,2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
         </div>
         </section>
 
