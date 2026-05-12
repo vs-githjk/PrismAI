@@ -1,13 +1,19 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bolt,
+  BookOpen,
   Brain,
+  Copy,
   DoorOpen,
+  Download,
+  FileText,
   History,
   LayoutDashboard,
+  MessageSquare,
   MessagesSquare,
   Plus,
   Search,
+  Share2,
   Trash2,
   UserCircle,
   X,
@@ -59,6 +65,91 @@ function IntegrationsIcon({ className = '' }) {
       <circle cx="4.25" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="11.75" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
     </svg>
+  )
+}
+
+function MeetingActionsBar({
+  shareToken,
+  shareCopied,
+  setShareCopied,
+  mdCopied,
+  copyMarkdown,
+  exportMarkdown,
+  exportPDF,
+  exportToSlack,
+  exportToNotion,
+  exportingSlack,
+  exportingNotion,
+}) {
+  const handleShare = () => {
+    if (!shareToken) return
+    const url = `${window.location.origin}${window.location.pathname}#share/${shareToken}`
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    })
+  }
+
+  const itemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]'
+  const iconClass = 'h-4 w-4 shrink-0 text-white/62'
+
+  return (
+    <div className="mb-3 flex items-center justify-end gap-2">
+      {shareToken && (
+        <button
+          type="button"
+          onClick={handleShare}
+          className={secondaryButtonClass}
+          style={shareCopied ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
+          aria-label="Copy share link"
+        >
+          <Share2 className="h-4 w-4" aria-hidden="true" />
+          {shareCopied ? 'Copied!' : 'Share'}
+        </button>
+      )}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={secondaryButtonClass} aria-label="Export meeting">
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+        >
+          <DropdownMenuItem onSelect={() => copyMarkdown()} className={itemClass}>
+            <Copy className={iconClass} aria-hidden="true" />
+            {mdCopied ? 'Copied!' : 'Copy markdown'}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => exportMarkdown()} className={itemClass}>
+            <Download className={iconClass} aria-hidden="true" />
+            Download .md
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => exportPDF()} className={itemClass}>
+            <FileText className={iconClass} aria-hidden="true" />
+            Open print view
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={exportingSlack}
+            onSelect={() => exportToSlack()}
+            className={itemClass}
+          >
+            <MessageSquare className={iconClass} aria-hidden="true" />
+            {exportingSlack ? 'Sending…' : 'Send to Slack'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={exportingNotion}
+            onSelect={() => exportToNotion()}
+            className={itemClass}
+          >
+            <BookOpen className={iconClass} aria-hidden="true" />
+            {exportingNotion ? 'Sending…' : 'Send to Notion'}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 
@@ -749,9 +840,26 @@ export default function DashboardMcpPage(props) {
             {props.loading && !props.result ? (
               <MeetingViewSkeleton />
             ) : (
-              <Suspense fallback={<SkeletonCard lines={4} tall />}>
-                <MeetingView result={props.result} meeting={currentMeeting} gmailConnected={props.calendarConnected} />
-              </Suspense>
+              <>
+                {props.result && !props.loading && (
+                  <MeetingActionsBar
+                    shareToken={props.shareToken}
+                    shareCopied={props.shareCopied}
+                    setShareCopied={props.setShareCopied}
+                    mdCopied={props.mdCopied}
+                    copyMarkdown={props.copyMarkdown}
+                    exportMarkdown={props.exportMarkdown}
+                    exportPDF={props.exportPDF}
+                    exportToSlack={props.exportToSlack}
+                    exportToNotion={props.exportToNotion}
+                    exportingSlack={props.exportingSlack}
+                    exportingNotion={props.exportingNotion}
+                  />
+                )}
+                <Suspense fallback={<SkeletonCard lines={4} tall />}>
+                  <MeetingView result={props.result} meeting={currentMeeting} gmailConnected={props.calendarConnected} />
+                </Suspense>
+              </>
             )}
           </>
         )}
