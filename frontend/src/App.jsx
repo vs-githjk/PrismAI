@@ -2167,17 +2167,9 @@ export default function App() {
     setShareToken(token)
     setSessionId(s => s + 1)
     setShowHistory(false)
-    if (isTestAccount) {
-      setInitialMessages([])
-      return
-    }
-    try {
-      const res = await apiFetch(`/chats/${entry.id}`)
-      const data = await res.json()
-      setInitialMessages(data.messages || [])
-    } catch {
-      setInitialMessages([])
-    }
+    // Active chat is ephemeral per visit — always start blank. Past sessions are surfaced
+    // via the chat panel's per-meeting history dropdown (fetched in DashboardMcpPage).
+    setInitialMessages([])
   }
 
   const startRecording = () => {
