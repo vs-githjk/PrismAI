@@ -1,5 +1,5 @@
 import { Calendar } from 'lucide-react'
-import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboard/dashboardStyles'
+import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 function formatResolvedDate(value) {
   if (!value) return ''

@@ -3,7 +3,7 @@ import { Loader2, MailCheck, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from '../lib/sessionKeys'
 
-const DASHBOARD_PATH = '/dashboard-mcp'
+const DASHBOARD_PATH = '/dashboard'
 
 function GoogleIcon() {
   return (

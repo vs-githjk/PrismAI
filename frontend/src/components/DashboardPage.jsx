@@ -432,7 +432,7 @@ function AnalyzingBanner({ result }) {
   )
 }
 
-export default function DashboardMcpPage(props) {
+export default function DashboardPage(props) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
@@ -702,7 +702,7 @@ export default function DashboardMcpPage(props) {
   const inIntelligence = activeView === 'intelligence'
 
   return (
-    <div className="landing-page dashboard-mcp-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
+    <div className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
       <div className="dashboard-dot-field-bg" aria-hidden="true">
         <div className="dashboard-dot-field-frame">
           <DotField
@@ -835,7 +835,7 @@ export default function DashboardMcpPage(props) {
           <StatsCanvas
             history={props.history}
             loadFromHistory={handleSelectMeeting}
-            loadSample={props.loadDashboardSample || props.startDemo}
+            loadSample={props.loadDashboardSample}
             canLoadSample={props.canLoadSample}
             selectedMeetingId={props.selectedMeetingId}
           />

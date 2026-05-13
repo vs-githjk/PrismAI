@@ -1,7 +1,7 @@
 import { CheckCircle2, FileText } from 'lucide-react'
-import CalendarCard from '../CalendarCard'
-import EmailCard from '../EmailCard'
-import SpeakerCoachCard from '../SpeakerCoachCard'
+import CalendarCard from './CalendarCard'
+import EmailCard from './EmailCard'
+import SpeakerCoachCard from './SpeakerCoachCard'
 import { formatMeetingDate, scoreBand } from '../../lib/insights'
 import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
 import { cardGlowStyle, cardTitle, eyebrow, glassCard, subtleText } from './dashboardStyles'
@@ -75,7 +75,7 @@ function BreakdownBar({ label, value, color }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false }) {
   if (!result) {
     return (
       <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 text-center">
@@ -198,23 +198,38 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                   key={`${item.task}-${i}`}
                   className="flex items-start gap-2.5 border-b border-white/[0.07] px-3 py-2.5 last:border-b-0"
                 >
-                  <button
-                    type="button"
-                    onClick={() => onToggleActionItem?.(i)}
-                    aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
-                    aria-pressed={!!item.completed}
-                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                      item.completed
-                        ? 'border-cyan-400 bg-cyan-400'
-                        : 'border-white/30 hover:border-cyan-300'
-                    }`}
-                  >
-                    {item.completed && (
-                      <svg className="h-2.5 w-2.5 text-[#07040f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
+                  {readOnly ? (
+                    <span
+                      aria-hidden="true"
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
+                        item.completed ? 'border-cyan-400 bg-cyan-400' : 'border-white/30'
+                      }`}
+                    >
+                      {item.completed && (
+                        <svg className="h-2.5 w-2.5 text-[#07040f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onToggleActionItem?.(i)}
+                      aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
+                      aria-pressed={!!item.completed}
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                        item.completed
+                          ? 'border-cyan-400 bg-cyan-400'
+                          : 'border-white/30 hover:border-cyan-300'
+                      }`}
+                    >
+                      {item.completed && (
+                        <svg className="h-2.5 w-2.5 text-[#07040f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
                   <div className={`min-w-0 flex-1 ${item.completed ? 'opacity-50' : ''}`}>
                     <p className={`text-sm font-medium text-white ${item.completed ? 'line-through' : ''}`}>
                       {item.task}

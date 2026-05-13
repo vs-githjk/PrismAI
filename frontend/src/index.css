@@ -1069,13 +1069,13 @@ h1, h2, h3, .font-display {
   z-index: 1;
 }
 
-.dashboard-mcp-page {
+.dashboard-page {
   background: var(--landing-bg);
   background-image: none;
   font-family: "General Sans", "Geist Variable", "Inter Variable", Inter, "Segoe UI", sans-serif;
 }
 
-.dashboard-mcp-page :is(h1, h2, h3, .dashboard-heading) {
+.dashboard-page :is(h1, h2, h3, .dashboard-heading) {
   font-family: "Rubik", "General Sans", "Geist Variable", "Inter Variable", Inter, sans-serif;
 }
 
@@ -2289,7 +2289,7 @@ h1, h2, h3, .font-display {
   margin-top: 0.5em;
 }
 
-/* Keep the landing page aligned with the Dashboard MCP font pairing. */
+/* Keep the landing page aligned with the dashboard font pairing. */
 .landing-page,
 .landing-page * {
   font-family: "General Sans", "Geist Variable", "Inter Variable", Inter, "Segoe UI", sans-serif;
