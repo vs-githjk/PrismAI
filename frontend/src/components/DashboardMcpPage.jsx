@@ -80,6 +80,7 @@ function MeetingActionsBar({
   exportToNotion,
   exportingSlack,
   exportingNotion,
+  integrations,
 }) {
   const handleShare = () => {
     if (!shareToken) return
@@ -91,7 +92,12 @@ function MeetingActionsBar({
   }
 
   const itemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]'
+  const connectItemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-cyan-300 focus:bg-cyan-300/[0.12]'
   const iconClass = 'h-4 w-4 shrink-0 text-white/62'
+  const connectIconClass = 'h-4 w-4 shrink-0 text-cyan-300'
+
+  const slackConnected = !!integrations?.slack_webhook
+  const notionConnected = !!(integrations?.notion_token && integrations?.notion_page_id)
 
   return (
     <div className="mb-3 flex items-center justify-end gap-2">
@@ -134,18 +140,18 @@ function MeetingActionsBar({
           <DropdownMenuItem
             disabled={exportingSlack}
             onSelect={() => exportToSlack()}
-            className={itemClass}
+            className={slackConnected ? itemClass : connectItemClass}
           >
-            <MessageSquare className={iconClass} aria-hidden="true" />
-            {exportingSlack ? 'Sending…' : 'Send to Slack'}
+            <MessageSquare className={slackConnected ? iconClass : connectIconClass} aria-hidden="true" />
+            {exportingSlack ? 'Sending…' : slackConnected ? 'Send to Slack' : 'Connect Slack →'}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={exportingNotion}
             onSelect={() => exportToNotion()}
-            className={itemClass}
+            className={notionConnected ? itemClass : connectItemClass}
           >
-            <BookOpen className={iconClass} aria-hidden="true" />
-            {exportingNotion ? 'Sending…' : 'Send to Notion'}
+            <BookOpen className={notionConnected ? iconClass : connectIconClass} aria-hidden="true" />
+            {exportingNotion ? 'Sending…' : notionConnected ? 'Send to Notion' : 'Connect Notion →'}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -854,10 +860,16 @@ export default function DashboardMcpPage(props) {
                     exportToNotion={props.exportToNotion}
                     exportingSlack={props.exportingSlack}
                     exportingNotion={props.exportingNotion}
+                    integrations={props.integrations}
                   />
                 )}
                 <Suspense fallback={<SkeletonCard lines={4} tall />}>
-                  <MeetingView result={props.result} meeting={currentMeeting} gmailConnected={props.calendarConnected} />
+                  <MeetingView
+                    result={props.result}
+                    meeting={currentMeeting}
+                    gmailConnected={props.calendarConnected}
+                    onToggleActionItem={props.toggleActionItem}
+                  />
                 </Suspense>
               </>
             )}

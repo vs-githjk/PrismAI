@@ -2768,8 +2768,6 @@ export default function App() {
           shareToken={shareToken}
           shareCopied={shareCopied}
           setShareCopied={setShareCopied}
-          showExportMenu={showExportMenu}
-          setShowExportMenu={setShowExportMenu}
           copyMarkdown={copyMarkdown}
           mdCopied={mdCopied}
           exportMarkdown={exportMarkdown}
