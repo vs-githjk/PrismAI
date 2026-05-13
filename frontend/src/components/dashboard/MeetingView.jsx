@@ -111,6 +111,32 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </div>
       )}
 
+      {transcript && (
+        <section className={`${glassCard}`} style={cardGlowStyle}>
+          <button
+            type="button"
+            onClick={() => setTranscriptOpen(o => !o)}
+            className="flex w-full items-center justify-between gap-3 p-4"
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 shrink-0 text-white/50" aria-hidden="true" />
+              <p className={eyebrow}>Transcript</p>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {transcriptOpen && (
+            <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-white/62">
+                {transcript}
+              </pre>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="grid gap-3 lg:grid-cols-[minmax(340px,1fr)_minmax(0,1.3fr)]">
         <section className={`${glassCard} p-4`} style={cardGlowStyle}>
           <p className={`${eyebrow} mb-3`}>Health score</p>
@@ -289,31 +315,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       <CalendarCard suggestion={result.calendar_suggestion} />
       <SpeakerCoachCard speakerCoach={result.speaker_coach} />
 
-      {transcript && (
-        <section className={`${glassCard}`} style={cardGlowStyle}>
-          <button
-            type="button"
-            onClick={() => setTranscriptOpen(o => !o)}
-            className="flex w-full items-center justify-between gap-3 p-4"
-          >
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-white/50" aria-hidden="true" />
-              <p className={eyebrow}>Transcript</p>
-            </div>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
-              aria-hidden="true"
-            />
-          </button>
-          {transcriptOpen && (
-            <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-white/62">
-                {transcript}
-              </pre>
-            </div>
-          )}
-        </section>
-      )}
     </div>
   )
 }

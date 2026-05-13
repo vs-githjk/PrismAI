@@ -267,16 +267,21 @@ export function deriveDisplayTitle(entry) {
   const resultTitle = entry?.result?.title
   if (resultTitle) return resultTitle
   const stored = entry?.title || ''
-  if (stored && !/^the meeting\b/i.test(stored)) return stored
+  // Skip stored titles that look like summary excerpts (> 45 chars or start with "The meeting")
+  if (stored && !/^the meeting\b/i.test(stored) && stored.length <= 45) return stored
   const summary = entry?.result?.summary || ''
   if (summary) {
     const stripped = summary
       .replace(/^the meeting[^,]*(?:,[^,]*)?,\s*/i, '')
       .replace(/^(?:appeared to be|was|seemed to be|is|seemed)\s+/i, '')
+      .replace(/^(?:discussed|covered|focused on|reviewed|addressed|explored|examined|centered on)\s+/i, '')
       .trim()
     const text = stripped || summary
     const atComma = text.split(',')[0].trim()
     const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+    // Strip trailing preposition phrases for a cleaner noun-phrase title
+    const corePhrase = atComma.replace(/\s+(?:from|with|for|about|regarding|in|at|by)\s+.*/i, '').trim()
+    if (corePhrase.length >= 8 && corePhrase.length <= 60) return cap(corePhrase)
     if (atComma.length >= 8 && atComma.length <= 60) return cap(atComma)
     const words = text.split(/\s+/)
     let title = ''
