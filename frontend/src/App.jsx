@@ -1545,6 +1545,8 @@ export default function App() {
       return
     }
     if (!meetingUrl.trim()) return
+    // Prevent duplicate bot creation if one is already active
+    if (activeBotId && botStatus && !['done', 'error'].includes(botStatus)) return
     setBotError(null)
     setBotTranscriptReady(false)
     setLiveCommands([])
