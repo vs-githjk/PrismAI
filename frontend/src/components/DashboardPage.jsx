@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeft,
   Bolt,
   BookOpen,
   Brain,
@@ -731,18 +732,30 @@ export default function DashboardPage(props) {
 
       <header className="sticky top-0 z-30 bg-transparent px-6 py-4 sm:px-7">
         <div className="flex items-center justify-between gap-4">
-          <button
-            type="button"
-            onClick={() => {
-              sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
-              window.location.href = '/'
-            }}
-            className="logo-btn flex items-center gap-2"
-            aria-label="Back to landing page"
-          >
-            <LogoIcon className="h-11 w-11" />
-            <span className="prism-logo-text text-2xl font-light tracking-wider" data-text="prism">prism</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {activeView === 'meeting' && (
+              <button
+                type="button"
+                onClick={() => setActiveView('home')}
+                className={`${darkCircleButtonClass} h-9 w-9`}
+                aria-label="Back to dashboard"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
+                window.location.href = '/'
+              }}
+              className="logo-btn flex items-center gap-2"
+              aria-label="Back to landing page"
+            >
+              <LogoIcon className="h-11 w-11" />
+              <span className="prism-logo-text text-2xl font-light tracking-wider" data-text="prism">prism</span>
+            </button>
+          </div>
 
           <div className="flex items-center gap-2">
             {props.authReady && props.user ? (
@@ -876,6 +889,7 @@ export default function DashboardPage(props) {
                     meeting={currentMeeting}
                     gmailConnected={props.calendarConnected}
                     onToggleActionItem={props.toggleActionItem}
+                    transcript={props.transcript}
                   />
                 </Suspense>
               </>

@@ -1,4 +1,5 @@
-import { CheckCircle2, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { CheckCircle2, ChevronDown, FileText } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
@@ -75,7 +76,8 @@ function BreakdownBar({ label, value, color }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '' }) {
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
   if (!result) {
     return (
       <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 text-center">
@@ -286,6 +288,32 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />
       <CalendarCard suggestion={result.calendar_suggestion} />
       <SpeakerCoachCard speakerCoach={result.speaker_coach} />
+
+      {transcript && (
+        <section className={`${glassCard}`} style={cardGlowStyle}>
+          <button
+            type="button"
+            onClick={() => setTranscriptOpen(o => !o)}
+            className="flex w-full items-center justify-between gap-3 p-4"
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 shrink-0 text-white/50" aria-hidden="true" />
+              <p className={eyebrow}>Transcript</p>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {transcriptOpen && (
+            <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-white/62">
+                {transcript}
+              </pre>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   )
 }
