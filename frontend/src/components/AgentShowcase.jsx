@@ -8,6 +8,7 @@ const AGENTS = [
   { name: 'Email Drafter',      desc: 'Writes a ready-to-send follow-up email.' },
   { name: 'Calendar Suggester', desc: 'Recommends a follow-up meeting with timing.' },
   { name: 'Health Score',       desc: 'Rates meeting quality 0–100 with a breakdown.' },
+  { name: 'Speaker Coach',      desc: 'Analyzes talk-time balance and gives per-speaker feedback.' },
 ]
 
 export default function AgentShowcase() {
@@ -29,7 +30,7 @@ export default function AgentShowcase() {
   return (
     <section ref={sectionRef} className="agent-showcase-section scroll-section" style={{ position: 'relative' }}>
       <div className="section-inner">
-        <p className="section-eyebrow">Seven agents</p>
+        <p className="section-eyebrow">Eight agents</p>
         <div className={`spectrum-hairline${visible ? ' hairline-visible' : ''}`} aria-hidden="true" />
         <div className="agents-grid">
           {AGENTS.map((agent, i) => (
