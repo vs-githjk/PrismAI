@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, ChevronDown, FileText } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, FileText } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
@@ -76,7 +76,7 @@ function BreakdownBar({ label, value, color }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '' }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', onBack }) {
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   if (!result) {
     return (
@@ -105,7 +105,19 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
     <div className="space-y-3">
       {meeting && (
         <div className="px-0.5">
-          <p className={eyebrow}>Current meeting</p>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to dashboard"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-cyan-200/70 transition-colors hover:text-cyan-200"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
+            <p className={eyebrow}>Current meeting</p>
+          </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{displayTitle}</h1>
           {meeting.date && <p className={`mt-0.5 ${subtleText}`}>{formatMeetingDate(meeting.date)}</p>}
         </div>

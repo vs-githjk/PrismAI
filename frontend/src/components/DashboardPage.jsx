@@ -1,6 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft,
   Bolt,
   BookOpen,
   Brain,
@@ -733,16 +732,6 @@ export default function DashboardPage(props) {
       <header className="sticky top-0 z-30 bg-transparent px-6 py-4 sm:px-7">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            {activeView === 'meeting' && (
-              <button
-                type="button"
-                onClick={() => setActiveView('home')}
-                className={`${darkCircleButtonClass} h-9 w-9`}
-                aria-label="Back to dashboard"
-              >
-                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {
@@ -890,6 +879,7 @@ export default function DashboardPage(props) {
                     gmailConnected={props.calendarConnected}
                     onToggleActionItem={props.toggleActionItem}
                     transcript={props.transcript}
+                    onBack={() => setActiveView('home')}
                   />
                 </Suspense>
               </>
