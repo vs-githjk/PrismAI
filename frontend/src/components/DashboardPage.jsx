@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
 import { apiFetch } from '../lib/api'
+import { deriveDisplayTitle } from '../lib/insights'
 import DotField from './DotField'
 import LogoIcon from './LogoIcon'
 import StatsCanvas from './dashboard/StatsCanvas'
