@@ -181,6 +181,63 @@ async def delete_chat(meeting_id: int, user_id: str = Depends(require_user_id)):
     return {"ok": True}
 
 
+# --- Per-meeting ephemeral chat sessions (max 3 saved per meeting) ---
+
+CHAT_SESSIONS_CAP = 3
+
+
+@router.get("/chat-sessions/{meeting_id}")
+async def list_chat_sessions(meeting_id: int, user_id: str = Depends(require_user_id)):
+    client = _require_storage()
+    res = (
+        client.table("chat_sessions")
+        .select("id,messages,created_at")
+        .eq("meeting_id", meeting_id)
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(CHAT_SESSIONS_CAP)
+        .execute()
+    )
+    return {"sessions": res.data or []}
+
+
+@router.post("/chat-sessions/{meeting_id}")
+async def save_chat_session(meeting_id: int, entry: ChatEntry, user_id: str = Depends(require_user_id)):
+    if not entry.messages or not any(
+        isinstance(m, dict) and m.get("role") == "user" for m in entry.messages
+    ):
+        raise HTTPException(status_code=400, detail="Chat must contain at least one user message")
+    client = _require_storage()
+    insert_res = (
+        client.table("chat_sessions")
+        .insert({"meeting_id": meeting_id, "user_id": user_id, "messages": entry.messages})
+        .execute()
+    )
+    inserted = (insert_res.data or [None])[0]
+
+    # Prune to the CHAT_SESSIONS_CAP most recent for this (meeting, user)
+    existing = (
+        client.table("chat_sessions")
+        .select("id,created_at")
+        .eq("meeting_id", meeting_id)
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    rows = existing.data or []
+    if len(rows) > CHAT_SESSIONS_CAP:
+        stale_ids = [r["id"] for r in rows[CHAT_SESSIONS_CAP:]]
+        client.table("chat_sessions").delete().in_("id", stale_ids).eq("user_id", user_id).execute()
+    return {"session": inserted}
+
+
+@router.delete("/chat-sessions/{session_id}")
+async def delete_chat_session(session_id: str, user_id: str = Depends(require_user_id)):
+    client = _require_storage()
+    client.table("chat_sessions").delete().eq("id", session_id).eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
 class SendFollowupRequest(BaseModel):
     to: list[str]
     subject: str

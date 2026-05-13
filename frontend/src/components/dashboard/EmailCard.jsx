@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Copy, Mail, Send } from 'lucide-react'
-import { apiFetch } from '../lib/api'
-import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboard/dashboardStyles'
+import { apiFetch } from '../../lib/api'
+import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 export default function EmailCard({ email, gmailConnected = false }) {
   const [copied, setCopied] = useState(false)

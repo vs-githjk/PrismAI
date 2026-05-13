@@ -1,17 +1,25 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bolt,
+  BookOpen,
   Brain,
+  Copy,
   DoorOpen,
+  Download,
+  FileText,
   History,
   LayoutDashboard,
+  MessageSquare,
+  MessagesSquare,
   Plus,
   Search,
+  Share2,
   Trash2,
   UserCircle,
   X,
 } from 'lucide-react'
-import { deriveDisplayTitle } from '../lib/insights'
+import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
+import { apiFetch } from '../lib/api'
 import DotField from './DotField'
 import LogoIcon from './LogoIcon'
 import StatsCanvas from './dashboard/StatsCanvas'
@@ -58,6 +66,97 @@ function IntegrationsIcon({ className = '' }) {
       <circle cx="4.25" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="11.75" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
     </svg>
+  )
+}
+
+function MeetingActionsBar({
+  shareToken,
+  shareCopied,
+  setShareCopied,
+  mdCopied,
+  copyMarkdown,
+  exportMarkdown,
+  exportPDF,
+  exportToSlack,
+  exportToNotion,
+  exportingSlack,
+  exportingNotion,
+  integrations,
+}) {
+  const handleShare = () => {
+    if (!shareToken) return
+    const url = `${window.location.origin}${window.location.pathname}#share/${shareToken}`
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    })
+  }
+
+  const itemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]'
+  const connectItemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-cyan-300 focus:bg-cyan-300/[0.12]'
+  const iconClass = 'h-4 w-4 shrink-0 text-white/62'
+  const connectIconClass = 'h-4 w-4 shrink-0 text-cyan-300'
+
+  const slackConnected = !!integrations?.slack_webhook
+  const notionConnected = !!(integrations?.notion_token && integrations?.notion_page_id)
+
+  return (
+    <div className="mb-3 flex items-center justify-end gap-2">
+      {shareToken && (
+        <button
+          type="button"
+          onClick={handleShare}
+          className={secondaryButtonClass}
+          style={shareCopied ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
+          aria-label="Copy share link"
+        >
+          <Share2 className="h-4 w-4" aria-hidden="true" />
+          {shareCopied ? 'Copied!' : 'Share'}
+        </button>
+      )}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={secondaryButtonClass} aria-label="Export meeting">
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+        >
+          <DropdownMenuItem onSelect={() => copyMarkdown()} className={itemClass}>
+            <Copy className={iconClass} aria-hidden="true" />
+            {mdCopied ? 'Copied!' : 'Copy markdown'}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => exportMarkdown()} className={itemClass}>
+            <Download className={iconClass} aria-hidden="true" />
+            Download .md
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => exportPDF()} className={itemClass}>
+            <FileText className={iconClass} aria-hidden="true" />
+            Open print view
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={exportingSlack}
+            onSelect={() => exportToSlack()}
+            className={slackConnected ? itemClass : connectItemClass}
+          >
+            <MessageSquare className={slackConnected ? iconClass : connectIconClass} aria-hidden="true" />
+            {exportingSlack ? 'Sending…' : slackConnected ? 'Send to Slack' : 'Connect Slack →'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={exportingNotion}
+            onSelect={() => exportToNotion()}
+            className={notionConnected ? itemClass : connectItemClass}
+          >
+            <BookOpen className={notionConnected ? iconClass : connectIconClass} aria-hidden="true" />
+            {exportingNotion ? 'Sending…' : notionConnected ? 'Send to Notion' : 'Connect Notion →'}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 
@@ -339,7 +438,7 @@ function AnalyzingBanner({ result }) {
   )
 }
 
-export default function DashboardMcpPage(props) {
+export default function DashboardPage(props) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
@@ -356,6 +455,77 @@ export default function DashboardMcpPage(props) {
   const profileContentHovered = useRef(false)
   const isFirstRender = useRef(true)
   const userSelectedMeetingRef = useRef(false)
+
+  // --- Chat panel state ---
+  const [chatOpen, setChatOpen] = useState(() => {
+    try { return localStorage.getItem('prismai:dashboard-chat-open') === '1' } catch { return false }
+  })
+  const [isNarrow, setIsNarrow] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 1023px)').matches
+  })
+  const [pastSessions, setPastSessions] = useState([])
+  const pendingFlushesRef = useRef(new Map()) // meetingId → in-flight POST promise
+
+  useEffect(() => {
+    try { localStorage.setItem('prismai:dashboard-chat-open', chatOpen ? '1' : '0') } catch { /* ignore */ }
+  }, [chatOpen])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const mql = window.matchMedia('(max-width: 1023px)')
+    const handler = (e) => setIsNarrow(e.matches)
+    mql.addEventListener?.('change', handler)
+    return () => mql.removeEventListener?.('change', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!chatOpen) return undefined
+    const handler = (e) => { if (e.key === 'Escape') setChatOpen(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [chatOpen])
+
+  // Fetch up to 3 past chat sessions for this meeting on entry. If there's a pending
+  // exit-save POST for the same meeting, wait for it first so the fetch sees the new row.
+  useEffect(() => {
+    if (!props.meetingId || !props.user) { setPastSessions([]); return undefined }
+    let cancelled = false
+    const meetingId = props.meetingId
+    const pending = pendingFlushesRef.current.get(meetingId)
+    Promise.resolve(pending).then(() => (
+      apiFetch(`/chat-sessions/${meetingId}`)
+        .then((res) => (res.ok ? res.json() : { sessions: [] }))
+        .then((data) => { if (!cancelled) setPastSessions(data.sessions || []) })
+        .catch(() => { if (!cancelled) setPastSessions([]) })
+    ))
+    return () => { cancelled = true }
+  }, [props.meetingId, props.user])
+
+  // Called from ChatPanel's unmount cleanup. Captures the unmounting panel's own meetingId,
+  // so it works correctly when meetingId changes (the new ChatPanel has already mounted).
+  const handleChatCommitOnExit = useCallback((mid, finalMessages) => {
+    if (!props.user || !mid) return
+    if (!finalMessages.some((m) => m.role === 'user')) return
+    const flush = apiFetch(`/chat-sessions/${mid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: finalMessages }),
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    pendingFlushesRef.current.set(mid, flush)
+    flush.finally(() => {
+      if (pendingFlushesRef.current.get(mid) === flush) {
+        pendingFlushesRef.current.delete(mid)
+      }
+      // If user is still viewing the same meeting, refresh the per-meeting history
+      if (props.meetingId === mid) {
+        apiFetch(`/chat-sessions/${mid}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => { if (data) setPastSessions(data.sessions || []) })
+          .catch(() => {})
+      }
+    })
+  }, [props.user, props.meetingId])
 
   // Switch to meeting view immediately when analysis starts
   useEffect(() => {
@@ -538,7 +708,7 @@ export default function DashboardMcpPage(props) {
   const inIntelligence = activeView === 'intelligence'
 
   return (
-    <div className="landing-page dashboard-mcp-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
+    <div className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
       <div className="dashboard-dot-field-bg" aria-hidden="true">
         <div className="dashboard-dot-field-frame">
           <DotField
@@ -657,12 +827,21 @@ export default function DashboardMcpPage(props) {
         </div>
       )}
 
-      <main className="relative z-10 mx-auto max-w-[92rem] -mt-3 px-5 pb-28 sm:px-8">
+      <main
+        className={`relative z-10 -mt-3 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
+          chatOpen && activeView === 'meeting' && !isNarrow ? '' : 'mx-auto'
+        }`}
+        style={
+          chatOpen && activeView === 'meeting' && !isNarrow
+            ? { paddingLeft: '452px' }
+            : undefined
+        }
+      >
         {activeView === 'home' && (
           <StatsCanvas
             history={props.history}
             loadFromHistory={handleSelectMeeting}
-            loadSample={props.loadDashboardSample || props.startDemo}
+            loadSample={props.loadDashboardSample}
             canLoadSample={props.canLoadSample}
             selectedMeetingId={props.selectedMeetingId}
           />
@@ -673,22 +852,32 @@ export default function DashboardMcpPage(props) {
             {props.loading && !props.result ? (
               <MeetingViewSkeleton />
             ) : (
-              <Suspense fallback={<SkeletonCard lines={4} tall />}>
-                <MeetingView result={props.result} meeting={currentMeeting} gmailConnected={props.calendarConnected} />
-              </Suspense>
-            )}
-            {props.result && !props.loading && (
-              <Suspense fallback={null}>
-                <ChatPanel
-                  key={props.sessionId}
-                  meetingId={props.meetingId}
-                  initialMessages={props.initialMessages}
-                  transcript={props.transcript}
-                  result={props.result}
-                  onResultUpdate={(updated) => props.setResult(r => ({ ...r, ...updated }))}
-                  isSignedIn={!!props.user}
-                />
-              </Suspense>
+              <>
+                {props.result && !props.loading && (
+                  <MeetingActionsBar
+                    shareToken={props.shareToken}
+                    shareCopied={props.shareCopied}
+                    setShareCopied={props.setShareCopied}
+                    mdCopied={props.mdCopied}
+                    copyMarkdown={props.copyMarkdown}
+                    exportMarkdown={props.exportMarkdown}
+                    exportPDF={props.exportPDF}
+                    exportToSlack={props.exportToSlack}
+                    exportToNotion={props.exportToNotion}
+                    exportingSlack={props.exportingSlack}
+                    exportingNotion={props.exportingNotion}
+                    integrations={props.integrations}
+                  />
+                )}
+                <Suspense fallback={<SkeletonCard lines={4} tall />}>
+                  <MeetingView
+                    result={props.result}
+                    meeting={currentMeeting}
+                    gmailConnected={props.calendarConnected}
+                    onToggleActionItem={props.toggleActionItem}
+                  />
+                </Suspense>
+              </>
             )}
           </>
         )}
@@ -702,6 +891,63 @@ export default function DashboardMcpPage(props) {
           </Suspense>
         )}
       </main>
+
+      {activeView === 'meeting' && props.result && !props.loading && (
+        <>
+          {/* Mobile backdrop */}
+          {chatOpen && isNarrow && (
+            <button
+              type="button"
+              aria-label="Close chat"
+              onClick={() => setChatOpen(false)}
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+            />
+          )}
+
+          {/* Slide-out chat panel */}
+          <div
+            aria-hidden={!chatOpen}
+            className={`fixed left-3 top-[88px] bottom-[120px] z-50 flex flex-col overflow-hidden transition-all duration-300 ease-out ${
+              chatOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-[110%] opacity-0'
+            } ${glassCard}`}
+            style={{
+              ...cardGlowStyle,
+              width: isNarrow ? 'min(88vw, 420px)' : '420px',
+            }}
+          >
+            <Suspense fallback={<div className="p-4 text-xs text-white/40">Loading chat…</div>}>
+              <ChatPanel
+                key={props.meetingId || 'no-meeting'}
+                meetingId={props.meetingId}
+                initialMessages={[]}
+                pastSessions={pastSessions}
+                onPastSessionsChange={setPastSessions}
+                onCommitOnExit={handleChatCommitOnExit}
+                transcript={props.transcript}
+                result={props.result}
+                onResultUpdate={props.setResult}
+                isSignedIn={!!props.user}
+              />
+            </Suspense>
+          </div>
+
+          {/* Floating trigger button — hidden when the mobile overlay is open (backdrop + Esc handle close) */}
+          {!(chatOpen && isNarrow) && (
+            <button
+              type="button"
+              onClick={() => setChatOpen((v) => !v)}
+              aria-label={chatOpen ? 'Close chat' : 'Open chat'}
+              aria-pressed={chatOpen}
+              className={`fixed top-1/2 z-50 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/[0.14] bg-[#0c0d0f] text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.35)] transition-all duration-300 ease-out hover:border-cyan-300/40 hover:text-cyan-200 ${
+                chatOpen ? 'left-[440px]' : 'left-4'
+              }`}
+              style={chatOpen ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
+            >
+              {chatOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <MessagesSquare className="h-4 w-4" aria-hidden="true" />}
+            </button>
+          )}
+        </>
+      )}
 
       <nav className="fixed bottom-5 left-1/2 z-30 h-[96px] w-[154px] -translate-x-1/2" aria-label="Dashboard shortcuts" data-node-id="4590:266">
         <div className="absolute bottom-4 left-1" data-history-panel>
