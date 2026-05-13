@@ -1680,6 +1680,7 @@ export default function App() {
 
   // Auto-join: directly join when polling detects an imminent meeting
   const autoJoinDirect = (url) => {
+    if (activeBotId && botStatus && !['done', 'error'].includes(botStatus)) return
     setInputTab('join')
     setMeetingUrl(url)
     // joinMeeting reads meetingUrl state, so we need to call the API directly
