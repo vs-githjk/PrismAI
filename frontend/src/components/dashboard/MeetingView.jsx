@@ -2,7 +2,7 @@ import { CheckCircle2, FileText } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
-import { formatMeetingDate, scoreBand } from '../../lib/insights'
+import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
 import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
 import { cardGlowStyle, cardTitle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
