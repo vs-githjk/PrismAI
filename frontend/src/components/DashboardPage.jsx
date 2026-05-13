@@ -930,7 +930,7 @@ export default function DashboardPage(props) {
                 onCommitOnExit={handleChatCommitOnExit}
                 transcript={props.transcript}
                 result={props.result}
-                onResultUpdate={props.setResult}
+                onResultUpdate={(patch) => props.setResult((prev) => prev ? { ...prev, ...patch } : patch)}
                 isSignedIn={!!props.user}
               />
             </Suspense>
