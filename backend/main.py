@@ -1,6 +1,4 @@
-import asyncio
 import os
-from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,19 +11,12 @@ from analysis_routes import create_analysis_router
 from calendar_routes import router as calendar_router
 from chat_routes import create_chat_router
 from export_routes import router as export_router
-from migrations import run_migrations
 from realtime_routes import router as realtime_router
 from recall_routes import router as recall_router
 from storage_routes import router as storage_router
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    await asyncio.to_thread(run_migrations)
-    yield
-
-
-app = FastAPI(title="Agentic Meeting Copilot", lifespan=lifespan)
+app = FastAPI(title="Agentic Meeting Copilot")
 
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,https://agentic-meeting-copilot.vercel.app")
 _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
