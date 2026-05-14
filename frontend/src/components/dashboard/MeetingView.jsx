@@ -1,11 +1,36 @@
-import { CheckCircle2, FileText } from 'lucide-react'
+import { CheckCircle2, FileText, Paperclip, Plus } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
 import CalendarCard from '../CalendarCard'
 import EmailCard from '../EmailCard'
 import SpeakerCoachCard from '../SpeakerCoachCard'
+import KnowledgeDocCard from '../KnowledgeDocCard'
+import KnowledgeUploadModal from '../KnowledgeUploadModal'
+import { listDocs } from '../../lib/knowledge'
 import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
 import { cardGlowStyle, cardTitle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 export default function MeetingView({ result, meeting, gmailConnected = false }) {
+  const meetingId = meeting?.id ? String(meeting.id) : undefined
+  const [pinnedDocs, setPinnedDocs] = useState([])
+  const [uploadOpen, setUploadOpen] = useState(false)
+
+  const refreshDocs = useCallback(async () => {
+    if (!meetingId) return
+    try {
+      const list = await listDocs({ meetingId })
+      setPinnedDocs(list)
+    } catch {
+      // non-critical — silently ignore errors in the pinned docs panel
+    }
+  }, [meetingId])
+
+  useEffect(() => { refreshDocs() }, [refreshDocs])
+
+  useEffect(() => {
+    if (!pinnedDocs.some(d => d.status === 'processing')) return
+    const id = setInterval(refreshDocs, 5000)
+    return () => clearInterval(id)
+  }, [pinnedDocs, refreshDocs])
   if (!result) {
     return (
       <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 text-center">
@@ -139,6 +164,30 @@ export default function MeetingView({ result, meeting, gmailConnected = false })
       <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />
       <CalendarCard suggestion={result.calendar_suggestion} />
       <SpeakerCoachCard speakerCoach={result.speaker_coach} />
+
+      {meetingId && (
+        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Paperclip className="h-4 w-4 text-cyan-300" />
+              <h3 className="text-sm font-semibold text-white">Pinned Documents</h3>
+            </div>
+            <button onClick={() => setUploadOpen(true)}
+                    className="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 hover:bg-white/10">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          {pinnedDocs.length === 0 ? (
+            <p className="text-[11px] text-white/40">No documents pinned to this meeting.</p>
+          ) : (
+            <div className="space-y-2">
+              {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
+            </div>
+          )}
+          <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
+                                meetingId={meetingId} onUploaded={refreshDocs} />
+        </section>
+      )}
     </div>
   )
 }

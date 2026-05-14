@@ -12,13 +12,13 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import httpx
 from fastapi import APIRouter, Request
-from groq import AsyncGroq
 
 import meeting_memory
 from agents.utils import llm_call, strip_fences
-from tools.registry import get_available_tools, execute_tool, confirm_and_execute
+from clients import get_groq, get_http
+from tools.registry import get_available_tools, execute_tool, confirm_and_execute, is_tainted
+from voice_pipeline import StreamingSegmenter, TtsDispatcher
 from tools.tts import text_to_speech
 from recall_routes import bot_store, _db_append_command, _db_save_memory
 from auth import supabase
@@ -49,6 +49,131 @@ TRIGGER_WORD_PATTERN = re.compile(r"\b(?:prism|prismai|prism ai)\b", re.IGNORECA
 
 # Seconds to wait for the command after a bare trigger word
 PENDING_TRIGGER_WINDOW = 8
+
+# ── Malformed tool-call recovery ──────────────────────────────────────────────
+# Llama 3.3 occasionally emits tool calls as raw `<function=NAME {json}>` text
+# inside the assistant content instead of in the structured `tool_calls` field.
+# Groq's server detects this and rejects with 400 tool_use_failed, returning the
+# offending text in `error.failed_generation`. These helpers parse that text so
+# we can synthesise proper tool_calls and continue the conversation.
+
+_FUNCTION_TAG_RE = re.compile(
+    r"<function\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*",
+    re.IGNORECASE,
+)
+
+
+def _find_matching_brace(s: str, start: int) -> int:
+    """Return the index just past the '}' that closes s[start]='{'. -1 if unbalanced."""
+    if start >= len(s) or s[start] != "{":
+        return -1
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(s)):
+        c = s[i]
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return -1
+
+
+def _parse_function_tags(text: str) -> list[dict]:
+    """Extract <function=NAME {args}> calls from a string.
+
+    Returns a list of {"name": str, "arguments": str-of-json} dicts. Skips calls
+    whose JSON braces are unmatched. Defaults arguments to "{}" when missing or
+    malformed so downstream tool execution can decide whether to error.
+    """
+    if not text:
+        return []
+    out = []
+    pos = 0
+    while pos < len(text):
+        m = _FUNCTION_TAG_RE.search(text, pos)
+        if not m:
+            break
+        name = m.group(1)
+        body_start = m.end()
+        # Skip leading whitespace between name and the JSON body
+        while body_start < len(text) and text[body_start].isspace():
+            body_start += 1
+        if body_start < len(text) and text[body_start] == "{":
+            body_end = _find_matching_brace(text, body_start)
+            if body_end == -1:
+                # Truncated JSON — skip this call entirely so we don't fabricate args.
+                pos = m.end()
+                continue
+            args_str = text[body_start:body_end]
+            try:
+                json.loads(args_str)
+            except json.JSONDecodeError:
+                args_str = "{}"
+            pos = body_end
+        else:
+            # Tag with no args body — treat as zero-arg call.
+            args_str = "{}"
+            pos = body_start if body_start > m.end() else m.end()
+        out.append({"name": name, "arguments": args_str})
+    return out
+
+
+def _extract_failed_generation(exc: Exception) -> str:
+    """Pull `error.failed_generation` from a Groq tool_use_failed exception."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            gen = err.get("failed_generation")
+            if isinstance(gen, str):
+                return gen
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            data = response.json()
+            err = (data or {}).get("error") or {}
+            gen = err.get("failed_generation")
+            if isinstance(gen, str):
+                return gen
+        except Exception:
+            pass
+    return ""
+
+
+def _recover_tool_calls(text: str, valid_tool_names: set) -> list[dict]:
+    """Parse `text` for <function=...> tags and keep only those naming known tools."""
+    calls = _parse_function_tags(text)
+    return [c for c in calls if c["name"] in valid_tool_names]
+
+
+def _strip_tools_if_tainted(call_kwargs: dict, executed_tool_names) -> bool:
+    """If any just-executed tool taints context (e.g. web_search), remove `tools` and
+    `tool_choice` from `call_kwargs` so the next LLM call this turn cannot dispatch
+    further tools. Canonical defence against prompt-injection-via-tool-result: a
+    web search whose page tells the model to "now call gmail_send..." cannot win.
+    Called from both the structured tool_calls path and the recovered/synth path.
+    Returns True if tools were stripped.
+    """
+    if any(is_tainted(name) for name in executed_tool_names):
+        call_kwargs.pop("tools", None)
+        call_kwargs.pop("tool_choice", None)
+        return True
+    return False
+
 
 # ── Idea Engine constants ─────────────────────────────────────────────────────
 
@@ -181,7 +306,7 @@ async def _send_chat_response(bot_id: str, message: str):
     if not RECALL_API_KEY:
         return
     try:
-        async with httpx.AsyncClient() as client:
+        async with get_http() as client:
             await client.post(
                 f"{RECALL_API_BASE}/bot/{bot_id}/send_chat_message/",
                 headers={
@@ -195,25 +320,337 @@ async def _send_chat_response(bot_id: str, message: str):
         print(f"[realtime] failed to send chat response: {exc}")
 
 
-async def _send_voice_response(bot_id: str, text: str):
-    """Convert text to speech and play it in the meeting via Recall.ai bot."""
-    audio_bytes = await text_to_speech(text)
-    if not audio_bytes:
-        print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
-        return
-
+async def _upload_audio_to_recall(bot_id: str, audio_bytes: bytes) -> bool:
+    """Upload a single audio blob to Recall's output_audio endpoint. Returns True on 2xx."""
+    if not RECALL_API_KEY or not audio_bytes:
+        return False
     try:
-        async with httpx.AsyncClient() as client:
+        async with get_http() as client:
             resp = await client.post(
                 f"{RECALL_API_BASE}/bot/{bot_id}/output_audio/",
                 headers={"Authorization": f"Token {RECALL_API_KEY}", "Content-Type": "application/json"},
                 json={"kind": "mp3", "b64_data": base64.b64encode(audio_bytes).decode()},
                 timeout=30,
             )
-            if resp.status_code not in (200, 201):
-                print(f"[realtime] output_audio failed ({resp.status_code}): {resp.text[:200]}")
+            if resp.status_code in (200, 201):
+                return True
+            print(f"[realtime] output_audio failed ({resp.status_code}): {resp.text[:200]}")
+            return False
     except Exception as exc:
-        print(f"[realtime] voice response failed: {exc}")
+        print(f"[realtime] voice upload failed: {exc}")
+        return False
+
+
+async def _send_voice_response(bot_id: str, text: str):
+    """Convert text to speech and play it in the meeting via Recall.ai bot.
+    Buffered (default) path: one TTS call, one upload."""
+    if not RECALL_API_KEY:
+        return
+    audio_bytes = await text_to_speech(text)
+    if not audio_bytes:
+        print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
+        return
+    await _upload_audio_to_recall(bot_id, audio_bytes)
+
+
+def _chunk_reply(text: str, min_chars: int = 25) -> list[str]:
+    """Segment the full reply into sentences, then concat-dispatch into TTS-sized chunks."""
+    seg = StreamingSegmenter()
+    sentences = list(seg.feed(text))
+    sentences.extend(seg.flush())
+    dispatcher = TtsDispatcher(min_chars=min_chars)
+    chunks = []
+    for s in sentences:
+        chunks.extend(dispatcher.push(s))
+    chunks.extend(dispatcher.flush())
+    return chunks
+
+
+_FUNCTION_TAG_MARKER = "<function="
+_LEAK_TAIL_WINDOW = 30
+
+
+def _scan_delta_for_leak(tail: str, delta: str, window: int = _LEAK_TAIL_WINDOW) -> tuple[str, bool]:
+    """Rolling-tail scan for `<function=` across stream-delta boundaries.
+
+    Returns `(new_tail, leak_detected)`. Detection covers (1) the marker fully
+    inside `delta`, (2) the marker straddling tail+delta, and (3) the marker
+    inside the new tail itself. The new tail is the last `window` chars of
+    `tail + delta` — small enough that 30 chars is sufficient for an 11-char
+    marker, big enough to survive whitespace/punctuation between fragments.
+    """
+    combined = tail + delta
+    return combined[-window:], _FUNCTION_TAG_MARKER in combined
+
+
+async def _stream_llm_to_voice(
+    groq_client,
+    call_kwargs: dict,
+    bot_id: str,
+    cmd_detected_ts: float,
+) -> str:
+    """Layer 3 (B) — gated by PRISM_STREAMED_LLM=1 (requires PRISM_STREAMED_TTS=1).
+
+    Calls Groq with `stream=True`, feeds token deltas into the segmenter as they
+    arrive, dispatches TTS chunks in parallel, and uploads sequentially so
+    playback ordering is preserved. Returns the full accumulated reply text.
+
+    Salvage (bounded drain): on first upload failure we wait up to 2.5s for the
+    LLM stream to finish; whatever has been buffered (chunks not yet uploaded
+    + dispatcher residuals) is consolidated into one TTS + one upload IF the
+    text is > 20 chars; otherwise we give up (P1, log `salvage_skipped_too_little_text`).
+    A second upload failure hard-aborts (log `salvage_skipped_recall_dead`).
+    """
+    stream_kwargs = dict(call_kwargs)
+    stream_kwargs["stream"] = True
+
+    # Without Recall there's no audio path — just drain the stream for the text.
+    if not RECALL_API_KEY:
+        stream = await groq_client.chat.completions.create(**stream_kwargs)
+        parts = []
+        async for event in stream:
+            if event.choices and event.choices[0].delta.content:
+                parts.append(event.choices[0].delta.content)
+        return "".join(parts)
+
+    state = _get_bot_state(bot_id)
+    segmenter = StreamingSegmenter()
+    dispatcher = TtsDispatcher(min_chars=25)
+    chunks_dispatched: list[str] = []
+    tts_tasks: list[asyncio.Task] = []
+    full_text_parts: list[str] = []
+    tail = ""
+    leak_detected = False
+    stream_done = asyncio.Event()
+    new_chunk_event = asyncio.Event()
+
+    uploaded_idx = 0
+    upload_failures = 0
+    salvage_invoked = False
+    first_upload_logged = False
+
+    def _dispatch(new_chunks: list[str]) -> bool:
+        """Spawn TTS tasks for new chunks. Returns False if a chunk contains
+        the function-tag marker (the cross-delta tail scan should make this
+        impossible, but it's the last line of defence before TTS)."""
+        for c in new_chunks:
+            if _FUNCTION_TAG_MARKER in c:
+                return False
+            chunks_dispatched.append(c)
+            tts_tasks.append(asyncio.create_task(text_to_speech(c)))
+        if new_chunks:
+            new_chunk_event.set()
+        return True
+
+    async def _stream_consumer():
+        nonlocal tail, leak_detected
+        try:
+            stream = await groq_client.chat.completions.create(**stream_kwargs)
+            async for event in stream:
+                if not event.choices:
+                    continue
+                delta = event.choices[0].delta.content or ""
+                if not delta:
+                    continue
+                tail, leak = _scan_delta_for_leak(tail, delta)
+                if leak:
+                    leak_detected = True
+                    return
+                full_text_parts.append(delta)
+                new_sentences = segmenter.feed(delta)
+                new_chunks = []
+                for s in new_sentences:
+                    new_chunks.extend(dispatcher.push(s))
+                if not _dispatch(new_chunks):
+                    leak_detected = True
+                    return
+            # Stream exhausted — flush segmenter + dispatcher residuals.
+            tail_chunks = []
+            for s in segmenter.flush():
+                tail_chunks.extend(dispatcher.push(s))
+            tail_chunks.extend(dispatcher.flush())
+            if not _dispatch(tail_chunks):
+                leak_detected = True
+        finally:
+            stream_done.set()
+            new_chunk_event.set()
+
+    stream_task = asyncio.create_task(_stream_consumer())
+
+    try:
+        i = 0
+        while True:
+            if leak_detected:
+                print(f"[realtime] function_tag_leak_detected bot={bot_id[:8]}; aborting streamed LLM voice")
+                stream_task.cancel()
+                for t in tts_tasks[i:]:
+                    t.cancel()
+                break
+            if i >= len(tts_tasks):
+                if stream_done.is_set():
+                    break
+                new_chunk_event.clear()
+                await new_chunk_event.wait()
+                continue
+            try:
+                audio = await tts_tasks[i]
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[realtime] TTS failed for chunk {i}: {exc}")
+                audio = None
+            if not audio:
+                i += 1
+                continue
+            if await _upload_audio_to_recall(bot_id, audio):
+                uploaded_idx = i + 1
+                if not first_upload_logged:
+                    ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
+                    print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
+                    first_upload_logged = True
+                i += 1
+                continue
+            upload_failures += 1
+            if upload_failures >= 2:
+                print(f"[realtime] salvage_skipped_recall_dead failures={upload_failures} bot={bot_id[:8]}")
+                stream_task.cancel()
+                for t in tts_tasks[i:]:
+                    t.cancel()
+                break
+            # First failure: bounded drain of remaining stream, then salvage.
+            salvage_invoked = True
+            state["last_command_ts"] = 0
+            try:
+                await asyncio.wait_for(stream_done.wait(), timeout=2.5)
+            except asyncio.TimeoutError:
+                stream_task.cancel()
+            for t in tts_tasks[i:]:
+                t.cancel()
+            unuploaded = list(chunks_dispatched[uploaded_idx:])
+            for s in segmenter.flush():
+                unuploaded.extend(dispatcher.push(s))
+            unuploaded.extend(dispatcher.flush())
+            salvage_text = " ".join(c for c in unuploaded if c).strip()
+            if len(salvage_text) > 20:
+                print(f"[realtime] salvage_invoked drained_chars={len(salvage_text)} bot={bot_id[:8]}")
+                try:
+                    salvage_audio = await text_to_speech(salvage_text)
+                except Exception as exc:
+                    print(f"[realtime] salvage TTS failed: {exc}")
+                    salvage_audio = None
+                if salvage_audio:
+                    if not await _upload_audio_to_recall(bot_id, salvage_audio):
+                        upload_failures += 1
+                        if upload_failures >= 2:
+                            print(f"[realtime] salvage_skipped_recall_dead failures={upload_failures} bot={bot_id[:8]}")
+            else:
+                print(f"[realtime] salvage_skipped_too_little_text drained_chars={len(salvage_text)} bot={bot_id[:8]}")
+            break
+    finally:
+        if not stream_task.done():
+            try:
+                await asyncio.wait_for(stream_task, timeout=1.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+
+    full_text = "".join(full_text_parts).strip()
+    print(
+        f"[realtime] streamed_llm_done chunker_sentences_emitted={len(chunks_dispatched)} "
+        f"ordered_upload_failures={upload_failures} salvage_invoked={salvage_invoked} "
+        f"uploaded={uploaded_idx}/{len(chunks_dispatched)} chars={len(full_text)} bot={bot_id[:8]}"
+    )
+    return full_text
+
+
+async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts: float):
+    """Streamed TTS variant (Layer 3 A) gated by PRISM_STREAMED_TTS=1.
+
+    LLM call has already returned the full reply. We segment it, dispatch each
+    chunk to TTS in parallel, and upload sequentially so playback ordering is
+    preserved. On a Recall upload failure we salvage once (consolidate remaining
+    sentences into one TTS + one upload). Two failures => hard abort.
+    """
+    if not RECALL_API_KEY:
+        return
+
+    chunks = _chunk_reply(text)
+    if not chunks:
+        return
+
+    # Belt-and-suspenders: PR-1 ensures the synthesis turn (post-tool) has no
+    # tools=, so the LLM can't emit a `<function=...` tag. If one ever leaks
+    # we hard-abort before TTS — never let the model's tag get spoken aloud.
+    for chunk in chunks:
+        if "<function=" in chunk:
+            print(f"[realtime] function_tag_leak_detected bot={bot_id[:8]}; aborting streamed voice")
+            return
+
+    state = _get_bot_state(bot_id)
+    print(f"[realtime] chunker_sentences_emitted={len(chunks)} bot={bot_id[:8]}")
+
+    tts_tasks = [asyncio.create_task(text_to_speech(c)) for c in chunks]
+
+    uploaded_idx = 0
+    upload_failures = 0
+    salvage_invoked = False
+    first_upload_logged = False
+
+    i = 0
+    while i < len(tts_tasks):
+        try:
+            audio = await tts_tasks[i]
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[realtime] TTS failed for chunk {i}: {exc}")
+            audio = None
+
+        if not audio:
+            i += 1
+            continue
+
+        if await _upload_audio_to_recall(bot_id, audio):
+            uploaded_idx = i + 1
+            if not first_upload_logged:
+                ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
+                print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
+                first_upload_logged = True
+            i += 1
+            continue
+
+        # Upload failed — count, then either hard-abort or salvage.
+        upload_failures += 1
+        if upload_failures >= 2:
+            print(f"[realtime] salvage_skipped_recall_dead failures={upload_failures} bot={bot_id[:8]}")
+            for t in tts_tasks[i:]:
+                t.cancel()
+            break
+
+        # First failure: salvage. Consolidate remaining unuploaded chunks into
+        # one TTS + one upload, in parallel with sentence n-1's playback at Recall.
+        # Reset debounce so a follow-up command isn't blocked while salvage runs.
+        salvage_invoked = True
+        state["last_command_ts"] = 0
+        for t in tts_tasks[i:]:
+            t.cancel()
+        remaining_text = " ".join(chunks[uploaded_idx:])
+        print(f"[realtime] salvage_invoked remaining_chars={len(remaining_text)} bot={bot_id[:8]}")
+        try:
+            salvage_audio = await text_to_speech(remaining_text)
+        except Exception as exc:
+            print(f"[realtime] salvage TTS failed: {exc}")
+            salvage_audio = None
+        if salvage_audio:
+            if not await _upload_audio_to_recall(bot_id, salvage_audio):
+                upload_failures += 1
+                if upload_failures >= 2:
+                    print(f"[realtime] salvage_skipped_recall_dead failures={upload_failures} bot={bot_id[:8]}")
+        break
+
+    print(
+        f"[realtime] streamed_voice_done ordered_upload_failures={upload_failures} "
+        f"salvage_invoked={salvage_invoked} uploaded={uploaded_idx}/{len(chunks)} bot={bot_id[:8]}"
+    )
 
 
 async def _fetch_historical_blockers(user_id: str | None) -> list[dict]:
@@ -308,6 +745,13 @@ async def _compress_and_persist(bot_id: str, state: dict) -> None:
         snapshot = meeting_memory.get_memory_snapshot(state)
         _db_save_memory(bot_id, snapshot["memory_summary"], snapshot["live_state_payload"])
         asyncio.create_task(_maybe_generate_idea(bot_id, state))
+
+    # Proactive knowledge check — additive, isolated, never raises
+    try:
+        from knowledge_proactive import maybe_proactive_knowledge_check
+        await maybe_proactive_knowledge_check(bot_id, state)
+    except Exception as exc:
+        print(f"[proactive-knowledge] hook error for {bot_id}: {exc}")
 
 
 async def _maybe_generate_idea(bot_id: str, state: dict) -> None:
@@ -535,7 +979,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
             return
 
-        groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+        groq_client = get_groq()
 
         # Build full three-layer memory context for this command
         memory_context = meeting_memory.build_memory_context(state, command)
@@ -589,6 +1033,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         ]
 
         tools_used = []
+        valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
             "model": "llama-3.3-70b-versatile",
             "temperature": 0.3,
@@ -598,40 +1043,29 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             call_kwargs["tools"] = tools
             call_kwargs["tool_choice"] = "auto"
 
-        # Tool loop (max 3 iterations)
-        for _ in range(3):
-            try:
-                response = await groq_client.chat.completions.create(**call_kwargs)
-            except Exception as groq_exc:
-                # Llama sometimes generates malformed tool calls (400). Retry without tools.
-                if "400" in str(groq_exc) and "tools" in call_kwargs:
-                    print(f"[realtime] tool call format error, retrying without tools: {groq_exc}")
-                    call_kwargs.pop("tools", None)
-                    call_kwargs.pop("tool_choice", None)
-                    response = await groq_client.chat.completions.create(**call_kwargs)
-                else:
-                    raise
+        reply = None
+        actual_user_id = (bot_store.get(bot_id) or {}).get("user_id")
+        user_id = actual_user_id or bot_id  # bot_id used only as rate-limit key when unauthed
+        # Pass bot_id through so tools like knowledge_lookup can scope audit logs.
+        tool_settings = dict(user_settings)
+        tool_settings["bot_id"] = bot_id
 
-            choice = response.choices[0]
-
-            if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
-                reply = choice.message.content or f"Got it — {command}."
-                break
-
-            messages.append(choice.message)
-            actual_user_id = (bot_store.get(bot_id) or {}).get("user_id")
-            user_id = actual_user_id or bot_id  # bot_id used only as rate-limit key when unauthed
-            for tool_call in choice.message.tool_calls:
+        async def _run_tool_calls(tc_specs):
+            """Execute a list of (id, name, arguments_json_str) and append tool messages.
+            `tc_specs` is shaped the same regardless of whether the call came from a
+            structured tool_calls field or was recovered from a malformed generation.
+            """
+            for tc_id, tc_name, tc_args in tc_specs:
                 result = await execute_tool(
-                    tool_call.function.name,
-                    tool_call.function.arguments,
+                    tc_name,
+                    tc_args,
                     user_id=user_id,
-                    user_settings=user_settings,
+                    user_settings=tool_settings,
                 )
                 if result.get("requires_confirmation"):
                     # In live meeting context, the spoken/typed command is the confirmation
                     result = await confirm_and_execute(
-                        tool_call.function.name,
+                        tc_name,
                         result["preview"],
                         user_settings=user_settings,
                     )
@@ -645,12 +1079,129 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                         }).execute()
                     except Exception:
                         pass
-                tools_used.append(tool_call.function.name)
+                tools_used.append(tc_name)
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": tc_id,
                     "content": json.dumps(result),
                 })
+
+        # Streamed-LLM gate: requires both flags; only fires on synthesis turns
+        # (when `tools` is no longer in call_kwargs — either because the user has
+        # no tools available, or PR-1 taint enforcement stripped them, or the
+        # tools-format retry stripped them).
+        streamed_voice_active = (
+            os.getenv("PRISM_STREAMED_TTS") == "1"
+            and os.getenv("PRISM_STREAMED_LLM") == "1"
+        )
+        voice_already_streamed = False
+
+        # Tool loop (max 3 iterations)
+        for iteration in range(3):
+            if streamed_voice_active and "tools" not in call_kwargs:
+                # PR-5: stream the synthesis turn directly into TTS+upload.
+                try:
+                    streamed_reply = await _stream_llm_to_voice(
+                        groq_client, call_kwargs, bot_id, state["last_command_ts"] or now,
+                    )
+                except Exception as stream_exc:
+                    print(f"[realtime] streamed LLM failed, falling back: {stream_exc}")
+                    streamed_reply = None
+                if streamed_reply:
+                    reply = streamed_reply
+                    voice_already_streamed = True
+                    break
+                # Stream failed entirely (no text produced) — fall through to buffered retry below.
+
+            response = None
+            synth_calls = None
+
+            try:
+                response = await groq_client.chat.completions.create(**call_kwargs)
+            except Exception as groq_exc:
+                # Llama 3.3 occasionally emits tool calls as raw `<function=NAME {json}>`
+                # text instead of structured tool_calls; Groq rejects with 400
+                # tool_use_failed. Try to recover by parsing the failed generation.
+                err_str = str(groq_exc)
+                is_400 = "400" in err_str or "tool_use_failed" in err_str
+                if is_400 and "tools" in call_kwargs:
+                    failed_gen = _extract_failed_generation(groq_exc)
+                    recovered = _recover_tool_calls(failed_gen, valid_tool_names)
+                    if recovered:
+                        print(
+                            f"[realtime] recovered {len(recovered)} tool call(s) from malformed generation: "
+                            f"{[c['name'] for c in recovered]}"
+                        )
+                        synth_calls = recovered
+
+                if synth_calls is None:
+                    # Couldn't recover. Strip tools and retry once for a plain-text answer.
+                    if "tools" in call_kwargs:
+                        print(f"[realtime] tool call format error, retrying without tools: {groq_exc}")
+                        call_kwargs.pop("tools", None)
+                        call_kwargs.pop("tool_choice", None)
+                        try:
+                            response = await groq_client.chat.completions.create(**call_kwargs)
+                        except Exception as retry_exc:
+                            print(f"[realtime] retry-without-tools also failed: {retry_exc}")
+                            reply = "Sorry, I had trouble processing that."
+                            break
+                    else:
+                        print(f"[realtime] command failed without tools: {groq_exc}")
+                        reply = "Sorry, I had trouble processing that."
+                        break
+
+            # Belt-and-suspenders: a 200 response may still leak <function=...> in
+            # content (Groq sometimes lets these through). Parse and treat as a call.
+            if synth_calls is None and response is not None and "tools" in call_kwargs:
+                msg = response.choices[0].message
+                if not msg.tool_calls and msg.content and "<function=" in msg.content:
+                    leaked = _recover_tool_calls(msg.content, valid_tool_names)
+                    if leaked:
+                        print(
+                            f"[realtime] recovered {len(leaked)} leaked tool call(s) from 200 content: "
+                            f"{[c['name'] for c in leaked]}"
+                        )
+                        synth_calls = leaked
+
+            if synth_calls is not None:
+                # Synthesise a proper assistant message with tool_calls and execute.
+                tc_payload = []
+                ts_ms = int(time.time() * 1000)
+                for idx, call in enumerate(synth_calls):
+                    tc_payload.append({
+                        "id": f"call_synth_{iteration}_{idx}_{ts_ms}",
+                        "type": "function",
+                        "function": {"name": call["name"], "arguments": call["arguments"]},
+                    })
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": tc_payload,
+                })
+                await _run_tool_calls([
+                    (tc["id"], tc["function"]["name"], tc["function"]["arguments"])
+                    for tc in tc_payload
+                ])
+                if _strip_tools_if_tainted(call_kwargs, [tc["function"]["name"] for tc in tc_payload]):
+                    print(f"[realtime] tainted tool executed (recovery path); disabling further tool use this turn")
+                call_kwargs["messages"] = messages
+                continue  # Re-prompt the model with the tool results.
+
+            choice = response.choices[0]
+
+            if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
+                reply = choice.message.content or f"Got it — {command}."
+                break
+
+            messages.append(choice.message)
+            executed_names = [tc.function.name for tc in choice.message.tool_calls]
+            await _run_tool_calls([
+                (tc.id, tc.function.name, tc.function.arguments)
+                for tc in choice.message.tool_calls
+            ])
+            if _strip_tools_if_tainted(call_kwargs, executed_names):
+                print(f"[realtime] tainted tool executed; disabling further tool use this turn")
             call_kwargs["messages"] = messages
         else:
             # Tool loop exhausted without a text summary — ask LLM to summarise what was done
@@ -679,7 +1230,14 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         # Respond via voice + chat
         print(f"[realtime] command='{command}' tools={tools_used} reply='{reply}'")
         await _send_chat_response(bot_id, f"✓ {reply}")
-        await _send_voice_response(bot_id, reply)
+        if voice_already_streamed:
+            # PR-5 streamed-LLM path already produced and uploaded audio in parallel
+            # with token generation. Nothing more to do.
+            pass
+        elif os.getenv("PRISM_STREAMED_TTS") == "1":
+            await _send_voice_response_streamed(bot_id, reply, cmd_detected_ts=state["last_command_ts"] or now)
+        else:
+            await _send_voice_response(bot_id, reply)
 
     except Exception as exc:
         err_str = str(exc)

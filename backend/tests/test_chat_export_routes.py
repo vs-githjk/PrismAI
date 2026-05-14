@@ -23,7 +23,10 @@ sys.modules.setdefault("supabase", fake_supabase_module)
 class _FakeGroqCompletions:
     async def create(self, *args, **kwargs):
         return types.SimpleNamespace(
-            choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="mocked response"))]
+            choices=[types.SimpleNamespace(
+                finish_reason="stop",
+                message=types.SimpleNamespace(content="mocked response", tool_calls=None),
+            )]
         )
 
 
@@ -176,7 +179,7 @@ class ChatAndExportRoutesTestCase(unittest.TestCase):
         response = self.client.post("/chat/global", json={"message": "Summarize my meetings"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"response": "mocked response"})
+        self.assertEqual(response.json().get("response"), "mocked response")
 
     def test_export_to_notion_rejects_invalid_page_url(self):
         response = self.client.post(

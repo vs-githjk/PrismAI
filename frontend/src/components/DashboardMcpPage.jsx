@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bolt,
+  BookOpen,
   Brain,
   DoorOpen,
   History,
@@ -36,6 +37,7 @@ import { UI_SCREEN_KEY } from '../lib/sessionKeys'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
+const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
@@ -701,6 +703,11 @@ export default function DashboardMcpPage(props) {
             />
           </Suspense>
         )}
+        {activeView === 'knowledge' && (
+          <Suspense fallback={<SkeletonCard lines={4} tall />}>
+            <KnowledgeBase />
+          </Suspense>
+        )}
       </main>
 
       <nav className="fixed bottom-5 left-1/2 z-30 h-[96px] w-[154px] -translate-x-1/2" aria-label="Dashboard shortcuts" data-node-id="4590:266">
@@ -806,6 +813,16 @@ export default function DashboardMcpPage(props) {
             <NewMeetingPanel {...props} onClose={() => setNewMeetingOpen(false)} />
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <button
+          type="button"
+          onClick={() => setActiveView(v => v === 'knowledge' ? (props.result ? 'meeting' : 'home') : 'knowledge')}
+          className={`${darkCircleButtonClass} absolute bottom-16 right-1 h-10 w-10`}
+          style={activeView === 'knowledge' ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
+          aria-label={activeView === 'knowledge' ? 'Back to meeting view' : 'Open Knowledge Base'}
+        >
+          <BookOpen className="h-4 w-4" aria-hidden="true" />
+        </button>
 
         <button
           type="button"

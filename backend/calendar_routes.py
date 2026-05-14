@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase
+from clients import get_http
 
 router = APIRouter(tags=["calendar"])
 
@@ -70,7 +71,7 @@ async def refresh_google_token(refresh_token: str) -> dict | None:
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         return None
     try:
-        async with httpx.AsyncClient() as client:
+        async with get_http() as client:
             resp = await client.post(
                 GOOGLE_TOKEN_URL,
                 data={
@@ -156,7 +157,7 @@ async def calendar_exchange_code(
         raise HTTPException(status_code=503, detail="Google OAuth credentials not configured on server")
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with get_http() as client:
             resp = await client.post(
                 GOOGLE_TOKEN_URL,
                 data={
@@ -272,7 +273,7 @@ async def calendar_events(
     time_max = now + timedelta(days=days_ahead)
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with get_http() as client:
             resp = await client.get(
                 f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
                 headers={"Authorization": f"Bearer {access_token}"},
