@@ -141,7 +141,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           </button>
           {transcriptOpen && (
             <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-white/62">
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-white/90">
                 {transcript}
               </pre>
             </div>
