@@ -1016,6 +1016,8 @@ export default function App() {
     sessionStorage.removeItem('prism_active_bot_id')
     sessionStorage.removeItem('prism_active_live_token')
     sessionStorage.removeItem('prism_new_meeting')
+    sessionStorage.removeItem('prism_last_meeting_id')
+    sessionStorage.removeItem('prism_active_view')
     window.location.href = `/dashboard?${TEST_RUN_QUERY_PARAM}=1`
   }
 
@@ -1120,6 +1122,7 @@ export default function App() {
   const meetingRestoreDone = useRef(false)
   useEffect(() => {
     if (meetingRestoreDone.current || !history.length || result) return
+    if (sessionStorage.getItem('prism_active_view') !== 'meeting') return
     const savedId = sessionStorage.getItem('prism_last_meeting_id')
     if (!savedId) return
     const entry = history.find((e) => e.id === Number(savedId))

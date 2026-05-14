@@ -554,7 +554,7 @@ export default function DashboardPage(props) {
       props.history?.length >= 2 &&
       props.meetingId === latest?.id &&
       String(latest?.share_token || '').startsWith('sample')
-    if (props.result) {
+    if (props.result && activeView !== 'intelligence') {
       persistView(showingLatestSample && !userSelectedMeetingRef.current ? 'home' : 'meeting')
       userSelectedMeetingRef.current = false
     }
@@ -849,7 +849,7 @@ export default function DashboardPage(props) {
             : undefined
         }
       >
-        {activeView === 'home' && (
+        {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
           <StatsCanvas
             history={props.history}
             loadFromHistory={handleSelectMeeting}
