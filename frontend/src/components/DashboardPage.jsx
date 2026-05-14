@@ -699,7 +699,7 @@ export default function DashboardPage(props) {
 
   function handleSwitchView() {
     if (activeView === 'intelligence') {
-      persistView(props.result ? 'meeting' : 'home')
+      persistView('home')
     } else {
       if (historyCount < 2) {
         setShowGateDialog(true)
