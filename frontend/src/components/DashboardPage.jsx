@@ -444,7 +444,9 @@ export default function DashboardPage(props) {
   const [profileMenuPinned, setProfileMenuPinned] = useState(false)
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
-  const [activeView, setActiveView] = useState('home')
+  const [activeView, setActiveView] = useState(
+    () => sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home'
+  )
   const [showGateDialog, setShowGateDialog] = useState(false)
 
   const historyCount = props.history?.length || 0
@@ -879,7 +881,7 @@ export default function DashboardPage(props) {
                     gmailConnected={props.calendarConnected}
                     onToggleActionItem={props.toggleActionItem}
                     transcript={props.transcript}
-                    onBack={() => setActiveView('home')}
+                    onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); setActiveView('home') }}
                   />
                 </Suspense>
               </>

@@ -131,11 +131,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             className="flex w-full items-center justify-between gap-3 p-4"
           >
             <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-white/50" aria-hidden="true" />
-              <p className={eyebrow}>Transcript</p>
+              <FileText className="h-4 w-4 shrink-0 text-cyan-300/80" aria-hidden="true" />
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">Transcript</p>
             </div>
             <ChevronDown
-              className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
+              className={`h-4 w-4 shrink-0 text-white/70 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
               aria-hidden="true"
             />
           </button>

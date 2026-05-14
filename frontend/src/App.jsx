@@ -1020,7 +1020,10 @@ export default function App() {
   }
 
   const [sessionId, setSessionId] = useState(0)
-  const [meetingId, setMeetingId] = useState(null)
+  const [meetingId, setMeetingId] = useState(() => {
+    const saved = sessionStorage.getItem('prism_last_meeting_id')
+    return saved ? Number(saved) : null
+  })
   const [initialMessages, setInitialMessages] = useState([])
   const [recording, setRecording] = useState(false)
   const recognitionRef = useRef(null)
@@ -1655,6 +1658,12 @@ export default function App() {
     sessionStorage.removeItem('prism_active_bot_id')
     sessionStorage.removeItem('prism_active_live_token')
   }
+
+  // Persist last-viewed meeting so refresh restores the same view
+  useEffect(() => {
+    if (meetingId) sessionStorage.setItem('prism_last_meeting_id', String(meetingId))
+    else sessionStorage.removeItem('prism_last_meeting_id')
+  }, [meetingId])
 
   // Clean up poll on unmount
   useEffect(() => () => clearInterval(pollRef.current), [])
