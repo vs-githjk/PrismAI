@@ -2302,13 +2302,13 @@ export default function App() {
             </p>
           )}
           {r.agents_run?.length > 0 && (
-            <div className="mt-3"><AgentTags agents={r.agents_run} /></div>
+            <div className="mt-3"><AgentTags agents={r.agents_run} totalAgents={8} /></div>
           )}
         </div>
 
         {/* Cards */}
         <div className="px-4 pb-8 max-w-5xl mx-auto">
-          <MeetingView result={r} readOnly />
+          <MeetingView result={r} readOnly transcript={shareMode.transcript || ''} />
         </div>
 
         {/* Bottom CTA */}
@@ -2316,7 +2316,7 @@ export default function App() {
           <div className="rounded-2xl p-6"
             style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}>
             <p className="text-sm font-semibold text-white mb-1">Analyze your own meetings</p>
-            <p className="text-xs text-gray-400 mb-4">Paste any transcript — 7 AI agents produce a full analysis in seconds.</p>
+            <p className="text-xs text-gray-400 mb-4">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
             <a href={appUrl}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
               style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>

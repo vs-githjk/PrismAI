@@ -206,7 +206,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         <section className={`${glassCard} p-4`} style={cardGlowStyle}>
           <p className={`${eyebrow} mb-2`}>Summary</p>
           {result.summary ? (
-            <p className="text-sm leading-6 text-white/78">{result.summary}</p>
+            <p className="text-sm leading-6 text-white">{result.summary}</p>
           ) : (
             <p className={subtleText}>No summary generated.</p>
           )}
@@ -311,7 +311,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
       </div>
 
-      {sentiment?.overall && (
+      {sentiment?.overall && !readOnly && (
         <section className={`${glassCard} p-4`} style={cardGlowStyle}>
           <p className={`${eyebrow} mb-2`}>Sentiment</p>
           <div className="flex flex-wrap items-start gap-3">
@@ -325,7 +325,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
       {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
       <CalendarCard suggestion={result.calendar_suggestion} />
-      <SpeakerCoachCard speakerCoach={result.speaker_coach} />
+      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
 
     </div>
   )

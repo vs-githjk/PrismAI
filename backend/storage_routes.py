@@ -120,7 +120,7 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
 @router.get("/share/{token}")
 async def get_shared_meeting(token: str):
     client = _require_storage()
-    res = client.table("meetings").select("title,date,result,score").eq("share_token", token).limit(1).execute()
+    res = client.table("meetings").select("title,date,result,score,transcript").eq("share_token", token).limit(1).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Share link not found")
     return res.data[0]
