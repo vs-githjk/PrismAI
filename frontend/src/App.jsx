@@ -1116,6 +1116,19 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, user?.id, isTestAccount])
 
+  // On refresh, restore the last-viewed meeting from history once it loads
+  const meetingRestoreDone = useRef(false)
+  useEffect(() => {
+    if (meetingRestoreDone.current || !history.length || result) return
+    const savedId = sessionStorage.getItem('prism_last_meeting_id')
+    if (!savedId) return
+    const entry = history.find((e) => e.id === Number(savedId))
+    if (entry) {
+      meetingRestoreDone.current = true
+      loadFromHistory(entry)
+    }
+  }, [history]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const titleBackfillDone = useRef(false)
   useEffect(() => {
     if (!user || isTestAccount || history.length === 0 || titleBackfillDone.current) return
