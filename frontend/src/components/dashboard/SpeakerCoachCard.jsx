@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Mic } from 'lucide-react'
-import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboard/dashboardStyles'
+import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 function useCountUp(target, duration = 1000) {
   const [display, setDisplay] = useState(0)

@@ -553,6 +553,10 @@ async def bot_status(bot_id: str):
             bot_store[bot_id] = {"status": "processing", "result": None, "error": None, "commands": []}
             _db_save(bot_id, {"status": "processing"})
             asyncio.create_task(_process_bot_transcript(bot_id))
+        elif bot_store[bot_id].get("status") == "processing" and not bot_store[bot_id].get("result"):
+            # Zombie state: server restarted mid-processing — task died but DB still says "processing".
+            # Re-trigger so the transcript gets fetched and saved.
+            asyncio.create_task(_process_bot_transcript(bot_id))
         elif bot_store[bot_id].get("status") not in ("processing", "done", "error"):
             bot_store[bot_id]["status"] = "processing"
             _db_save(bot_id, {"status": "processing"})

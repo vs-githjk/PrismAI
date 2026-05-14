@@ -26,6 +26,7 @@ AGENT_MAP = {
 
 
 DEFAULT_RESULT = {
+    "title": "",
     "summary": "",
     "action_items": [],
     "decisions": [],
@@ -75,6 +76,7 @@ def merge_agent_results(valid_agents: list[str], results: list) -> dict:
         if isinstance(agent_result, Exception):
             continue
         if agent_name == "summarizer":
+            result["title"] = agent_result.get("title", "")
             result["summary"] = agent_result.get("summary", "")
         elif agent_name == "action_items":
             result["action_items"] = agent_result.get("action_items", [])

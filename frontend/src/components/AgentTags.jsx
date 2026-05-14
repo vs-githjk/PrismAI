@@ -10,7 +10,7 @@ const AGENT_CONFIG = {
   speaker_coach:      { label: 'Speaker Coach', icon: '🎤', bg: 'bg-rose-500/20',   border: 'border-rose-500/40',   text: 'text-rose-300',   dot: 'bg-rose-400' },
 }
 
-export default function AgentTags({ agents }) {
+export default function AgentTags({ agents, totalAgents }) {
   if (!agents || agents.length === 0) return null
 
   return (
@@ -28,7 +28,7 @@ export default function AgentTags({ agents }) {
             </div>
             <div>
               <p className="text-[11px] font-semibold text-gray-200 leading-none">Prism Orchestrator</p>
-              <p className="text-[10px] text-gray-500 mt-0.5">split the meeting into {agents.length} specialized reads</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">{totalAgents ? `ran ${agents.length} of ${totalAgents} specialized agents` : `split the meeting into ${agents.length} specialized reads`}</p>
             </div>
           </div>
 
