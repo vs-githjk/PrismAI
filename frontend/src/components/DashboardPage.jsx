@@ -445,9 +445,16 @@ export default function DashboardPage(props) {
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
   const [activeView, setActiveView] = useState(
-    () => sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home'
+    () => sessionStorage.getItem('prism_active_view') ||
+          (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
   )
   const [showGateDialog, setShowGateDialog] = useState(false)
+
+  // Persist active view so hard refresh restores the same view
+  const persistView = (view) => {
+    sessionStorage.setItem('prism_active_view', view)
+    setActiveView(view)
+  }
 
   const historyCount = props.history?.length || 0
   const profileCloseTimer = useRef(null)
@@ -532,7 +539,7 @@ export default function DashboardPage(props) {
 
   // Switch to meeting view immediately when analysis starts
   useEffect(() => {
-    if (props.loading) setActiveView('meeting')
+    if (props.loading) persistView('meeting')
   }, [props.loading])
 
   // Auto-switch to meeting view when a new result is loaded (not on initial mount)
@@ -548,7 +555,7 @@ export default function DashboardPage(props) {
       props.meetingId === latest?.id &&
       String(latest?.share_token || '').startsWith('sample')
     if (props.result) {
-      setActiveView(showingLatestSample && !userSelectedMeetingRef.current ? 'home' : 'meeting')
+      persistView(showingLatestSample && !userSelectedMeetingRef.current ? 'home' : 'meeting')
       userSelectedMeetingRef.current = false
     }
   }, [props.result, props.isTestAccount, props.meetingId, props.history])
@@ -673,7 +680,7 @@ export default function DashboardPage(props) {
     if (entry.id === props.meetingId) {
       sessionStorage.setItem('prism_new_meeting', '1')
       props.clearWorkspaceState?.()
-      setActiveView('home')
+      persistView('home')
     }
   }
 
@@ -687,17 +694,17 @@ export default function DashboardPage(props) {
     userSelectedMeetingRef.current = true
     props.setShowHistory?.(false)
     props.loadFromHistory?.(entry)
-    setActiveView('meeting')
+    persistView('meeting')
   }
 
   function handleSwitchView() {
     if (activeView === 'intelligence') {
-      setActiveView(props.result ? 'meeting' : 'home')
+      persistView(props.result ? 'meeting' : 'home')
     } else {
       if (historyCount < 2) {
         setShowGateDialog(true)
       } else {
-        setActiveView('intelligence')
+        persistView('intelligence')
       }
     }
   }
@@ -881,7 +888,7 @@ export default function DashboardPage(props) {
                     gmailConnected={props.calendarConnected}
                     onToggleActionItem={props.toggleActionItem}
                     transcript={props.transcript}
-                    onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); setActiveView('home') }}
+                    onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
                   />
                 </Suspense>
               </>
