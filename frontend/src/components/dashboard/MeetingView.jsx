@@ -323,7 +323,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
       )}
 
-      <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />
+      {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
       <CalendarCard suggestion={result.calendar_suggestion} />
       <SpeakerCoachCard speakerCoach={result.speaker_coach} />
 
