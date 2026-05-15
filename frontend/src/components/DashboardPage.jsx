@@ -1207,7 +1207,7 @@ export default function DashboardPage(props) {
       )}
 
       <main
-        className={`relative z-10 -mt-3 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
+        className={`relative z-10 mt-2 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
           chatOpen && activeView === 'meeting' && !isNarrow ? '' : 'mx-auto'
         }`}
         style={
