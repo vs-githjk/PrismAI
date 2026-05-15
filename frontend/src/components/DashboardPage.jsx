@@ -297,7 +297,7 @@ function NewMeetingPanel(props) {
               {props.calendarConnected && props.user && !props.isTestAccount && (
                 <Suspense fallback={null}>
                   <UpcomingMeetings
-                    workspaces={workspaces}
+                    workspaces={props.workspaces || []}
                     onJoin={(url, wsId) => {
                       props.setMeetingUrl(url)
                       if (wsId) props.onJoinWithWorkspace?.(wsId)
@@ -1434,7 +1434,7 @@ export default function DashboardPage(props) {
             className="dashboard-body-font w-[340px] rounded-2xl border border-white/[0.10] bg-[#0f0f11] p-0 shadow-2xl"
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
-            <NewMeetingPanel {...props} onClose={() => setNewMeetingOpen(false)} />
+            <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
           </DropdownMenuContent>
         </DropdownMenu>
 

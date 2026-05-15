@@ -96,11 +96,10 @@ async def get_meetings(
 
         query = (
             client.table("meetings")
-            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id")
+            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id,user_id")
             .eq("workspace_id", workspace_id)
-            .eq("user_id", user_id)
             .order("id", desc=True)
-            .limit(200)
+            .limit(400)
         )
     else:
         # Personal mode: only the user's own meetings with no workspace
@@ -116,7 +115,23 @@ async def get_meetings(
     if q.strip():
         query = query.ilike("title", f"%{q}%")
     res = query.execute()
-    meaningful = [entry for entry in res.data if has_meaningful_result(entry.get("result"))]
+
+    if workspace_id.strip():
+        # Deduplicate: fan-out creates copies for each member (same date+recorder, different user_id).
+        # Keep one per logical meeting, preferring the current user's own copy.
+        dedup_map: dict = {}
+        for row in res.data:
+            recorder = row.get("recorded_by_user_id") or row.get("user_id", "")
+            key = (row.get("date", "")[:16], recorder)
+            if key not in dedup_map or row.get("user_id") == user_id:
+                dedup_map[key] = row
+        rows = sorted(dedup_map.values(), key=lambda r: r.get("id", 0), reverse=True)
+        for row in rows:
+            row.pop("user_id", None)
+    else:
+        rows = res.data
+
+    meaningful = [entry for entry in rows if has_meaningful_result(entry.get("result"))]
     return meaningful[:50]
 
 
@@ -138,15 +153,26 @@ async def get_cross_meeting_insights(
         )
         if not membership.data:
             raise HTTPException(status_code=403, detail="Not a member of this workspace")
-        res = (
+        all_res = (
             client.table("meetings")
-            .select("id,date,title,score,result")
+            .select("id,date,title,score,result,recorded_by_user_id,user_id")
             .eq("workspace_id", workspace_id)
-            .eq("user_id", user_id)
             .order("id", desc=True)
-            .limit(50)
+            .limit(200)
             .execute()
         )
+        # Deduplicate fan-out copies same as the meetings endpoint
+        dedup_map: dict = {}
+        for row in (all_res.data or []):
+            recorder = row.get("recorded_by_user_id") or row.get("user_id", "")
+            key = (row.get("date", "")[:16], recorder)
+            if key not in dedup_map or row.get("user_id") == user_id:
+                dedup_map[key] = row
+        deduped = sorted(dedup_map.values(), key=lambda r: r.get("id", 0), reverse=True)
+        for row in deduped:
+            row.pop("user_id", None)
+            row.pop("recorded_by_user_id", None)
+        res_data = deduped[:50]
     else:
         res = (
             client.table("meetings")
@@ -157,8 +183,9 @@ async def get_cross_meeting_insights(
             .limit(50)
             .execute()
         )
+        res_data = res.data
 
-    return derive_cross_meeting_insights(res.data, user_id=user_id)
+    return derive_cross_meeting_insights(res_data, user_id=user_id)
 
 
 def _fan_out_id(original_id: int, member_user_id: str) -> int:
