@@ -479,6 +479,23 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
   - `IntelligenceView.jsx`: accepts `workspaceName` prop; when set, renders `MembersLeaderboard` card (open owner load, amber progress bars) + "Unresolved topics" card (themes without a decision, amber chips) in a new 2-col row
   - `DashboardPage.jsx`: computes `workspaceName` inline from `workspaces.find()` — passed to `IntelligenceView`
 
+### Fixed May 15 2026 — Post-deploy bugs + workspace auto-classification
+
+**Bug fixes (all committed to main):**
+- **Workspace history not re-fetching on switch** — `activeWorkspaceId` missing from history effect deps in `App.jsx`. Added.
+- **Workspace settings panel too transparent** — `rgba(255,255,255,0.03)` bg → `#0f0f12` solid + `boxShadow` in `DashboardPage.jsx`.
+- **Settings panel staying open when switching workspaces** — `switchWorkspace()` now calls `setWsSettingsId(null); setWsDetails(null)`.
+- **Stale meeting result after workspace switch** — `onWorkspaceChange` now also calls `setResult(null); setMeetingId(null)`.
+- **No title or back arrow on fresh analyses** — `MeetingView` header guard changed from `{meeting && ...}` to `{(onBack || meeting) && ...}`; `meeting.date` → `meeting?.date`.
+- **Old transcript in new meeting panel** — `resetTranscriptWorkspaces` now called in `onOpenChange` when the + panel opens.
+- **Single-meeting dashboard looked bare** — `SingleMeetingState` redesigned to centered "Good start." layout matching multi-meeting welcome style.
+- **Duplicate meetings in workspace view** — backend workspace query was returning ALL rows with matching `workspace_id` (both recorder's original AND fan-out copies). Fixed with Python dedup: group by `(date[:16], recorded_by_user_id or user_id)`, keep one per logical meeting (prefer current user's copy). Originals have `recorded_by_user_id = null` (falls back to `user_id`), fan-outs have it set — both resolve to same key. `user_id` added to select, stripped from response.
+- **Content overlapping workspace chip row** — `<main>` had `-mt-3`. Changed to `mt-2`.
+- **`NewMeetingPanel` ReferenceError on Join tab** — `workspaces` referenced as free variable but is local state of `DashboardPage`. Fixed by passing `workspaces={workspaces}` explicitly at render site and using `props.workspaces` inside `NewMeetingPanel`.
+
+**Features added:**
+- **Upcoming meetings workspace auto-classification** — `GET /calendar/events` returns `attendee_emails` (excluding self). `GET /workspaces` returns `member_emails` (bulk query, not N+1). `UpcomingMeetings.jsx` `matchWorkspace()` finds best-overlap workspace. Matched events show cyan workspace chip; unmatched show gray "Personal" chip. Join button passes matched `wsId` to `onJoinWithWorkspace` (silently sets workspace without clearing current result view).
+
 ### Status: Workspace + Phase 2 + Phase 3 (LangGraph) complete — Phases 5–8 pending
 
 ### Key design decisions (locked)
