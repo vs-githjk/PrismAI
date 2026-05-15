@@ -2598,6 +2598,10 @@ export default function App() {
             if (wsId) sessionStorage.setItem('prism_active_workspace', wsId)
             else sessionStorage.removeItem('prism_active_workspace')
           }}
+          onJoinWithWorkspace={(wsId) => {
+            setActiveWorkspaceId(wsId)
+            sessionStorage.setItem('prism_active_workspace', wsId)
+          }}
         />
 
         {showSpeakerModal && (

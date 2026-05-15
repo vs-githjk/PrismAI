@@ -87,18 +87,29 @@ async def list_workspaces(user_id: str = Depends(require_user_id)):
         .execute()
     )
 
+    all_members = (
+        client.table("workspace_members")
+        .select("workspace_id, user_email")
+        .in_("workspace_id", workspace_ids)
+        .execute()
+    )
+    member_data: dict = {}
+    for m in (all_members.data or []):
+        wsid = m["workspace_id"]
+        if wsid not in member_data:
+            member_data[wsid] = {"count": 0, "emails": []}
+        member_data[wsid]["count"] += 1
+        if m.get("user_email"):
+            member_data[wsid]["emails"].append(m["user_email"])
+
     result = []
     for ws in (workspaces.data or []):
-        member_count = (
-            client.table("workspace_members")
-            .select("user_id", count="exact")
-            .eq("workspace_id", ws["id"])
-            .execute()
-        )
+        md = member_data.get(ws["id"], {"count": 0, "emails": []})
         result.append({
             **ws,
             "role": role_map.get(ws["id"], "member"),
-            "member_count": member_count.count or 0,
+            "member_count": md["count"],
+            "member_emails": md["emails"],
         })
     return result
 

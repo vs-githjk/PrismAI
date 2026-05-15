@@ -296,7 +296,13 @@ function NewMeetingPanel(props) {
             <div className="space-y-3">
               {props.calendarConnected && props.user && !props.isTestAccount && (
                 <Suspense fallback={null}>
-                  <UpcomingMeetings onJoin={(url) => props.setMeetingUrl(url)} />
+                  <UpcomingMeetings
+                    workspaces={workspaces}
+                    onJoin={(url, wsId) => {
+                      props.setMeetingUrl(url)
+                      if (wsId) props.onJoinWithWorkspace?.(wsId)
+                    }}
+                  />
                 </Suspense>
               )}
               <input
