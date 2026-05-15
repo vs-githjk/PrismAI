@@ -1127,7 +1127,7 @@ export default function App() {
       .catch(() => {})
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, user?.id, isTestAccount])
+  }, [authReady, user?.id, isTestAccount, activeWorkspaceId])
 
   // On refresh, restore the last-viewed meeting from history once it loads
   const meetingRestoreDone = useRef(false)
