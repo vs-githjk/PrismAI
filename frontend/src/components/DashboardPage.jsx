@@ -627,6 +627,8 @@ export default function DashboardPage(props) {
   function switchWorkspace(wsId) {
     props.onWorkspaceChange?.(wsId)
     persistView('home')
+    setWsSettingsId(null)
+    setWsDetails(null)
   }
 
   function dismissWorkspaceNudge() {
