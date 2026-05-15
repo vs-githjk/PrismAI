@@ -6,7 +6,6 @@ import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
 import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
-import AgentShowcase from './components/AgentShowcase'
 import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
 import SignupDialog from './components/SignupDialog'
@@ -953,7 +952,6 @@ function LandingScreen({ onViewDashboard }) {
 
         <div className="landing-post-hero">
           <HowItWorks />
-          <AgentShowcase />
           <PricingSection onGetStarted={openSignup} />
           <TeamSection />
         </div>
