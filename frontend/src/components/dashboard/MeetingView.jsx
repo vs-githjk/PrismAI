@@ -76,7 +76,7 @@ function BreakdownBar({ label, value, color }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', onBack }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', onBack, recordedByEmail = null }) {
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   if (!result) {
     return (
@@ -120,6 +120,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{displayTitle}</h1>
           {meeting.date && <p className={`mt-0.5 ${subtleText}`}>{formatMeetingDate(meeting.date)}</p>}
+          {recordedByEmail && (
+            <p className="mt-1 text-[11px] text-white/38">Recorded by {recordedByEmail}</p>
+          )}
         </div>
       )}
 

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import time
 from collections import defaultdict
@@ -8,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from groq import AsyncGroq
 from pydantic import BaseModel
 
-from analysis_service import AGENT_MAP, AGENT_RESULT_KEY, build_analysis_transcript, run_full_analysis
+from analysis_service import AGENT_RESULT_KEY, _GRAPH, build_analysis_transcript, run_full_analysis
 
 # Simple IP-based rate limit for /transcribe (paid Whisper call, no auth required for demo)
 _transcribe_log: dict[str, list[float]] = defaultdict(list)
@@ -38,39 +37,27 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
             raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
         transcript = build_analysis_transcript(req.transcript, req.speakers, req.owner_name)
-        from agents import orchestrator
-
-        agents_to_run = await orchestrator.run_orchestrator(transcript)
-        valid_agents = [agent for agent in agents_to_run if agent in AGENT_MAP]
 
         async def event_stream():
-            yield f"data: {json.dumps({'agents_run': valid_agents})}\n\n"
-
-            async def run_agent(name):
-                result = await AGENT_MAP[name](transcript)
-                return name, result
-
-            tasks = {asyncio.ensure_future(run_agent(name)): name for name in valid_agents}
-            pending = set(tasks.keys())
+            initial = {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {}}
             succeeded_agents = []
 
-            while pending:
-                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-                for task in done:
-                    try:
-                        agent_name, agent_result = task.result()
+            async for chunk in _GRAPH.astream(initial, stream_mode="updates"):
+                for node_name, update in chunk.items():
+                    if node_name == "orchestrator":
+                        yield f"data: {json.dumps({'agents_run': update.get('agents_to_run', [])})}\n\n"
+                    elif node_name.startswith("t1_") or node_name.startswith("t2_"):
+                        agent_name = node_name[3:]  # strip "t1_" or "t2_"
+                        agent_result = update.get("results", {}).get(agent_name, {})
                         key = AGENT_RESULT_KEY.get(agent_name)
                         if key and key in agent_result:
                             payload = {"agent": agent_name, **agent_result}
                             yield f"data: {json.dumps(payload)}\n\n"
                             succeeded_agents.append(agent_name)
                         elif key:
-                            # Agent ran without raising but returned no usable data
                             print(f"[analyze] agent {agent_name} returned no '{key}' key")
                             yield f"data: {json.dumps({'agent_error': f'{agent_name}: missing result key'})}\n\n"
-                    except Exception as e:
-                        print(f"[analyze] agent failed: {e}")
-                        yield f"data: {json.dumps({'agent_error': str(e)})}\n\n"
+                    # tier1_barrier updates are silently skipped
 
             yield f"data: {json.dumps({'agents_run': succeeded_agents})}\n\n"
             yield "data: [DONE]\n\n"

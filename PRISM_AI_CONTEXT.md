@@ -55,10 +55,11 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 ├── backend/
 │   ├── main.py                    # FastAPI app shell — middleware + router wiring only
 │   ├── auth.py                    # require_user_id() dependency + shared Supabase client
-│   ├── analysis_service.py        # AGENT_MAP, AGENT_RESULT_KEY, DEFAULT_RESULT, run_full_analysis, merge_agent_results
+│   ├── analysis_service.py        # LangGraph two-tier StateGraph + AGENT_MAP, TIER1_AGENTS, TIER2_AGENTS, _GRAPH, run_full_analysis
 │   ├── analysis_routes.py         # /analyze, /analyze-stream, /transcribe
-│   ├── storage_routes.py          # /meetings, /chats, /share, /insights — all auth-gated
-│   ├── recall_routes.py           # /join-meeting, /bot-status/{id}, /recall-webhook — intentionally unauthenticated
+│   ├── storage_routes.py          # /meetings, /chats, /share, /insights — all auth-gated; fan-out on workspace save
+│   ├── workspace_routes.py        # /workspaces, /invites — workspace CRUD + invite system
+│   ├── recall_routes.py           # /join-meeting (workspace dedup), /bot-status/{id}, /recall-webhook
 │   ├── chat_routes.py             # /chat, /chat/global (auth-gated), /agent (unauthenticated)
 │   ├── export_routes.py           # /export/slack, /export/notion
 │   ├── cross_meeting_service.py   # Pure Python: derives insights from meeting history (no LLM)
@@ -166,17 +167,27 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 | POST | `/agent` | No | Single agent re-run (used by chat intent) |
 | POST | `/chat` | No | Chat with transcript context |
 | POST | `/chat/global` | **Yes** | Chat across all user's saved meetings |
-| GET | `/meetings` | **Yes** | List user's meetings |
-| POST | `/meetings` | **Yes** | Save/upsert a meeting |
-| PATCH | `/meetings/{id}` | **Yes** | Update result (action item checkboxes) |
-| DELETE | `/meetings/{id}` | **Yes** | Delete meeting (cascades to chats) |
-| GET | `/insights` | **Yes** | Cross-meeting intelligence (pure Python, no LLM) |
+| GET | `/meetings` | **Yes** | List meetings — pass `?workspace_id=` to scope to workspace |
+| POST | `/meetings` | **Yes** | Save/upsert meeting; fans out to workspace members if `workspace_id` set |
+| PATCH | `/meetings/{id}` | **Yes** | Update result, title, share_token, workspace_id |
+| DELETE | `/meetings/{id}` | **Yes** | Delete meeting (own copy only) |
+| POST | `/meetings/{id}/claim-email` | **Yes** | Claim follow-up email send for workspace |
+| GET | `/insights` | **Yes** | Cross-meeting intelligence — pass `?workspace_id=` to scope |
 | GET | `/share/{token}` | No | Public read-only meeting by share token |
 | GET | `/chats` | **Yes** | All chats as `{ meeting_id: messages[] }` map |
 | GET | `/chats/{meeting_id}` | **Yes** | Single meeting's chat |
 | POST | `/chats/{meeting_id}` | **Yes** | Save/upsert chat messages |
 | DELETE | `/chats/{meeting_id}` | **Yes** | Delete chat |
-| POST | `/join-meeting` | No | Start Recall.ai bot |
+| POST | `/workspaces` | **Yes** | Create workspace (auto-adds creator as owner) |
+| GET | `/workspaces` | **Yes** | List workspaces the user belongs to |
+| GET | `/workspaces/{id}` | **Yes** | Workspace detail + members list |
+| PATCH | `/workspaces/{id}` | **Yes** | Rename (owner only) |
+| DELETE | `/workspaces/{id}` | **Yes** | Delete workspace; meetings fall to Personal |
+| DELETE | `/workspaces/{id}/members/{uid}` | **Yes** | Remove member (owner) or self-leave |
+| POST | `/workspaces/{id}/regenerate-invite` | **Yes** | Regenerate invite token (owner only) |
+| GET | `/invites/{token}` | No | Validate invite token, return workspace info |
+| POST | `/invites/{token}/accept` | **Yes** | Join workspace via invite token |
+| POST | `/join-meeting` | No | Start Recall.ai bot — checks workspace dedup first |
 | GET | `/bot-status/{bot_id}` | No | Poll bot lifecycle + result |
 | POST | `/recall-webhook` | No | Recall.ai event callbacks |
 | POST | `/export/slack` | No | Send recap to Slack webhook |
@@ -189,6 +200,7 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 ## Supabase Schema
 
 ```sql
+-- Core meeting storage
 create table meetings (
   id bigint primary key,           -- Date.now()-based ID from frontend
   user_id uuid references auth.users(id),
@@ -198,6 +210,9 @@ create table meetings (
   transcript text,
   result jsonb,
   share_token text unique,
+  workspace_id uuid references workspaces(id) on delete set null,  -- null = Personal
+  recorded_by_user_id text,        -- set on fan-out copies; null = recorded by self
+  email_claimed_by text,           -- user_id who claimed the follow-up email send
   created_at timestamptz default now()
 );
 
@@ -209,10 +224,45 @@ create table chats (
   updated_at timestamptz default now()
 );
 
+-- Workspace system
+create table workspaces (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_by text not null,
+  invite_token text unique not null default gen_random_uuid()::text,
+  created_at timestamptz default now()
+);
+
+create table workspace_members (
+  workspace_id uuid references workspaces(id) on delete cascade,
+  user_id text not null,
+  user_email text,                 -- stored at join time for display
+  role text not null default 'member',  -- 'owner' | 'member'
+  joined_at timestamptz default now(),
+  primary key (workspace_id, user_id)
+);
+
+-- Active bot registry — powers workspace dedup
+create table meeting_bots (
+  id uuid primary key default gen_random_uuid(),
+  meeting_url text not null,       -- normalized (lowercase, no query params)
+  bot_id text not null,
+  owner_user_id text not null,
+  workspace_id uuid references workspaces(id) on delete set null,
+  status text not null default 'joining',  -- joining | recording | processing | done | error
+  created_at timestamptz default now()
+);
+
 create index on meetings(user_id);
+create index on meetings(workspace_id);
 ```
 
-Both tables have `user_id`. All queries filter by it. `on delete cascade` means deleting a meeting automatically deletes its chat.
+**Meeting ownership rules:**
+- `workspace_id = null` → Personal meeting, visible only to owner
+- `workspace_id` set, `recorded_by_user_id = null` → recorder's copy in workspace
+- `workspace_id` set, `recorded_by_user_id` set → fan-out copy for a workspace member
+
+**Workspace invite:** One invite token per workspace stored on the `workspaces` row. Anyone with the link can join. Owner can regenerate the token to revoke access.
 
 ---
 
@@ -228,17 +278,24 @@ Both tables have `user_id`. All queries filter by it. `on delete cascade` means 
 
 ## Streaming Analysis
 
-Frontend calls `POST /analyze-stream`. Backend uses SSE + `asyncio.wait(FIRST_COMPLETED)` — each agent streams its result the moment it finishes. Frontend reads chunk by chunk, calling `setResult(prev => ({ ...prev, ...chunk }))`.
+Frontend calls `POST /analyze-stream`. Backend uses a LangGraph `StateGraph` with `graph.astream(stream_mode="updates")` — each agent node streams its result the moment it finishes. Frontend reads chunk by chunk, calling `setResult(prev => ({ ...prev, ...chunk }))`.
 
-SSE event format:
+**Two-tier execution:**
+- Tier 1 (parallel): `summarizer`, `decisions`, `action_items`, `sentiment`, `speaker_coach`
+- `tier1_barrier`: synchronizes all Tier 1 results → builds `context` dict `{summary, decisions, action_items, sentiment}`
+- Tier 2 (parallel, enriched): `email_drafter`, `health_score`, `calendar_suggester` — each receives `context` to produce richer output
+
+SSE event format (unchanged from before LangGraph):
 ```
-data: {"agents_run": ["summarizer", "action_items", ...]}
-data: {"agent": "summarizer", "summary": "..."}
-data: {"agent": "action_items", "action_items": [...]}
+data: {"agents_run": ["summarizer", "action_items", ...]}   ← from orchestrator node
+data: {"agent": "summarizer", "summary": "..."}             ← from t1_summarizer node
+data: {"agent": "action_items", "action_items": [...]}      ← from t1_action_items node
+data: {"agent": "email_drafter", "follow_up_email": {...}}  ← from t2_email_drafter node
+data: {"agents_run": ["summarizer", ...]}                   ← final succeeded list
 data: [DONE]
 ```
 
-`saveToHistory` is called on `[DONE]`. The stream has a 120s `AbortController` timeout.
+`tier1_barrier` updates are silently skipped in SSE (pass-through node). `saveToHistory` is called on `[DONE]`. The stream has a 120s `AbortController` timeout.
 
 ---
 
@@ -372,11 +429,91 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 
 ---
 
-## Remaining Roadmap (priority order)
+## Workspace System (In Progress — May 2026)
 
-1. **Bot store persistence** — move `bot_store` to a `bots` Supabase table so restarts don't lose in-flight meetings
-2. **Model fallback** — each agent catches Groq 429/errors, retries with `gpt-4o-mini` or `claude-haiku-4-5`. Add `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` to Render.
-3. **Team workspace** — add `workspace_id` to schema, invite flow, shared history. Blocked on the existing single-user auth being stable first.
+### What's been built
+- **DB schema:** `workspaces`, `workspace_members`, `meeting_bots` tables; `meetings` extended with `workspace_id`, `recorded_by_user_id`, `email_claimed_by`
+- **Backend:** `workspace_routes.py` — full workspace CRUD + invite system (multi-use revocable links)
+- **Bot dedup:** `recall_routes.py` — before joining, checks if any workspace member's bot is already in the meeting (via `_find_shared_workspace_bot`). Returns `{skip: true, existing_bot_id}` instead of joining.
+- **Fan-out:** `storage_routes.py` — `POST /meetings` with `workspace_id` triggers async `_fan_out_to_workspace`, writing copies to all other workspace members
+- **Email claim:** `POST /meetings/{id}/claim-email` — first-claim model, locks send button for others
+- **Scoped queries:** `/meetings` and `/insights` both accept `?workspace_id=` — workspace mode returns all members' meetings
+- **Frontend switcher:** Chip row in DashboardPage below header — Personal + workspace chips + `+ New` inline creator
+- **Workspace state in App.jsx:** `activeWorkspaceId` state, passed to DashboardPage + used in meeting save + history/insights fetches
+
+- **Frontend invite flow (Step 6 — done):**
+  - `INITIAL_INVITE_TOKEN` detected synchronously at module load from `window.location.hash` matching `#invite/{token}`
+  - When present, App.jsx renders an invite acceptance screen instead of the normal app
+  - Unauthenticated: saves token to `sessionStorage` (`prism_pending_invite`), triggers Google OAuth; `SIGNED_IN` handler restores by navigating to `/dashboard#invite/{token}`
+  - Authenticated: "Join [workspace]" button → `POST /invites/{token}/accept` → writes `prism_active_workspace` to sessionStorage → "Go to dashboard" button
+  - Workspace ⚙ settings panel in DashboardPage: appears below chip row when active workspace gear is clicked. Shows invite link (copy/regenerate for owners), member list with remove buttons, delete/leave workspace.
+
+- **Bot dedup UI (Step 7 — done):**
+  - `dedupBotInfo` state in App.jsx (`{ botId, ownerUserId, ownerUserEmail }`) — separate from `botStatus` to avoid breaking existing bot state logic
+  - When join returns `{skip: true}`, sets `dedupBotInfo`, points `activeBotId` at the existing bot, and starts polling it — results flow in normally
+  - `rejoinMeeting()` in App.jsx clears `dedupBotInfo` + resets bot state then calls `joinMeeting()` — used by the inline Rejoin button in the error banner
+  - Auto-clears `dedupBotInfo` via `useEffect` when `botStatus` goes to `done` or `error`
+  - DashboardPage: dedup strip ("Prism is already in this meeting via [email]") shown above the normal status banner; error banner now has inline "Rejoin" button
+  - Backend: `_find_shared_workspace_bot` now returns `owner_user_email` (from `workspace_members.user_email`)
+
+- **Meeting attribution UI (Step 8 — done):**
+  - `workspaceMemberMap` state in DashboardPage (`{ userId: email }`) — built by fetching `GET /workspaces/{id}` when `activeWorkspaceId` changes
+  - `recordedByEmail` computed in DashboardPage from `currentMeeting.recorded_by_user_id` — only non-null for fan-out copies (teammate recorded, not the current user)
+  - MeetingsRail: shows `via [email]` in muted text at the bottom of each card where the recorder is a teammate
+  - MeetingView: shows `Recorded by [email]` in muted text below the meeting date
+  - Props threaded: DashboardPage → StatsCanvas → MultiMeetingHome → MeetingsRail
+
+- **First-run workspace nudge (gap fix — done):**
+  - Shows a dismissible callout below the chip row when: user is signed in + workspace fetch has resolved (`workspacesLoaded = true`) + no workspaces exist + not previously dismissed
+  - `workspacesLoaded` flag (default `false`, set `true` after fetch) prevents a flash of the nudge on load for users who already have workspaces
+  - "Create workspace" button opens the inline name input directly
+  - "×" button permanently dismisses via `localStorage` key `prismai:workspace-nudge-dismissed`
+  - Disappears automatically once the first workspace is created (condition falls false)
+
+- **Phase 2 — Meeting Pattern Intelligence (done):**
+  - `cross_meeting_service.py`: 4 new metrics — `completion_rate {total,completed,rate}`, `decision_velocity {avg,total}`, `open_owner_load [{owner,open,total}]`, `unresolved_themes [{theme,count}]`
+  - `unresolved_themes`: words from summaries/action items filtered to exclude any word appearing in decision text (word-subtraction approach, no ML dependency)
+  - `open_owner_load`: counts open vs total action items per owner across all workspace meetings; completion IS persisted via `PATCH /meetings/{id}`
+  - `insights.js`: `normalizeInsights` extended with `completionRate`, `decisionVelocity`, `openOwnerLoad`, `unresolvedThemes`
+  - `StatsHero.jsx`: expanded from 4 to 6 `MetricTile` entries (`grid-cols-2 lg:grid-cols-3`); shows completion rate + avg decisions. Accepts `workspaceName` prop — header shows "Team · [name] / Team intelligence" when set
+  - `IntelligenceView.jsx`: accepts `workspaceName` prop; when set, renders `MembersLeaderboard` card (open owner load, amber progress bars) + "Unresolved topics" card (themes without a decision, amber chips) in a new 2-col row
+  - `DashboardPage.jsx`: computes `workspaceName` inline from `workspaces.find()` — passed to `IntelligenceView`
+
+### Status: Workspace + Phase 2 + Phase 3 (LangGraph) complete — Phases 5–8 pending
+
+### Key design decisions (locked)
+- Invite links: multi-use, revocable by owner regenerating the token
+- Any member can share the link; only owner can remove members
+- Meeting attribution: auto-detect from calendar attendees (not yet built) → active workspace fallback → user prompt on tie
+- Personal meetings always separate; meetings fall to Personal when workspace deleted
+- Fan-out: full data (transcript + analysis) to all workspace members
+- Follow-up email: first-claim model (anyone can claim, locks for others once claimed)
+- Action items: synced across workspace (one completion state — not yet implemented, planned)
+- Bot failure: manual recovery alert now; auto-takeover planned for later
+
+### Remaining roadmap (original 8-phase plan — Phases 1 and 4 complete)
+
+**Phase 2 — Meeting Pattern Intelligence**
+Cross-workspace analytics: decision velocity, recurring unresolved topics, action item completion rate, meeting health trend, top contributors. New endpoint `GET /workspace-insights/{workspace_id}`. Frontend: team health trend chart, recurring themes card, members leaderboard.
+
+**Phase 3 — LangGraph Orchestration ✅ Complete**
+Two-tier `StateGraph` in `analysis_service.py`. Tier 1 (summarizer, decisions, action_items, sentiment, speaker_coach) runs in parallel; `tier1_barrier` merges results and builds context; Tier 2 (email_drafter, health_score, calendar_suggester) runs enriched with that context. Streaming via `graph.astream(stream_mode="updates")`. SSE format unchanged — zero frontend changes. Foundation for Phases 5–7 agent dependencies.
+
+**Phase 5 — Graph RAG Knowledge Base**
+`workspace_docs` + `workspace_graph` tables. Upload docs → entity extraction → graph. New LangGraph retrieval node injected before agents when workspace has knowledge loaded. Chat shows "Answered from team knowledge" badge.
+
+**Phase 6 — Voice Identification**
+Speaker enrollment (10s sample → embedding via ElevenLabs or Resemblyzer). Store `{user_id, voice_embedding}` in `user_settings`. During live meeting: match audio segments to enrolled users. Access control: unrecognized voice → public context only.
+
+**Phase 7 — Context-Aware Conversation**
+Chat agent tracks named entities + ambiguous references across the conversation. On ambiguity, generates clarifying question + choice UI instead of hallucinating. Multi-turn context window: last 10 exchanges + relevant meeting excerpts in prompt.
+
+**Phase 8 — Personas**
+4-5 system prompt variants (Default, Concise, Formal/Executive, Cheeky/Sarcastic, Socratic). Workspace-level default + personal override. Persona chip indicator in chat.
+
+**Deferred debt (not original phases, but real issues):**
+- `bot_store` in-memory → lost on Render restart. Fix: move to a `bots` Supabase table.
+- Auto-takeover on bot failure (Option B) — currently manual alert only.
 
 ### Fixed Apr 20 2026 (commit 73e5097) — Two bugs from codebase audit
 
@@ -527,17 +664,20 @@ async def run(transcript: str) -> dict:
 
 ### Adding a New Agent — Checklist
 
-1. Create `backend/agents/yourname.py` — follow the pattern above
+1. Create `backend/agents/yourname.py` — follow the pattern above. If Tier 2, add `context: dict = {}` param to `run()` and use available keys (`summary`, `decisions`, `action_items`, `sentiment`).
 2. Import it in `backend/analysis_service.py`
-3. Add to `AGENT_MAP` and `AGENT_RESULT_KEY` in `analysis_service.py`
-4. Add default value to `DEFAULT_RESULT` in `analysis_service.py` (and mirror in `frontend/src/App.jsx`)
-5. Add to both result-builder loops in `analysis_routes.py`
-6. Add to `ALL_AGENTS` list in `orchestrator.py`
-7. Add guardrail in `orchestrator.py` if it should always run
-8. Add to `AGENTS_META` in `App.jsx` with icon + gradient
-9. Add to `AGENT_CONFIG` in `AgentTags.jsx` with ROYGBIV color
-10. Create `YournameCard.jsx` in `frontend/src/components/`
-11. Import and place card in `App.jsx` (both desktop and mobile layouts)
+3. Add to `AGENT_MAP` in `analysis_service.py`
+4. Add to `TIER1_AGENTS` or `TIER2_AGENTS` frozenset in `analysis_service.py` — Tier 2 if it benefits from reading Tier 1 results
+5. Add to `AGENT_RESULT_KEY` in `analysis_service.py`
+6. Add default value to `DEFAULT_RESULT` in `analysis_service.py` (and mirror in `frontend/src/App.jsx`)
+7. Add a result extraction block in `_state_to_result()` in `analysis_service.py`
+8. If Tier 2: add its output key to `_tier1_barrier`'s context dict if other Tier 2 agents should read it
+9. Add to `ALL_AGENTS` list in `orchestrator.py`
+10. Add guardrail in `orchestrator.py` if it should always run
+11. Add to `AGENTS_META` in `App.jsx` with icon + gradient
+12. Add to `AGENT_CONFIG` in `AgentTags.jsx` with ROYGBIV color
+13. Create `YournameCard.jsx` in `frontend/src/components/`
+14. Import and place card in `App.jsx` (both desktop and mobile layouts)
 
 ---
 

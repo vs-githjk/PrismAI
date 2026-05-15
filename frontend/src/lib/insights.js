@@ -254,12 +254,16 @@ export function normalizeInsights(insights = {}, history = []) {
     topOwners: source.top_owners ?? source.topOwners ?? derived.topOwners,
     ownershipDrift: source.ownership_drift ?? source.ownershipDrift ?? derived.ownershipDrift,
     recurringThemes: source.recurring_themes ?? source.recurringThemes ?? derived.recurringThemes,
+    unresolvedThemes: source.unresolved_themes ?? source.unresolvedThemes ?? [],
     recurringBlockers: source.recurring_blockers ?? source.recurringBlockers ?? derived.recurringBlockers,
     recurringHygieneIssues: source.recurring_hygiene_issues ?? source.recurringHygieneIssues ?? derived.recurringHygieneIssues,
     resurfacingDecisionThemes: source.resurfacing_decision_themes ?? source.resurfacingDecisionThemes ?? derived.resurfacingDecisionThemes,
     unresolvedDecisions: source.unresolved_decisions ?? source.unresolvedDecisions ?? derived.unresolvedDecisions,
     recentDecisions: source.recent_decisions ?? source.recentDecisions ?? derived.recentDecisions,
     recommendedActions: source.recommended_actions ?? source.recommendedActions ?? derived.recommendedActions,
+    completionRate: source.completion_rate ?? source.completionRate ?? null,
+    decisionVelocity: source.decision_velocity ?? source.decisionVelocity ?? null,
+    openOwnerLoad: source.open_owner_load ?? source.openOwnerLoad ?? [],
   }
 }
 
