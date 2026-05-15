@@ -1414,7 +1414,7 @@ export default function DashboardPage(props) {
           </DropdownMenu>
         </div>
 
-        <DropdownMenu open={newMeetingOpen} onOpenChange={setNewMeetingOpen}>
+        <DropdownMenu open={newMeetingOpen} onOpenChange={(open) => { setNewMeetingOpen(open); if (open) props.resetTranscriptWorkspaces?.() }}>
           <DropdownMenuTrigger asChild>
             <button type="button" className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
               <Plus className="h-[19px] w-[19px]" aria-hidden="true" />

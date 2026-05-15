@@ -2542,6 +2542,7 @@ export default function App() {
           handleAnalyzeClick={handleAnalyzeClick}
           cancelActiveAnalysis={cancelActiveAnalysis}
           clearWorkspaceState={clearWorkspaceState}
+          resetTranscriptWorkspaces={resetTranscriptWorkspaces}
           toggleActionItem={toggleActionItem}
           history={history}
           showHistory={showHistory}
