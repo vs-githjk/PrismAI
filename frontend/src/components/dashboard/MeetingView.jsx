@@ -103,7 +103,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   return (
     <div className="space-y-3">
-      {meeting && (
+      {(onBack || meeting) && (
         <div className="px-0.5">
           <div className="flex items-center gap-2">
             {onBack && (
@@ -119,7 +119,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             <p className={eyebrow}>Current meeting</p>
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{displayTitle}</h1>
-          {meeting.date && <p className={`mt-0.5 ${subtleText}`}>{formatMeetingDate(meeting.date)}</p>}
+          {meeting?.date && <p className={`mt-0.5 ${subtleText}`}>{formatMeetingDate(meeting.date)}</p>}
           {recordedByEmail && (
             <p className="mt-1 text-[11px] text-white/38">Recorded by {recordedByEmail}</p>
           )}
