@@ -92,26 +92,32 @@ function FirstMeetingPlaceholder({ onLoadSample, canLoadSample }) {
 function SingleMeetingState({ history, onSelect }) {
   const entry = history[0]
   return (
-    <div className="space-y-3">
-      <section className={`${glassCard} p-5`} style={cardGlowStyle}>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/80">One meeting saved</p>
-        <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-white">More meetings unlock trends</h2>
-        <p className={`mt-2 ${subtleText}`}>
-          Health trends, owner load, recurring decisions, and cross-meeting patterns appear after at least two saved meetings.
+    <div className="space-y-6">
+      <section className="flex flex-col items-center justify-center px-6 py-10 text-center">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/76">Dashboard</p>
+        <h1 className="mt-3 w-full max-w-4xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.05] text-white">
+          Good start.
+        </h1>
+        <p className="mt-4 max-w-md text-lg leading-7 text-white/58">
+          One meeting saved. Trends, owner load, and patterns unlock after your second.
         </p>
-        {entry && (
+      </section>
+      {entry && (
+        <div className="mx-auto w-full max-w-xl px-2">
           <button
             type="button"
             onClick={() => onSelect?.(entry)}
-            className="mt-4 w-full rounded-2xl border border-white/[0.1] bg-white/[0.035] p-3 text-left transition hover:border-cyan-200/30 hover:bg-white/[0.06]"
+            className={`${glassCard} w-full p-4 text-left transition hover:border-cyan-200/30`}
+            style={cardGlowStyle}
           >
-            <p className="text-sm font-semibold text-white">{deriveDisplayTitle(entry)}</p>
-            <p className="mt-2 text-xs leading-5 text-white/58">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">Latest meeting</p>
+            <p className="mt-1.5 text-base font-semibold text-white">{deriveDisplayTitle(entry)}</p>
+            <p className="mt-2 text-sm leading-5 text-white/52">
               {entry.result?.health_score?.verdict || entry.result?.summary || 'Meeting saved.'}
             </p>
           </button>
-        )}
-      </section>
+        </div>
+      )}
     </div>
   )
 }
