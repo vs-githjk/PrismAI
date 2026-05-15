@@ -206,10 +206,15 @@ export default function UpcomingMeetings({ onJoin, workspaces = [] }) {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] font-medium text-gray-300 truncate">{event.title}</span>
                     <MeetingLinkIcon link={event.meeting_link} />
-                    {matchedWs && (
+                    {matchedWs ? (
                       <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
                         style={{ background: 'rgba(34,211,238,0.10)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.18)' }}>
                         {matchedWs.name}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                        Personal
                       </span>
                     )}
                   </div>
