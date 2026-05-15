@@ -16,10 +16,30 @@ SYSTEM_PROMPT = (
 _DEFAULT = {"follow_up_email": {"subject": "", "body": ""}}
 
 
-async def run(transcript: str) -> dict:
+async def run(transcript: str, context: dict = {}) -> dict:
+    user_content = f"Transcript:\n{transcript}"
+
+    if context:
+        parts = []
+        if context.get("summary"):
+            parts.append(f"Meeting summary: {context['summary']}")
+        if context.get("decisions"):
+            decisions_text = "\n".join(
+                f"- {d.get('decision', str(d))}" for d in context["decisions"]
+            )
+            parts.append(f"Decisions made:\n{decisions_text}")
+        if context.get("action_items"):
+            items_text = "\n".join(
+                f"- {a.get('task', str(a))} (owner: {a.get('owner', 'Unassigned')})"
+                for a in context["action_items"]
+            )
+            parts.append(f"Action items:\n{items_text}")
+        if parts:
+            user_content = "\n\n".join(parts) + "\n\n---\n\n" + user_content
+
     for attempt in range(2):
         try:
-            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}", temperature=0.7)
+            raw = await llm_call(SYSTEM_PROMPT, user_content, temperature=0.7)
             return json.loads(strip_fences(raw))
         except Exception:
             if attempt == 1:

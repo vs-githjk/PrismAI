@@ -116,7 +116,7 @@ function SingleMeetingState({ history, onSelect }) {
   )
 }
 
-function MultiMeetingHome({ history, onSelect, selectedMeetingId }) {
+function MultiMeetingHome({ history, onSelect, selectedMeetingId, memberEmailMap, currentUserId }) {
   return (
     <div className="space-y-6">
       <section className="flex flex-col items-center justify-center px-6 py-10 text-center">
@@ -129,15 +129,15 @@ function MultiMeetingHome({ history, onSelect, selectedMeetingId }) {
         </p>
       </section>
       <Suspense fallback={<SkeletonCard lines={2} />}>
-        <MeetingsRail history={history} onSelect={onSelect} selectedMeetingId={selectedMeetingId} />
+        <MeetingsRail history={history} onSelect={onSelect} selectedMeetingId={selectedMeetingId} memberEmailMap={memberEmailMap} currentUserId={currentUserId} />
       </Suspense>
     </div>
   )
 }
 
-export default function StatsCanvas({ history, loadFromHistory, loadSample, canLoadSample = false, selectedMeetingId = null }) {
+export default function StatsCanvas({ history, loadFromHistory, loadSample, canLoadSample = false, selectedMeetingId = null, memberEmailMap = {}, currentUserId = null }) {
   const safeHistory = history || []
   if (safeHistory.length === 0) return <FirstMeetingPlaceholder onLoadSample={loadSample} canLoadSample={canLoadSample} />
   if (safeHistory.length === 1) return <SingleMeetingState history={safeHistory} onSelect={loadFromHistory} />
-  return <MultiMeetingHome history={safeHistory} onSelect={loadFromHistory} selectedMeetingId={selectedMeetingId} />
+  return <MultiMeetingHome history={safeHistory} onSelect={loadFromHistory} selectedMeetingId={selectedMeetingId} memberEmailMap={memberEmailMap} currentUserId={currentUserId} />
 }
