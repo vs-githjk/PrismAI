@@ -1090,7 +1090,7 @@ export default function DashboardPage(props) {
 
             {/* Workspace settings panel */}
             {wsSettingsId && (
-              <div className="mt-2 rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', width: '320px' }}>
+              <div className="mt-2 rounded-xl p-4" style={{ background: '#0f0f12', border: '1px solid rgba(255,255,255,0.12)', width: '320px', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
                 <p className="text-[10px] uppercase tracking-widest text-white/35 mb-2">Invite link</p>
                 {wsDetailsLoading ? (
                   <p className="text-[11px] text-white/30">Loading…</p>
