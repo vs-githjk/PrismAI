@@ -1,7 +1,7 @@
 import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
 
-export default function MeetingsRail({ history, onSelect, selectedMeetingId = null }) {
+export default function MeetingsRail({ history, onSelect, selectedMeetingId = null, memberEmailMap = {}, currentUserId = null }) {
   const meetings = history.slice(0, 12)
 
   return (
@@ -39,6 +39,9 @@ export default function MeetingsRail({ history, onSelect, selectedMeetingId = nu
                 <p className="mt-2 line-clamp-1 text-sm font-semibold leading-5 text-white">{deriveDisplayTitle(entry)}</p>
                 <p className="mt-1 text-[11px] text-white/45">{formatMeetingDate(entry.date)}</p>
                 <p className="mt-2 line-clamp-1 text-xs leading-5 text-white/58">{entry.result?.health_score?.verdict || entry.result?.summary || 'No verdict recorded.'}</p>
+                {entry.recorded_by_user_id && entry.recorded_by_user_id !== currentUserId && memberEmailMap[entry.recorded_by_user_id] && (
+                  <p className="mt-1.5 text-[10px] text-white/35 truncate">via {memberEmailMap[entry.recorded_by_user_id]}</p>
+                )}
                 {badges.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {badges.slice(0, 2).map((badge) => (

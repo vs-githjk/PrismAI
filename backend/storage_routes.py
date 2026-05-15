@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,12 +33,14 @@ class MeetingEntry(BaseModel):
     transcript: str = ""
     result: dict = {}
     share_token: str = ""
+    workspace_id: str | None = None
 
 
 class MeetingPatch(BaseModel):
     result: dict | None = None
     share_token: str | None = None
     title: str | None = None
+    workspace_id: str | None = None
 
 
 class ChatEntry(BaseModel):
@@ -69,36 +73,154 @@ async def save_user_settings(settings: UserToolSettings, user_id: str = Depends(
 
 
 @router.get("/meetings")
-async def get_meetings(q: str = Query(default=""), user_id: str = Depends(require_user_id)):
+async def get_meetings(
+    q: str = Query(default=""),
+    workspace_id: str = Query(default=""),
+    user_id: str = Depends(require_user_id),
+):
     client = _require_storage()
-    # Fetch more rows than the target cap (50) so the Python meaningfulness filter
-    # doesn't silently drop real meetings when a few recent saves are partial.
-    query = (
-        client.table("meetings")
-        .select("id,date,title,score,transcript,result,share_token")
-        .eq("user_id", user_id)
-        .order("id", desc=True)
-        .limit(200)
-    )
+
+    if workspace_id.strip():
+        # Workspace mode: return all meetings in this workspace across all members
+        # Verify the requester is a member first
+        membership = (
+            client.table("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", workspace_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if not membership.data:
+            raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+        query = (
+            client.table("meetings")
+            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id,user_id")
+            .eq("workspace_id", workspace_id)
+            .order("id", desc=True)
+            .limit(400)
+        )
+    else:
+        # Personal mode: only the user's own meetings with no workspace
+        query = (
+            client.table("meetings")
+            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id")
+            .eq("user_id", user_id)
+            .is_("workspace_id", None)
+            .order("id", desc=True)
+            .limit(200)
+        )
+
     if q.strip():
         query = query.ilike("title", f"%{q}%")
     res = query.execute()
-    meaningful = [entry for entry in res.data if has_meaningful_result(entry.get("result"))]
+
+    if workspace_id.strip():
+        # Deduplicate: fan-out creates copies for each member (same date+recorder, different user_id).
+        # Keep one per logical meeting, preferring the current user's own copy.
+        dedup_map: dict = {}
+        for row in res.data:
+            recorder = row.get("recorded_by_user_id") or row.get("user_id", "")
+            key = (row.get("date", "")[:16], recorder)
+            if key not in dedup_map or row.get("user_id") == user_id:
+                dedup_map[key] = row
+        rows = sorted(dedup_map.values(), key=lambda r: r.get("id", 0), reverse=True)
+        for row in rows:
+            row.pop("user_id", None)
+    else:
+        rows = res.data
+
+    meaningful = [entry for entry in rows if has_meaningful_result(entry.get("result"))]
     return meaningful[:50]
 
 
 @router.get("/insights")
-async def get_cross_meeting_insights(user_id: str = Depends(require_user_id)):
+async def get_cross_meeting_insights(
+    workspace_id: str = Query(default=""),
+    user_id: str = Depends(require_user_id),
+):
     client = _require_storage()
-    res = (
-        client.table("meetings")
-        .select("id,date,title,score,result")
-        .eq("user_id", user_id)
-        .order("id", desc=True)
-        .limit(50)
-        .execute()
-    )
-    return derive_cross_meeting_insights(res.data, user_id=user_id)
+
+    if workspace_id.strip():
+        membership = (
+            client.table("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", workspace_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if not membership.data:
+            raise HTTPException(status_code=403, detail="Not a member of this workspace")
+        all_res = (
+            client.table("meetings")
+            .select("id,date,title,score,result,recorded_by_user_id,user_id")
+            .eq("workspace_id", workspace_id)
+            .order("id", desc=True)
+            .limit(200)
+            .execute()
+        )
+        # Deduplicate fan-out copies same as the meetings endpoint
+        dedup_map: dict = {}
+        for row in (all_res.data or []):
+            recorder = row.get("recorded_by_user_id") or row.get("user_id", "")
+            key = (row.get("date", "")[:16], recorder)
+            if key not in dedup_map or row.get("user_id") == user_id:
+                dedup_map[key] = row
+        deduped = sorted(dedup_map.values(), key=lambda r: r.get("id", 0), reverse=True)
+        for row in deduped:
+            row.pop("user_id", None)
+            row.pop("recorded_by_user_id", None)
+        res_data = deduped[:50]
+    else:
+        res = (
+            client.table("meetings")
+            .select("id,date,title,score,result")
+            .eq("user_id", user_id)
+            .is_("workspace_id", None)
+            .order("id", desc=True)
+            .limit(50)
+            .execute()
+        )
+        res_data = res.data
+
+    return derive_cross_meeting_insights(res_data, user_id=user_id)
+
+
+def _fan_out_id(original_id: int, member_user_id: str) -> int:
+    """Deterministic meeting ID for a fan-out copy — avoids collisions and is idempotent."""
+    return int(hashlib.md5(f"{original_id}-{member_user_id}".encode()).hexdigest()[:12], 16)
+
+
+async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id: str, workspace_id: str):
+    """Write a copy of this meeting to every other workspace member's history."""
+    try:
+        members = (
+            client.table("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", workspace_id)
+            .neq("user_id", recorder_user_id)
+            .execute()
+        )
+        for member in (members.data or []):
+            member_id = member["user_id"]
+            fan_id = _fan_out_id(entry.id, member_id)
+            client.table("meetings").upsert({
+                "id": fan_id,
+                "user_id": member_id,
+                "date": entry.date,
+                "title": entry.title,
+                "score": entry.score,
+                "transcript": entry.transcript,
+                "result": entry.result,
+                "share_token": None,
+                "workspace_id": workspace_id,
+                "recorded_by_user_id": recorder_user_id,
+            }).execute()
+            print(f"[fanout] wrote meeting {fan_id} to member {member_id} in workspace {workspace_id}")
+    except Exception as exc:
+        print(f"[fanout] failed for meeting {entry.id}: {exc}")
 
 
 @router.post("/meetings")
@@ -113,7 +235,13 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "transcript": entry.transcript,
         "result": entry.result,
         "share_token": entry.share_token or None,
+        "workspace_id": entry.workspace_id or None,
     }).execute()
+
+    # Fan out to all other workspace members when a workspace is set
+    if entry.workspace_id:
+        asyncio.create_task(_fan_out_to_workspace(client, entry, user_id, entry.workspace_id))
+
     return {"ok": True}
 
 
@@ -146,6 +274,40 @@ async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Dep
     if update:
         client.table("meetings").update(update).eq("id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}
+
+
+@router.post("/meetings/{meeting_id}/claim-email")
+async def claim_email(meeting_id: int, user_id: str = Depends(require_user_id)):
+    client = _require_storage()
+    res = (
+        client.table("meetings")
+        .select("workspace_id, date, email_claimed_by")
+        .eq("id", meeting_id)
+        .maybe_single()
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    meeting = res.data
+    current_claimer = meeting.get("email_claimed_by")
+
+    if current_claimer and current_claimer != user_id:
+        return {"claimed": False, "claimed_by": current_claimer}
+
+    # Claim on all workspace copies sharing same workspace + date
+    if meeting.get("workspace_id") and meeting.get("date"):
+        client.table("meetings").update({"email_claimed_by": user_id}) \
+            .eq("workspace_id", meeting["workspace_id"]) \
+            .eq("date", meeting["date"]) \
+            .is_("email_claimed_by", None) \
+            .execute()
+    else:
+        client.table("meetings").update({"email_claimed_by": user_id}) \
+            .eq("id", meeting_id) \
+            .execute()
+
+    return {"claimed": True, "claimed_by": user_id}
 
 
 @router.get("/chats")

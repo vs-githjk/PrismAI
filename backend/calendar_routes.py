@@ -316,6 +316,10 @@ async def calendar_events(
             "meeting_link": meeting_link,
             "has_meeting_link": meeting_link is not None,
             "attendee_count": len(item.get("attendees", [])),
+            "attendee_emails": [
+                a["email"] for a in item.get("attendees", [])
+                if a.get("email") and not a.get("self")
+            ],
         })
 
     return {"events": events}

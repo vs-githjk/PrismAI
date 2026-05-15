@@ -57,7 +57,19 @@ function MeetingLinkIcon({ link }) {
   )
 }
 
-export default function UpcomingMeetings({ onJoin }) {
+function matchWorkspace(attendeeEmails, workspaces) {
+  if (!attendeeEmails?.length || !workspaces?.length) return null
+  const emailSet = new Set(attendeeEmails.map(e => e.toLowerCase()))
+  let best = null
+  let bestOverlap = 0
+  for (const ws of workspaces) {
+    const overlap = (ws.member_emails || []).filter(e => emailSet.has(e.toLowerCase())).length
+    if (overlap > bestOverlap) { bestOverlap = overlap; best = ws }
+  }
+  return bestOverlap > 0 ? best : null
+}
+
+export default function UpcomingMeetings({ onJoin, workspaces = [] }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -180,6 +192,7 @@ export default function UpcomingMeetings({ onJoin }) {
           {joinable.map(event => {
             const mins = minutesUntil(event.start)
             const isNow = mins !== null && mins >= -60 && mins <= 15
+            const matchedWs = matchWorkspace(event.attendee_emails, workspaces)
             return (
               <div key={event.id}
                 className="px-3 py-2.5 flex items-center gap-2.5 group"
@@ -193,6 +206,17 @@ export default function UpcomingMeetings({ onJoin }) {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] font-medium text-gray-300 truncate">{event.title}</span>
                     <MeetingLinkIcon link={event.meeting_link} />
+                    {matchedWs ? (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'rgba(34,211,238,0.10)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.18)' }}>
+                        {matchedWs.name}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                        Personal
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] text-gray-600 mt-0.5">
                     {formatEventTime(event.start)}
@@ -223,7 +247,7 @@ export default function UpcomingMeetings({ onJoin }) {
 
                 {/* Join button */}
                 <button
-                  onClick={() => onJoin(event.meeting_link)}
+                  onClick={() => onJoin(event.meeting_link, matchedWs?.id ?? null)}
                   aria-label={`Join ${event.title} with PrismAI`}
                   className="flex-shrink-0 text-[10px] font-medium px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                   style={{ background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>

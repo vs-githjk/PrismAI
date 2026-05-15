@@ -296,7 +296,13 @@ function NewMeetingPanel(props) {
             <div className="space-y-3">
               {props.calendarConnected && props.user && !props.isTestAccount && (
                 <Suspense fallback={null}>
-                  <UpcomingMeetings onJoin={(url) => props.setMeetingUrl(url)} />
+                  <UpcomingMeetings
+                    workspaces={props.workspaces || []}
+                    onJoin={(url, wsId) => {
+                      props.setMeetingUrl(url)
+                      if (wsId) props.onJoinWithWorkspace?.(wsId)
+                    }}
+                  />
                 </Suspense>
               )}
               <input
@@ -307,6 +313,15 @@ function NewMeetingPanel(props) {
                 disabled={botActive}
                 className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 disabled:opacity-50"
               />
+
+              {props.dedupBotInfo && (
+                <div className="flex items-center gap-2 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-3 py-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
+                  <p className="text-[11px] text-cyan-300/70">
+                    Prism is already in this meeting via {props.dedupBotInfo.ownerUserEmail || 'a teammate'} — results will appear here when done.
+                  </p>
+                </div>
+              )}
 
               {botActive && (
                 <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.04] px-3 py-2">
@@ -334,7 +349,13 @@ function NewMeetingPanel(props) {
               )}
 
               {props.botError && (
-                <p className="rounded-xl border border-red-400/20 bg-red-400/[0.07] px-3 py-2 text-xs text-red-300">{props.botError}</p>
+                <div className="flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/[0.07] px-3 py-2">
+                  <p className="flex-1 text-xs text-red-300">{props.botError}</p>
+                  <button type="button" onClick={props.rejoinMeeting}
+                    className="shrink-0 text-[10px] font-semibold text-cyan-300 transition hover:text-cyan-200">
+                    Rejoin
+                  </button>
+                </div>
               )}
 
               {props.botStatus === 'done' && props.result && (
@@ -449,6 +470,23 @@ export default function DashboardPage(props) {
           (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
   )
   const [showGateDialog, setShowGateDialog] = useState(false)
+
+  // --- Workspace state (activeWorkspaceId owned by App.jsx, synced via props) ---
+  const [workspaces, setWorkspaces] = useState([])
+  const activeWorkspaceId = props.activeWorkspaceId ?? null
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [workspaceCreateError, setWorkspaceCreateError] = useState('')
+  const [workspaceCreating, setWorkspaceCreating] = useState(false)
+  const [wsSettingsId, setWsSettingsId] = useState(null)
+  const [wsDetails, setWsDetails] = useState(null)
+  const [wsDetailsLoading, setWsDetailsLoading] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [workspaceMemberMap, setWorkspaceMemberMap] = useState({})
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
+  const [workspaceNudgeDismissed, setWorkspaceNudgeDismissed] = useState(
+    () => { try { return localStorage.getItem('prismai:workspace-nudge-dismissed') === '1' } catch { return false } }
+  )
 
   // Persist active view so hard refresh restores the same view
   const persistView = (view) => {
@@ -565,6 +603,130 @@ export default function DashboardPage(props) {
       props.setInputTab?.('paste')
     }
   }, [props.isTestAccount, props.inputTab, props.setInputTab])
+
+  // Fetch workspace list when user is signed in
+  useEffect(() => {
+    if (!props.user) { setWorkspaces([]); setWorkspacesLoaded(false); return }
+    apiFetch('/workspaces')
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => { setWorkspaces(data); setWorkspacesLoaded(true) })
+      .catch(() => { setWorkspaces([]); setWorkspacesLoaded(true) })
+  }, [props.user])
+
+  // Build userId→email map for attribution when active workspace changes
+  useEffect(() => {
+    if (!activeWorkspaceId || !props.user) { setWorkspaceMemberMap({}); return }
+    apiFetch(`/workspaces/${activeWorkspaceId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.members) return
+        const map = {}
+        for (const m of data.members) {
+          if (m.user_id && m.user_email) map[m.user_id] = m.user_email
+        }
+        setWorkspaceMemberMap(map)
+      })
+      .catch(() => {})
+  }, [activeWorkspaceId, props.user?.id])
+
+  // When active workspace changes: persist to sessionStorage and re-fetch scoped data
+  function switchWorkspace(wsId) {
+    props.onWorkspaceChange?.(wsId)
+    persistView('home')
+    setWsSettingsId(null)
+    setWsDetails(null)
+  }
+
+  function dismissWorkspaceNudge() {
+    setWorkspaceNudgeDismissed(true)
+    try { localStorage.setItem('prismai:workspace-nudge-dismissed', '1') } catch { /* ignore */ }
+  }
+
+  async function createWorkspace() {
+    const name = newWorkspaceName.trim()
+    if (!name) return
+    setWorkspaceCreateError('')
+    setWorkspaceCreating(true)
+    try {
+      const r = await apiFetch('/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, user_email: props.user?.email || '' }),
+      })
+      if (r.ok) {
+        const ws = await r.json()
+        setWorkspaces((prev) => [...prev, { ...ws, role: 'owner', member_count: 1 }])
+        setNewWorkspaceName('')
+        setCreatingWorkspace(false)
+        switchWorkspace(ws.id)
+      } else {
+        setWorkspaceCreateError('Failed to create — try again')
+      }
+    } catch {
+      setWorkspaceCreateError('Could not reach server')
+    } finally {
+      setWorkspaceCreating(false)
+    }
+  }
+
+  async function toggleWsSettings(wsId) {
+    if (wsSettingsId === wsId) {
+      setWsSettingsId(null)
+      setWsDetails(null)
+      return
+    }
+    setWsSettingsId(wsId)
+    setWsDetails(null)
+    setWsDetailsLoading(true)
+    try {
+      const r = await apiFetch(`/workspaces/${wsId}`)
+      if (r.ok) setWsDetails(await r.json())
+    } catch {}
+    finally { setWsDetailsLoading(false) }
+  }
+
+  async function regenerateInvite() {
+    if (!wsSettingsId) return
+    const r = await apiFetch(`/workspaces/${wsSettingsId}/regenerate-invite`, { method: 'POST' })
+    if (r.ok) {
+      const data = await r.json()
+      setWsDetails(prev => prev ? { ...prev, invite_token: data.invite_token } : prev)
+      setWorkspaces(prev => prev.map(ws => ws.id === wsSettingsId ? { ...ws, invite_token: data.invite_token } : ws))
+    }
+  }
+
+  async function removeMember(wsId, targetUserId) {
+    const r = await apiFetch(`/workspaces/${wsId}/members/${targetUserId}`, { method: 'DELETE' })
+    if (r.ok) {
+      if (targetUserId === props.user?.id) {
+        setWorkspaces(prev => prev.filter(ws => ws.id !== wsId))
+        if (activeWorkspaceId === wsId) switchWorkspace(null)
+        setWsSettingsId(null)
+        setWsDetails(null)
+      } else {
+        setWsDetails(prev => prev ? { ...prev, members: prev.members.filter(m => m.user_id !== targetUserId) } : prev)
+      }
+    }
+  }
+
+  async function deleteWorkspaceFromSettings() {
+    if (!wsSettingsId) return
+    const r = await apiFetch(`/workspaces/${wsSettingsId}`, { method: 'DELETE' })
+    if (r.ok) {
+      setWorkspaces(prev => prev.filter(ws => ws.id !== wsSettingsId))
+      if (activeWorkspaceId === wsSettingsId) switchWorkspace(null)
+      setWsSettingsId(null)
+      setWsDetails(null)
+    }
+  }
+
+  function copyInviteLink(token) {
+    const url = `${window.location.origin}/dashboard#invite/${token}`
+    navigator.clipboard.writeText(url).then(() => {
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 2000)
+    })
+  }
 
   useEffect(() => {
     if (!profileMenuOpen) return undefined
@@ -715,6 +877,12 @@ export default function DashboardPage(props) {
     [props.meetingId, props.history],
   )
 
+  const recordedByEmail = useMemo(() => {
+    if (!currentMeeting?.recorded_by_user_id) return null
+    if (currentMeeting.recorded_by_user_id === props.user?.id) return null
+    return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
+  }, [currentMeeting, props.user?.id, workspaceMemberMap])
+
   const inIntelligence = activeView === 'intelligence'
 
   return (
@@ -839,8 +1007,207 @@ export default function DashboardPage(props) {
         </div>
       )}
 
+      {props.user && (
+        <div className="relative z-20 px-5 pb-2 pt-1 sm:px-8">
+          <div className="mx-auto max-w-[92rem]">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Personal chip */}
+              <button
+                type="button"
+                onClick={() => switchWorkspace(null)}
+                className={`rounded-full border px-3.5 py-1 text-[11px] font-semibold tracking-wide transition-all ${
+                  !activeWorkspaceId
+                    ? 'border-cyan-400/60 bg-cyan-400/[0.15] text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.15)]'
+                    : 'border-white/[0.18] bg-white/[0.06] text-white/60 hover:border-white/30 hover:bg-white/[0.10] hover:text-white/85'
+                }`}
+              >
+                Personal
+              </button>
+
+              {/* Workspace chips */}
+              {workspaces.map((ws) => (
+                <div key={ws.id} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => switchWorkspace(ws.id)}
+                    className={`rounded-full border px-3.5 py-1 text-[11px] font-semibold tracking-wide transition-all ${
+                      activeWorkspaceId === ws.id
+                        ? 'border-cyan-400/60 bg-cyan-400/[0.15] text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.15)]'
+                        : 'border-white/[0.18] bg-white/[0.06] text-white/60 hover:border-white/30 hover:bg-white/[0.10] hover:text-white/85'
+                    }`}
+                  >
+                    {ws.name}
+                  </button>
+                  {activeWorkspaceId === ws.id && (
+                    <button
+                      type="button"
+                      onClick={() => toggleWsSettings(ws.id)}
+                      title="Workspace settings"
+                      className={`text-[13px] leading-none transition-colors ${wsSettingsId === ws.id ? 'text-cyan-300' : 'text-white/35 hover:text-white/70'}`}
+                    >
+                      ⚙
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {/* New workspace inline input */}
+              {creatingWorkspace ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    autoFocus
+                    value={newWorkspaceName}
+                    onChange={(e) => { setNewWorkspaceName(e.target.value); setWorkspaceCreateError('') }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') createWorkspace()
+                      if (e.key === 'Escape') { setCreatingWorkspace(false); setNewWorkspaceName(''); setWorkspaceCreateError('') }
+                    }}
+                    placeholder="Workspace name…"
+                    className="h-[26px] rounded-full border border-cyan-400/40 bg-white/[0.07] px-3 text-[11px] text-white/90 outline-none placeholder:text-white/35 focus:border-cyan-400/70 focus:bg-white/[0.10]"
+                    style={{ width: '148px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={createWorkspace}
+                    disabled={workspaceCreating}
+                    className="rounded-full border border-cyan-400/50 bg-cyan-400/[0.15] px-3 py-0.5 text-[10px] font-bold text-cyan-300 transition hover:bg-cyan-400/[0.25] disabled:opacity-50"
+                  >
+                    {workspaceCreating ? '…' : 'Create'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setCreatingWorkspace(false); setNewWorkspaceName(''); setWorkspaceCreateError('') }}
+                    className="text-[12px] text-white/35 hover:text-white/65"
+                  >
+                    ✕
+                  </button>
+                  {workspaceCreateError && (
+                    <span className="text-[10px] text-red-400/80">{workspaceCreateError}</span>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCreatingWorkspace(true)}
+                  className="rounded-full border border-white/[0.14] bg-white/[0.03] px-3 py-1 text-[11px] font-medium text-white/45 transition hover:border-white/25 hover:bg-white/[0.07] hover:text-white/70"
+                >
+                  + New
+                </button>
+              )}
+            </div>
+
+            {/* Workspace settings panel */}
+            {wsSettingsId && (
+              <div className="mt-2 rounded-xl p-4" style={{ background: '#0f0f12', border: '1px solid rgba(255,255,255,0.12)', width: '320px', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+                <p className="text-[10px] uppercase tracking-widest text-white/35 mb-2">Invite link</p>
+                {wsDetailsLoading ? (
+                  <p className="text-[11px] text-white/30">Loading…</p>
+                ) : wsDetails ? (
+                  <>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <input
+                        readOnly
+                        value={`${window.location.origin}/dashboard#invite/${wsDetails.invite_token}`}
+                        className="min-w-0 flex-1 h-[26px] rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 text-[10px] text-white/55 outline-none truncate"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyInviteLink(wsDetails.invite_token)}
+                        className="shrink-0 rounded-lg border border-cyan-400/30 bg-cyan-400/[0.08] px-2.5 py-1 text-[10px] font-semibold text-cyan-300 transition hover:bg-cyan-400/[0.16]"
+                      >
+                        {inviteCopied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    {wsDetails.your_role === 'owner' && (
+                      <button type="button" onClick={regenerateInvite} className="text-[10px] text-white/35 hover:text-white/65 transition">
+                        Regenerate link
+                      </button>
+                    )}
+
+                    <p className="text-[10px] uppercase tracking-widest text-white/35 mt-4 mb-2">
+                      Members ({wsDetails.members?.length ?? 0})
+                    </p>
+                    <div className="space-y-2 mb-3">
+                      {wsDetails.members?.map(member => (
+                        <div key={member.user_id} className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-white/70 truncate">
+                              {member.user_email || member.user_id.slice(0, 12) + '…'}
+                              {member.user_id === props.user?.id && <span className="ml-1 text-white/30">(you)</span>}
+                            </p>
+                            <p className="text-[10px] text-white/30 capitalize">{member.role}</p>
+                          </div>
+                          {wsDetails.your_role === 'owner' && member.user_id !== props.user?.id && (
+                            <button type="button" onClick={() => removeMember(wsSettingsId, member.user_id)}
+                              className="shrink-0 text-[10px] text-red-400/50 hover:text-red-400/80 transition">
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t pt-3" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                      {wsDetails.your_role === 'owner' ? (
+                        <button type="button" onClick={deleteWorkspaceFromSettings}
+                          className="text-[10px] text-red-400/50 hover:text-red-400/80 transition">
+                          Delete workspace
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => removeMember(wsSettingsId, props.user?.id)}
+                          className="text-[10px] text-red-400/50 hover:text-red-400/80 transition">
+                          Leave workspace
+                        </button>
+                      )}
+                      <button type="button" onClick={() => { setWsSettingsId(null); setWsDetails(null) }}
+                        className="text-[10px] text-white/30 hover:text-white/60 transition">
+                        Done
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-red-400/60">Failed to load workspace details.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {props.user && workspacesLoaded && workspaces.length === 0 && !workspaceNudgeDismissed && (
+        <div className="relative z-20 px-5 pb-3 sm:px-8">
+          <div className="mx-auto max-w-[92rem]">
+            <div className="flex items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-semibold text-cyan-200/90">Invite your team</p>
+                <p className="mt-0.5 text-[11px] leading-5 text-white/50">
+                  Create a workspace to share meeting summaries, action items, and insights with teammates.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreatingWorkspace(true)}
+                  className="rounded-full border border-cyan-400/40 bg-cyan-400/[0.12] px-3 py-1 text-[10px] font-semibold text-cyan-300 transition hover:bg-cyan-400/[0.22]"
+                >
+                  Create workspace
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissWorkspaceNudge}
+                  aria-label="Dismiss invite prompt"
+                  className="text-white/30 transition hover:text-white/60"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main
-        className={`relative z-10 -mt-3 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
+        className={`relative z-10 mt-2 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
           chatOpen && activeView === 'meeting' && !isNarrow ? '' : 'mx-auto'
         }`}
         style={
@@ -856,6 +1223,8 @@ export default function DashboardPage(props) {
             loadSample={props.loadDashboardSample}
             canLoadSample={props.canLoadSample}
             selectedMeetingId={props.selectedMeetingId}
+            memberEmailMap={workspaceMemberMap}
+            currentUserId={props.user?.id}
           />
         )}
         {activeView === 'meeting' && (
@@ -889,6 +1258,7 @@ export default function DashboardPage(props) {
                     onToggleActionItem={props.toggleActionItem}
                     transcript={props.transcript}
                     onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
+                    recordedByEmail={recordedByEmail}
                   />
                 </Suspense>
               </>
@@ -901,6 +1271,7 @@ export default function DashboardPage(props) {
               history={props.history}
               crossMeetingInsights={props.crossMeetingInsights}
               onSelectMeeting={handleSelectMeeting}
+              workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
             />
           </Suspense>
         )}
@@ -1049,7 +1420,7 @@ export default function DashboardPage(props) {
           </DropdownMenu>
         </div>
 
-        <DropdownMenu open={newMeetingOpen} onOpenChange={setNewMeetingOpen}>
+        <DropdownMenu open={newMeetingOpen} onOpenChange={(open) => { setNewMeetingOpen(open); if (open) props.resetTranscriptWorkspaces?.() }}>
           <DropdownMenuTrigger asChild>
             <button type="button" className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
               <Plus className="h-[19px] w-[19px]" aria-hidden="true" />
@@ -1063,7 +1434,7 @@ export default function DashboardPage(props) {
             className="dashboard-body-font w-[340px] rounded-2xl border border-white/[0.10] bg-[#0f0f11] p-0 shadow-2xl"
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
-            <NewMeetingPanel {...props} onClose={() => setNewMeetingOpen(false)} />
+            <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
           </DropdownMenuContent>
         </DropdownMenu>
 

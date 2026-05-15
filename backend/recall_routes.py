@@ -6,6 +6,7 @@ import os
 import secrets
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -112,6 +113,64 @@ STATUS_MAP = {
     "done": "done",
     "fatal_error": "error",
 }
+
+
+def _normalize_meeting_url(url: str) -> str:
+    """Lowercase + strip query params/fragments so two users with the same meeting link match."""
+    try:
+        p = urlparse(url.strip().lower())
+        return urlunparse((p.scheme, p.netloc, p.path.rstrip("/"), "", "", ""))
+    except Exception:
+        return url.strip().lower()
+
+
+def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: str) -> dict | None:
+    """Return an active meeting_bots row for this URL where the bot owner shares a workspace
+    with the requesting user. Returns None if no such bot exists."""
+    active = (
+        client.table("meeting_bots")
+        .select("bot_id, owner_user_id")
+        .eq("meeting_url", normalized_url)
+        .in_("status", ["joining", "recording", "processing"])
+        .execute()
+    )
+    if not active.data:
+        return None
+
+    my_workspaces = (
+        client.table("workspace_members")
+        .select("workspace_id")
+        .eq("user_id", requesting_user_id)
+        .execute()
+    )
+    my_ws_ids = [w["workspace_id"] for w in (my_workspaces.data or [])]
+    if not my_ws_ids:
+        return None
+
+    for bot in active.data:
+        if bot["owner_user_id"] == requesting_user_id:
+            continue
+        shared = (
+            client.table("workspace_members")
+            .select("workspace_id, user_email")
+            .eq("user_id", bot["owner_user_id"])
+            .in_("workspace_id", my_ws_ids)
+            .limit(1)
+            .execute()
+        )
+        if shared.data:
+            return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
+    return None
+
+
+def _mb_update_status(bot_id: str, status: str):
+    """Update meeting_bots.status — best-effort, non-blocking."""
+    if not supabase:
+        return
+    try:
+        supabase.table("meeting_bots").update({"status": status}).eq("bot_id", bot_id).execute()
+    except Exception as exc:
+        print(f"[recall] meeting_bots status update failed for {bot_id}: {exc}")
 
 
 class JoinMeetingRequest(BaseModel):
@@ -404,6 +463,7 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
         _db_save(bot_id, {"status": "done", "transcript": transcript, "result": result})
+        _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
@@ -413,6 +473,7 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = str(exc)
         _db_save(bot_id, {"status": "error", "error": str(exc)})
+        _mb_update_status(bot_id, "error")
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
@@ -435,6 +496,19 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
 
     # Optionally link bot to authenticated user (enables live tool access)
     user_id = await _optional_user_id(request)
+
+    # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
+    if user_id and supabase:
+        normalized_url = _normalize_meeting_url(req.meeting_url)
+        existing = _find_shared_workspace_bot(supabase, normalized_url, user_id)
+        if existing:
+            print(f"[recall] dedup: skipping join for {user_id}, existing bot {existing['bot_id']} from {existing['owner_user_id']}")
+            return {
+                "skip": True,
+                "existing_bot_id": existing["bot_id"],
+                "owner_user_id": existing["owner_user_id"],
+                "owner_user_email": existing.get("owner_user_email", ""),
+            }
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
 
@@ -482,6 +556,18 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id, "live_token": live_token, "owner_name": req.owner_name}
     _live_token_index[live_token] = bot_id
     _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
+
+    # Register in meeting_bots for workspace dedup
+    if user_id and supabase:
+        try:
+            supabase.table("meeting_bots").insert({
+                "bot_id": bot_id,
+                "meeting_url": _normalize_meeting_url(req.meeting_url),
+                "owner_user_id": user_id,
+                "status": "joining",
+            }).execute()
+        except Exception as exc:
+            print(f"[recall] meeting_bots insert failed: {exc}")
 
     from realtime_routes import init_bot_realtime, _run_proactive_checker
     init_bot_realtime(bot_id)
@@ -657,17 +743,21 @@ async def recall_webhook(request: Request):
     if event in ("bot.joining_call", "joining_call"):
         bot_store[bot_id]["status"] = "joining"
         _db_save(bot_id, {"status": "joining"})
+        _mb_update_status(bot_id, "joining")
     elif event in ("bot.in_call_recording", "in_call_recording"):
         bot_store[bot_id]["status"] = "recording"
         _db_save(bot_id, {"status": "recording"})
+        _mb_update_status(bot_id, "recording")
     elif event in ("bot.call_ended", "call_ended", "bot.done", "done"):
         if bot_store[bot_id].get("status") not in ("processing", "done"):
             bot_store[bot_id]["status"] = "processing"
             _db_save(bot_id, {"status": "processing"})
+            _mb_update_status(bot_id, "processing")
             asyncio.create_task(_process_bot_transcript(bot_id))
     elif event in ("bot.fatal_error", "fatal_error"):
         bot_store[bot_id]["status"] = "error"
         bot_store[bot_id]["error"] = "Bot encountered a fatal error"
         _db_save(bot_id, {"status": "error", "error": "Bot encountered a fatal error"})
+        _mb_update_status(bot_id, "error")
 
     return {"ok": True}
