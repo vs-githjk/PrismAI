@@ -6,68 +6,150 @@ const PHASE_DURATIONS = { 1: 4000, 2: 7000, 3: 6000, 4: 7000 }
 
 const FADE = { duration: 0.45, ease: [0.22, 1, 0.36, 1] }
 
+const RATIO_THRESHOLDS = Array.from({ length: 51 }, (_, i) => i / 50)
+const PLAY_AT = 0.7
+const PEEK_BLUR_PX = 7
+
+// ── Deck tuning ──────────────────────────────────────────────────────
+// 4 cards fanned bottom-right. Origin is top-left (see .hiw-card CSS) so
+// the front card is anchored at (0,0) and deeper slots peek out the
+// bottom-right. STACK_OFFSET must exceed (1 - scale)·cardWidth for an
+// edge to actually show, hence a small SCALE_STEP. Bump these when the
+// user asks for "more / less" fan; the reserved stage gutter is
+// --hiw-deck-gutter in HowItWorks.css and should track 3·STACK_OFFSET.
+const STACK_OFFSET = 22 // px transl(x & y) per slot behind the front
+const SCALE_STEP = 0.012 // scale shrink per slot behind the front
+
+const PHASE_COMPONENTS = {
+  1: Phase1Meeting,
+  2: Phase2Acting,
+  3: Phase3LiveView,
+  4: Phase4Dashboard,
+}
+
+const PHASE_LABELS = {
+  1: 'Bot joins the call',
+  2: 'Prism acts',
+  3: 'Live view',
+  4: 'Dashboard',
+}
+
 export default function HowItWorks() {
   const [phase, setPhase] = useState(1)
-  const [inView, setInView] = useState(false)
-  const [paused, setPaused] = useState(false)
-  const sectionRef = useRef(null)
+  const [ratio, setRatio] = useState(0)
+  const frameRef = useRef(null)
+  // The phase that was front *before* this render. The card matching it
+  // is the one rotating 0→back this step, so it teleports while invisible
+  // instead of sliding diagonally across the deck.
+  const prevPhaseRef = useRef(1)
 
   useEffect(() => {
-    const node = sectionRef.current
+    const node = frameRef.current
     if (!node) return
     const obs = new IntersectionObserver(
-      ([entry]) => {
-        setInView(entry.intersectionRatio > 0.15)
-      },
-      { threshold: [0, 0.15, 0.3, 1] }
+      ([entry]) => setRatio(entry.intersectionRatio),
+      { threshold: RATIO_THRESHOLDS }
     )
     obs.observe(node)
     return () => obs.disconnect()
   }, [])
 
-  useEffect(() => {
-    if (!inView) {
-      setPhase(1)
-    }
-  }, [inView])
+  // Plays only once the frame is ≥70% visible. Below that it freezes on the
+  // current phase (phase 1 until it first plays); scrolling away pauses on the
+  // current phase and resumes there rather than resetting.
+  const playing = ratio >= PLAY_AT
+  // Progressive scroll-linked blur: ~6px while peeking → 0 by the play point.
+  const blurPx = Math.max(0, PEEK_BLUR_PX * (1 - Math.min(ratio / PLAY_AT, 1)))
 
   useEffect(() => {
-    if (!inView || paused) return
+    if (!playing) return
     const dur = PHASE_DURATIONS[phase] ?? 4000
     const t = setTimeout(() => {
       setPhase((p) => (p >= 4 ? 1 : p + 1))
     }, dur)
     return () => clearTimeout(t)
-  }, [phase, inView, paused])
+  }, [phase, playing])
+
+  const prevPhase = prevPhaseRef.current
+  useEffect(() => {
+    prevPhaseRef.current = phase
+  }, [phase])
+
+  const ActivePhase = PHASE_COMPONENTS[phase]
 
   return (
     <section
-      ref={sectionRef}
       id="product"
       className="how-it-works-section scroll-section"
       style={{ position: 'relative' }}
     >
       <div className="section-inner hiw-section-inner">
-        <p className="section-eyebrow">See it in action</p>
-        <h2 className="hiw-heading">
-          Your AI teammate, <span className="hiw-heading-soft">end-to-end.</span>
-        </h2>
-        <p className="hiw-subline">
-          From joining the call to organizing the aftermath — watch one loop.
-        </p>
-
         <div
+          ref={frameRef}
           className="hiw-frame"
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
           aria-label="Animated product walkthrough"
+          style={{ filter: blurPx > 0.05 ? `blur(${blurPx.toFixed(2)}px)` : 'none' }}
         >
-          <AnimatePresence mode="wait">
-            {inView && phase === 1 && <Phase1Meeting key="p1" />}
-            {inView && phase === 2 && <Phase2Acting key="p2" />}
-            {inView && phase === 3 && <Phase3LiveView key="p3" />}
-            {inView && phase === 4 && <Phase4Dashboard key="p4" />}
-          </AnimatePresence>
+          {/* Static shell deck — 4 cards rotating through 4 slots. Only the
+              front slot is occluded by the live overlay below it. */}
+          {[1, 2, 3, 4].map((p) => {
+            const slot = (p - phase + 4) % 4
+            const isRecycling = p === prevPhase && phase !== prevPhase
+            return (
+              <motion.div
+                key={p}
+                className="hiw-card hiw-card-shell"
+                aria-hidden="true"
+                initial={false}
+                animate={{
+                  x: slot * STACK_OFFSET,
+                  y: slot * STACK_OFFSET,
+                  scale: 1 - slot * SCALE_STEP,
+                  opacity: isRecycling ? [1, 0, 0, 1] : slot === 0 ? 0 : 1,
+                }}
+                transition={
+                  isRecycling
+                    ? {
+                        opacity: { duration: 0.5, times: [0, 0.25, 0.55, 1] },
+                        x: { delay: 0.16, duration: 0 },
+                        y: { delay: 0.16, duration: 0 },
+                        scale: { delay: 0.16, duration: 0 },
+                      }
+                    : { type: 'spring', stiffness: 260, damping: 30 }
+                }
+                style={{ zIndex: 4 - slot }}
+              >
+                <span className="hiw-shell-label">{PHASE_LABELS[p]}</span>
+              </motion.div>
+            )
+          })}
+
+          {/* Live front overlay — crossfades between phases, keyed by phase
+              so each phase's internal timeline replays on every return. */}
+          <div className="hiw-card hiw-card-front">
+            <AnimatePresence>
+              <motion.div
+                key={phase}
+                className="hiw-front-inner"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={FADE}
+              >
+                <ActivePhase />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <div className="hiw-caption">
+          <p className="section-eyebrow">See it in action</p>
+          <h2 className="hiw-heading">
+            Your AI teammate, <span className="hiw-heading-soft">end-to-end.</span>
+          </h2>
+          <p className="hiw-subline">
+            From joining the call to organizing the aftermath — watch one loop.
+          </p>
         </div>
       </div>
     </section>

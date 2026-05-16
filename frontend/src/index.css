@@ -1179,7 +1179,10 @@ h1, h2, h3, .font-display {
 
 .landing-post-hero {
   position: relative;
-  z-index: 2;
+  /* Above the hero (z-index 3) so the HowItWorks frame, pulled up into the
+     hero's lower region, peeks on top of both fade layers (hero::after dark
+     fade + .landing-post-hero::before blur) which stay in the background. */
+  z-index: 4;
   isolation: isolate;
   margin-top: clamp(-96px, -12vh, -64px);
   padding-top: clamp(64px, 12vh, 96px);
@@ -1216,7 +1219,7 @@ h1, h2, h3, .font-display {
   padding: 0.75rem 2rem;
   background: linear-gradient(180deg, #1f8aa1, #16606f);
   color: #eaffff;
-  font-weight: 700;
+  font-weight: 550;
   font-size: 0.9375rem;
   border-radius: 9999px;
   border: 1px solid rgba(103, 232, 249, 0.42);
@@ -1340,13 +1343,21 @@ h1, h2, h3, .font-display {
 
 /* ── How It Works section ────────────────────────────────────── */
 .how-it-works-section {
-  min-height: 100vh;
+  /* How far the frame is pulled up into the hero's empty lower region so it
+     peeks above the fold. Tune this to adjust the peek amount. */
+  --hiw-peek: 16vh;
+  position: relative;
   background: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 7rem 2rem;
+  margin-top: calc(-1 * var(--hiw-peek));
+  padding: 0 2rem 3rem;
+}
+
+@media (max-width: 760px) {
+  /* Thinner sliver on mobile so it doesn't crowd the hero CTA. */
+  .how-it-works-section { --hiw-peek: 7vh; }
 }
 
 /* Flow diagram */
@@ -1759,7 +1770,7 @@ h1, h2, h3, .font-display {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 5rem 2rem;
+  padding: 3rem 2rem 5rem;
 }
 
 .pricing-heading {

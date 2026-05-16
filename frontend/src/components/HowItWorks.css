@@ -5,7 +5,7 @@
  * ───────────────────────────────────────────────────────────────── */
 
 .hiw-section-inner {
-  max-width: 1100px;
+  max-width: 1240px;
   gap: 0;
 }
 
@@ -31,28 +31,93 @@
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.55);
   text-align: center;
-  margin: 0 0 2.5rem;
+  margin: 0;
   max-width: 32rem;
 }
 
-/* ── Frame ───────────────────────────────────────────────────── */
+/* ── Caption (moved below the frame) ─────────────────────────── */
+
+.hiw-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 2.75rem;
+}
+
+.hiw-caption .section-eyebrow {
+  margin-bottom: 0.9rem;
+}
+
+.hiw-caption .hiw-heading {
+  margin: 0 0 0.6rem;
+}
+
+/* ── Stage + deck ────────────────────────────────────────────────
+ * .hiw-frame is now a transparent positioning stage (it still owns the
+ * ref, the IntersectionObserver and the scroll-blur filter — which now
+ * blurs the whole deck). The card surface chrome lives on .hiw-card.
+ * The front card is inset by --hiw-deck-gutter so the fanned shells
+ * peek into that reserved room and never overflow the stage box.
+ * ──────────────────────────────────────────────────────────────── */
 
 .hiw-frame {
+  --hiw-deck-gutter: 66px; /* ≈ 3 × STACK_OFFSET in HowItWorks.jsx */
   position: relative;
   width: 100%;
-  max-width: 900px;
+  max-width: 1120px;
   aspect-ratio: 5 / 3;
+  /* Smooths the scroll-linked blur between IntersectionObserver steps. */
+  transition: filter 0.12s linear;
+  will-change: filter;
+  overflow: visible;
+  font-family: 'Inter Variable', Inter, sans-serif;
+  color: rgba(255, 255, 255, 0.86);
+  isolation: isolate;
+}
+
+.hiw-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% - var(--hiw-deck-gutter));
+  aspect-ratio: 5 / 3;
+  border-radius: 14px;
   background: #0b0b0b;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
   overflow: hidden;
+  /* Front-anchored: scale + translate fan out toward bottom-right only. */
+  transform-origin: top left;
+}
+
+.hiw-card-shell {
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hiw-shell-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.16);
+  user-select: none;
+}
+
+.hiw-card-front {
+  z-index: 5;
   box-shadow:
     0 30px 80px rgba(0, 0, 0, 0.55),
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 0 0 1px rgba(34, 211, 238, 0.04);
-  font-family: 'Inter Variable', Inter, sans-serif;
-  color: rgba(255, 255, 255, 0.86);
-  isolation: isolate;
+}
+
+.hiw-front-inner {
+  position: absolute;
+  inset: 0;
 }
 
 .phase-root {
