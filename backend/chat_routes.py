@@ -73,12 +73,32 @@ class ConfirmToolRequest(BaseModel):
 
 
 async def _get_user_settings(user_id: str) -> dict:
-    """Fetch user settings from Supabase, including tokens for tool availability."""
+    """Fetch user settings from Supabase, including tokens for tool availability.
+
+    Mirrors the meeting path's token-refresh logic: Google access tokens
+    are valid for 1 hour. If the stored token is expired, get_valid_token
+    refreshes it using the refresh_token. Without this, every Gmail /
+    calendar tool call from the chat panel uses a stale access_token and
+    fails with 401 Invalid Credentials.
+    """
     if not supabase:
         return {}
     try:
         resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
         row = (resp.data if resp is not None else None) or {}
+        # Refresh expired Google access token via refresh_token. Same
+        # pattern as realtime_routes._get_settings_for_bot.
+        if row.get("google_access_token"):
+            from calendar_routes import get_valid_token
+            try:
+                fresh_token = await get_valid_token(user_id)
+                row["google_access_token"] = fresh_token
+            except Exception as e:
+                # get_valid_token raises if no refresh_token or refresh
+                # fails. Fall back to the stored (possibly expired) token
+                # so the failure surfaces as a clear Gmail 401 rather
+                # than a 500 here.
+                print(f"[chat] google token refresh failed for user={user_id[:8]}: {e}")
         # Merge env-level tokens so tools that use env fallback are available
         if SLACK_BOT_TOKEN and not row.get("slack_bot_token"):
             row["slack_bot_token"] = SLACK_BOT_TOKEN

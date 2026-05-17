@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from analysis_service import build_analysis_transcript, run_full_analysis
@@ -438,7 +438,13 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
 
-    realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events"
+    # Generate a one-time webhook auth token for the realtime stream.
+    # 32 URL-safe bytes = 256 bits of entropy — unguessable. The token
+    # binds this specific bot's events to a verified URL path; without it,
+    # an attacker who knows or guesses the bot_id can POST forged events
+    # to the public webhook endpoint.
+    realtime_token = secrets.token_urlsafe(32)
+    realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -454,7 +460,28 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "recording_config": {
                     "transcript": {
                         "provider": {
-                            "deepgram_streaming": {}
+                            # endpointing=500 → wait 500ms of silence before finalizing
+                            #   (default 10ms makes Deepgram emit one "final" per word).
+                            # utterance_end_ms=1000 → bounded fallback in case endpointing under-fires.
+                            # smart_format + punctuate + diarize → better readability, fewer mishears,
+                            #   and Recall already attaches speaker labels separately.
+                            # Note: Recall.ai validates Deepgram params as URL-style strings
+                            # (booleans must be "true"/"false", not JSON true/false). Numeric
+                            # params can stay as integers.
+                            # endpointing=300: 30x longer than the 10ms default (which
+                            #   was causing one-word "finals"), but lower than 500 to
+                            #   reduce TTFB. The same-fragment-completion heuristic +
+                            #   accumulator in realtime_routes handles the rare split case.
+                            "deepgram_streaming": {
+                                "model": "nova-3",
+                                "language": "en",
+                                "smart_format": "true",
+                                "punctuate": "true",
+                                "diarize": "true",
+                                "endpointing": 300,
+                                "utterance_end_ms": 1000,
+                                "interim_results": "true",
+                            }
                         }
                     },
                     "realtime_endpoints": [
@@ -479,11 +506,24 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     data = resp.json()
     bot_id = data["id"]
     live_token = secrets.token_hex(16)
-    bot_store[bot_id] = {"status": "joining", "result": None, "error": None, "commands": [], "user_id": user_id, "live_token": live_token, "owner_name": req.owner_name}
+    bot_store[bot_id] = {
+        "status": "joining",
+        "result": None,
+        "error": None,
+        "commands": [],
+        "user_id": user_id,
+        "live_token": live_token,
+        "owner_name": req.owner_name,
+        "realtime_token": realtime_token,
+    }
     _live_token_index[live_token] = bot_id
     _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
 
-    from realtime_routes import init_bot_realtime, _run_proactive_checker
+    from realtime_routes import init_bot_realtime, _run_proactive_checker, register_realtime_token
+    # Bind the webhook token AFTER Recall confirmed the bot id. The mapping
+    # in realtime_routes lets the tokenized webhook handler resolve token →
+    # bot_id and reject any forged or stale tokens.
+    register_realtime_token(realtime_token, bot_id)
     init_bot_realtime(bot_id)
 
     asyncio.create_task(_send_bot_intro(bot_id))
@@ -606,6 +646,14 @@ async def live_meeting(live_token: str):
     import meeting_memory as _mm
     memory_snapshot = _mm.get_memory_snapshot(rt) if rt else {}
 
+    # Operational counters (Phase A pre-perception observability). Safe to
+    # expose on this possession-based endpoint: dedup_hits / partial_drops /
+    # cancel_count / replace_depth_hits / cousin_hit_no_match are operational
+    # signal, not security signal. Security counters live on a separate
+    # require_user_id-gated endpoint below.
+    import perception_state as _pp
+    op_counters = _pp.operational_counters(rt) if rt else {}
+
     return {
         "status": status,
         "commands": entry.get("commands", []),
@@ -621,6 +669,38 @@ async def live_meeting(live_token: str):
         "idea_history": memory_snapshot.get("idea_history", []),
         # Include transcript when done so signed-in viewers can save a copy
         "transcript": entry.get("transcript") if status == "done" else None,
+        "counters": op_counters,
+    }
+
+
+@router.get("/bot-counters/{bot_id}")
+async def bot_counters(bot_id: str, user_id: str = Depends(require_user_id)):
+    """Owner-only counters for a bot. Returns 404 on ownership mismatch so we
+    don't confirm bot existence to a non-owner.
+
+    Operational counters live on /live/{token}. This endpoint exposes the
+    security-signal counters (injection_redactions, owner_gate_blocks) that
+    would leak attack-attempt feedback to non-owners.
+    """
+    if bot_id not in bot_store:
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
+    rec = bot_store.get(bot_id)
+    if not rec or rec.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    from realtime_routes import _bot_state
+    import perception_state as _pp
+    rt = _bot_state.get(bot_id, {})
+    return {
+        "bot_id": bot_id,
+        "counters": _pp.security_counters(rt),
+        "recent_drops": _pp.get_drops(bot_id),
+        # Latency timeline for the most recent cancellation. Three monotonic
+        # timestamps + a reason. Diff (last_upload_aborted_mono - detected_mono)
+        # is the "interrupt-utterance-detected → last-audio-uploaded" number
+        # that's the whole point of Phase B.
+        "last_cancel_timeline": rt.get("last_cancel_timeline"),
     }
 
 

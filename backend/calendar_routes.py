@@ -67,8 +67,20 @@ def extract_meeting_link(event: dict) -> str | None:
 # ─── Token refresh ────────────────────────────────────────────────────────────
 
 async def refresh_google_token(refresh_token: str) -> dict | None:
-    """Exchange refresh token for a new access token. Returns token data or None."""
+    """Exchange refresh token for a new access token. Returns token data or None.
+
+    Diagnostic logging on every failure path — without it, gmail_send and
+    calendar_* tools silently degrade to using the expired access_token.
+    The user sees "Invalid Credentials" from Google and we have no idea
+    why our refresh failed. The logs here surface the real cause: missing
+    env vars, revoked grant, client mismatch, etc.
+    """
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        print(
+            "[google-refresh] FAIL missing env vars "
+            f"client_id_set={bool(GOOGLE_CLIENT_ID)} "
+            f"client_secret_set={bool(GOOGLE_CLIENT_SECRET)}"
+        )
         return None
     try:
         async with get_http() as client:
@@ -83,9 +95,15 @@ async def refresh_google_token(refresh_token: str) -> dict | None:
                 timeout=10,
             )
         if resp.status_code == 200:
+            print("[google-refresh] OK")
             return resp.json()
-    except httpx.HTTPError:
-        pass
+        # Common Google errors: invalid_grant (revoked/expired), invalid_client
+        # (wrong id/secret), unauthorized_client (consent screen issue).
+        print(
+            f"[google-refresh] FAIL status={resp.status_code} body={resp.text[:300]}"
+        )
+    except httpx.HTTPError as e:
+        print(f"[google-refresh] FAIL http_error={type(e).__name__}: {e}")
     return None
 
 

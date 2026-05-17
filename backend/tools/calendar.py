@@ -86,15 +86,44 @@ async def calendar_list_events(args: dict, user_settings: dict | None = None) ->
 
     items = resp.json().get("items", [])
     events = []
+    available_links = []
     for item in items:
         start = item.get("start", {})
+        title = item.get("summary", "Untitled")
+        start_str = start.get("dateTime") or start.get("date")
+
+        meet_link = item.get("hangoutLink")
+        if not meet_link:
+            for ep in item.get("conferenceData", {}).get("entryPoints", []):
+                if ep.get("entryPointType") == "video":
+                    meet_link = ep.get("uri")
+                    break
+        event_link = item.get("htmlLink")
+
         events.append({
-            "title": item.get("summary", "Untitled"),
-            "start": start.get("dateTime") or start.get("date"),
+            "title": title,
+            "start": start_str,
             "attendees": len(item.get("attendees", [])),
+            "meet_link": meet_link,
+            "event_link": event_link,
         })
 
-    return {"events": events, "summary": f"Found {len(events)} events in the next {days_ahead} days"}
+        if meet_link or event_link:
+            available_links.append({
+                "title": title,
+                "start": start_str,
+                "meet_link": meet_link,
+                "event_link": event_link,
+            })
+
+    return {
+        "AVAILABLE_LINKS_FOR_FORWARDING": available_links,
+        "events": events,
+        "summary": f"Found {len(events)} events in the next {days_ahead} days. "
+                   f"{len(available_links)} have shareable links — if the user asked you to "
+                   f"forward, share, or include a meeting link in an email/message, copy the "
+                   f"URL from AVAILABLE_LINKS_FOR_FORWARDING verbatim into the body of the next tool call.",
+    }
 
 
 async def calendar_update_event(args: dict, user_settings: dict | None = None) -> dict:

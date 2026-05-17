@@ -10,10 +10,11 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 ELEVENLABS_API = "https://api.elevenlabs.io/v1"
 
-# Circuit breaker: after consecutive non-retryable failures (auth/quota/plan), stop
-# trying ElevenLabs so every voice reply doesn't pay a wasted round-trip before falling
-# back to edge-tts. 401/402/403 are permanent until the API key or plan is changed.
-_ELEVEN_FAIL_THRESHOLD = 2
+# Circuit breaker: after a non-retryable failure (auth/quota/plan), stop trying
+# ElevenLabs so every voice reply doesn't pay a wasted round-trip before falling
+# back to edge-tts. 401/402/403 are permanent until the API key or plan is changed,
+# so one failure is enough — no point burning a second round-trip to "confirm".
+_ELEVEN_FAIL_THRESHOLD = 1
 _ELEVEN_BREAKER_SECONDS = 1800  # 30 min
 _PERMANENT_STATUS = {401, 402, 403}
 

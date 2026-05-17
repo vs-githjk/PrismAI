@@ -661,3 +661,79 @@ Run in **Supabase SQL Editor** (in order, skip if already applied):
    - Voice (if ElevenLabs configured): ElevenLabs TTS → `POST /bot/{id}/output_audio/`
 6. Command logged to `bot_sessions` table + shown in frontend command log
 7. After meeting ends → full transcript analysis runs as before (7 agents)
+
+---
+
+## Recent Work — Utterance Accumulator + Realtime Security Hardening
+
+Branch `fixed-changes`. All work is feature-flagged; flag-off behavior is byte-identical to pre-change state. Full design log is in `UTTERANCE_ACCUMULATOR_NOTES.md` at the repo root — that file is the authoritative record. This section is the summary for handoff.
+
+### What changed (high level)
+
+Two intertwined projects landed together:
+
+1. **Utterance Accumulator** — turns Recall's wire-level transcript chunks into semantic utterances before they hit the buffer, command dispatcher, or downstream agents. Fixes the "mid-sentence pause fires a half-command" and "ping-pong duplicated lines" issues in live meetings.
+2. **Realtime security hardening (Phase 0)** — closes attack paths in the realtime webhook surface that were exploitable independent of the accumulator (unsigned webhook, name-only owner gate, no ingress rate limit, raw display names).
+
+### New files
+
+| File | Purpose |
+|---|---|
+| `backend/utterance_accumulator.py` | Pure-logic accumulator. `Accumulator`, `PendingUtterance`, `FlushedUtterance`. No asyncio, no globals. 5 flush triggers (speaker change, max-cap, pause, punctuation grace, flush_all). Detects Deepgram cumulative re-emissions (e.g. "prism" → "prism can" → "prism can you") via prefix overlap. |
+| `backend/perception_state.py` | Per-bot perception state + security counters. Hosts the owner participant-ID lock (`maybe_lock_owner_id`, `is_owner_with_lock`), the `bot_self_speaker_id` field (wired but filter pending empirical test), and `_SECURITY_KEYS` surface for owner-only debug. |
+| `backend/tests/test_utterance_accumulator.py` | 40 tests across 9 groups — basics, single-speaker flow, speaker change, re-emission dedup, discard/flush_all, DoS guards, callback exception containment, utterance_id stability, helper units, integration ping-pong replay. |
+| `backend/tests/test_accumulator_integration.py` | 14 tests — state init under both flag states, `_emit_utterance` buffer format parity, full flow with flag on/off, cleanup, compare mode, realistic transcript simulation. |
+| `backend/tests/test_security_hardening.py` | 29 tests — speaker-name sanitization, ingress rate limit, owner lock, `is_owner_with_lock`, realtime token index, payload-handler refactor. |
+| `backend/tests/test_barge_in.py`, `test_injection_guard.py`, `test_pre_perception.py`, `test_prompt_structure.py` | Supporting suites for prompt-injection guard, pre-perception state, barge-in detection, prompt assembly. |
+| `UTTERANCE_ACCUMULATOR_NOTES.md` | Full design + change log. Read this before extending the accumulator. |
+
+### Modified files
+
+- **`backend/realtime_routes.py`** (+1100 lines) — speaker-name sanitization helper, per-bot ingress rate limit (50/s sliding window, pre-lock), token-in-URL webhook route `POST /realtime-events/{token}` alongside the legacy unauthenticated route, refactored payload handling into `_handle_realtime_payload(payload, verified_bot_id=None)`, accumulator import + lazy state init + tick task, `_emit_utterance` / `_dispatch_slow_path_command` helpers, branching chunk handler (accumulator path vs. legacy path), Phase B stop-command `discard_speaker` wiring, `cleanup_bot_state` flushes and unregisters tokens, optional compare-mode legacy-buffer simulation.
+- **`backend/recall_routes.py`** (+90 lines) — bot creation generates `secrets.token_urlsafe(32)` realtime_token, embeds it in the webhook URL, registers in `_realtime_token_index`, stores in `bot_store[bot_id]`.
+- **`backend/calendar_routes.py`** — minor edits to token validity helpers used by chat-tools refresh path.
+- **`backend/chat_routes.py`** — minor adjustments to `_get_user_settings` (Google token refresh via `get_valid_token`).
+- **`backend/tools/{calendar,gmail,slack,tts}.py`** — prompt-injection / argument-handling hardening to align with the security work.
+
+### Feature flags (all opt-in; defaults off)
+
+| Env var | Default | Effect |
+|---|---|---|
+| `PRISM_ACCUMULATOR` | unset | Routes chunks through `utterance_accumulator`. Flag-off path is byte-identical to pre-change behavior. |
+| `PRISM_ACC_PAUSE_MS` | `1200` | Pause threshold that ends an utterance. |
+| `PRISM_ACC_PUNCT_GRACE_MS` | `200` | Grace window after terminal punctuation before flushing. |
+| `PRISM_ACC_MAX_CHARS` | `500` | Utterance char cap. |
+| `PRISM_ACC_MAX_WORDS` | `80` | Utterance word cap. |
+| `PRISM_ACC_COMPARE` | unset | Run legacy fuzzy-dedup buffer in parallel for offline diffing. Writes to `state["transcript_buffer_legacy"]`. Logs `[ACC-COMPARE-SUMMARY]` at meeting end. |
+| `PRISM_OWNER_ID_LOCK` | unset | After a 5s grace post bot-join, lock `state["owner_speaker_id"]` to the participant_id of the first name-matching chunk. After lock, owner gate requires ID match; name-only mismatches increment `owner_impersonation_attempts`. |
+
+### Security counters added to `perception_state._SECURITY_KEYS`
+
+`owner_impersonation_attempts`, `ingress_rate_limited`, `accumulator_evictions`. All surface via the owner-only debug path; non-zero values warrant investigation.
+
+### Test status at hand-off
+
+**144 tests passing, 0 failing** across `test_utterance_accumulator`, `test_accumulator_integration`, `test_security_hardening`, `test_injection_guard`, `test_pre_perception`, `test_barge_in`. Pre-existing failing suites (`test_streamed_voice`, `test_voice_pipeline`, `test_chat_export_routes`, `test_recall_routes`, `test_storage_routes`) are unrelated to these changes — verified.
+
+### Known limitations + open work
+
+- **Bot-self TTS filter** — `state["bot_self_speaker_id"]` exists but the filter at slow-path dispatch isn't wired pending one live meeting to confirm whether Recall echoes the bot's TTS as a transcript event.
+- **Recall participant_id consistency** — accumulator merging and owner ID-lock both assume `participant.id` is stable across chunks for the same human. One live meeting will confirm. If unstable, owner lock would never claim and accumulator merging fails per-speaker.
+- **Wake-word-only follow-up** — legacy path had an 8s pending-trigger window so "Ok, Prism" + later "schedule a meeting" dispatched the second utterance. Accumulator path drops this; `_dispatch_slow_path_command` only fires when `_detect_command` matches the current utterance. Acceptable for v1, flagged in notes.
+- **In-memory `_realtime_token_index`** — server restart mid-meeting causes the tokenized route to 401 for that bot until it ends. Consistent with the existing `bot_store` in-memory limitation; would need a `bot_sessions.realtime_token` column to persist.
+
+### Phase status
+
+- Phase 0 (security hardening) — **complete**.
+- Phase 1 (accumulator module) — **complete**.
+- Phase 2 (integration behind flag) — **complete**.
+- Phase 3 (validation tooling: compare mode + realistic simulation) — **complete**.
+- Phase 4 (default-on + remove legacy fuzzy-dedup + drop flags) — **pending** soak.
+- Phase 5 (diarization heuristic, per-speaker pause tuning, out-of-order chunk sorting, wake-word-only follow-up, bot-self filter wiring) — **deferred**.
+
+### Operational rollout
+
+1. Deploy with all flags off — zero behavior change.
+2. Enable `PRISM_ACCUMULATOR=1 PRISM_ACC_COMPARE=1` on a test bot; run a meeting; grep `[ACC-COMPARE-SUMMARY]` and diff `transcript_buffer` vs `transcript_buffer_legacy`.
+3. Enable `PRISM_OWNER_ID_LOCK=1` independently; monitor `owner_impersonation_attempts`.
+4. After a clean soak, drop the legacy path in `realtime_routes.py` (Phase 4).
