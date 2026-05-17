@@ -1083,7 +1083,7 @@ h1, h2, h3, .font-display {
 }
 
 .dashboard-topbar {
-  min-height: var(--dashboard-topbar-h);
+  height: var(--dashboard-topbar-h);
   background: var(--dashboard-chrome-bg);
 }
 
@@ -1095,37 +1095,46 @@ h1, h2, h3, .font-display {
   width: var(--dashboard-sidebar-w);
   background: var(--dashboard-chrome-bg);
   z-index: 20;
-  display: none;
+  transition: width 0.18s ease;
+}
+
+.dashboard-page.is-resizing .dashboard-sidebar,
+.dashboard-page.is-resizing .dashboard-content {
+  transition: none;
+  user-select: none;
 }
 
 /* Content sits on a lighter panel, floated over the chrome. */
 .dashboard-content {
+  margin-left: var(--dashboard-sidebar-w);
+  min-height: calc(100dvh - var(--dashboard-topbar-h));
   background: var(--dashboard-bg);
+  border-top-left-radius: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  transition: margin-left 0.18s ease;
 }
 
-@media (min-width: 1024px) {
-  .dashboard-sidebar {
-    display: block;
-  }
-
-  .dashboard-content {
-    margin-left: var(--dashboard-sidebar-w);
-    min-height: calc(100dvh - var(--dashboard-topbar-h));
-    border-top-left-radius: 14px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    border-left: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  /* Chat shifted to sit beside the sidebar, not over it. Additive margin-left
-     does not clobber the state-dependent `left` (trigger left-4 vs
-     left-[440px]) and does not fight existing transforms. */
-  .dashboard-chat-panel {
-    margin-left: var(--dashboard-sidebar-w);
-  }
-
-  .dashboard-chat-trigger {
-    margin-left: var(--dashboard-sidebar-w);
-  }
+/* Drag handle on the sidebar's right edge */
+.dashboard-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 30;
+}
+.dashboard-sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.dashboard-sidebar-resizer:hover::after,
+.dashboard-page.is-resizing .dashboard-sidebar-resizer::after {
+  background: rgba(34, 211, 238, 0.45);
 }
 
 .dashboard-signin-button {

@@ -40,7 +40,13 @@ import {
   DialogTitle,
 } from './ui/dialog'
 import SkeletonCard from './SkeletonCard'
+import DashboardSidebar from './dashboard/DashboardSidebar'
+import DashboardTopbar from './dashboard/DashboardTopbar'
 import { UI_SCREEN_KEY } from '../lib/sessionKeys'
+
+const SIDEBAR_MIN = 200
+const SIDEBAR_MAX = 420
+const SIDEBAR_DEFAULT = 248
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
@@ -486,6 +492,58 @@ export default function DashboardPage(props) {
   const [workspaceNudgeDismissed, setWorkspaceNudgeDismissed] = useState(
     () => { try { return localStorage.getItem('prismai:workspace-nudge-dismissed') === '1' } catch { return false } }
   )
+  const [shareWorkspaceId, setShareWorkspaceId] = useState(null)
+
+  // --- Sidebar resize / collapse (persisted) ---
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('prismai:sidebar-collapsed') === '1' } catch { return false }
+  })
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem('prismai:sidebar-width'), 10)
+      return Number.isFinite(v) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, v)) : SIDEBAR_DEFAULT
+    } catch { return SIDEBAR_DEFAULT }
+  })
+  const [isResizing, setIsResizing] = useState(false)
+
+  useEffect(() => {
+    try { localStorage.setItem('prismai:sidebar-collapsed', sidebarCollapsed ? '1' : '0') } catch { /* ignore */ }
+  }, [sidebarCollapsed])
+  useEffect(() => {
+    try { localStorage.setItem('prismai:sidebar-width', String(sidebarWidth)) } catch { /* ignore */ }
+  }, [sidebarWidth])
+
+  const toggleSidebar = useCallback(() => setSidebarCollapsed((v) => !v), [])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault()
+        toggleSidebar()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [toggleSidebar])
+
+  const onResizeHandlePointerDown = useCallback((e) => {
+    e.preventDefault()
+    setIsResizing(true)
+    const startX = e.clientX
+    let startW = SIDEBAR_DEFAULT
+    setSidebarWidth((w) => { startW = w; return w })
+    const onMove = (ev) => {
+      const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + (ev.clientX - startX)))
+      setSidebarWidth(next)
+    }
+    const onUp = () => {
+      setIsResizing(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
 
   // Persist active view so hard refresh restores the same view
   const persistView = (view) => {
@@ -727,6 +785,24 @@ export default function DashboardPage(props) {
     })
   }
 
+  // Per-row Share: fetch the workspace's invite token and copy the link directly.
+  async function shareWorkspace(wsId) {
+    try {
+      const r = await apiFetch(`/workspaces/${wsId}`)
+      if (!r.ok) return
+      const data = await r.json()
+      const url = `${window.location.origin}/dashboard#invite/${data.invite_token}`
+      await navigator.clipboard.writeText(url)
+      setShareWorkspaceId(wsId)
+      setTimeout(() => setShareWorkspaceId(null), 2000)
+    } catch { /* ignore */ }
+  }
+
+  function closeWsSettings() {
+    setWsSettingsId(null)
+    setWsDetails(null)
+  }
+
   useEffect(() => {
     if (!profileMenuOpen) return undefined
 
@@ -882,286 +958,95 @@ export default function DashboardPage(props) {
     return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
   }, [currentMeeting, props.user?.id, workspaceMemberMap])
 
-  const inIntelligence = activeView === 'intelligence'
+  const meetingInFocus = activeView !== 'home'
+  const switchView = activeView === 'intelligence' ? 'cross' : 'current'
+
+  function handleSelectSwitchView(v) {
+    if (v === 'cross') {
+      if (historyCount < 2) {
+        setShowGateDialog(true)
+        return
+      }
+      persistView('intelligence')
+    } else {
+      persistView('meeting')
+    }
+  }
+
+  const showHomeNudge =
+    props.user &&
+    workspacesLoaded &&
+    workspaces.length === 0 &&
+    !workspaceNudgeDismissed &&
+    activeView === 'home'
 
   return (
-    <div className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
-      <header className="dashboard-topbar sticky top-0 z-30 px-3 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
-                window.location.href = '/'
-              }}
-              className="logo-btn flex items-center gap-2"
-              aria-label="Back to landing page"
-            >
-              <LogoIcon className="h-9 w-9" />
-              <span className="prism-logo-text text-[1.375rem] font-light tracking-wider" data-text="prism">prism</span>
-            </button>
-          </div>
+    <div
+      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)] ${isResizing ? 'is-resizing' : ''}`}
+      style={{ '--dashboard-sidebar-w': sidebarCollapsed ? '56px' : `${sidebarWidth}px` }}
+    >
+      <DashboardTopbar
+        newMeetingOpen={newMeetingOpen}
+        setNewMeetingOpen={setNewMeetingOpen}
+        onOpenNewMeeting={() => props.resetTranscriptWorkspaces?.()}
+        newMeetingPanel={
+          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
+        }
+        meetingInFocus={meetingInFocus}
+        view={switchView}
+        onSelectView={handleSelectSwitchView}
+      />
 
-          <div className="flex items-center gap-2">
-            {props.authReady && props.user ? (
-              <div ref={profileAreaRef}>
-                <DropdownMenu
-                  modal={false}
-                  open={profileMenuOpen}
-                  onOpenChange={(open) => {
-                    if (!open && (profileMenuPinned || profileTriggerHovered.current || profileContentHovered.current)) return
-                    setProfileMenuOpen(open)
-                    if (!open) setProfileMenuPinned(false)
-                  }}
-                >
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      onPointerEnter={() => {
-                        profileTriggerHovered.current = true
-                        openProfileMenu()
-                      }}
-                      onPointerLeave={() => {
-                        profileTriggerHovered.current = false
-                        closeProfileMenuSoon()
-                      }}
-                      onPointerDown={toggleProfileMenuPinned}
-                      className={`${darkCircleButtonClass} h-9 w-9 shadow-[0_10px_28px_rgba(0,0,0,0.3)]`}
-                      aria-label="Open profile menu"
-                    >
-                      <UserCircle className="h-5.5 w-5.5" aria-hidden="true" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    ref={profileContentRef}
-                    align="end"
-                    className="dashboard-body-font w-52 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
-                    onPointerEnter={() => {
-                      profileContentHovered.current = true
-                      openProfileMenu()
-                    }}
-                    onPointerLeave={() => {
-                      profileContentHovered.current = false
-                      closeProfileMenuSoon()
-                    }}
-                    onCloseAutoFocus={(event) => event.preventDefault()}
-                  >
-                    <DropdownMenuGroup>
-                      <DropdownMenuItem onSelect={() => props.setShowIntegrations(true)} className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]">
-                        <IntegrationsIcon className="h-4 w-4 shrink-0 text-white/62" />
-                        Integrations
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]">
-                        <Bolt className="h-4 w-4 shrink-0 text-white/62" aria-hidden="true" />
-                        Settings
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={props.signOut} variant="destructive" className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-red-400 focus:bg-red-400/[0.12] focus:text-red-300">
-                      <DoorOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      {props.isTestAccount ? 'Exit test run' : 'Sign out'}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className={`${darkCircleButtonClass} h-9 w-9 shadow-[0_10px_28px_rgba(0,0,0,0.3)]`}
-                aria-label="Profile"
-              >
-                <UserCircle className="h-5.5 w-5.5" aria-hidden="true" />
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <aside className="dashboard-sidebar" aria-label="Dashboard navigation" />
+      <DashboardSidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+        onResizeHandlePointerDown={onResizeHandlePointerDown}
+        user={props.user}
+        isTestAccount={props.isTestAccount}
+        isDemoMode={props.isDemoMode}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        switchWorkspace={switchWorkspace}
+        creatingWorkspace={creatingWorkspace}
+        setCreatingWorkspace={setCreatingWorkspace}
+        newWorkspaceName={newWorkspaceName}
+        setNewWorkspaceName={setNewWorkspaceName}
+        createWorkspace={createWorkspace}
+        workspaceCreating={workspaceCreating}
+        workspaceCreateError={workspaceCreateError}
+        setWorkspaceCreateError={setWorkspaceCreateError}
+        shareWorkspace={shareWorkspace}
+        shareWorkspaceId={shareWorkspaceId}
+        toggleWsSettings={toggleWsSettings}
+        wsSettingsId={wsSettingsId}
+        wsDetails={wsDetails}
+        wsDetailsLoading={wsDetailsLoading}
+        regenerateInvite={regenerateInvite}
+        removeMember={removeMember}
+        deleteWorkspaceFromSettings={deleteWorkspaceFromSettings}
+        copyInviteLink={copyInviteLink}
+        inviteCopied={inviteCopied}
+        closeWsSettings={closeWsSettings}
+        history={props.history || []}
+        filteredHistory={filteredHistory}
+        historySearch={props.historySearch}
+        historySearchOpen={historySearchOpen}
+        toggleHistorySearch={toggleHistorySearch}
+        onHistorySearchChange={handleHistorySearchChange}
+        activeView={activeView}
+        onGoHome={() => persistView('home')}
+        onSelectMeeting={handleSelectMeeting}
+        onDeleteMeeting={handleDeleteHistoryEntry}
+        currentMeetingId={props.meetingId}
+        botActive={props.botStatus && !['done', 'error'].includes(props.botStatus)}
+        setShowIntegrations={props.setShowIntegrations}
+        signOut={props.signOut}
+      />
 
       <div className="dashboard-content">
-
-      {props.isDemoMode && (
-        <div className="border-b border-white/[0.14] bg-white/[0.05] px-5 py-3 sm:px-8">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-            <p className={eyebrowClass}>Demo mode active</p>
-            <button type="button" onClick={props.exitDemoMode} className={`${secondaryButtonClass} min-h-10 px-3 text-xs`}>Use my transcript</button>
-          </div>
-        </div>
-      )}
-
-      {props.user && (
-        <div className="relative z-20 px-5 pb-2 pt-1 sm:px-8">
-          <div className="mx-auto max-w-[92rem]">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Personal chip */}
-              <button
-                type="button"
-                onClick={() => switchWorkspace(null)}
-                className={`rounded-full border px-3.5 py-1 text-[11px] font-semibold tracking-wide transition-all ${
-                  !activeWorkspaceId
-                    ? 'border-cyan-400/60 bg-cyan-400/[0.15] text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.15)]'
-                    : 'border-white/[0.18] bg-white/[0.06] text-white/60 hover:border-white/30 hover:bg-white/[0.10] hover:text-white/85'
-                }`}
-              >
-                Personal
-              </button>
-
-              {/* Workspace chips */}
-              {workspaces.map((ws) => (
-                <div key={ws.id} className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => switchWorkspace(ws.id)}
-                    className={`rounded-full border px-3.5 py-1 text-[11px] font-semibold tracking-wide transition-all ${
-                      activeWorkspaceId === ws.id
-                        ? 'border-cyan-400/60 bg-cyan-400/[0.15] text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.15)]'
-                        : 'border-white/[0.18] bg-white/[0.06] text-white/60 hover:border-white/30 hover:bg-white/[0.10] hover:text-white/85'
-                    }`}
-                  >
-                    {ws.name}
-                  </button>
-                  {activeWorkspaceId === ws.id && (
-                    <button
-                      type="button"
-                      onClick={() => toggleWsSettings(ws.id)}
-                      title="Workspace settings"
-                      className={`text-[13px] leading-none transition-colors ${wsSettingsId === ws.id ? 'text-cyan-300' : 'text-white/35 hover:text-white/70'}`}
-                    >
-                      ⚙
-                    </button>
-                  )}
-                </div>
-              ))}
-
-              {/* New workspace inline input */}
-              {creatingWorkspace ? (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    autoFocus
-                    value={newWorkspaceName}
-                    onChange={(e) => { setNewWorkspaceName(e.target.value); setWorkspaceCreateError('') }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') createWorkspace()
-                      if (e.key === 'Escape') { setCreatingWorkspace(false); setNewWorkspaceName(''); setWorkspaceCreateError('') }
-                    }}
-                    placeholder="Workspace name…"
-                    className="h-[26px] rounded-full border border-cyan-400/40 bg-white/[0.07] px-3 text-[11px] text-white/90 outline-none placeholder:text-white/35 focus:border-cyan-400/70 focus:bg-white/[0.10]"
-                    style={{ width: '148px' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={createWorkspace}
-                    disabled={workspaceCreating}
-                    className="rounded-full border border-cyan-400/50 bg-cyan-400/[0.15] px-3 py-0.5 text-[10px] font-bold text-cyan-300 transition hover:bg-cyan-400/[0.25] disabled:opacity-50"
-                  >
-                    {workspaceCreating ? '…' : 'Create'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setCreatingWorkspace(false); setNewWorkspaceName(''); setWorkspaceCreateError('') }}
-                    className="text-[12px] text-white/35 hover:text-white/65"
-                  >
-                    ✕
-                  </button>
-                  {workspaceCreateError && (
-                    <span className="text-[10px] text-red-400/80">{workspaceCreateError}</span>
-                  )}
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setCreatingWorkspace(true)}
-                  className="rounded-full border border-white/[0.14] bg-white/[0.03] px-3 py-1 text-[11px] font-medium text-white/45 transition hover:border-white/25 hover:bg-white/[0.07] hover:text-white/70"
-                >
-                  + New
-                </button>
-              )}
-            </div>
-
-            {/* Workspace settings panel */}
-            {wsSettingsId && (
-              <div className="mt-2 rounded-xl p-4" style={{ background: '#0f0f12', border: '1px solid rgba(255,255,255,0.12)', width: '320px', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
-                <p className="text-[10px] uppercase tracking-widest text-white/35 mb-2">Invite link</p>
-                {wsDetailsLoading ? (
-                  <p className="text-[11px] text-white/30">Loading…</p>
-                ) : wsDetails ? (
-                  <>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <input
-                        readOnly
-                        value={`${window.location.origin}/dashboard#invite/${wsDetails.invite_token}`}
-                        className="min-w-0 flex-1 h-[26px] rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 text-[10px] text-white/55 outline-none truncate"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => copyInviteLink(wsDetails.invite_token)}
-                        className="shrink-0 rounded-lg border border-cyan-400/30 bg-cyan-400/[0.08] px-2.5 py-1 text-[10px] font-semibold text-cyan-300 transition hover:bg-cyan-400/[0.16]"
-                      >
-                        {inviteCopied ? 'Copied!' : 'Copy'}
-                      </button>
-                    </div>
-                    {wsDetails.your_role === 'owner' && (
-                      <button type="button" onClick={regenerateInvite} className="text-[10px] text-white/35 hover:text-white/65 transition">
-                        Regenerate link
-                      </button>
-                    )}
-
-                    <p className="text-[10px] uppercase tracking-widest text-white/35 mt-4 mb-2">
-                      Members ({wsDetails.members?.length ?? 0})
-                    </p>
-                    <div className="space-y-2 mb-3">
-                      {wsDetails.members?.map(member => (
-                        <div key={member.user_id} className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[11px] text-white/70 truncate">
-                              {member.user_email || member.user_id.slice(0, 12) + '…'}
-                              {member.user_id === props.user?.id && <span className="ml-1 text-white/30">(you)</span>}
-                            </p>
-                            <p className="text-[10px] text-white/30 capitalize">{member.role}</p>
-                          </div>
-                          {wsDetails.your_role === 'owner' && member.user_id !== props.user?.id && (
-                            <button type="button" onClick={() => removeMember(wsSettingsId, member.user_id)}
-                              className="shrink-0 text-[10px] text-red-400/50 hover:text-red-400/80 transition">
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center justify-between border-t pt-3" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                      {wsDetails.your_role === 'owner' ? (
-                        <button type="button" onClick={deleteWorkspaceFromSettings}
-                          className="text-[10px] text-red-400/50 hover:text-red-400/80 transition">
-                          Delete workspace
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => removeMember(wsSettingsId, props.user?.id)}
-                          className="text-[10px] text-red-400/50 hover:text-red-400/80 transition">
-                          Leave workspace
-                        </button>
-                      )}
-                      <button type="button" onClick={() => { setWsSettingsId(null); setWsDetails(null) }}
-                        className="text-[10px] text-white/30 hover:text-white/60 transition">
-                        Done
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-[11px] text-red-400/60">Failed to load workspace details.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {props.user && workspacesLoaded && workspaces.length === 0 && !workspaceNudgeDismissed && (
-        <div className="relative z-20 px-5 pb-3 sm:px-8">
-          <div className="mx-auto max-w-[92rem]">
-            <div className="flex items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
+        {showHomeNudge && (
+          <div className="px-5 pt-4 sm:px-8">
+            <div className="mx-auto flex max-w-[92rem] items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="text-[12px] font-semibold text-cyan-200/90">Invite your team</p>
                 <p className="mt-0.5 text-[11px] leading-5 text-white/50">
@@ -1187,80 +1072,78 @@ export default function DashboardPage(props) {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <main
-        className={`relative z-10 mt-2 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
-          chatOpen && activeView === 'meeting' && !isNarrow ? '' : 'mx-auto'
-        }`}
-        style={
-          chatOpen && activeView === 'meeting' && !isNarrow
-            ? { paddingLeft: '452px' }
-            : undefined
-        }
-      >
-        {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
-          <StatsCanvas
-            history={props.history}
-            loadFromHistory={handleSelectMeeting}
-            loadSample={props.loadDashboardSample}
-            canLoadSample={props.canLoadSample}
-            selectedMeetingId={props.selectedMeetingId}
-            memberEmailMap={workspaceMemberMap}
-            currentUserId={props.user?.id}
-          />
-        )}
-        {activeView === 'meeting' && (
-          <>
-            {props.loading && <AnalyzingBanner result={props.result} />}
-            {props.loading && !props.result ? (
-              <MeetingViewSkeleton />
-            ) : (
-              <>
-                {props.result && !props.loading && (
-                  <MeetingActionsBar
-                    shareToken={props.shareToken}
-                    shareCopied={props.shareCopied}
-                    setShareCopied={props.setShareCopied}
-                    mdCopied={props.mdCopied}
-                    copyMarkdown={props.copyMarkdown}
-                    exportMarkdown={props.exportMarkdown}
-                    exportPDF={props.exportPDF}
-                    exportToSlack={props.exportToSlack}
-                    exportToNotion={props.exportToNotion}
-                    exportingSlack={props.exportingSlack}
-                    exportingNotion={props.exportingNotion}
-                    integrations={props.integrations}
-                  />
-                )}
-                <Suspense fallback={<SkeletonCard lines={4} tall />}>
-                  <MeetingView
-                    result={props.result}
-                    meeting={currentMeeting}
-                    gmailConnected={props.calendarConnected}
-                    onToggleActionItem={props.toggleActionItem}
-                    transcript={props.transcript}
-                    onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
-                    recordedByEmail={recordedByEmail}
-                  />
-                </Suspense>
-              </>
-            )}
-          </>
-        )}
-        {activeView === 'intelligence' && (
-          <Suspense fallback={<SkeletonCard lines={4} tall />}>
-            <IntelligenceView
+        <main
+          className={`relative z-10 mt-2 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
+            chatOpen && activeView === 'meeting' && !isNarrow ? '' : 'mx-auto'
+          }`}
+          style={
+            chatOpen && activeView === 'meeting' && !isNarrow
+              ? { paddingLeft: '452px' }
+              : undefined
+          }
+        >
+          {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
+            <StatsCanvas
               history={props.history}
-              crossMeetingInsights={props.crossMeetingInsights}
-              onSelectMeeting={handleSelectMeeting}
-              workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+              loadFromHistory={handleSelectMeeting}
+              loadSample={props.loadDashboardSample}
+              canLoadSample={props.canLoadSample}
+              selectedMeetingId={props.selectedMeetingId}
+              memberEmailMap={workspaceMemberMap}
+              currentUserId={props.user?.id}
             />
-          </Suspense>
-        )}
-      </main>
-
+          )}
+          {activeView === 'meeting' && (
+            <>
+              {props.loading && <AnalyzingBanner result={props.result} />}
+              {props.loading && !props.result ? (
+                <MeetingViewSkeleton />
+              ) : (
+                <>
+                  {props.result && !props.loading && (
+                    <MeetingActionsBar
+                      shareToken={props.shareToken}
+                      shareCopied={props.shareCopied}
+                      setShareCopied={props.setShareCopied}
+                      mdCopied={props.mdCopied}
+                      copyMarkdown={props.copyMarkdown}
+                      exportMarkdown={props.exportMarkdown}
+                      exportPDF={props.exportPDF}
+                      exportToSlack={props.exportToSlack}
+                      exportToNotion={props.exportToNotion}
+                      exportingSlack={props.exportingSlack}
+                      exportingNotion={props.exportingNotion}
+                      integrations={props.integrations}
+                    />
+                  )}
+                  <Suspense fallback={<SkeletonCard lines={4} tall />}>
+                    <MeetingView
+                      result={props.result}
+                      meeting={currentMeeting}
+                      gmailConnected={props.calendarConnected}
+                      onToggleActionItem={props.toggleActionItem}
+                      transcript={props.transcript}
+                      onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
+                      recordedByEmail={recordedByEmail}
+                    />
+                  </Suspense>
+                </>
+              )}
+            </>
+          )}
+          {activeView === 'intelligence' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <IntelligenceView
+                history={props.history}
+                crossMeetingInsights={props.crossMeetingInsights}
+                onSelectMeeting={handleSelectMeeting}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+              />
+            </Suspense>
+          )}
+        </main>
       </div>
 
       {activeView === 'meeting' && props.result && !props.loading && (
@@ -1302,7 +1185,7 @@ export default function DashboardPage(props) {
             </Suspense>
           </div>
 
-          {/* Floating trigger button — hidden when the mobile overlay is open (backdrop + Esc handle close) */}
+          {/* Floating trigger button */}
           {!(chatOpen && isNarrow) && (
             <button
               type="button"
@@ -1320,139 +1203,7 @@ export default function DashboardPage(props) {
         </>
       )}
 
-      <nav className="fixed bottom-5 left-1/2 z-30 h-[96px] w-[154px] -translate-x-1/2" aria-label="Dashboard shortcuts" data-node-id="4590:266">
-        <div className="absolute bottom-4 left-1" data-history-panel>
-          <DropdownMenu modal={false} open={props.showHistory} onOpenChange={props.setShowHistory}>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className={`${darkCircleButtonClass} relative h-10 w-10`} aria-label="Open meeting history">
-                <History className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side="left"
-              align="end"
-              alignOffset={52}
-              sideOffset={8}
-              collisionPadding={16}
-              className="dashboard-body-font w-[min(16.5rem,calc(100vw-2rem))] translate-x-1 -translate-y-4 overflow-hidden rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5 text-white shadow-2xl shadow-black/50"
-              data-history-panel
-              onCloseAutoFocus={(event) => event.preventDefault()}
-            >
-              <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-2">
-                <p className="text-[13px] font-semibold leading-5 text-white/90">History</p>
-                <button
-                  type="button"
-                  onClick={toggleHistorySearch}
-                  aria-expanded={historySearchOpen}
-                  aria-controls="dashboard-history-search-wrap"
-                  aria-label="Search history"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-white/48 transition hover:border-cyan-200/24 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/18 data-[state=open]:text-cyan-100"
-                  data-state={historySearchOpen ? 'open' : 'closed'}
-                >
-                  <Search className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              </div>
-
-              {(props.user || props.isDemoMode) ? (
-                <>
-                  {historySearchOpen && (
-                    <div id="dashboard-history-search-wrap" className="px-1.5 pb-1.5">
-                      <label className="sr-only" htmlFor="dashboard-history-search">Search meetings</label>
-                      <div className="flex h-7 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.035] px-2 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.05] focus-within:ring-2 focus-within:ring-cyan-300/10">
-                        <Search className="h-3 w-3 shrink-0 text-white/36" aria-hidden="true" />
-                        <input
-                          ref={historySearchInputRef}
-                          id="dashboard-history-search"
-                          value={props.historySearch || ''}
-                          onChange={handleHistorySearchChange}
-                          placeholder="Search meetings..."
-                          className="h-full min-w-0 flex-1 bg-transparent text-[11px] font-medium text-white/80 outline-none placeholder:font-normal placeholder:text-white/32"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="max-h-[min(12rem,calc(100dvh-15rem))] space-y-1 overflow-y-auto">
-                    {filteredHistory.length > 0 ? (
-                      filteredHistory.map((entry) => (
-                        <div key={entry.id} className="group flex items-center rounded-md pr-1 transition hover:bg-cyan-300/[0.055] focus-within:bg-cyan-300/[0.075]">
-                          <button type="button" onClick={() => handleSelectMeeting(entry)} className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-left focus-visible:outline-none">
-                            <p className="truncate text-[13px] font-medium leading-5 text-white/88 group-hover:text-white">{deriveDisplayTitle(entry)}</p>
-                            <p className="text-[10.5px] font-normal leading-4 text-white/44">{formatHistoryDate(entry.date)}</p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteHistoryEntry(entry)}
-                            aria-label={`Delete ${deriveDisplayTitle(entry)}`}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center text-white/30 opacity-100 transition hover:text-red-300 focus-visible:text-red-300 focus-visible:outline-none sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="px-4 py-6 text-center text-xs leading-5 text-white/46">
-                        {props.historySearch ? 'No matching meetings.' : 'Saved meetings will appear here.'}
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="px-4 py-6 text-center">
-                  <p className="text-xs font-medium text-white/72">Meeting history appears after you sign in from the landing page.</p>
-                </div>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <DropdownMenu open={newMeetingOpen} onOpenChange={(open) => { setNewMeetingOpen(open); if (open) props.resetTranscriptWorkspaces?.() }}>
-          <DropdownMenuTrigger asChild>
-            <button type="button" className="dashboard-signin-button absolute bottom-[38px] left-1/2 flex h-[60px] w-[60px] -translate-x-1/2 items-center justify-center rounded-full border text-cyan-50 shadow-xl transition hover:text-cyan-50" aria-label="New meeting">
-              <Plus className="h-[19px] w-[19px]" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="top"
-            align="center"
-            sideOffset={12}
-            modal={false}
-            className="dashboard-body-font w-[340px] rounded-2xl border border-white/[0.10] bg-[#0f0f11] p-0 shadow-2xl"
-            onCloseAutoFocus={(e) => e.preventDefault()}
-          >
-            <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <button
-          type="button"
-          onClick={handleSwitchView}
-          className={`${darkCircleButtonClass} absolute bottom-4 right-1 h-10 w-10`}
-          style={inIntelligence ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
-          aria-label={inIntelligence ? 'Back to meeting view' : 'Switch to cross-meeting intelligence'}
-        >
-          {inIntelligence
-            ? <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-            : <Brain className="h-4 w-4" aria-hidden="true" />
-          }
-        </button>
-      </nav>
-
-      <div
-        className="pointer-events-none fixed bottom-0 left-1/2 z-20 -translate-x-1/2"
-        style={{
-          width: '800px',
-          height: '400px',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          maskImage: 'radial-gradient(circle at 50% 90%, black 11%, transparent 25%)',
-          WebkitMaskImage: 'radial-gradient(circle at 50% 90%, black 11%, transparent 25%)',
-        }}
-        aria-hidden="true"
-      />
-
-
-<Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
+      <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
         <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold text-white">More meetings needed</DialogTitle>
