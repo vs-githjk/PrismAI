@@ -2328,13 +2328,6 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
-  useEffect(() => {
-    if (!showHistory) return
-    const h = (e) => { if (!e.target.closest('[data-history-panel]')) setShowHistory(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [showHistory])
-
   // Landing screen — shown to first-time visitors
   if (showLanding) {
     return <LandingScreen onViewDashboard={enterDashboardTestRun} />
@@ -2543,8 +2536,6 @@ export default function App() {
           resetTranscriptWorkspaces={resetTranscriptWorkspaces}
           toggleActionItem={toggleActionItem}
           history={history}
-          showHistory={showHistory}
-          setShowHistory={setShowHistory}
           historySearch={historySearch}
           setHistorySearch={setHistorySearch}
           historySearchDebounceRef={historySearchDebounceRef}

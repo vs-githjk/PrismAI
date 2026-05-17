@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
+import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
@@ -42,24 +43,6 @@ const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
-
-function formatHistoryDate(date) {
-  if (!date) return 'Saved meeting'
-  const parsed = new Date(date)
-  if (Number.isNaN(parsed.getTime())) return 'Saved meeting'
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-function IntegrationsIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="4.25" cy="4.25" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="11.75" cy="4.25" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="4.25" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="11.75" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  )
-}
 
 function MeetingActionsBar({
   shareToken,
@@ -477,6 +460,7 @@ export default function DashboardPage(props) {
     () => { try { return localStorage.getItem('prismai:workspace-nudge-dismissed') === '1' } catch { return false } }
   )
   const [shareWorkspaceId, setShareWorkspaceId] = useState(null)
+  const [shareErrorId, setShareErrorId] = useState(null)
 
   // --- Sidebar resize / collapse (persisted) ---
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -764,17 +748,46 @@ export default function DashboardPage(props) {
     })
   }
 
-  // Per-row Share: fetch the workspace's invite token and copy the link directly.
+  // Best-effort copy: Clipboard API, then a hidden-textarea/execCommand
+  // fallback for insecure contexts where navigator.clipboard is unavailable.
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch { /* fall through to legacy path */ }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      return ok
+    } catch { return false }
+  }
+
+  // Per-row Share: fetch the workspace's invite token and copy the link
+  // directly. Surfaces a transient error state if fetch or copy fails so the
+  // click never silently no-ops.
   async function shareWorkspace(wsId) {
+    setShareErrorId(null)
     try {
       const r = await apiFetch(`/workspaces/${wsId}`)
-      if (!r.ok) return
+      if (!r.ok) throw new Error('fetch failed')
       const data = await r.json()
       const url = `${window.location.origin}/dashboard#invite/${data.invite_token}`
-      await navigator.clipboard.writeText(url)
+      const copied = await copyText(url)
+      if (!copied) throw new Error('copy failed')
       setShareWorkspaceId(wsId)
       setTimeout(() => setShareWorkspaceId(null), 2000)
-    } catch { /* ignore */ }
+    } catch {
+      setShareErrorId(wsId)
+      setTimeout(() => setShareErrorId(null), 2500)
+    }
   }
 
   function closeWsSettings() {
@@ -919,6 +932,7 @@ export default function DashboardPage(props) {
         setWorkspaceCreateError={setWorkspaceCreateError}
         shareWorkspace={shareWorkspace}
         shareWorkspaceId={shareWorkspaceId}
+        shareErrorId={shareErrorId}
         toggleWsSettings={toggleWsSettings}
         wsSettingsId={wsSettingsId}
         wsDetails={wsDetails}

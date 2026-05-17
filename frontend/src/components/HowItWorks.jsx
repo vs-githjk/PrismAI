@@ -9,6 +9,13 @@ const FADE = { duration: 0.45, ease: [0.22, 1, 0.36, 1] }
 const RATIO_THRESHOLDS = Array.from({ length: 51 }, (_, i) => i / 50)
 const PLAY_AT = 0.7
 const PEEK_BLUR_PX = 7
+// Snap the observed ratio down to 0.05 buckets and only re-render when the
+// bucket changes. Cuts scroll-tick re-renders of the framer-motion deck
+// (+ animated blur filter) by ~5×. 0.05 ≈ 0.35px blur granularity — below
+// perception. floor (not round) keeps the play gate exact: PLAY_AT (0.70)
+// is a bucket edge, so `playing` still flips at true ratio ≥ 0.70.
+const RATIO_QUANTUM = 0.05
+const quantizeRatio = (r) => Math.floor(r / RATIO_QUANTUM) * RATIO_QUANTUM
 
 // ── Deck tuning ──────────────────────────────────────────────────────
 // 4 cards fanned bottom-right. Origin is top-left (see .hiw-card CSS) so
@@ -38,6 +45,7 @@ export default function HowItWorks() {
   const [phase, setPhase] = useState(1)
   const [ratio, setRatio] = useState(0)
   const frameRef = useRef(null)
+  const lastRatioRef = useRef(-1)
   // The phase that was front *before* this render. The card matching it
   // is the one rotating 0→back this step, so it teleports while invisible
   // instead of sliding diagonally across the deck.
@@ -47,7 +55,12 @@ export default function HowItWorks() {
     const node = frameRef.current
     if (!node) return
     const obs = new IntersectionObserver(
-      ([entry]) => setRatio(entry.intersectionRatio),
+      ([entry]) => {
+        const q = quantizeRatio(entry.intersectionRatio)
+        if (q === lastRatioRef.current) return
+        lastRatioRef.current = q
+        setRatio(q)
+      },
       { threshold: RATIO_THRESHOLDS }
     )
     obs.observe(node)

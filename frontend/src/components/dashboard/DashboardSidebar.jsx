@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { deriveDisplayTitle } from '../../lib/insights'
+import { formatHistoryDate, IntegrationsIcon } from './chrome'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,29 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog'
-
-function IntegrationsIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="4.25" cy="4.25" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="11.75" cy="4.25" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="4.25" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="11.75" cy="11.75" r="2" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  )
-}
-
-function formatHistoryDate(date) {
-  if (!date) return 'Saved meeting'
-  const parsed = new Date(date)
-  if (Number.isNaN(parsed.getTime())) return 'Saved meeting'
-  return parsed.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 // Group meetings into Today / This week / Earlier, newest first.
 function groupMeetings(entries) {
@@ -94,6 +72,7 @@ export default function DashboardSidebar(props) {
     setWorkspaceCreateError,
     shareWorkspace,
     shareWorkspaceId,
+    shareErrorId,
     toggleWsSettings,
     wsSettingsId,
     wsDetails,
@@ -239,11 +218,13 @@ export default function DashboardSidebar(props) {
                   <button
                     type="button"
                     onClick={() => shareWorkspace(ws.id)}
-                    title="Copy invite link"
+                    title={shareErrorId === ws.id ? 'Copy failed — try again' : 'Copy invite link'}
                     aria-label={`Copy invite link for ${ws.name}`}
                     className="flex h-7 w-7 shrink-0 items-center justify-center text-white/35 transition hover:text-cyan-200 disabled:opacity-50"
                   >
-                    {shareWorkspaceId === ws.id ? (
+                    {shareErrorId === ws.id ? (
+                      <X className="h-3.5 w-3.5 text-red-400" />
+                    ) : shareWorkspaceId === ws.id ? (
                       <Check className="h-3.5 w-3.5 text-cyan-300" />
                     ) : (
                       <Share2 className="h-3.5 w-3.5" />
