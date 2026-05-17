@@ -1,32 +1,21 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bolt,
   BookOpen,
-  Brain,
   Copy,
-  DoorOpen,
   Download,
   FileText,
-  History,
-  LayoutDashboard,
   MessageSquare,
   MessagesSquare,
-  Plus,
-  Search,
   Share2,
-  Trash2,
-  UserCircle,
   X,
 } from 'lucide-react'
 import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
-import LogoIcon from './LogoIcon'
 import StatsCanvas from './dashboard/StatsCanvas'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -42,7 +31,6 @@ import {
 import SkeletonCard from './SkeletonCard'
 import DashboardSidebar from './dashboard/DashboardSidebar'
 import DashboardTopbar from './dashboard/DashboardTopbar'
-import { UI_SCREEN_KEY } from '../lib/sessionKeys'
 
 const SIDEBAR_MIN = 200
 const SIDEBAR_MAX = 420
@@ -54,8 +42,6 @@ const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
 const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
-const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90'
-const darkCircleButtonClass = 'flex items-center justify-center rounded-full border border-[#2f2f2f] bg-[#18181b] text-[#f2f2f2] shadow-xl transition-all hover:bg-[#27272a] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/18 data-[state=open]:bg-[#27272a]'
 
 function formatHistoryDate(date) {
   if (!date) return 'Saved meeting'
@@ -466,8 +452,6 @@ function AnalyzingBanner({ result }) {
 }
 
 export default function DashboardPage(props) {
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const [profileMenuPinned, setProfileMenuPinned] = useState(false)
   const [historySearchOpen, setHistorySearchOpen] = useState(false)
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
   const [activeView, setActiveView] = useState(
@@ -553,12 +537,6 @@ export default function DashboardPage(props) {
   }
 
   const historyCount = props.history?.length || 0
-  const profileCloseTimer = useRef(null)
-  const profileAreaRef = useRef(null)
-  const profileContentRef = useRef(null)
-  const historySearchInputRef = useRef(null)
-  const profileTriggerHovered = useRef(false)
-  const profileContentHovered = useRef(false)
   const isFirstRender = useRef(true)
   const userSelectedMeetingRef = useRef(false)
 
@@ -804,35 +782,6 @@ export default function DashboardPage(props) {
     setWsDetails(null)
   }
 
-  useEffect(() => {
-    if (!profileMenuOpen) return undefined
-
-    function handlePointerMove(event) {
-      const rects = [
-        profileAreaRef.current?.getBoundingClientRect(),
-        profileContentRef.current?.getBoundingClientRect(),
-      ].filter(Boolean)
-
-      if (rects.length === 0) return
-
-      const buffer = 28
-      const isNearProfileMenu = rects.some((rect) => (
-        event.clientX >= rect.left - buffer &&
-        event.clientX <= rect.right + buffer &&
-        event.clientY >= rect.top - buffer &&
-        event.clientY <= rect.bottom + buffer
-      ))
-
-      if (!isNearProfileMenu) {
-        setProfileMenuPinned(false)
-        setProfileMenuOpen(false)
-      }
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    return () => window.removeEventListener('pointermove', handlePointerMove)
-  }, [profileMenuOpen])
-
   const filteredHistory = useMemo(() => {
     const query = `${props.historySearch || ''}`.trim().toLowerCase()
     const entries = props.history || []
@@ -861,33 +810,6 @@ export default function DashboardPage(props) {
       return searchable.includes(query)
     })
   }, [props.history, props.historySearch])
-
-  function openProfileMenu() {
-    if (profileCloseTimer.current) {
-      clearTimeout(profileCloseTimer.current)
-      profileCloseTimer.current = null
-    }
-    setProfileMenuOpen(true)
-  }
-
-  function closeProfileMenuSoon() {
-    if (profileMenuPinned) return
-    if (profileCloseTimer.current) clearTimeout(profileCloseTimer.current)
-    profileCloseTimer.current = setTimeout(() => {
-      if (profileTriggerHovered.current || profileContentHovered.current) return
-      setProfileMenuOpen(false)
-      profileCloseTimer.current = null
-    }, 120)
-  }
-
-  function toggleProfileMenuPinned(event) {
-    event.preventDefault()
-    setProfileMenuPinned((isPinned) => {
-      const nextPinned = !isPinned
-      setProfileMenuOpen(nextPinned)
-      return nextPinned
-    })
-  }
 
   function handleHistorySearchChange(event) {
     props.setHistorySearch?.(event.target.value)
