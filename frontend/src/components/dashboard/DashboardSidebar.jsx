@@ -170,10 +170,10 @@ export default function DashboardSidebar(props) {
         <div className="mt-auto">
           <button
             type="button"
-            onClick={signOut}
+            onClick={onToggleCollapse}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-white/45 transition hover:bg-white/[0.06] hover:text-white/80"
-            aria-label="Account"
-            title={accountSub}
+            aria-label="Expand sidebar for account menu"
+            title={`${accountSub} — expand for account menu`}
           >
             <UserCircle className="h-5 w-5" />
           </button>
