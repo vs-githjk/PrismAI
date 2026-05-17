@@ -185,13 +185,13 @@ export default function DashboardSidebar(props) {
   // ---- Full sidebar ----
   return (
     <aside className="dashboard-sidebar flex flex-col" aria-label="Dashboard navigation">
-      {/* Workspace switcher */}
-      <div className="px-2.5 pb-1 pt-3">
+      {/* Workspace switcher + collapse toggle */}
+      <div className="flex items-center gap-1 px-2.5 pb-1 pt-3">
         <DropdownMenu open={wsMenuOpen} onOpenChange={setWsMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-white/[0.05]"
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-white/[0.05]"
             >
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-cyan-400/[0.14] text-[11px] font-bold text-cyan-200">
                 {scopeInitial}
@@ -317,6 +317,15 @@ export default function DashboardSidebar(props) {
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/30 transition hover:bg-white/[0.06] hover:text-white/70"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar (⌘\\)"
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Pinned: Home */}
@@ -514,17 +523,6 @@ export default function DashboardSidebar(props) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-
-      {/* Collapse toggle (sits on the resize handle area) */}
-      <button
-        type="button"
-        onClick={onToggleCollapse}
-        className="absolute right-2 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition hover:bg-white/[0.06] hover:text-white/70"
-        aria-label="Collapse sidebar"
-        title="Collapse sidebar (⌘\\)"
-      >
-        <PanelLeftClose className="h-4 w-4" />
-      </button>
 
       {/* Drag-resize handle */}
       <div

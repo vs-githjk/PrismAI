@@ -505,11 +505,13 @@ export default function DashboardPage(props) {
     } catch { return SIDEBAR_DEFAULT }
   })
   const [isResizing, setIsResizing] = useState(false)
+  const sidebarWidthRef = useRef(sidebarWidth)
 
   useEffect(() => {
     try { localStorage.setItem('prismai:sidebar-collapsed', sidebarCollapsed ? '1' : '0') } catch { /* ignore */ }
   }, [sidebarCollapsed])
   useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth
     try { localStorage.setItem('prismai:sidebar-width', String(sidebarWidth)) } catch { /* ignore */ }
   }, [sidebarWidth])
 
@@ -530,8 +532,7 @@ export default function DashboardPage(props) {
     e.preventDefault()
     setIsResizing(true)
     const startX = e.clientX
-    let startW = SIDEBAR_DEFAULT
-    setSidebarWidth((w) => { startW = w; return w })
+    const startW = sidebarWidthRef.current
     const onMove = (ev) => {
       const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + (ev.clientX - startX)))
       setSidebarWidth(next)
