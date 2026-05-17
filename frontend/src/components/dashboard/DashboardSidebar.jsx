@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Bolt,
   Check,
@@ -120,6 +120,9 @@ export default function DashboardSidebar(props) {
     signOut,
   } = props
 
+  const [wsMenuOpen, setWsMenuOpen] = useState(false)
+  const closeWsMenu = () => setWsMenuOpen(false)
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || null
   const scopeLabel = activeWorkspace ? activeWorkspace.name : 'Personal'
   const scopeInitial = scopeLabel.charAt(0).toUpperCase()
@@ -177,7 +180,7 @@ export default function DashboardSidebar(props) {
     <aside className="dashboard-sidebar flex flex-col" aria-label="Dashboard navigation">
       {/* Workspace switcher */}
       <div className="px-2.5 pb-1 pt-3">
-        <DropdownMenu>
+        <DropdownMenu open={wsMenuOpen} onOpenChange={setWsMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -194,12 +197,11 @@ export default function DashboardSidebar(props) {
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
-            className="dashboard-body-font w-[var(--ws-menu-w,260px)] rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
-            style={{ '--ws-menu-w': '260px' }}
+            className="dashboard-body-font w-[260px] rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
           >
             <DropdownMenuGroup>
               <DropdownMenuItem
-                onSelect={() => switchWorkspace(null)}
+                onSelect={() => { closeWsMenu(); switchWorkspace(null) }}
                 className="cursor-pointer gap-2 px-2.5 py-2 text-[12.5px] font-semibold text-white/84 focus:bg-cyan-300/[0.08]"
               >
                 <span className="grid h-5 w-5 place-items-center rounded bg-white/[0.08] text-[10px] font-bold text-white/70">
@@ -216,7 +218,7 @@ export default function DashboardSidebar(props) {
                 >
                   <button
                     type="button"
-                    onClick={() => switchWorkspace(ws.id)}
+                    onClick={() => { closeWsMenu(); switchWorkspace(ws.id) }}
                     className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-[12.5px] font-semibold text-white/84"
                   >
                     <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-white/[0.08] text-[10px] font-bold text-white/70">
@@ -232,7 +234,7 @@ export default function DashboardSidebar(props) {
                     onClick={() => shareWorkspace(ws.id)}
                     title="Copy invite link"
                     aria-label={`Copy invite link for ${ws.name}`}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center text-white/35 transition hover:text-cyan-200"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center text-white/35 transition hover:text-cyan-200 disabled:opacity-50"
                   >
                     {shareWorkspaceId === ws.id ? (
                       <Check className="h-3.5 w-3.5 text-cyan-300" />
@@ -242,7 +244,7 @@ export default function DashboardSidebar(props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => toggleWsSettings(ws.id)}
+                    onClick={() => { closeWsMenu(); toggleWsSettings(ws.id) }}
                     title="Workspace settings"
                     aria-label={`Settings for ${ws.name}`}
                     className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center text-white/35 transition hover:text-white/80"
@@ -256,7 +258,13 @@ export default function DashboardSidebar(props) {
             <DropdownMenuSeparator />
 
             {creatingWorkspace ? (
-              <div className="flex items-center gap-1.5 px-1.5 py-1.5">
+              // Radix Menu runs a typeahead + arrow-key handler on its content;
+              // stopping propagation here keeps keystrokes in the input.
+              <div
+                className="flex items-center gap-1.5 px-1.5 py-1.5"
+                onKeyDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
                 <input
                   autoFocus
                   value={newWorkspaceName}
@@ -265,6 +273,7 @@ export default function DashboardSidebar(props) {
                     setWorkspaceCreateError('')
                   }}
                   onKeyDown={(e) => {
+                    e.stopPropagation()
                     if (e.key === 'Enter') createWorkspace()
                     if (e.key === 'Escape') {
                       setCreatingWorkspace(false)
