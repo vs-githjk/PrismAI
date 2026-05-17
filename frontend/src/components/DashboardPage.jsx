@@ -1053,16 +1053,7 @@ export default function DashboardPage(props) {
           </div>
         )}
 
-        <main
-          className={`relative z-10 mt-2 max-w-[92rem] px-5 pb-28 transition-[padding,margin] duration-300 ease-out sm:px-8 ${
-            chatOpen && activeView === 'meeting' && !isNarrow ? '' : 'mx-auto'
-          }`}
-          style={
-            chatOpen && activeView === 'meeting' && !isNarrow
-              ? { paddingLeft: '452px' }
-              : undefined
-          }
-        >
+        <main className="relative z-10 mx-auto mt-2 max-w-[92rem] px-5 pb-28 sm:px-8">
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
@@ -1137,17 +1128,26 @@ export default function DashboardPage(props) {
             />
           )}
 
-          {/* Slide-out chat panel */}
+          {/* Bottom-right docked chat panel */}
           <div
             aria-hidden={!chatOpen}
-            className={`dashboard-chat-panel fixed left-3 top-[88px] bottom-[120px] z-50 flex flex-col overflow-hidden transition-all duration-300 ease-out ${
-              chatOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-[110%] opacity-0'
-            } ${glassCard}`}
-            style={{
-              ...cardGlowStyle,
-              width: isNarrow ? 'min(88vw, 420px)' : '420px',
-            }}
+            className={`dashboard-chat-panel fixed z-50 flex flex-col overflow-hidden transition-all duration-300 ease-out ${
+              chatOpen ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0'
+            } ${glassCard} ${
+              isNarrow
+                ? 'inset-x-3 bottom-3 top-16'
+                : 'bottom-5 right-5 h-[min(640px,calc(100dvh-7rem))] w-[400px]'
+            }`}
+            style={cardGlowStyle}
           >
+            <button
+              type="button"
+              onClick={() => setChatOpen(false)}
+              aria-label="Close chat"
+              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full text-white/45 transition hover:bg-white/[0.08] hover:text-white/80"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
             <Suspense fallback={<div className="p-4 text-xs text-white/40">Loading chat…</div>}>
               <ChatPanel
                 key={props.meetingId || 'no-meeting'}
@@ -1164,19 +1164,16 @@ export default function DashboardPage(props) {
             </Suspense>
           </div>
 
-          {/* Floating trigger button */}
-          {!(chatOpen && isNarrow) && (
+          {/* Bottom-right launcher (hidden while the panel is open) */}
+          {!chatOpen && (
             <button
               type="button"
-              onClick={() => setChatOpen((v) => !v)}
-              aria-label={chatOpen ? 'Close chat' : 'Open chat'}
-              aria-pressed={chatOpen}
-              className={`dashboard-chat-trigger fixed top-1/2 z-50 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/[0.14] bg-[#0c0d0f] text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.35)] transition-all duration-300 ease-out hover:border-cyan-300/40 hover:text-cyan-200 ${
-                chatOpen ? 'left-[440px]' : 'left-4'
-              }`}
-              style={chatOpen ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
+              onClick={() => setChatOpen(true)}
+              aria-label="Open chat"
+              aria-pressed={false}
+              className="dashboard-chat-trigger fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full border border-cyan-400/35 bg-[#0c0d0f] text-cyan-200 shadow-[0_12px_30px_rgba(0,0,0,0.4)] transition-all duration-200 ease-out hover:scale-105 hover:border-cyan-300/55 hover:text-cyan-100"
             >
-              {chatOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <MessagesSquare className="h-4 w-4" aria-hidden="true" />}
+              <MessagesSquare className="h-5 w-5" aria-hidden="true" />
             </button>
           )}
         </>
