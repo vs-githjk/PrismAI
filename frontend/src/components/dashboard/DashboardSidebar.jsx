@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bolt,
   Check,
@@ -129,6 +129,13 @@ export default function DashboardSidebar(props) {
 
   const groups = useMemo(() => groupMeetings(filteredHistory), [filteredHistory])
   const onHome = activeView === 'home'
+  const hasMeetings = (!!user || isDemoMode) && history.length > 0
+
+  // Keep the focused meeting visible when it changes.
+  const activeRowRef = useRef(null)
+  useEffect(() => {
+    activeRowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [currentMeetingId, activeView])
 
   const accountName =
     user?.email?.split('@')[0] || (isDemoMode ? 'Demo session' : 'Guest')
@@ -333,19 +340,21 @@ export default function DashboardSidebar(props) {
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-white/36">
           Meetings
         </p>
-        <button
-          type="button"
-          onClick={toggleHistorySearch}
-          aria-label="Search meetings"
-          aria-expanded={historySearchOpen}
-          className={`flex h-6 w-6 items-center justify-center rounded-md transition ${
-            historySearchOpen
-              ? 'text-cyan-200'
-              : 'text-white/35 hover:bg-white/[0.06] hover:text-white/70'
-          }`}
-        >
-          <Search className="h-3.5 w-3.5" />
-        </button>
+        {hasMeetings && (
+          <button
+            type="button"
+            onClick={toggleHistorySearch}
+            aria-label="Search meetings"
+            aria-expanded={historySearchOpen}
+            className={`flex h-6 w-6 items-center justify-center rounded-md transition ${
+              historySearchOpen
+                ? 'text-cyan-200'
+                : 'text-white/35 hover:bg-white/[0.06] hover:text-white/70'
+            }`}
+          >
+            <Search className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {historySearchOpen && (
@@ -388,6 +397,7 @@ export default function DashboardSidebar(props) {
                 return (
                   <div
                     key={entry.id}
+                    ref={isActive ? activeRowRef : null}
                     className={`group flex items-center rounded-lg pr-1 transition ${
                       isActive
                         ? 'bg-cyan-400/[0.12]'
@@ -397,6 +407,7 @@ export default function DashboardSidebar(props) {
                     <button
                       type="button"
                       onClick={() => onSelectMeeting(entry)}
+                      aria-current={isActive ? 'page' : undefined}
                       className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left"
                     >
                       {isLive ? (
