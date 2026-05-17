@@ -15,11 +15,23 @@ SYSTEM_PROMPT = (
 _DEFAULT = {"calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "resolved_date": "", "resolved_day": ""}}
 
 
-async def run(transcript: str) -> dict:
+async def run(transcript: str, context: dict = {}) -> dict:
     reference_date = datetime.now(timezone.utc).date()
+
+    user_content = f"Reference date: {reference_date.isoformat()}\nTranscript:\n{transcript}"
+    if context.get("decisions"):
+        decisions_text = "\n".join(
+            f"- {d.get('decision', str(d))}" for d in context["decisions"]
+        )
+        user_content = (
+            f"Reference date: {reference_date.isoformat()}\n"
+            f"Decisions from this meeting:\n{decisions_text}\n\n---\n\n"
+            f"Transcript:\n{transcript}"
+        )
+
     for attempt in range(2):
         try:
-            raw = await llm_call(SYSTEM_PROMPT, f"Reference date: {reference_date.isoformat()}\nTranscript:\n{transcript}")
+            raw = await llm_call(SYSTEM_PROMPT, user_content)
             payload = json.loads(strip_fences(raw))
             suggestion = payload.get("calendar_suggestion", {}) or {}
             phrase = suggestion.get("suggested_timeframe") or suggestion.get("reason") or ""

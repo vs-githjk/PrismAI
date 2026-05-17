@@ -28,10 +28,28 @@ _DEFAULT = {
 }
 
 
-async def run(transcript: str) -> dict:
+async def run(transcript: str, context: dict = {}) -> dict:
+    user_content = f"Transcript:\n{transcript}"
+
+    if context:
+        parts = []
+        sentiment = context.get("sentiment", {})
+        if sentiment.get("overall"):
+            parts.append(
+                f"Pre-analyzed sentiment: {sentiment['overall']} (score: {sentiment.get('score', 'N/A')}/100)"
+            )
+        action_items = context.get("action_items")
+        if action_items is not None:
+            parts.append(f"Action items extracted: {len(action_items)}")
+        decisions = context.get("decisions")
+        if decisions is not None:
+            parts.append(f"Decisions made: {len(decisions)}")
+        if parts:
+            user_content = "\n".join(parts) + "\n\n---\n\n" + user_content
+
     for attempt in range(2):
         try:
-            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}", temperature=0.1)
+            raw = await llm_call(SYSTEM_PROMPT, user_content, temperature=0.1)
             return json.loads(strip_fences(raw))
         except Exception:
             if attempt == 1:

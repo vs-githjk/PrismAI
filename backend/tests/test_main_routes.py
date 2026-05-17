@@ -50,7 +50,7 @@ sys.modules.setdefault("groq", fake_groq_module)
 fake_analysis_service = types.ModuleType("analysis_service")
 fake_analysis_service.AGENT_MAP = {}
 fake_analysis_service.AGENT_RESULT_KEY = {}
-fake_analysis_service.build_analysis_transcript = lambda transcript, speakers=None: transcript
+fake_analysis_service.build_analysis_transcript = lambda transcript, speakers=None, owner_name=None: transcript
 
 
 async def _fake_run_full_analysis(_transcript: str):
@@ -58,6 +58,14 @@ async def _fake_run_full_analysis(_transcript: str):
 
 
 fake_analysis_service.run_full_analysis = _fake_run_full_analysis
+
+
+class _FakeGraph:
+    async def astream(self, *args, **kwargs):
+        yield {"orchestrator": {"agents_to_run": []}}
+
+
+fake_analysis_service._GRAPH = _FakeGraph()
 sys.modules["analysis_service"] = fake_analysis_service
 
 fastapi_dependency_utils.ensure_multipart_is_installed = lambda: None

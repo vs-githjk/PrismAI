@@ -108,6 +108,8 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
     hygiene_meetings = []
     decision_memory = []
     tense_meetings = 0
+    decision_words: set[str] = set()
+    open_owner_counts: dict[str, dict[str, int]] = {}
 
     for entry in meetings:
         result = entry.get("result", {}) or {}
@@ -123,6 +125,11 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
             if owner:
                 owner_counts[owner] += 1
                 owner_meeting_ids[owner].add(entry["id"])
+                if owner not in open_owner_counts:
+                    open_owner_counts[owner] = {"open": 0, "total": 0}
+                open_owner_counts[owner]["total"] += 1
+                if not item.get("completed"):
+                    open_owner_counts[owner]["open"] += 1
 
             text = f'{item.get("task", "")} {item.get("owner", "")} {item.get("due", "")}'
             for word in extract_significant_terms(text):
@@ -152,6 +159,7 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
                 theme_counts[word] += 1
                 decision_theme_counts[word] += 1
                 decision_theme_meeting_ids[word].add(entry["id"])
+                decision_words.add(word)
 
             decision_entry = {
                 "id": f'{entry["id"]}-{text}',
@@ -176,6 +184,40 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
                 if snippet:
                     blocker_counts[snippet] += 1
                     blocker_meeting_ids[snippet].add(entry["id"])
+
+    # --- New Phase 2 metrics ---
+    total_items = sum(
+        v["total"] for v in open_owner_counts.values()
+    ) if open_owner_counts else sum(
+        len(e.get("result", {}).get("action_items") or []) for e in meetings
+    )
+    completed_items = sum(
+        v["total"] - v["open"] for v in open_owner_counts.values()
+    )
+    completion_rate = {
+        "total": total_items,
+        "completed": completed_items,
+        "rate": round((completed_items / total_items) * 100) if total_items > 0 else 0,
+    }
+
+    total_decisions = sum(len(e.get("result", {}).get("decisions") or []) for e in meetings)
+    decision_velocity = {
+        "avg": round(total_decisions / len(meetings), 1) if meetings else 0.0,
+        "total": total_decisions,
+    }
+
+    open_owner_load = sorted(
+        [{"owner": o, **counts} for o, counts in open_owner_counts.items()],
+        key=lambda x: x["open"],
+        reverse=True,
+    )[:5]
+
+    unresolved_themes = [
+        {"theme": theme, "count": count}
+        for theme, count in sorted(theme_counts.items(), key=lambda item: item[1], reverse=True)
+        if theme not in decision_words
+    ][:5]
+    # --- End Phase 2 metrics ---
 
     top_owners = [
         {"owner": owner, "count": count, "meeting_ids": sorted(owner_meeting_ids[owner], reverse=True)}
@@ -316,6 +358,7 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         "top_owners": top_owners,
         "ownership_drift": ownership_drift,
         "recurring_themes": recurring_themes,
+        "unresolved_themes": unresolved_themes,
         "recurring_blockers": recurring_blockers,
         "recurring_hygiene_issues": recurring_hygiene_issues,
         "resurfacing_decision_themes": resurfacing_decision_themes,
@@ -323,5 +366,8 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         "recent_decisions": recent_decisions,
         "recommended_actions": recommended_actions,
         "unresolved_action_refs": unresolved_action_refs,
+        "completion_rate": completion_rate,
+        "decision_velocity": decision_velocity,
+        "open_owner_load": open_owner_load,
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }

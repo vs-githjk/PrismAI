@@ -25,3 +25,4 @@ google-auth>=2.30.0
 # control the supply-chain surface; if a security patch is ever needed we'll
 # have to fork or migrate.
 pysbd==0.3.4
+langgraph==1.2.0
