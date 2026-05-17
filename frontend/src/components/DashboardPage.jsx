@@ -832,16 +832,6 @@ export default function DashboardPage(props) {
     return () => window.removeEventListener('pointermove', handlePointerMove)
   }, [profileMenuOpen])
 
-  useEffect(() => {
-    if (!props.showHistory) setHistorySearchOpen(false)
-  }, [props.showHistory])
-
-  useEffect(() => {
-    if (props.showHistory && historySearchOpen) {
-      historySearchInputRef.current?.focus()
-    }
-  }, [historySearchOpen, props.showHistory])
-
   const filteredHistory = useMemo(() => {
     const query = `${props.historySearch || ''}`.trim().toLowerCase()
     const entries = props.history || []
@@ -921,29 +911,12 @@ export default function DashboardPage(props) {
     }
   }
 
-  function handleSelectHistoryEntry(entry) {
-    props.setShowHistory?.(false)
-    props.loadFromHistory?.(entry)
-  }
-
   // Wrapped handler: load meeting AND switch to meeting view
   function handleSelectMeeting(entry) {
     userSelectedMeetingRef.current = true
     props.setShowHistory?.(false)
     props.loadFromHistory?.(entry)
     persistView('meeting')
-  }
-
-  function handleSwitchView() {
-    if (activeView === 'intelligence') {
-      persistView('home')
-    } else {
-      if (historyCount < 2) {
-        setShowGateDialog(true)
-      } else {
-        persistView('intelligence')
-      }
-    }
   }
 
   // Find the currently loaded meeting metadata (for MeetingView title/date)
@@ -958,7 +931,13 @@ export default function DashboardPage(props) {
     return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
   }, [currentMeeting, props.user?.id, workspaceMemberMap])
 
-  const meetingInFocus = activeView !== 'home'
+  // A meeting is "in focus" when the focused surface is a real meeting.
+  // Cross-meeting intelligence is always reached via a focused meeting (ADR 0001),
+  // so the switch stays enabled there too. A stale 'meeting' view with no
+  // meeting/result/loading keeps the switch grayed.
+  const meetingInFocus =
+    activeView === 'intelligence' ||
+    (activeView === 'meeting' && (!!props.meetingId || !!props.result || props.loading))
   const switchView = activeView === 'intelligence' ? 'cross' : 'current'
 
   function handleSelectSwitchView(v) {
