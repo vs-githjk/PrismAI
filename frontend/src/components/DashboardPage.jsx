@@ -21,7 +21,6 @@ import {
 import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
-import DotField from './DotField'
 import LogoIcon from './LogoIcon'
 import StatsCanvas from './dashboard/StatsCanvas'
 import {
@@ -887,26 +886,7 @@ export default function DashboardPage(props) {
 
   return (
     <div className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]">
-      <div className="dashboard-dot-field-bg" aria-hidden="true">
-        <div className="dashboard-dot-field-frame">
-          <DotField
-            dotRadius={3}
-            dotSpacing={14}
-            cursorRadius={250}
-            cursorForce={0.1}
-            bulgeOnly
-            bulgeStrength={67}
-            glowRadius={80}
-            sparkle={false}
-            waveAmplitude={0}
-            gradientFrom="#0071dc"
-            gradientTo="#000000"
-            glowColor="#120F17"
-          />
-        </div>
-      </div>
-
-      <header className="sticky top-0 z-30 bg-transparent px-6 py-4 sm:px-7">
+      <header className="dashboard-topbar sticky top-0 z-30 px-3 py-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <button
@@ -918,8 +898,8 @@ export default function DashboardPage(props) {
               className="logo-btn flex items-center gap-2"
               aria-label="Back to landing page"
             >
-              <LogoIcon className="h-11 w-11" />
-              <span className="prism-logo-text text-2xl font-light tracking-wider" data-text="prism">prism</span>
+              <LogoIcon className="h-9 w-9" />
+              <span className="prism-logo-text text-[1.375rem] font-light tracking-wider" data-text="prism">prism</span>
             </button>
           </div>
 
@@ -997,6 +977,10 @@ export default function DashboardPage(props) {
           </div>
         </div>
       </header>
+
+      <aside className="dashboard-sidebar" aria-label="Dashboard navigation" />
+
+      <div className="dashboard-content">
 
       {props.isDemoMode && (
         <div className="border-b border-white/[0.14] bg-white/[0.05] px-5 py-3 sm:px-8">
@@ -1277,6 +1261,8 @@ export default function DashboardPage(props) {
         )}
       </main>
 
+      </div>
+
       {activeView === 'meeting' && props.result && !props.loading && (
         <>
           {/* Mobile backdrop */}
@@ -1292,7 +1278,7 @@ export default function DashboardPage(props) {
           {/* Slide-out chat panel */}
           <div
             aria-hidden={!chatOpen}
-            className={`fixed left-3 top-[88px] bottom-[120px] z-50 flex flex-col overflow-hidden transition-all duration-300 ease-out ${
+            className={`dashboard-chat-panel fixed left-3 top-[88px] bottom-[120px] z-50 flex flex-col overflow-hidden transition-all duration-300 ease-out ${
               chatOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-[110%] opacity-0'
             } ${glassCard}`}
             style={{
@@ -1323,7 +1309,7 @@ export default function DashboardPage(props) {
               onClick={() => setChatOpen((v) => !v)}
               aria-label={chatOpen ? 'Close chat' : 'Open chat'}
               aria-pressed={chatOpen}
-              className={`fixed top-1/2 z-50 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/[0.14] bg-[#0c0d0f] text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.35)] transition-all duration-300 ease-out hover:border-cyan-300/40 hover:text-cyan-200 ${
+              className={`dashboard-chat-trigger fixed top-1/2 z-50 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/[0.14] bg-[#0c0d0f] text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.35)] transition-all duration-300 ease-out hover:border-cyan-300/40 hover:text-cyan-200 ${
                 chatOpen ? 'left-[440px]' : 'left-4'
               }`}
               style={chatOpen ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}

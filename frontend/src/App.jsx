@@ -931,7 +931,7 @@ function LandingScreen({ onViewDashboard }) {
                 mainClassName="w-full justify-center text-center text-[clamp(1.5rem,5.5vw,4.5rem)] font-medium leading-tight tracking-tight text-white/85"
                 splitLevelClassName="overflow-hidden pb-1"
                 elementLevelClassName="font-medium"
-                style={{ fontFamily: "'Rubik', 'General Sans', sans-serif", fontWeight: 500 }}
+                style={{ fontFamily: "'Poppins', 'Inter Variable', Inter, sans-serif", fontWeight: 500 }}
               />
             </div>
           </div>
@@ -939,7 +939,7 @@ function LandingScreen({ onViewDashboard }) {
           {/* Tagline — centerline at 50% */}
           <div style={{ position: 'absolute', top: '55%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'center', padding: '0 1.5rem' }}>
             <div className="animate-fade-in-up" style={{ animationDelay: '0.45s' }}>
-              <p className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white text-center">
+              <p className="landing-hero-title text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white text-center">
                 Let <span className="font-light">prism</span> handle it.
               </p>
             </div>
