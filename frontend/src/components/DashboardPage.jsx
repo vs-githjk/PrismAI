@@ -419,7 +419,7 @@ function AnalyzingBanner({ result }) {
               <div
                 key={agent.id}
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-300 ${
-                  isDone ? agent.done : 'animate-pulse border-white/[0.09] bg-white/[0.04] text-white/38'
+                  isDone ? `${agent.done} agent-pop` : 'animate-pulse border-white/[0.09] bg-white/[0.04] text-white/38'
                 }`}
               >
                 <span className="text-sm leading-none">{agent.icon}</span>
@@ -903,7 +903,7 @@ export default function DashboardPage(props) {
       <DashboardTopbar
         newMeetingOpen={newMeetingOpen}
         setNewMeetingOpen={setNewMeetingOpen}
-        onOpenNewMeeting={() => props.resetTranscriptWorkspaces?.()}
+        onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
         newMeetingPanel={
           <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
         }
@@ -991,6 +991,7 @@ export default function DashboardPage(props) {
         )}
 
         <main className="relative z-10 mx-auto mt-2 max-w-[92rem] px-5 pb-28 sm:px-8">
+          <div key={activeView} className="animate-fade-in-up">
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
@@ -1050,6 +1051,7 @@ export default function DashboardPage(props) {
               />
             </Suspense>
           )}
+          </div>
         </main>
       </div>
 

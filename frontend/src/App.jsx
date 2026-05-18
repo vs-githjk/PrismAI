@@ -832,6 +832,49 @@ const HERO_SENTENCES = [
   "The follow-up never made it out of your drafts.",
 ]
 
+// Seeded into New Meeting → Paste for the test/demo account. Intentionally a
+// different topic (sprint retrospective) than any DEMO_TRANSCRIPTS entry so
+// "try it out" doesn't duplicate the sample-dashboard meetings.
+const DEMO_NEW_MEETING_TRANSCRIPT = `Priya: Thanks for jumping on the sprint 14 retro. Let's keep it tight — wins first, then what hurt, then what we change.
+
+Daniel: Win from me: the payments migration shipped a day early and we've had zero rollback alarms over the weekend.
+
+Priya: That's a big one. The on-call rotation held up?
+
+Daniel: It did. Two pages, both auto-resolved. Marcus's runbook update is the reason — it was actually usable this time.
+
+Marcus: Appreciate that. My pain point is the opposite side: code review latency. My migration PR sat for 31 hours before first review. That's most of the "shipped early" margin eaten on the previous task.
+
+Elena: Same pattern on the frontend. Two of my PRs waited over a day. We're all heads-down so reviews keep losing to feature work.
+
+Priya: So review turnaround is the theme. Daniel, you felt it too?
+
+Daniel: Yeah. I think the root cause is we have no review SLA and no clear owner per area, so PRs get diffused.
+
+Elena: Counterpoint — even with an SLA, if everyone's at capacity nothing changes. We over-committed this sprint. We planned 38 points and the team's honest velocity is around 28.
+
+Priya: That's fair and it's the harder truth. Two threads then: review process, and planning realism.
+
+Marcus: For reviews — what if we assign a daily review owner per area on rotation? That person clears the queue first thing before their own feature work.
+
+Elena: I'd support that if it's capped, like a 45-minute morning block, not "you own all reviews all day."
+
+Daniel: Works for me. We should also auto-tag PRs by area so the owner actually sees them.
+
+Priya: Okay, decision: we adopt a rotating daily review owner per area, time-boxed to 45 minutes each morning, starting next sprint. Marcus, can you set up the CODEOWNERS-based auto-tagging?
+
+Marcus: Yes. I'll have the auto-tagging and the rotation schedule in place before sprint 15 planning.
+
+Priya: On planning realism — we commit to 28 points next sprint, not 38. Elena, will you reforecast the current backlog against that number?
+
+Elena: I'll do it by Wednesday and flag anything that slips so we can talk to the PM early instead of at the demo.
+
+Priya: Good. Last thing — sentiment check. This sprint felt stressful even though we delivered. I want next sprint to feel sustainable, not just productive.
+
+Daniel: Agreed. The early-ship only happened because of weekend buffer, and that's not repeatable.
+
+Priya: Noted. Let's protect the new plan and not quietly refill the freed capacity. Recap: rotating review owner with a 45-minute morning cap, Marcus owns auto-tagging plus the schedule before planning, Elena reforecasts to 28 points by Wednesday and escalates slips early. Thanks everyone.`
+
 // ── Landing / Hero screen ────────────────────────────────────────
 function LandingScreen({ onViewDashboard }) {
   const [signupOpen, setSignupOpen] = useState(false)
@@ -950,7 +993,7 @@ function LandingScreen({ onViewDashboard }) {
             <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s' }}>
               <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
               <span className="cta-or">or</span>
-              <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>View dashboard</button>
+              <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>Try it out</button>
             </div>
           </div>
         </div>
@@ -1436,6 +1479,19 @@ export default function App() {
   const resetTranscriptWorkspaces = () => {
     setTranscript('')
     setTranscriptDrafts({ paste: '', record: '', upload: '' })
+  }
+
+  // Opening "New Meeting": in the test/demo account, seed the Paste box with a
+  // ready-to-analyze sample transcript instead of leaving it blank. Real
+  // accounts keep the existing clear-on-open behavior.
+  const prepareNewMeeting = () => {
+    if (isTestAccount) {
+      setInputTab('paste')
+      setTranscript(DEMO_NEW_MEETING_TRANSCRIPT)
+      setTranscriptDrafts({ paste: DEMO_NEW_MEETING_TRANSCRIPT, record: '', upload: '' })
+    } else {
+      resetTranscriptWorkspaces()
+    }
   }
 
   useEffect(() => {
@@ -2534,6 +2590,7 @@ export default function App() {
           cancelActiveAnalysis={cancelActiveAnalysis}
           clearWorkspaceState={clearWorkspaceState}
           resetTranscriptWorkspaces={resetTranscriptWorkspaces}
+          prepareNewMeeting={prepareNewMeeting}
           toggleActionItem={toggleActionItem}
           history={history}
           historySearch={historySearch}
