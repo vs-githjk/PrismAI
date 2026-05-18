@@ -146,7 +146,7 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 | 🔴 Red | `summarizer` | Always | `summary` | `string` |
 | 🟠 Orange | `action_items` | Always | `action_items` | `[{ task, owner, due, completed }]` |
 | 🟡 Yellow | `decisions` | Always | `decisions` | `[{ decision, owner, importance: 1-3 }]` |
-| 🟢 Green | `sentiment` | Only if tension/conflict | `sentiment` | `{ overall, score, arc, notes, speakers:[{name,tone,score}], tension_moments:[] }` |
+| 🟢 Green | `sentiment` | Only if tension/conflict | `sentiment` | `{ overall, score, arc, notes, speakers:[{name,tone,score}], tension_moments:[] }` — `overall` vocab: `collaborative \| aligned \| decision-making \| exploratory \| frictional \| divergent \| rushed \| draining \| neutral`. Per-speaker word counts are pre-computed in Python before the LLM call so the prompt has hard evidence to anchor labels. |
 | 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` |
 | 🟣 Indigo | `calendar_suggester` | Only if follow-up discussed | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe, resolved_date, resolved_day }` |
 | 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, badges:[], breakdown:{clarity,action_orientation,engagement} }` |
@@ -168,7 +168,8 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 | POST | `/chat` | No | Chat with transcript context |
 | POST | `/chat/global` | **Yes** | Chat across all user's saved meetings |
 | GET | `/meetings` | **Yes** | List meetings — pass `?workspace_id=` to scope to workspace |
-| POST | `/meetings` | **Yes** | Save/upsert meeting; fans out to workspace members if `workspace_id` set |
+| GET | `/meetings/{id}` | **Yes** | Fetch single meeting; workspace-member auth (any member can read) |
+| POST | `/meetings` | **Yes** | Save/upsert meeting; accepts `recorded_by_user_id` for dedup'd bots; fans out to workspace members if `workspace_id` set |
 | PATCH | `/meetings/{id}` | **Yes** | Update result, title, share_token, workspace_id |
 | DELETE | `/meetings/{id}` | **Yes** | Delete meeting (own copy only) |
 | POST | `/meetings/{id}/claim-email` | **Yes** | Claim follow-up email send for workspace |
@@ -185,6 +186,7 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 | DELETE | `/workspaces/{id}` | **Yes** | Delete workspace; meetings fall to Personal |
 | DELETE | `/workspaces/{id}/members/{uid}` | **Yes** | Remove member (owner) or self-leave |
 | POST | `/workspaces/{id}/regenerate-invite` | **Yes** | Regenerate invite token (owner only) |
+| GET | `/workspaces/{id}/brief` | **Yes** | Open (unchecked) action items from this workspace's last-30-day meetings; max 10, each links back to source meeting |
 | GET | `/invites/{token}` | No | Validate invite token, return workspace info |
 | POST | `/invites/{token}/accept` | **Yes** | Join workspace via invite token |
 | POST | `/join-meeting` | No | Start Recall.ai bot — checks workspace dedup first |
@@ -495,6 +497,26 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 
 **Features added:**
 - **Upcoming meetings workspace auto-classification** — `GET /calendar/events` returns `attendee_emails` (excluding self). `GET /workspaces` returns `member_emails` (bulk query, not N+1). `UpcomingMeetings.jsx` `matchWorkspace()` finds best-overlap workspace. Matched events show cyan workspace chip; unmatched show gray "Personal" chip. Join button passes matched `wsId` to `onJoinWithWorkspace` (silently sets workspace without clearing current result view).
+
+### Fixed May 17–18 2026 — Dedup edge case, sentiment rework, pre-meeting brief
+
+**Duplicate workspace meeting cards when bot was dedup'd (commit `45dc2a9`):**
+- *Symptom:* Two users in the same workspace both join a meeting; one bot is dedup'd to the other. After the meeting, dashboard shows two cards for the same meeting (one tagged `via teammate@…`).
+- *Root cause:* Both frontends still independently called `POST /meetings`, producing 4 rows (2 originals + 2 fan-outs) with 2 distinct dedup keys under the old `(date[:16], recorded_by_user_id or user_id)` formula.
+- *Fix:* `MeetingEntry` now accepts `recorded_by_user_id`; frontend passes the dedup'd bot's owner id through `startPolling` → `saveToHistory` → POST payload. `_fan_out_to_workspace` uses `entry.recorded_by_user_id or user_id` so all fan-out copies share one recorder. The GET `/meetings` + `/insights` workspace dedup key was also relaxed from `(date[:16], recorder)` → `date[:16]` only (within one workspace, two rows at the same minute are the same meeting). This relaxation also retroactively collapses pre-fix duplicate rows.
+
+**Sentiment agent reworked — actionable vocabulary, no lazy neutral, rich UI (commit `7e627bd`):**
+- *Symptom:* Sentiment almost always rendered as the single word "neutral" — most of the agent's output was being thrown away by the UI.
+- *Root cause:* `MeetingView` rendered only `sentiment.overall` and `notes`; the existing `score`, `arc`, `speakers[]`, `tension_moments[]` fields were never displayed. The prompt also defaulted to neutral too aggressively.
+- *Fix (backend `sentiment.py`):* Replaced `positive/neutral/tense/unresolved` with `collaborative / aligned / decision-making / exploratory / frictional / divergent / rushed / draining / neutral`. "Neutral" is still valid but reserved for genuinely flat meetings. Added `_compute_talk_distribution()` — pure Python parsing of `Speaker: text` lines that feeds per-speaker word share into the prompt as hard evidence (no extra LLM call, no tier change). Expanded per-speaker tone vocab to include `enthusiastic` and `reserved`. Prompt explicitly names signals (hedging, interruptions, repeated questions, enthusiasm markers, commit-vs-defer).
+- *Fix (frontend `SentimentCard.jsx`):* New dedicated card renders overall pill (color-coded by label via `LABEL_META`), animated score bar, trend arc indicator, notes, per-speaker tone rows, and tension moments. Removed prior `!readOnly` guard so it also renders on the shared meeting view.
+
+**Workspace pre-meeting brief on upcoming meeting cards (commit `0874f78`):**
+- New `GET /workspaces/{id}/brief` returns `{open_items: [{task, owner, due, meeting_id, meeting_title, meeting_date}]}` — up to 10 unchecked action items from this workspace's meetings in the last 30 days. Membership-gated. Dedups fan-out copies by `date[:16]`, preferring the caller's own row so the linked `meeting_id` opens in their dashboard.
+- New `GET /meetings/{id}` with workspace-member auth — lets the Brief panel open any source meeting even when it isn't in the caller's currently-loaded workspace history.
+- `UpcomingMeetings.jsx`: workspace-matched events get a **Brief** button next to the cyan workspace chip. Click → lazy-fetches the brief → expands an inline `<BriefPanel>` listing items with owner / due / source meeting / age. Each item is clickable → calls `onOpenMeeting(meetingId)`.
+- `DashboardPage.jsx`: `handleOpenMeetingById(meetingId)` — closes the new-meeting popover, uses in-memory history if available, otherwise fetches `GET /meetings/{id}` and routes through the existing `handleSelectMeeting` (which calls `loadFromHistory` + switches view).
+- Personal upcoming meetings intentionally do NOT show a brief — V1 is workspace-only (workspace meetings have cohesive context, scattered personal history rarely does).
 
 ### Status: Workspace + Phase 2 + Phase 3 (LangGraph) complete — Phases 5–8 pending
 
