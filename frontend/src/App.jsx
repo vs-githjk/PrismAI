@@ -2341,73 +2341,79 @@ export default function App() {
   // Share mode — loading state (token detected synchronously, waiting for fetch)
   if (shareMode === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
+      <div className="dashboard-page min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center animate-pulse" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
             </svg>
           </div>
-          <p className="text-xs text-gray-500">Loading shared meeting…</p>
+          <p className="text-xs text-white/40">Loading shared meeting…</p>
         </div>
       </div>
     )
   }
 
-  // Share mode — read-only view for shared links
+  // Share mode — read-only view, styled to match the dashboard. Sidebar is
+  // omitted because viewers may be unauthenticated; everything else mirrors
+  // the dashboard (topbar chrome, content panel, Inter font, MeetingView).
   if (shareMode) {
     const r = shareMode.result || {}
     const appUrl = window.location.origin + window.location.pathname
     return (
-      <div className="min-h-screen" style={{ background: '#07040f' }}>
-        {/* Header bar */}
-        <div className="sticky top-0 z-10 px-4 py-3 flex items-center justify-between"
-          style={{ background: 'rgba(7,4,15,0.92)', borderBottom: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(16px)' }}>
-          <div className="flex items-center gap-2.5">
-            <LogoIcon className="w-7 h-7" />
-            <span className="text-sm font-bold gradient-text">PrismAI</span>
-            <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              shared
+      <div className="dashboard-page min-h-screen">
+        <header className="dashboard-topbar sticky top-0 z-30 flex items-center gap-2 border-b border-white/[0.06] px-3 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <a href={appUrl} className="logo-btn flex shrink-0 items-center gap-2" aria-label="Open PrismAI">
+              <LogoIcon className="h-8 w-8" />
+              <span
+                className="prism-logo-text hidden text-[1.3rem] font-light tracking-wider sm:inline"
+                data-text="prism"
+              >
+                prism
+              </span>
+            </a>
+            <span className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-white/85">
+              Shared
             </span>
           </div>
-          <a href={appUrl}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-105"
-            style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.2), rgba(13,148,136,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
+          <a
+            href={appUrl}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-3.5 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
+          >
             Analyze your own →
           </a>
-        </div>
+        </header>
 
-        {/* Meeting title + date */}
-        <div className="px-4 pt-6 pb-4 max-w-2xl mx-auto">
-          <h1 className="text-xl font-bold text-white leading-tight">{shareMode.title || 'Meeting'}</h1>
-          {shareMode.date && (
-            <p className="text-xs text-gray-500 mt-1">
-              {new Date(shareMode.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
-          )}
-          {r.agents_run?.length > 0 && (
-            <div className="mt-3"><AgentTags agents={r.agents_run} totalAgents={8} /></div>
-          )}
-        </div>
+        <div
+          className="dashboard-body-font"
+          style={{
+            background: 'var(--dashboard-bg)',
+            borderTopLeftRadius: 14,
+            borderTopRightRadius: 14,
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            minHeight: 'calc(100dvh - var(--dashboard-topbar-h))',
+          }}
+        >
+          <main className="relative z-10 mx-auto max-w-[92rem] px-5 pt-6 pb-28 sm:px-8">
+            <MeetingView
+              result={r}
+              meeting={{ title: shareMode.title, date: shareMode.date }}
+              readOnly
+              transcript={shareMode.transcript || ''}
+            />
 
-        {/* Cards */}
-        <div className="px-4 pb-8 max-w-5xl mx-auto">
-          <MeetingView result={r} readOnly transcript={shareMode.transcript || ''} />
-        </div>
-
-        {/* Bottom CTA */}
-        <div className="px-4 pb-12 max-w-2xl mx-auto text-center">
-          <div className="rounded-2xl p-6"
-            style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}>
-            <p className="text-sm font-semibold text-white mb-1">Analyze your own meetings</p>
-            <p className="text-xs text-gray-400 mb-4">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
-            <a href={appUrl}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
-              style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 20px rgba(2,132,199,0.35)' }}>
-              Try PrismAI free →
-            </a>
-          </div>
+            <section className="mt-8 rounded-xl border border-white/[0.08] bg-white/[0.02] px-5 py-6 text-center">
+              <p className="text-sm font-semibold text-white">Analyze your own meetings</p>
+              <p className="mt-1 text-xs text-white/85">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
+              <a
+                href={appUrl}
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-4 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
+              >
+                Try PrismAI free →
+              </a>
+            </section>
+          </main>
         </div>
       </div>
     )

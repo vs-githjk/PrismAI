@@ -36,7 +36,7 @@ export default function CalendarCard({ suggestion }) {
           </div>
         )}
         <div className="px-3 py-2.5">
-          <p className="text-sm leading-6 text-white/78">{suggestion.reason}</p>
+          <p className="text-sm leading-6 text-white/90">{suggestion.reason}</p>
         </div>
       </div>
 

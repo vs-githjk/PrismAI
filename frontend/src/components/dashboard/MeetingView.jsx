@@ -66,8 +66,8 @@ function BreakdownBar({ label, value, color }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11.5px] font-medium text-white/68">{label}</span>
-        <span className="text-[11.5px] font-semibold text-white/86">{displayed}</span>
+        <span className="text-[11.5px] font-medium text-white/90">{label}</span>
+        <span className="text-[11.5px] font-semibold text-white">{displayed}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
         <div
@@ -159,7 +159,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           >
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 shrink-0 text-cyan-300/80" aria-hidden="true" />
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">Transcript</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white">Transcript</p>
             </div>
             <ChevronDown
               className={`h-4 w-4 shrink-0 text-white/70 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
@@ -239,7 +239,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           )}
           {healthScore?.verdict && (
             <blockquote
-              className="mt-3 border-l-2 pl-3 text-sm leading-5 text-white/62"
+              className="mt-3 border-l-2 pl-3 text-sm leading-5 text-white/85"
               style={{ borderColor: `${band.color}88` }}
             >
               {healthScore.verdict}
@@ -345,7 +345,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             <span className="rounded-full border border-white/[0.12] bg-white/[0.06] px-3 py-1 text-sm font-semibold capitalize text-white">
               {sentiment.overall}
             </span>
-            {sentiment.notes && <p className="text-sm leading-5 text-white/62">{sentiment.notes}</p>}
+            {sentiment.notes && <p className="text-sm leading-5 text-white/85">{sentiment.notes}</p>}
           </div>
         </section>
       )}
