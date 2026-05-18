@@ -276,6 +276,7 @@ function NewMeetingPanel(props) {
                       props.setMeetingUrl(url)
                       if (wsId) props.onJoinWithWorkspace?.(wsId)
                     }}
+                    onOpenMeeting={props.onOpenMeeting}
                   />
                 </Suspense>
               )}
@@ -855,6 +856,26 @@ export default function DashboardPage(props) {
     persistView('meeting')
   }
 
+  // Open a meeting by id — fetches the full row first so this works even when the
+  // meeting belongs to a workspace not currently loaded in history. Used by the
+  // upcoming-meeting Brief panel where each open item links back to its source.
+  const handleOpenMeetingById = useCallback(async (meetingId) => {
+    if (!meetingId) return
+    setNewMeetingOpen(false)
+    const existing = (props.history || []).find((m) => m.id === meetingId)
+    if (existing) {
+      handleSelectMeeting(existing)
+      return
+    }
+    try {
+      const res = await apiFetch(`/meetings/${meetingId}`)
+      if (!res.ok) return
+      const entry = await res.json()
+      handleSelectMeeting(entry)
+    } catch { /* swallow — user can retry */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.history])
+
   // Find the currently loaded meeting metadata (for MeetingView title/date)
   const currentMeeting = useMemo(
     () => (props.meetingId ? (props.history || []).find((m) => m.id === props.meetingId) || null : null),
@@ -905,7 +926,7 @@ export default function DashboardPage(props) {
         setNewMeetingOpen={setNewMeetingOpen}
         onOpenNewMeeting={() => props.resetTranscriptWorkspaces?.()}
         newMeetingPanel={
-          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
+          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
         }
         meetingInFocus={meetingInFocus}
         view={switchView}

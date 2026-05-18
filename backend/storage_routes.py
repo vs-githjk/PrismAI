@@ -259,6 +259,43 @@ async def get_shared_meeting(token: str):
     return res.data[0]
 
 
+@router.get("/meetings/{meeting_id}")
+async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
+    """Fetch a single meeting by id. The caller must either own the meeting or be a member
+    of its workspace. Used by the workspace brief so clicking an open item opens its source
+    meeting without having to be in the workspace's history view first."""
+    client = _require_storage()
+    res = (
+        client.table("meetings")
+        .select("id,date,title,score,transcript,result,share_token,workspace_id,user_id,recorded_by_user_id")
+        .eq("id", meeting_id)
+        .maybe_single()
+        .execute()
+    )
+    meeting = res.data if res else None
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Authorize: owner of the row, or member of its workspace
+    if meeting.get("user_id") != user_id:
+        ws_id = meeting.get("workspace_id")
+        if not ws_id:
+            raise HTTPException(status_code=403, detail="Not authorized for this meeting")
+        membership = (
+            client.table("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", ws_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if not membership.data:
+            raise HTTPException(status_code=403, detail="Not authorized for this meeting")
+
+    meeting.pop("user_id", None)
+    return meeting
+
+
 @router.delete("/meetings/{meeting_id}")
 async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()

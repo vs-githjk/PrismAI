@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -280,3 +281,67 @@ async def regenerate_invite(workspace_id: str, user_id: str = Depends(require_us
     new_token = str(uuid.uuid4())
     client.table("workspaces").update({"invite_token": new_token}).eq("id", workspace_id).execute()
     return {"invite_token": new_token}
+
+
+@router.get("/workspaces/{workspace_id}/brief")
+async def get_workspace_brief(workspace_id: str, user_id: str = Depends(require_user_id)):
+    """Open (unchecked) action items from this workspace's meetings in the last 30 days,
+    so a user joining an upcoming workspace meeting can see what's still outstanding.
+    Each item links back to the source meeting via meeting_id."""
+    client = _require_storage()
+
+    # Verify membership
+    membership = (
+        client.table("workspace_members")
+        .select("role")
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not membership.data:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    res = (
+        client.table("meetings")
+        .select("id,date,title,result,user_id,recorded_by_user_id")
+        .eq("workspace_id", workspace_id)
+        .gte("date", since)
+        .order("date", desc=True)
+        .limit(200)
+        .execute()
+    )
+
+    # Dedup fan-out copies by date[:16], preferring the current user's row so meeting_id
+    # in the response opens correctly in their dashboard.
+    dedup_map: dict = {}
+    for row in (res.data or []):
+        key = row.get("date", "")[:16]
+        if key not in dedup_map or row.get("user_id") == user_id:
+            dedup_map[key] = row
+    meetings = sorted(dedup_map.values(), key=lambda r: r.get("date", ""), reverse=True)
+
+    open_items: list[dict] = []
+    for meeting in meetings:
+        result = meeting.get("result") or {}
+        for item in (result.get("action_items") or []):
+            if item.get("completed"):
+                continue
+            task = (item.get("task") or "").strip()
+            if not task:
+                continue
+            open_items.append({
+                "task": task,
+                "owner": (item.get("owner") or "").strip(),
+                "due": (item.get("due") or "").strip(),
+                "meeting_id": meeting.get("id"),
+                "meeting_title": meeting.get("title") or "Untitled meeting",
+                "meeting_date": meeting.get("date") or "",
+            })
+            if len(open_items) >= 10:
+                break
+        if len(open_items) >= 10:
+            break
+
+    return {"open_items": open_items}
