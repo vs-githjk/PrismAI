@@ -1631,7 +1631,7 @@ export default function App() {
         setDedupBotInfo({ botId: data.existing_bot_id, ownerUserId: data.owner_user_id, ownerUserEmail: data.owner_user_email || '' })
         setActiveBotId(data.existing_bot_id)
         sessionStorage.setItem('prism_active_bot_id', data.existing_bot_id)
-        startPolling(data.existing_bot_id)
+        startPolling(data.existing_bot_id, data.owner_user_id)
         return
       }
       setBotStatus(data.status)
@@ -1648,7 +1648,7 @@ export default function App() {
     }
   }
 
-  const startPolling = (id) => {
+  const startPolling = (id, dedupRecorderUserId = null) => {
     clearInterval(pollRef.current)
     let networkFailCount = 0
     let processingStartTime = null
@@ -1687,7 +1687,7 @@ export default function App() {
             setTranscriptForTab(data.transcript || '', 'paste')
             setSessionId(s => s + 1)
             setResult(data.result)
-            const entry = saveToHistory(data.transcript || '', data.result)
+            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId)
             const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
             void deliverMeetingRecap(meetingTitle, data.result, entry?.id)
             setBotTranscriptReady(false)
@@ -1861,7 +1861,7 @@ export default function App() {
     }).sort((a, b) => b.id - a.id)
   }
 
-  const saveToHistory = (t, r) => {
+  const saveToHistory = (t, r, recordedByUserId = null) => {
     if (!user) {
       setMeetingId(null)
       setShareToken(null)
@@ -1882,6 +1882,7 @@ export default function App() {
       score: r.health_score?.score,
       share_token,
       workspace_id: activeWorkspaceId || null,
+      recorded_by_user_id: recordedByUserId,
     }
     setHistory(prev => mergeHistoryEntries([entry, ...prev]))
     setMeetingId(id)

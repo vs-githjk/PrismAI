@@ -34,6 +34,7 @@ class MeetingEntry(BaseModel):
     result: dict = {}
     share_token: str = ""
     workspace_id: str | None = None
+    recorded_by_user_id: str | None = None
 
 
 class MeetingPatch(BaseModel):
@@ -117,12 +118,12 @@ async def get_meetings(
     res = query.execute()
 
     if workspace_id.strip():
-        # Deduplicate: fan-out creates copies for each member (same date+recorder, different user_id).
-        # Keep one per logical meeting, preferring the current user's own copy.
+        # Within a single workspace, two rows at the same minute are the same logical meeting —
+        # collapse them and prefer the current user's own copy. This handles both fan-out
+        # duplicates and the bot-dedup case where two users independently POST the same meeting.
         dedup_map: dict = {}
         for row in res.data:
-            recorder = row.get("recorded_by_user_id") or row.get("user_id", "")
-            key = (row.get("date", "")[:16], recorder)
+            key = row.get("date", "")[:16]
             if key not in dedup_map or row.get("user_id") == user_id:
                 dedup_map[key] = row
         rows = sorted(dedup_map.values(), key=lambda r: r.get("id", 0), reverse=True)
@@ -161,11 +162,11 @@ async def get_cross_meeting_insights(
             .limit(200)
             .execute()
         )
-        # Deduplicate fan-out copies same as the meetings endpoint
+        # Deduplicate fan-out copies same as the meetings endpoint — collapse by date[:16]
+        # within the workspace so insights aren't double-counted across fan-out duplicates.
         dedup_map: dict = {}
         for row in (all_res.data or []):
-            recorder = row.get("recorded_by_user_id") or row.get("user_id", "")
-            key = (row.get("date", "")[:16], recorder)
+            key = row.get("date", "")[:16]
             if key not in dedup_map or row.get("user_id") == user_id:
                 dedup_map[key] = row
         deduped = sorted(dedup_map.values(), key=lambda r: r.get("id", 0), reverse=True)
@@ -236,11 +237,15 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "result": entry.result,
         "share_token": entry.share_token or None,
         "workspace_id": entry.workspace_id or None,
+        "recorded_by_user_id": entry.recorded_by_user_id or None,
     }).execute()
 
-    # Fan out to all other workspace members when a workspace is set
+    # Fan out to all other workspace members when a workspace is set.
+    # actual_recorder is the bot owner (if the saver's bot was dedup'd) or the saver themselves —
+    # this keeps all four rows for one shared meeting under the same dedup key.
     if entry.workspace_id:
-        asyncio.create_task(_fan_out_to_workspace(client, entry, user_id, entry.workspace_id))
+        actual_recorder = entry.recorded_by_user_id or user_id
+        asyncio.create_task(_fan_out_to_workspace(client, entry, actual_recorder, entry.workspace_id))
 
     return {"ok": True}
 
