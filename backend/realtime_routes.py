@@ -736,8 +736,31 @@ def _has_trigger_word(text: str) -> bool:
     return bool(TRIGGER_WORD_PATTERN.search(text))
 
 
+# Per-bot settings cache to skip redundant Supabase + Google-refresh round-trips
+# on the in-meeting command hot path. Every "Prism, ..." command previously paid
+# two blocking Supabase fetches on the same user_settings row plus a possible
+# Google token refresh — adding 100-400ms of head-of-line latency before the
+# LLM even saw the prompt. Cache keys by bot_id; TTL bounded by the Google
+# access token's remaining lifetime so we never serve an expired token.
+_bot_settings_cache: dict[str, tuple[float, dict]] = {}  # bot_id -> (expires_at_mono, settings)
+_BOT_SETTINGS_TTL_S = 60  # cap: refresh at least every minute even if token is far from expiry
+
+
+def _invalidate_bot_settings_cache(bot_id: str) -> None:
+    _bot_settings_cache.pop(bot_id, None)
+
+
 async def _get_settings_for_bot(bot_id: str) -> dict:
-    """Look up the user who started this bot, then fetch their tool tokens from Supabase."""
+    """Look up the user who started this bot, then fetch their tool tokens from Supabase.
+
+    Cached for up to 60s per bot, with the TTL further capped so we never return
+    a Google access token that's within 60s of expiring. Cleared on bot cleanup.
+    """
+    now_mono = time.monotonic()
+    cached = _bot_settings_cache.get(bot_id)
+    if cached and now_mono < cached[0]:
+        return dict(cached[1])  # copy so caller mutations don't poison cache
+
     settings = {}
 
     # Env-level fallbacks
@@ -748,15 +771,17 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
 
     # Look up user_id from the bot record, then fetch their per-user tokens
     user_id = (bot_store.get(bot_id) or {}).get("user_id")
+    token_seconds_until_expiry: float | None = None
     if user_id and supabase:
         try:
             resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
             row = (resp.data if resp is not None else None) or {}
             if row.get("google_access_token"):
-                # Use get_valid_token to refresh if expired (tokens last 1 hour)
+                # Pass the already-fetched row so get_valid_token skips its own
+                # Supabase round-trip when the token is still fresh.
                 from calendar_routes import get_valid_token
                 try:
-                    fresh_token = await get_valid_token(user_id)
+                    fresh_token, token_seconds_until_expiry = await get_valid_token(user_id, row=row, return_remaining=True)
                     settings["google_access_token"] = fresh_token
                 except Exception:
                     settings["google_access_token"] = row["google_access_token"]
@@ -767,6 +792,10 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
         except Exception as exc:
             print(f"[realtime] failed to load user settings for bot {bot_id}: {exc}")
 
+    ttl = _BOT_SETTINGS_TTL_S
+    if token_seconds_until_expiry is not None:
+        ttl = min(ttl, max(0, token_seconds_until_expiry - 60))
+    _bot_settings_cache[bot_id] = (now_mono + ttl, dict(settings))
     return settings
 
 
@@ -2361,6 +2390,7 @@ def cleanup_bot_state(bot_id: str) -> None:
     # pending utterances before fully tearing down.
     state = _bot_state.pop(bot_id, None)
     _ingress_log.pop(bot_id, None)
+    _invalidate_bot_settings_cache(bot_id)
     unregister_realtime_token(bot_id)
     perception_state.cleanup_bot(bot_id)
     if state is not None:

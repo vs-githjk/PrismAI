@@ -86,12 +86,14 @@ async def _get_user_settings(user_id: str) -> dict:
     try:
         resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
         row = (resp.data if resp is not None else None) or {}
-        # Refresh expired Google access token via refresh_token. Same
-        # pattern as realtime_routes._get_settings_for_bot.
+        # Refresh expired Google access token via refresh_token. Pass the
+        # already-fetched row so get_valid_token skips its own Supabase
+        # round-trip when the token is still fresh — same pattern as
+        # realtime_routes._get_settings_for_bot.
         if row.get("google_access_token"):
             from calendar_routes import get_valid_token
             try:
-                fresh_token = await get_valid_token(user_id)
+                fresh_token = await get_valid_token(user_id, row=row)
                 row["google_access_token"] = fresh_token
             except Exception as e:
                 # get_valid_token raises if no refresh_token or refresh

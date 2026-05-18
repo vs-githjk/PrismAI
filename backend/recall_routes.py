@@ -126,41 +126,46 @@ def _normalize_meeting_url(url: str) -> str:
 
 def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: str) -> dict | None:
     """Return an active meeting_bots row for this URL where the bot owner shares a workspace
-    with the requesting user. Returns None if no such bot exists."""
-    active = (
-        client.table("meeting_bots")
-        .select("bot_id, owner_user_id")
-        .eq("meeting_url", normalized_url)
-        .in_("status", ["joining", "recording", "processing"])
-        .execute()
-    )
-    if not active.data:
-        return None
-
-    my_workspaces = (
-        client.table("workspace_members")
-        .select("workspace_id")
-        .eq("user_id", requesting_user_id)
-        .execute()
-    )
-    my_ws_ids = [w["workspace_id"] for w in (my_workspaces.data or [])]
-    if not my_ws_ids:
-        return None
-
-    for bot in active.data:
-        if bot["owner_user_id"] == requesting_user_id:
-            continue
-        shared = (
-            client.table("workspace_members")
-            .select("workspace_id, user_email")
-            .eq("user_id", bot["owner_user_id"])
-            .in_("workspace_id", my_ws_ids)
-            .limit(1)
+    with the requesting user. Returns None if no such bot exists, or if the workspace tables
+    are missing (local dev without supabase/workspace_migration.sql applied)."""
+    try:
+        active = (
+            client.table("meeting_bots")
+            .select("bot_id, owner_user_id")
+            .eq("meeting_url", normalized_url)
+            .in_("status", ["joining", "recording", "processing"])
             .execute()
         )
-        if shared.data:
-            return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
-    return None
+        if not active.data:
+            return None
+
+        my_workspaces = (
+            client.table("workspace_members")
+            .select("workspace_id")
+            .eq("user_id", requesting_user_id)
+            .execute()
+        )
+        my_ws_ids = [w["workspace_id"] for w in (my_workspaces.data or [])]
+        if not my_ws_ids:
+            return None
+
+        for bot in active.data:
+            if bot["owner_user_id"] == requesting_user_id:
+                continue
+            shared = (
+                client.table("workspace_members")
+                .select("workspace_id, user_email")
+                .eq("user_id", bot["owner_user_id"])
+                .in_("workspace_id", my_ws_ids)
+                .limit(1)
+                .execute()
+            )
+            if shared.data:
+                return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
+        return None
+    except Exception as exc:
+        print(f"[recall] dedup lookup skipped (workspace tables likely missing): {exc}")
+        return None
 
 
 def _mb_update_status(bot_id: str, status: str):

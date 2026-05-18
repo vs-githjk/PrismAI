@@ -107,45 +107,58 @@ async def refresh_google_token(refresh_token: str) -> dict | None:
     return None
 
 
-async def get_valid_token(user_id: str) -> str:
-    """Return a valid Google access token for the user, refreshing if needed."""
+async def get_valid_token(user_id: str, row: dict | None = None, return_remaining: bool = False):
+    """Return a valid Google access token for the user, refreshing if needed.
+
+    Optional ``row`` lets callers (e.g. realtime command path) pass an already-
+    fetched user_settings row so we skip the Supabase round-trip when the
+    token is still fresh. When ``return_remaining`` is True, returns
+    ``(access_token, seconds_until_expiry_or_None)`` so the caller can cap
+    its own cache TTL.
+    """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    try:
-        resp = supabase.table("user_settings").select(
-            "google_access_token,google_refresh_token,google_token_expires_at"
-        ).eq("user_id", user_id).maybe_single().execute()
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database error fetching calendar credentials")
+    if row is None:
+        try:
+            resp = supabase.table("user_settings").select(
+                "google_access_token,google_refresh_token,google_token_expires_at"
+            ).eq("user_id", user_id).maybe_single().execute()
+        except Exception:
+            raise HTTPException(status_code=503, detail="Database error fetching calendar credentials")
+        row = (resp.data if resp is not None else None) or {}
 
-    row = (resp.data if resp is not None else None) or {}
     if not row or not row.get("google_access_token"):
         raise HTTPException(status_code=404, detail="Google Calendar not connected")
 
     access_token = row["google_access_token"]
     refresh_token = row.get("google_refresh_token")
     expires_at_str = row.get("google_token_expires_at")
+    seconds_remaining: float | None = None
 
     # Check if token is expired (with 60s buffer)
     if expires_at_str and refresh_token:
         try:
             expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) >= expires_at - timedelta(seconds=60):
+            now = datetime.now(timezone.utc)
+            if now >= expires_at - timedelta(seconds=60):
                 new_token_data = await refresh_google_token(refresh_token)
                 if new_token_data and new_token_data.get("access_token"):
                     access_token = new_token_data["access_token"]
-                    new_expires_at = datetime.now(timezone.utc) + timedelta(
-                        seconds=new_token_data.get("expires_in", 3600)
-                    )
+                    new_expires_at = now + timedelta(seconds=new_token_data.get("expires_in", 3600))
                     supabase.table("user_settings").update({
                         "google_access_token": access_token,
                         "google_token_expires_at": new_expires_at.isoformat(),
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": now.isoformat(),
                     }).eq("user_id", user_id).execute()
+                    seconds_remaining = (new_expires_at - now).total_seconds()
+            else:
+                seconds_remaining = (expires_at - now).total_seconds()
         except (ValueError, TypeError):
             pass
 
+    if return_remaining:
+        return access_token, seconds_remaining
     return access_token
 
 
