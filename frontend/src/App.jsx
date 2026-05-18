@@ -1279,7 +1279,7 @@ export default function App() {
           window.location.replace(`/dashboard#invite/${pendingInvite}`)
           return
         }
-        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing') {
+        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN) {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard')
@@ -1291,7 +1291,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!authReady || INITIAL_SHARE_TOKEN || isDashboard) return
+    if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard) return
     if (sessionStorage.getItem(UI_SCREEN_KEY) === 'landing') return
     if (user && !isTestAccount) {
       sessionStorage.setItem(VISITED_KEY, '1')
