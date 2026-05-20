@@ -43,6 +43,21 @@ async def check_user_quota(user_id: str, new_chunks: int) -> None:
         )
 
 
+def _caller_workspace_ids(sb, user_id: str) -> list[str]:
+    """Workspaces the caller belongs to — used to scope retrieval to shared docs.
+    Failures are non-fatal: fall back to personal-only (empty list)."""
+    try:
+        res = (
+            sb.table("workspace_members")
+            .select("workspace_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return [r["workspace_id"] for r in (res.data or []) if r.get("workspace_id")]
+    except Exception:
+        return []
+
+
 async def search_knowledge(
     query: str,
     user_id: str,
@@ -50,7 +65,8 @@ async def search_knowledge(
     k: int = 5,
     min_score: float = MIN_SCORE_DEFAULT,
 ) -> list[dict]:
-    """Embed query, run pgvector similarity search, return matches with conflict flag."""
+    """Embed query, run pgvector similarity search, return matches with conflict flag.
+    Scoped to the caller's own docs plus any docs shared into their workspaces."""
     query_vec = await embed_text(query)
     sb = _supabase()
     # meetings.id is bigint; coerce string IDs so PostgREST doesn't bounce them.
@@ -59,11 +75,13 @@ async def search_knowledge(
         meeting_filter = int(meeting_id) if meeting_id not in (None, "") else None
     except (TypeError, ValueError):
         meeting_filter = None
+    workspace_ids = _caller_workspace_ids(sb, user_id)
     resp = sb.rpc(
         "knowledge_search",
         {
             "query_embedding": query_vec,
             "caller_user_id": user_id,
+            "caller_workspace_ids": workspace_ids,
             "meeting_filter": meeting_filter,
             "match_limit": k,
             "min_score": min_score,
@@ -124,11 +142,15 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
         contents = [c["content"] for c in chunks]
         vectors = await embed_batch(contents)
 
+        # Propagate workspace_id from the doc onto each chunk so the similarity
+        # search can scope by workspace without joining back to knowledge_docs.
+        doc_workspace_id = doc_row.get("workspace_id")
         rows = [
             {
                 "id": str(uuid.uuid4()),
                 "doc_id": doc_id,
                 "user_id": user_id,
+                "workspace_id": doc_workspace_id,
                 "content": chunks[i]["content"],
                 "embedding": vectors[i],
                 "chunk_index": chunks[i]["chunk_index"],

@@ -38,6 +38,7 @@ async def _user_settings(user_id: str) -> dict:
 class UploadUrlRequest(BaseModel):
     url: str
     meeting_id: Optional[str] = None
+    workspace_id: Optional[str] = None
     sensitivity: str = "internal"
 
 
@@ -46,6 +47,7 @@ class ConnectSourceRequest(BaseModel):
     source_id: str
     name: str
     meeting_id: Optional[str] = None
+    workspace_id: Optional[str] = None
     sensitivity: str = "internal"
 
 
@@ -53,6 +55,7 @@ class UpdateDocRequest(BaseModel):
     name: Optional[str] = None
     sensitivity: Optional[str] = None
     meeting_id: Optional[str] = None
+    workspace_id: Optional[str] = None
 
 
 def _coerce_meeting_id(value) -> Optional[int]:
@@ -68,6 +71,7 @@ def _coerce_meeting_id(value) -> Optional[int]:
 def _insert_doc_row(sb, *, user_id: str, name: str, source_type: str,
                     source_url: Optional[str] = None, file_path: Optional[str] = None,
                     size_bytes: Optional[int] = None, meeting_id: Optional[str] = None,
+                    workspace_id: Optional[str] = None,
                     sensitivity: str = "internal") -> str:
     doc_id = str(uuid.uuid4())
     sb.table("knowledge_docs").insert({
@@ -79,6 +83,7 @@ def _insert_doc_row(sb, *, user_id: str, name: str, source_type: str,
         "file_path": file_path,
         "size_bytes": size_bytes,
         "meeting_id": _coerce_meeting_id(meeting_id),
+        "workspace_id": (workspace_id or None),
         "sensitivity": sensitivity,
         "status": "processing",
     }).execute()
@@ -90,6 +95,7 @@ async def upload_file(
     background: BackgroundTasks,
     file: UploadFile = File(...),
     meeting_id: Optional[str] = Form(None),
+    workspace_id: Optional[str] = Form(None),
     sensitivity: str = Form("internal"),
     user_id: str = Depends(require_user_id),
 ):
@@ -123,7 +129,7 @@ async def upload_file(
         doc_id = _insert_doc_row(
             sb, user_id=user_id, name=file.filename or "Untitled",
             source_type=source_type, file_path=file_path, size_bytes=len(content),
-            meeting_id=meeting_id, sensitivity=sensitivity,
+            meeting_id=meeting_id, workspace_id=workspace_id, sensitivity=sensitivity,
         )
     except Exception as exc:
         msg = str(exc)
@@ -144,7 +150,8 @@ async def upload_url(req: UploadUrlRequest, background: BackgroundTasks, user_id
         raise HTTPException(status_code=503, detail="Storage not configured")
     doc_id = _insert_doc_row(
         sb, user_id=user_id, name=req.url, source_type="url",
-        source_url=req.url, meeting_id=req.meeting_id, sensitivity=req.sensitivity,
+        source_url=req.url, meeting_id=req.meeting_id,
+        workspace_id=req.workspace_id, sensitivity=req.sensitivity,
     )
     settings = await _user_settings(user_id)
     background.add_task(ingest_doc, doc_id, req.url, "url", settings)
@@ -160,7 +167,8 @@ async def connect_source(req: ConnectSourceRequest, background: BackgroundTasks,
         raise HTTPException(status_code=503, detail="Storage not configured")
     doc_id = _insert_doc_row(
         sb, user_id=user_id, name=req.name, source_type=req.source_type,
-        source_url=req.source_id, meeting_id=req.meeting_id, sensitivity=req.sensitivity,
+        source_url=req.source_id, meeting_id=req.meeting_id,
+        workspace_id=req.workspace_id, sensitivity=req.sensitivity,
     )
     settings = await _user_settings(user_id)
     background.add_task(ingest_doc, doc_id, req.source_id, req.source_type, settings)
@@ -172,7 +180,17 @@ async def list_docs(meeting_id: Optional[str] = None, user_id: str = Depends(req
     sb = _supabase()
     if not sb:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    q = sb.table("knowledge_docs").select("*").eq("user_id", user_id).is_("deleted_at", "null")
+    # Surface the caller's own docs PLUS docs shared into workspaces they belong to.
+    try:
+        wm = sb.table("workspace_members").select("workspace_id").eq("user_id", user_id).execute()
+        ws_ids = [r["workspace_id"] for r in (wm.data or []) if r.get("workspace_id")]
+    except Exception:
+        ws_ids = []
+    q = sb.table("knowledge_docs").select("*").is_("deleted_at", "null")
+    if ws_ids:
+        q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
+    else:
+        q = q.eq("user_id", user_id)
     mid = _coerce_meeting_id(meeting_id)
     if mid is not None:
         q = q.eq("meeting_id", mid)
@@ -197,7 +215,15 @@ async def update_doc(doc_id: str, req: UpdateDocRequest, user_id: str = Depends(
         raise HTTPException(status_code=400, detail="No fields to update")
     if "meeting_id" in update:
         update["meeting_id"] = _coerce_meeting_id(update["meeting_id"])
+    # Empty-string workspace_id means "move back to personal" → store NULL.
+    if "workspace_id" in update:
+        update["workspace_id"] = update["workspace_id"] or None
     sb.table("knowledge_docs").update(update).eq("id", doc_id).eq("user_id", user_id).execute()
+    # Chunks denormalize workspace_id for retrieval scoping — keep them in sync.
+    if "workspace_id" in update:
+        sb.table("knowledge_chunks").update(
+            {"workspace_id": update["workspace_id"]}
+        ).eq("doc_id", doc_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 
