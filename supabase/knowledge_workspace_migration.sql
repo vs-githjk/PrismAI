@@ -30,13 +30,15 @@ create index if not exists knowledge_chunks_workspace_id_idx on knowledge_chunks
 -- safety net for any anon-key access path. Owner keeps full management rights;
 -- workspace members get read access to docs shared into their workspace.
 
+-- workspace_members.user_id / workspace_id may be stored as text (not uuid),
+-- so every comparison casts to text to avoid "operator does not exist: text = uuid".
 drop policy if exists "workspace members can read shared docs" on knowledge_docs;
 create policy "workspace members can read shared docs"
   on knowledge_docs for select
   using (
-    auth.uid() = user_id
-    or workspace_id in (
-      select workspace_id from workspace_members where user_id = auth.uid()
+    auth.uid()::text = user_id::text
+    or workspace_id::text in (
+      select workspace_id::text from workspace_members where user_id::text = auth.uid()::text
     )
   );
 
@@ -44,9 +46,9 @@ drop policy if exists "workspace members can read shared chunks" on knowledge_ch
 create policy "workspace members can read shared chunks"
   on knowledge_chunks for select
   using (
-    auth.uid() = user_id
-    or workspace_id in (
-      select workspace_id from workspace_members where user_id = auth.uid()
+    auth.uid()::text = user_id::text
+    or workspace_id::text in (
+      select workspace_id::text from workspace_members where user_id::text = auth.uid()::text
     )
   );
 
