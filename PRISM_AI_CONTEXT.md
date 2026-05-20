@@ -130,12 +130,14 @@ PrismAI should read as a shadcn-style product UI with the existing cyan/sky acce
 │   ├── auth_migration.sql
 │   └── tools_migration.sql
 ├── render.yaml
-├── PRISM_AI_CONTEXT.md            # This file
-├── IMPROVEMENT_SPEC_2.md          # Feature spec — Features 1-5 status and test instructions
-└── IMPROVEMENT_SPECS_DRAFT_1.md   # Original prioritized roadmap
+├── CLAUDE.md                      # Working guide for Claude Code (commands + architecture)
+├── PRISM_AI_CONTEXT.md            # This file — full architecture reference
+├── CONTEXT.md                     # Canonical terminology glossary
+├── Orinial_Roadmap.md             # 8-phase product roadmap + status
+└── docs/specs/                    # Active design specs (e.g. smart-rag-additions)
 ```
 
-> **For incoming LLMs:** Read both docs first, then read the specific source files for your task. Never assume the docs match the code exactly — the code is authoritative.
+> **For incoming LLMs:** Read `CLAUDE.md` + this file first, then the specific source files for your task. Never assume the docs match the code exactly — the code is authoritative.
 
 ---
 
@@ -518,7 +520,14 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 - `DashboardPage.jsx`: `handleOpenMeetingById(meetingId)` — closes the new-meeting popover, uses in-memory history if available, otherwise fetches `GET /meetings/{id}` and routes through the existing `handleSelectMeeting` (which calls `loadFromHistory` + switches view).
 - Personal upcoming meetings intentionally do NOT show a brief — V1 is workspace-only (workspace meetings have cohesive context, scattered personal history rarely does).
 
-### Status: Workspace + Phase 2 + Phase 3 (LangGraph) complete — Phases 5–8 pending
+### Added May 20 2026 — Landing ProofSection + repo cleanup
+
+- **`ProofSection.jsx`** — new landing section between hero and HowItWorks. Three animated count-up stat tiles (8 agents / ~2s / 100% grounded). Interactive layer: scramble-then-settle number reveal, cursor-following radial glow + 3D tilt (CSS vars set on `onPointerMove`), scroll-driven parallax, aurora background (`mix-blend-mode: screen` drifting blobs), breathing top-stripe glow. Hero CTAs made magnetic (cursor-pull within 120px). All gated behind `prefers-reduced-motion`. Built using the `website-craft` skill's marketing-site guidance.
+- **PR #4 merged** — agent-pop chip animation, view crossfade, demo transcript prefill for the test account.
+- **Repo cleanup** — removed 6 stale planning docs (WARP, HANDOFF_MAY2026_SESSION2, IMPROVEMENT_SPEC_2, IMPROVEMENT_SPECS_DRAFT_1, MCP_TOOL_LAYER_PLAN, QA_SWEEP_CHECKLIST). Kept Orinial_Roadmap, LANDING_BRIEF, PITCH_AND_DEMO_SCRIPT.
+- **Smart-RAG spec written** — `docs/specs/2026-05-20-smart-rag-additions.md` defines the plan to layer hybrid retrieval + reranking + contextual retrieval + cross-source (docs + meeting transcripts) on top of the teammate's vector RAG once `fixed-changes` is merged.
+
+### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) in progress — vector RAG built on `fixed-changes`, smart-RAG additions spec'd, merge + workspace gaps next. Phases 6–8 pending.
 
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token
