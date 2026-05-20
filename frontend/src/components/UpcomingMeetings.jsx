@@ -57,6 +57,87 @@ function MeetingLinkIcon({ link }) {
   )
 }
 
+function formatRelativeDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const days = Math.round((Date.now() - d.getTime()) / 86400000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 7) return `${days}d ago`
+  if (days < 14) return 'last week'
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function BriefPanel({ state, workspaceName, onItemClick }) {
+  if (!state || state.loading) {
+    return (
+      <div className="px-3 pb-3 pt-1">
+        <div className="rounded-lg px-3 py-2 text-[10px] text-gray-500"
+          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          Loading brief…
+        </div>
+      </div>
+    )
+  }
+  if (state.error) {
+    return (
+      <div className="px-3 pb-3 pt-1">
+        <div className="rounded-lg px-3 py-2 text-[10px] text-red-300/80"
+          style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+          Couldn't load brief.
+        </div>
+      </div>
+    )
+  }
+  const items = state.items || []
+  if (items.length === 0) {
+    return (
+      <div className="px-3 pb-3 pt-1">
+        <div className="rounded-lg px-3 py-2 text-[10px] text-emerald-300/80"
+          style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.16)' }}>
+          All clear — no open items from recent {workspaceName} meetings.
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="px-3 pb-3 pt-1">
+      <div className="rounded-lg overflow-hidden"
+        style={{ background: 'rgba(34,211,238,0.03)', border: '1px solid rgba(34,211,238,0.14)' }}>
+        <div className="px-3 py-1.5 flex items-center justify-between"
+          style={{ borderBottom: '1px solid rgba(34,211,238,0.10)' }}>
+          <span className="text-[10px] font-semibold tracking-wide text-cyan-200/80">
+            {items.length} open from {workspaceName}
+          </span>
+        </div>
+        <ul className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+          {items.map((item, i) => (
+            <li key={i}>
+              <button
+                type="button"
+                onClick={() => item.meeting_id && onItemClick?.(item.meeting_id)}
+                disabled={!item.meeting_id || !onItemClick}
+                className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-cyan-400/[0.04] transition-colors disabled:cursor-default disabled:hover:bg-transparent">
+                <span className="text-orange-400 text-[10px] mt-0.5 flex-shrink-0">○</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] text-gray-200 leading-snug">{item.task}</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5 truncate">
+                    {[item.owner, item.due, item.meeting_title]
+                      .filter(Boolean)
+                      .concat([formatRelativeDate(item.meeting_date)].filter(Boolean))
+                      .join(' · ')}
+                  </p>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 function matchWorkspace(attendeeEmails, workspaces) {
   if (!attendeeEmails?.length || !workspaces?.length) return null
   const emailSet = new Set(attendeeEmails.map(e => e.toLowerCase()))
@@ -69,12 +150,36 @@ function matchWorkspace(attendeeEmails, workspaces) {
   return bestOverlap > 0 ? best : null
 }
 
-export default function UpcomingMeetings({ onJoin, workspaces = [] }) {
+export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [collapsed, setCollapsed] = useState(false)
   const [marked, toggleMark] = useMarkedEvents()
+  // Brief state — keyed by event.id. Each value: { loading, items, error }
+  const [briefs, setBriefs] = useState({})
+  const [expandedBriefId, setExpandedBriefId] = useState(null)
+
+  const loadBrief = useCallback(async (eventId, workspaceId) => {
+    if (briefs[eventId]?.items || briefs[eventId]?.loading) return
+    setBriefs(prev => ({ ...prev, [eventId]: { loading: true } }))
+    try {
+      const res = await apiFetch(`/workspaces/${workspaceId}/brief`)
+      if (!res.ok) throw new Error('Failed')
+      const data = await res.json()
+      setBriefs(prev => ({ ...prev, [eventId]: { loading: false, items: data.open_items || [] } }))
+    } catch {
+      setBriefs(prev => ({ ...prev, [eventId]: { loading: false, items: [], error: true } }))
+    }
+  }, [briefs])
+
+  const toggleBrief = useCallback((eventId, workspaceId) => {
+    setExpandedBriefId(prev => {
+      const next = prev === eventId ? null : eventId
+      if (next) loadBrief(eventId, workspaceId)
+      return next
+    })
+  }, [loadBrief])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -193,66 +298,97 @@ export default function UpcomingMeetings({ onJoin, workspaces = [] }) {
             const mins = minutesUntil(event.start)
             const isNow = mins !== null && mins >= -60 && mins <= 15
             const matchedWs = matchWorkspace(event.attendee_emails, workspaces)
+            const briefExpanded = expandedBriefId === event.id
+            const briefState = briefs[event.id]
             return (
               <div key={event.id}
-                className="px-3 py-2.5 flex items-center gap-2.5 group"
                 style={isNow ? { background: 'rgba(14,165,233,0.04)' } : {}}>
+                <div className="px-3 py-2.5 flex items-center gap-2.5 group">
 
-                {/* Status dot */}
-                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isNow ? 'bg-sky-400 animate-pulse' : 'bg-gray-700'}`} />
+                  {/* Status dot */}
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isNow ? 'bg-sky-400 animate-pulse' : 'bg-gray-700'}`} />
 
-                {/* Event info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[11px] font-medium text-gray-300 truncate">{event.title}</span>
-                    <MeetingLinkIcon link={event.meeting_link} />
-                    {matchedWs ? (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                        style={{ background: 'rgba(34,211,238,0.10)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.18)' }}>
-                        {matchedWs.name}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                        style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
-                        Personal
-                      </span>
-                    )}
+                  {/* Event info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-medium text-gray-300 truncate">{event.title}</span>
+                      <MeetingLinkIcon link={event.meeting_link} />
+                      {matchedWs ? (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'rgba(34,211,238,0.10)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.18)' }}>
+                          {matchedWs.name}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                          Personal
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-600 mt-0.5">
+                      {formatEventTime(event.start)}
+                      {mins !== null && mins > 0 && mins < 60 && (
+                        <span className="ml-1 text-sky-500/80">· in {mins}m</span>
+                      )}
+                      {mins !== null && mins <= 0 && mins > -60 && (
+                        <span className="ml-1 text-emerald-500/80">· in progress</span>
+                      )}
+                    </p>
                   </div>
-                  <p className="text-[10px] text-gray-600 mt-0.5">
-                    {formatEventTime(event.start)}
-                    {mins !== null && mins > 0 && mins < 60 && (
-                      <span className="ml-1 text-sky-500/80">· in {mins}m</span>
-                    )}
-                    {mins !== null && mins <= 0 && mins > -60 && (
-                      <span className="ml-1 text-emerald-500/80">· in progress</span>
-                    )}
-                  </p>
+
+                  {/* Brief button — only for workspace-matched events */}
+                  {matchedWs && (
+                    <button
+                      onClick={() => toggleBrief(event.id, matchedWs.id)}
+                      aria-label="View workspace brief"
+                      aria-expanded={briefExpanded}
+                      className="flex-shrink-0 text-[10px] font-medium px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
+                      style={{
+                        background: briefExpanded ? 'rgba(34,211,238,0.18)' : 'rgba(255,255,255,0.04)',
+                        color: briefExpanded ? '#67e8f9' : '#94a3b8',
+                        border: `1px solid ${briefExpanded ? 'rgba(34,211,238,0.3)' : 'rgba(255,255,255,0.10)'}`,
+                      }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                      </svg>
+                      Brief
+                    </button>
+                  )}
+
+                  {/* Mark button */}
+                  <button
+                    onClick={() => toggleMark(event.id)}
+                    aria-label={marked.has(event.id) ? 'Unmark event' : 'Mark for auto-join'}
+                    className="flex-shrink-0 p-1 rounded-md transition-all"
+                    style={{ color: marked.has(event.id) ? '#fbbf24' : 'transparent', opacity: marked.has(event.id) ? 1 : undefined }}
+                    title={marked.has(event.id) ? 'Marked for auto-join' : 'Mark for auto-join'}>
+                    <svg
+                      className={`w-3.5 h-3.5 transition-all group-hover:opacity-100 ${marked.has(event.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
+                      viewBox="0 0 24 24"
+                      fill={marked.has(event.id) ? 'currentColor' : 'none'}
+                      stroke="currentColor" strokeWidth="2">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                  </button>
+
+                  {/* Join button */}
+                  <button
+                    onClick={() => onJoin(event.meeting_link, matchedWs?.id ?? null)}
+                    aria-label={`Join ${event.title} with PrismAI`}
+                    className="flex-shrink-0 text-[10px] font-medium px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                    style={{ background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                    Join
+                  </button>
                 </div>
 
-                {/* Mark button */}
-                <button
-                  onClick={() => toggleMark(event.id)}
-                  aria-label={marked.has(event.id) ? 'Unmark event' : 'Mark for auto-join'}
-                  className="flex-shrink-0 p-1 rounded-md transition-all"
-                  style={{ color: marked.has(event.id) ? '#fbbf24' : 'transparent', opacity: marked.has(event.id) ? 1 : undefined }}
-                  title={marked.has(event.id) ? 'Marked for auto-join' : 'Mark for auto-join'}>
-                  <svg
-                    className={`w-3.5 h-3.5 transition-all group-hover:opacity-100 ${marked.has(event.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
-                    viewBox="0 0 24 24"
-                    fill={marked.has(event.id) ? 'currentColor' : 'none'}
-                    stroke="currentColor" strokeWidth="2">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                  </svg>
-                </button>
-
-                {/* Join button */}
-                <button
-                  onClick={() => onJoin(event.meeting_link, matchedWs?.id ?? null)}
-                  aria-label={`Join ${event.title} with PrismAI`}
-                  className="flex-shrink-0 text-[10px] font-medium px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                  style={{ background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
-                  Join
-                </button>
+                {/* Inline brief panel */}
+                {briefExpanded && matchedWs && (
+                  <BriefPanel
+                    state={briefState}
+                    workspaceName={matchedWs.name}
+                    onItemClick={onOpenMeeting}
+                  />
+                )}
               </div>
             )
           })}

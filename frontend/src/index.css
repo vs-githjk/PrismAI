@@ -86,6 +86,13 @@
   to { stroke-dashoffset: 0; }
 }
 
+/* Agent chip lands "done" — transform/opacity only so it doesn't fight the
+   color/border crossfade handled by transition-all on the same element. */
+@keyframes agent-pop {
+  from { opacity: 0.4; transform: scale(0.94); }
+  to   { opacity: 1;   transform: scale(1); }
+}
+
 /* Slow breathing gradient — opacity-only animation (GPU compositable) */
 @keyframes bg-breathe-overlay {
   0%, 100% { opacity: 0; }
@@ -163,6 +170,7 @@
 .animate-spin-slow   { animation: spin-slow 3s linear infinite; }
 .animate-orb-drift   { animation: orb-drift 10s ease-in-out infinite; }
 .animate-bar-grow    { animation: bar-grow 1s ease-out both; }
+.agent-pop           { animation: agent-pop 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .path-draw {
   stroke-dasharray: 1000;
   animation: path-draw 1s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -279,6 +287,7 @@ body::before {
   .animate-spin-slow,
   .animate-orb-drift,
   .animate-bar-grow,
+  .agent-pop,
   .path-draw { animation: none; }
 
   .scroll-cue-chevron { animation: none; }

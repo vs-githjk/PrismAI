@@ -277,6 +277,7 @@ function NewMeetingPanel(props) {
                       props.setMeetingUrl(url)
                       if (wsId) props.onJoinWithWorkspace?.(wsId)
                     }}
+                    onOpenMeeting={props.onOpenMeeting}
                   />
                 </Suspense>
               )}
@@ -420,7 +421,7 @@ function AnalyzingBanner({ result }) {
               <div
                 key={agent.id}
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-300 ${
-                  isDone ? agent.done : 'animate-pulse border-white/[0.09] bg-white/[0.04] text-white/38'
+                  isDone ? `${agent.done} agent-pop` : 'animate-pulse border-white/[0.09] bg-white/[0.04] text-white/38'
                 }`}
               >
                 <span className="text-sm leading-none">{agent.icon}</span>
@@ -856,6 +857,26 @@ export default function DashboardPage(props) {
     persistView('meeting')
   }
 
+  // Open a meeting by id — fetches the full row first so this works even when the
+  // meeting belongs to a workspace not currently loaded in history. Used by the
+  // upcoming-meeting Brief panel where each open item links back to its source.
+  const handleOpenMeetingById = useCallback(async (meetingId) => {
+    if (!meetingId) return
+    setNewMeetingOpen(false)
+    const existing = (props.history || []).find((m) => m.id === meetingId)
+    if (existing) {
+      handleSelectMeeting(existing)
+      return
+    }
+    try {
+      const res = await apiFetch(`/meetings/${meetingId}`)
+      if (!res.ok) return
+      const entry = await res.json()
+      handleSelectMeeting(entry)
+    } catch { /* swallow — user can retry */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.history])
+
   // Find the currently loaded meeting metadata (for MeetingView title/date)
   const currentMeeting = useMemo(
     () => (props.meetingId ? (props.history || []).find((m) => m.id === props.meetingId) || null : null),
@@ -904,9 +925,9 @@ export default function DashboardPage(props) {
       <DashboardTopbar
         newMeetingOpen={newMeetingOpen}
         setNewMeetingOpen={setNewMeetingOpen}
-        onOpenNewMeeting={() => props.resetTranscriptWorkspaces?.()}
+        onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
         newMeetingPanel={
-          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} />
+          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
         }
         meetingInFocus={meetingInFocus}
         view={switchView}
@@ -992,6 +1013,7 @@ export default function DashboardPage(props) {
         )}
 
         <main className="relative z-10 mx-auto mt-2 max-w-[92rem] px-5 pb-28 sm:px-8">
+          <div key={activeView} className="animate-fade-in-up">
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
@@ -1051,6 +1073,7 @@ export default function DashboardPage(props) {
               />
             </Suspense>
           )}
+          </div>
         </main>
       </div>
 

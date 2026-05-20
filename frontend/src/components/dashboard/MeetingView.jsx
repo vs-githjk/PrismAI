@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, CheckCircle2, ChevronDown, FileText, Paperclip, Plus } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
+import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
@@ -338,17 +339,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
       </div>
 
-      {sentiment?.overall && !readOnly && (
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <p className={`${eyebrow} mb-2`}>Sentiment</p>
-          <div className="flex flex-wrap items-start gap-3">
-            <span className="rounded-full border border-white/[0.12] bg-white/[0.06] px-3 py-1 text-sm font-semibold capitalize text-white">
-              {sentiment.overall}
-            </span>
-            {sentiment.notes && <p className="text-sm leading-5 text-white/85">{sentiment.notes}</p>}
-          </div>
-        </section>
-      )}
+      {!readOnly && <SentimentCard sentiment={sentiment} />}
 
       {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
       <CalendarCard suggestion={result.calendar_suggestion} />
