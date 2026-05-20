@@ -582,6 +582,27 @@ h1, h2, h3, .font-display {
   transform: translateY(-1px);
 }
 
+/* Magnetic CTA: compose cursor-driven --magnet-x/y with hover --hover-y so
+   both effects coexist. Without this, an inline style.transform from the
+   magnet JS would clobber the :hover translateY -1px. */
+.landing-button-primary,
+.landing-button-secondary {
+  --magnet-x: 0px;
+  --magnet-y: 0px;
+  --hover-y: 0px;
+  transform: translate(var(--magnet-x), calc(var(--magnet-y) + var(--hover-y)));
+  transition:
+    background-color var(--landing-transition-fast),
+    border-color var(--landing-transition-fast),
+    color var(--landing-transition-fast),
+    box-shadow var(--landing-transition-fast),
+    transform 0.18s ease-out;
+}
+.landing-button-primary:hover,
+.landing-button-secondary:hover {
+  --hover-y: -1px;
+}
+
 .landing-button:active,
 .landing-button-primary:active,
 .landing-button-secondary:active,
@@ -2248,4 +2269,357 @@ h1, h2, h3, .font-display {
 /* Satoshi — logo wordmark only. Last so it overrides `.landing-page *`. */
 .prism-logo-text {
   font-family: "Satoshi", "Inter Variable", Inter, sans-serif;
+}
+
+/* ── Proof section (between hero and HowItWorks) ───────────────────
+   Universal scroll-reveal pattern: section toggles --in-view via JS,
+   children read .proof-section--in-view to start their reveal + count-up.
+   Cards consume --mx, --my (pointer position) and --tilt-x, --tilt-y for
+   the cursor-tracking glow + 3D tilt interactive effects. */
+.proof-section {
+  position: relative;
+  /* Generous top padding so eyebrow + headline clear the sticky landing nav.
+     Generous bottom padding so HowItWorks's fanned card deck (overflow-visible,
+     absolutely positioned shells) doesn't intrude into the stat row. */
+  padding: clamp(8rem, 18vh, 12rem) 0 clamp(11rem, 22vh, 16rem);
+  isolation: isolate;
+  perspective: 1200px;  /* Enables real 3D rendering of the per-card tilts. */
+  z-index: 2;            /* Sits above HowItWorks's frame which may visually
+                            bleed upward due to its overflow:visible shells. */
+}
+
+.proof-container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 clamp(1.5rem, 5vw, 4rem);
+  text-align: center;
+}
+
+.proof-eyebrow {
+  display: inline-block;
+  font-family: "Inter Variable", Inter, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #67e8f9;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: rgba(34, 211, 238, 0.06);
+  border-radius: 9999px;
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.7s cubic-bezier(0.19, 1, 0.22, 1),
+    transform 0.7s cubic-bezier(0.19, 1, 0.22, 1);
+  transition-delay: 0s;
+}
+
+.proof-headline {
+  margin: 1.6rem auto 0;
+  max-width: 22ch;
+  font-family: "Poppins", "Inter Variable", Inter, sans-serif;
+  font-weight: 600;
+  font-size: clamp(2rem, 4.5vw, 3.6rem);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #ffffff;
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.8s cubic-bezier(0.19, 1, 0.22, 1) 0.12s,
+    transform 0.8s cubic-bezier(0.19, 1, 0.22, 1) 0.12s;
+}
+
+.proof-headline-accent {
+  /* Wider 3-stop gradient that we slide horizontally for a subtle "shimmer"
+     across the text. The gradient is intentionally low-contrast so it reads
+     as a breathing accent rather than a flashing banner. */
+  background: linear-gradient(
+    90deg,
+    #67e8f9 0%,
+    #a78bfa 35%,
+    #67e8f9 70%,
+    #a78bfa 100%
+  );
+  background-size: 200% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: proof-shimmer 8s ease-in-out infinite;
+}
+
+@keyframes proof-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proof-headline-accent { animation: none; }
+}
+
+.proof-subhead {
+  margin: 1.4rem auto 0;
+  max-width: 60ch;
+  font-size: clamp(0.96rem, 1.2vw, 1.1rem);
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.66);
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.8s cubic-bezier(0.19, 1, 0.22, 1) 0.24s,
+    transform 0.8s cubic-bezier(0.19, 1, 0.22, 1) 0.24s;
+}
+
+.proof-stats {
+  display: grid;
+  gap: clamp(1rem, 2vw, 1.8rem);
+  margin-top: clamp(3rem, 6vh, 4.5rem);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .proof-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.proof-stat {
+  /* Default cursor-tracking values — overwritten by JS on pointermove. */
+  --mx: 50%;
+  --my: 0%;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  position: relative;
+  min-height: clamp(220px, 28vh, 280px);
+  padding: clamp(2rem, 3.5vw, 2.6rem) clamp(1.4rem, 2.8vw, 2rem) clamp(1.8rem, 3vw, 2.2rem);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  text-align: left;
+  opacity: 0;
+  transform-style: preserve-3d;
+  /* Compose entering Y-translate with cursor-driven tilt. The .--in-view
+     class swaps translateY to 0 + applies cursor tilt; non-revealed cards
+     start 28px down. transition handles both. */
+  transform: translateY(28px) rotateX(0deg) rotateY(0deg);
+  transition:
+    opacity 0.9s cubic-bezier(0.19, 1, 0.22, 1),
+    transform 0.9s cubic-bezier(0.19, 1, 0.22, 1),
+    border-color 0.3s ease,
+    background 0.3s ease;
+  overflow: hidden;
+  will-change: transform;
+}
+
+.proof-stat::before {
+  /* Cursor-following radial glow — origin follows --mx, --my which are
+     updated on pointermove. Falls back to top-left when cursor is gone. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 60% 60% at var(--mx, 50%) var(--my, 0%),
+    var(--stat-color, #22d3ee) 0%,
+    transparent 60%
+  );
+  opacity: 0.10;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.proof-stat:hover::before {
+  /* Brighter on hover — cursor is over the card. */
+  opacity: 0.22;
+}
+
+.proof-stat::after {
+  /* Top accent stripe — gently "breathes" in glow intensity so each card
+     feels alive rather than static. */
+  content: "";
+  position: absolute;
+  left: clamp(1.4rem, 2.8vw, 2rem);
+  top: 0;
+  width: 36px;
+  height: 3px;
+  background: var(--stat-color, #22d3ee);
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 0 12px var(--stat-color, #22d3ee);
+  animation: proof-stripe-breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes proof-stripe-breathe {
+  0%, 100% {
+    box-shadow: 0 0 8px var(--stat-color, #22d3ee);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow: 0 0 22px var(--stat-color, #22d3ee), 0 0 4px var(--stat-color, #22d3ee);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proof-stat::after { animation: none; }
+}
+
+/* The inner wrapper sits flat against the rotated card so content reads
+   naturally even when the card tilts. */
+.proof-stat-inner {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Once revealed, the card sits at translateY(--parallax-y) (driven by scroll)
+   and the cursor tilts apply on top. */
+.proof-section--in-view .proof-stat {
+  transform:
+    translateY(var(--parallax-y, 0px))
+    rotateX(var(--tilt-x))
+    rotateY(var(--tilt-y));
+}
+
+.proof-section--in-view .proof-stat:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.16);
+  /* Hover keeps the tilt + parallax offset, adds a Z lift. */
+  transform:
+    translateY(var(--parallax-y, 0px))
+    translateZ(12px)
+    rotateX(var(--tilt-x))
+    rotateY(var(--tilt-y));
+}
+
+/* ── Aurora — soft drifting colored blobs behind the proof section ──── */
+.proof-aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  /* Sits behind the proof-container which has its own z-index/positioning */
+}
+
+.proof-aurora-blob {
+  position: absolute;
+  width: 55vw;
+  height: 55vw;
+  max-width: 820px;
+  max-height: 820px;
+  border-radius: 50%;
+  /* Tighter blur than v1 — keeps the colored core visible against the dark
+     landing-post-hero overlay + page-wide prism WebGL behind everything. */
+  filter: blur(90px);
+  opacity: 0.55;
+  will-change: transform;
+  mix-blend-mode: screen;  /* lifts the colors over the dark backdrop without
+                              washing them gray */
+}
+
+.proof-aurora-blob--cyan {
+  /* Place the blob CENTER inside the visible section, not the corner. */
+  top: 8%;
+  left: 6%;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.95) 0%, transparent 60%);
+  animation: aurora-drift-1 22s ease-in-out infinite;
+}
+
+.proof-aurora-blob--violet {
+  top: 30%;
+  right: 4%;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.92) 0%, transparent 60%);
+  animation: aurora-drift-2 28s ease-in-out infinite;
+}
+
+.proof-aurora-blob--emerald {
+  bottom: 5%;
+  left: 28%;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.85) 0%, transparent 60%);
+  animation: aurora-drift-3 26s ease-in-out infinite;
+}
+
+@keyframes aurora-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(8vw, 6vh) scale(1.08); }
+  66%      { transform: translate(-4vw, 10vh) scale(0.95); }
+}
+@keyframes aurora-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%      { transform: translate(-6vw, -8vh) scale(1.1); }
+  70%      { transform: translate(4vw, -4vh) scale(0.92); }
+}
+@keyframes aurora-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  35%      { transform: translate(-10vw, -4vh) scale(1.05); }
+  65%      { transform: translate(6vw, 6vh) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proof-aurora-blob { animation: none; }
+}
+
+/* Ensure container sits above aurora */
+.proof-container {
+  position: relative;
+  z-index: 1;
+}
+
+.proof-stat-number-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.1em;
+  font-family: "Poppins", "Inter Variable", Inter, sans-serif;
+  line-height: 1;
+}
+
+.proof-stat-number {
+  font-size: clamp(2.8rem, 5vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  filter: drop-shadow(0 0 24px currentColor);
+}
+
+.proof-stat-suffix {
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.proof-stat-label {
+  margin-top: auto;            /* Push label + sublabel toward the card bottom */
+  padding-top: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+  letter-spacing: -0.005em;
+}
+
+.proof-stat-sublabel {
+  margin-top: 0.5rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* Trigger states — when section enters viewport */
+.proof-section--in-view .proof-eyebrow,
+.proof-section--in-view .proof-headline,
+.proof-section--in-view .proof-subhead,
+.proof-section--in-view .proof-stat {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proof-eyebrow,
+  .proof-headline,
+  .proof-subhead,
+  .proof-stat {
+    transition: none;
+  }
 }

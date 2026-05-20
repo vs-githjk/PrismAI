@@ -6,6 +6,7 @@ import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
 import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
+import ProofSection from './components/ProofSection'
 import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
 import SignupDialog from './components/SignupDialog'
@@ -908,6 +909,57 @@ function LandingScreen({ onViewDashboard }) {
     return () => obs.disconnect()
   }, [])
 
+  // Magnetic CTA buttons — within ~120px of either hero button, the cursor
+  // pulls the button toward itself at decaying strength. Restores smoothly
+  // when cursor leaves the radius. rAF-throttled to stay 60fps.
+  useEffect(() => {
+    if (typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return
+    }
+    const buttons = document.querySelectorAll('.landing-button-primary, .landing-button-secondary')
+    if (!buttons.length) return
+    const RANGE = 120
+    let raf = 0
+    let pending = false
+    let lastE = null
+    const apply = () => {
+      pending = false
+      if (!lastE) return
+      buttons.forEach((btn) => {
+        const r = btn.getBoundingClientRect()
+        const cx = r.left + r.width / 2
+        const cy = r.top + r.height / 2
+        const dx = lastE.clientX - cx
+        const dy = lastE.clientY - cy
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < RANGE) {
+          const strength = (1 - dist / RANGE) * 0.32
+          btn.style.setProperty('--magnet-x', `${dx * strength}px`)
+          btn.style.setProperty('--magnet-y', `${dy * strength}px`)
+        } else {
+          btn.style.setProperty('--magnet-x', '0px')
+          btn.style.setProperty('--magnet-y', '0px')
+        }
+      })
+    }
+    const onMove = (e) => {
+      lastE = e
+      if (pending) return
+      pending = true
+      raf = requestAnimationFrame(apply)
+    }
+    window.addEventListener('pointermove', onMove)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('pointermove', onMove)
+      buttons.forEach((btn) => {
+        btn.style.removeProperty('--magnet-x')
+        btn.style.removeProperty('--magnet-y')
+      })
+    }
+  }, [])
+
   return (
     <div className="landing-page-shell">
       {/* Fixed prism — persists behind all sections */}
@@ -1000,6 +1052,7 @@ function LandingScreen({ onViewDashboard }) {
         </section>
 
         <div className="landing-post-hero">
+          <ProofSection />
           <HowItWorks />
           <PricingSection onGetStarted={openSignup} />
           <TeamSection />
