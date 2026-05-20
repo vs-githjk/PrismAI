@@ -56,6 +56,15 @@ create policy "workspace members can read shared chunks"
 -- A chunk matches when it is the caller's own (user_id) OR shared into one of
 -- their workspaces. The Python caller (knowledge_service.search_knowledge)
 -- resolves the caller's workspace_ids and passes them in.
+--
+-- The base migration created knowledge_search with a 5-arg signature and a
+-- narrower RETURNS TABLE. We add an argument AND new return columns, so a plain
+-- CREATE OR REPLACE would either create a second overload (ambiguous RPC) or
+-- fail with "cannot change return type". Drop the old signature first.
+-- The new function's caller_workspace_ids default ('{}') keeps old-style calls
+-- (without the param) working, so nothing else needs to change.
+
+drop function if exists knowledge_search(vector, uuid, bigint, int, float);
 
 create or replace function knowledge_search(
   query_embedding      vector(1536),
