@@ -162,7 +162,16 @@ register_tool(
         "type": "object",
         "properties": {
             "channel": {"type": "string", "description": "Channel name (e.g. '#engineering') or ID"},
-            "text": {"type": "string", "description": "Message text to post"},
+            "text": {
+                "type": "string",
+                "description": (
+                    "Message text to post. If a prior tool result in this conversation contains an "
+                    "AVAILABLE_LINKS_FOR_FORWARDING list (e.g. from calendar_list_events) and the "
+                    "user asked you to share/forward a meeting link, you MUST copy the relevant "
+                    "meet_link (or event_link if no meet_link exists) verbatim into this field. "
+                    "Brevity rules do not apply to URLs — never summarize, shorten, or omit a link."
+                ),
+            },
         },
         "required": ["channel", "text"],
     },

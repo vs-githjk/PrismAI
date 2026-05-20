@@ -42,8 +42,11 @@ async def gmail_send(args: dict, user_settings: dict | None = None) -> dict:
     if resp.status_code in (200, 201):
         data = resp.json()
         return {"success": True, "message_id": data.get("id"), "summary": f"Sent email '{subject}' to {', '.join(to)}"}
-    else:
-        return {"error": f"Gmail API error {resp.status_code}: {resp.text[:200]}"}
+    # Log full raw response on failure — the tool result truncates to 200
+    # chars for the LLM, but operators need to see the unambiguous Google
+    # error message (e.g. invalid_grant vs scope insufficient vs API disabled).
+    print(f"[gmail-send] FAIL status={resp.status_code} body={resp.text[:500]}")
+    return {"error": f"Gmail API error {resp.status_code}: {resp.text[:200]}"}
 
 
 async def gmail_read(args: dict, user_settings: dict | None = None) -> dict:
@@ -104,7 +107,17 @@ register_tool(
         "properties": {
             "to": {"type": "array", "items": {"type": "string"}, "description": "Recipient email addresses"},
             "subject": {"type": "string", "description": "Email subject line"},
-            "body": {"type": "string", "description": "Email body text"},
+            "body": {
+                "type": "string",
+                "description": (
+                    "Full email body. If a prior tool result in this conversation contains an "
+                    "AVAILABLE_LINKS_FOR_FORWARDING list (e.g. from calendar_list_events) and the "
+                    "user asked you to send/share/forward a meeting link or calendar invite, you "
+                    "MUST copy the relevant meet_link (or event_link if no meet_link exists) "
+                    "verbatim into this body field. Brevity rules do not apply to URLs — never "
+                    "summarize, shorten, or omit a link for the sake of a shorter response."
+                ),
+            },
         },
         "required": ["to", "subject", "body"],
     },

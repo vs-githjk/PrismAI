@@ -39,6 +39,7 @@ const SIDEBAR_DEFAULT = 248
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
+const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 

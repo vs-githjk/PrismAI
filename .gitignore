@@ -10,3 +10,14 @@ node_modules/
 .DS_Store
 *.pyc
 dist/
+
+# Python virtual environments
+.venv/
+backend/.venv/
+
+# Local agent / IDE skill configs (per-developer, not project state)
+.agents/
+.claude/skills/
+.superpowers/
+.windsurf/skills/
+skills-lock.json

@@ -23,8 +23,12 @@ def register_tool(
     handler: Callable[..., Awaitable[Any]],
     requires: str | None = None,
     confirm: bool = False,
+    taints_context: bool = False,
 ):
-    """Register a tool. `requires` is an env/setting key that must be present for the tool to be available."""
+    """Register a tool. `requires` is an env/setting key that must be present for the tool to be available.
+    `taints_context=True` marks tools whose output mixes attacker-controlled data into the LLM context
+    (e.g. web_search) — callers must strip further tool access after one of these runs.
+    """
     _TOOLS[name] = {
         "name": name,
         "description": description,
@@ -32,7 +36,12 @@ def register_tool(
         "handler": handler,
         "requires": requires,
         "confirm": confirm,
+        "taints_context": taints_context,
     }
+
+
+def is_tainted(name: str) -> bool:
+    return bool(_TOOLS.get(name, {}).get("taints_context", False))
 
 
 def get_available_tools(user_settings: dict | None = None, exclude_confirm: bool = False) -> list[dict]:
@@ -88,8 +97,12 @@ async def execute_tool(name: str, arguments: str | dict, user_id: str, user_sett
         }
 
     # Execute
+    # Inject user_id into a fresh settings copy so tools like knowledge_lookup
+    # can resolve it without changing every existing tool's signature.
+    settings = dict(user_settings or {})
+    settings.setdefault("user_id", user_id)
     try:
-        result = await tool["handler"](arguments, user_settings=user_settings or {})
+        result = await tool["handler"](arguments, user_settings=settings)
         # Inject external_ref for resource-creating tools so callers can store the ref
         if result.get("success"):
             if result.get("issue_id"):
