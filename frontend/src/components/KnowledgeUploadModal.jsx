@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { X, Upload, Link as LinkIcon, FileText } from 'lucide-react'
 import { uploadFile, uploadUrl, connectSource } from '../lib/knowledge'
 
-export default function KnowledgeUploadModal({ open, onClose, meetingId, onUploaded }) {
+export default function KnowledgeUploadModal({ open, onClose, meetingId, workspaceId, onUploaded }) {
   const [tab, setTab] = useState('file')
   const [url, setUrl] = useState('')
   const [notionId, setNotionId] = useState('')
@@ -20,7 +20,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, onUploa
     if (!file) return
     setBusy(true); setError(null)
     try {
-      await uploadFile(file, { meetingId, sensitivity })
+      await uploadFile(file, { meetingId, workspaceId, sensitivity })
       onUploaded?.(); close()
     } catch (err) {
       setError(err?.message || 'Upload failed')
@@ -33,7 +33,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, onUploa
     if (!url.trim()) return
     setBusy(true); setError(null)
     try {
-      await uploadUrl(url.trim(), { meetingId, sensitivity })
+      await uploadUrl(url.trim(), { meetingId, workspaceId, sensitivity })
       onUploaded?.(); close()
     } catch (err) {
       setError(err?.message || 'Failed to ingest URL')
@@ -46,7 +46,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, onUploa
     if (!notionId.trim() || !notionName.trim()) return
     setBusy(true); setError(null)
     try {
-      await connectSource({ sourceType: 'notion', sourceId: notionId.trim(), name: notionName.trim(), meetingId, sensitivity })
+      await connectSource({ sourceType: 'notion', sourceId: notionId.trim(), name: notionName.trim(), meetingId, workspaceId, sensitivity })
       onUploaded?.(); close()
     } catch (err) {
       setError(err?.message || 'Failed to connect Notion page')

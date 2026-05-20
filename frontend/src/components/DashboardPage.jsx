@@ -1057,6 +1057,7 @@ export default function DashboardPage(props) {
                       transcript={props.transcript}
                       onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
                       recordedByEmail={recordedByEmail}
+                      workspaceId={activeWorkspaceId}
                     />
                   </Suspense>
                 </>

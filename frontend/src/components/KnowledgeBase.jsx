@@ -4,7 +4,7 @@ import { listDocs } from '../lib/knowledge'
 import KnowledgeDocCard from './KnowledgeDocCard'
 import KnowledgeUploadModal from './KnowledgeUploadModal'
 
-export default function KnowledgeBase({ meetingId } = {}) {
+export default function KnowledgeBase({ meetingId, workspaceId } = {}) {
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -52,7 +52,7 @@ export default function KnowledgeBase({ meetingId } = {}) {
       )}
 
       <KnowledgeUploadModal open={modalOpen} onClose={() => setModalOpen(false)}
-                            meetingId={meetingId} onUploaded={refresh} />
+                            meetingId={meetingId} workspaceId={workspaceId} onUploaded={refresh} />
     </div>
   )
 }
