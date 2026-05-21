@@ -23,7 +23,9 @@ def _supabase() -> Client:
     global _sb_client
     if _sb_client is None:
         url = os.getenv("SUPABASE_URL", "")
-        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        # This project stores the service-role key as SUPABASE_KEY (see auth.py).
+        # Accept SUPABASE_SERVICE_ROLE_KEY too in case it's set that way on Render.
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY", "")
         _sb_client = create_client(url, key)
     return _sb_client
 
