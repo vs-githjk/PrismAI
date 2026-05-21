@@ -66,6 +66,16 @@ User input (paste / upload / record / bot)
 
 All agents import `strip_fences` from `backend/agents/utils.py`. Never redefine it.
 
+### Knowledge Base / RAG (merged from `fixed-changes`, May 2026)
+
+Vector RAG over user-uploaded docs + (planned) meeting transcripts. `knowledge_routes.py` (REST: upload/upload-url/connect-source, docs CRUD, resync, queries audit), `knowledge_service.py` (ingest orchestration + `search_knowledge`), `embeddings.py` (OpenAI `text-embedding-3-small`, batching + retry + quota circuit-breaker), `knowledge_ingest/` (pdf/docx/txt/url/notion/gdrive loaders + sentence-aware chunker), `knowledge_proactive.py` (surfaces relevant chunks every 20 transcript lines via one hook in `realtime_routes._compress_and_persist`). Two registered tools: `tools/knowledge_lookup.py` (grounded retrieval with strict-grounding + `NO_GROUNDED_ANSWER` fallback signal + conflict detection) and `tools/web_search.py` (Tavily fallback with prompt-injection defenses). Anti-hallucination: strict instruction string + citation requirement + conflict flag.
+
+**Workspace scoping:** `knowledge_docs` + `knowledge_chunks` carry a nullable `workspace_id` (null = personal). `search_knowledge` resolves the caller's workspace_ids from `workspace_members` and passes them to the `knowledge_search` RPC, which matches a chunk when `c.user_id = caller OR d.workspace_id = any(caller_workspace_ids)`. `ingest_doc` propagates the doc's `workspace_id` onto every chunk; PATCH keeps chunks in sync when a doc moves scope. `knowledge_service._supabase()` reads `SUPABASE_SERVICE_ROLE_KEY` then falls back to `SUPABASE_KEY` (this project's name for the service-role key).
+
+**Env vars:** `OPENAI_API_KEY` (embeddings only — chat stays on Groq) and `TAVILY_API_KEY` (web_search + url_loader). Both must be set on Render for production RAG. New Python deps: `openai`, `tiktoken`, `pymupdf`, `pytesseract`, `python-docx`, `notion-client`, `pysbd`, `langgraph`.
+
+**Status:** baseline RAG verified working end-to-end locally (ingest→embed→store→search). The smart-RAG upgrades (contextual retrieval, hybrid vector+BM25, reranking, cross-source over meeting transcripts, query rewriting) are spec'd in `docs/specs/2026-05-20-smart-rag-additions.md` — Phase 0 (merge + workspace scoping) done; Phases 1–5 pending. The standalone `KnowledgeBase` page is built but NOT yet mounted in dashboard nav — only the `MeetingView` pinned-docs upload path is reachable.
+
 ### Frontend Structure
 
 `App.jsx` holds all application state, all input modes, all result state, and the landing/share routing. It is intentionally a large file — don't split it without a strong reason. Always use `apiFetch()` from `lib/api.js` instead of raw `fetch()` — it auto-attaches the auth token.
@@ -117,6 +127,8 @@ Supabase migrations must be run manually in the SQL editor (in order):
 3. `tools_migration.sql` — linear_api_key, slack_bot_token columns + bot_sessions table
 4. Workspace migrations (run May 2026 — no file yet, run directly in SQL editor):
    - `workspaces` table
-   - `workspace_members` table (with `user_email` column)
+   - `workspace_members` table (with `user_email` column — note: `user_id`/`workspace_id` are stored as `text`, not uuid)
    - `meeting_bots` table
    - `alter table meetings add column workspace_id, recorded_by_user_id, email_claimed_by`
+5. `knowledge_migration.sql` — knowledge_docs + knowledge_chunks (pgvector) + knowledge_queries + knowledge_search RPC. Also create a private Supabase Storage bucket named `knowledge` (50MB) with the RLS policy in the file's header.
+6. `knowledge_workspace_migration.sql` — adds `workspace_id` to knowledge_docs/chunks, RLS for workspace members (casts to text since workspace_members columns are text), and redefines `knowledge_search` with a `caller_workspace_ids uuid[]` param (drops the old 5-arg signature first). Run AFTER `knowledge_migration.sql`.

@@ -178,18 +178,22 @@ Drop `internal` as the default. New defaults:
 
 Each phase leaves the system in a working, shippable state. Stop after any phase and PrismAI still functions.
 
-### Phase 0 — Merge `fixed-changes` + workspace gap fixes (~3 hours)
+### Phase 0 — Merge `fixed-changes` + workspace gap fixes ✅ DONE (May 21 2026)
 
-1. Merge `fixed-changes` into `vids_branch` — resolve conflicts manually
-2. Verify all our recent work (sentiment card, brief, dedup fix) survives
-3. Add `workspace_id` columns to `knowledge_docs` + `knowledge_chunks`
-4. Update `knowledge_search` RPC to accept optional workspace_id and use the OR-scope above
-5. Update `knowledge_routes.py` to accept workspace_id on upload + filter on list
-6. Add `meeting_dedup_key` column to `knowledge_docs`; compute on pin/unpin
-7. Rename sensitivity values: `internal` → `workspace`; migration on existing rows
-8. Frontend: KnowledgeBase shows separate sections "My docs" / "[Workspace name] docs"
+1. ✅ Merged `fixed-changes` into `vids_branch` — clean, zero conflicts (teammate had merged main in first)
+2. ✅ Verified sentiment card, brief, dedup fix, ProofSection all survived + build passes
+3. ✅ Added `workspace_id` columns to `knowledge_docs` + `knowledge_chunks` (`knowledge_workspace_migration.sql`)
+4. ✅ `knowledge_search` RPC takes `caller_workspace_ids uuid[]`; matches `own OR workspace-shared`. Dropped old 5-arg signature first (overload bug).
+5. ✅ `knowledge_routes.py` accepts workspace_id on upload/upload-url/connect-source; `list_docs` returns own + workspace docs; PATCH syncs chunk workspace_id
+6. ⏭️ `meeting_dedup_key` for fan-out-aware pinning — DEFERRED (lower value; most knowledge is global/workspace, not meeting-pinned)
+7. ⏭️ Sensitivity rename `internal`→`workspace` — DEFERRED (kept public/internal/confidential; backend accepts any)
+8. ⏭️ KnowledgeBase "My docs / Workspace docs" sections — DEFERRED (standalone page not yet mounted in nav; only MeetingView pinned-docs path reachable)
 
-**Acceptance:** Two users in same workspace each upload a doc with `sensitivity='workspace'`. Both can search and find each other's docs. A `private` doc remains invisible to the other.
+Plus fixes found during verification: `text=uuid` RLS cast, `SUPABASE_KEY` env-var fallback in knowledge_service.
+
+**Verified:** full ingest→embed→store→search round-trip against real Supabase (top match 0.795). OpenAI + Tavily keys confirmed working locally.
+
+**Remaining for full Phase 0 polish (next):** items 6–8 above + production deploy (vids_branch→main, Render env vars) + mounting the KnowledgeBase page in nav.
 
 ### Phase 1 — Cross-source unification: index meeting transcripts (~2 hours)
 

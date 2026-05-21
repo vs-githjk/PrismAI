@@ -527,7 +527,16 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 - **Repo cleanup** — removed 6 stale planning docs (WARP, HANDOFF_MAY2026_SESSION2, IMPROVEMENT_SPEC_2, IMPROVEMENT_SPECS_DRAFT_1, MCP_TOOL_LAYER_PLAN, QA_SWEEP_CHECKLIST). Kept Orinial_Roadmap, LANDING_BRIEF, PITCH_AND_DEMO_SCRIPT.
 - **Smart-RAG spec written** — `docs/specs/2026-05-20-smart-rag-additions.md` defines the plan to layer hybrid retrieval + reranking + contextual retrieval + cross-source (docs + meeting transcripts) on top of the teammate's vector RAG once `fixed-changes` is merged.
 
-### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) in progress — vector RAG built on `fixed-changes`, smart-RAG additions spec'd, merge + workspace gaps next. Phases 6–8 pending.
+### Added May 21 2026 — Knowledge Base merged + workspace-scoped + verified
+
+- **Merged `fixed-changes`** into `vids_branch` (clean, zero conflicts). Brought in: vector-RAG knowledge base (`knowledge_routes/service/proactive`, `embeddings.py`, `knowledge_ingest/` loaders, `tools/knowledge_lookup` + `tools/web_search`), voice pipeline plumbing (`voice_pipeline.py`, `utterance_accumulator.py`, `perception_state.py` — feature-flagged, dormant), and `langgraph`/`pysbd` deps.
+- **Workspace-scoped the knowledge base** (`supabase/knowledge_workspace_migration.sql`): `workspace_id` on docs+chunks, `knowledge_search` RPC takes `caller_workspace_ids` (own OR workspace-shared), `ingest_doc` propagates workspace_id to chunks, routes accept/filter by it. Knowledge is now a shared team asset, not per-user.
+- **Bugs fixed during bring-up:** (1) `knowledge_search` function-overload — drop old 5-arg signature before recreating with the new arg + return columns; (2) `text=uuid` RLS error — `workspace_members.user_id/workspace_id` are stored as **text**, so policies cast to text; (3) `knowledge_service` read `SUPABASE_SERVICE_ROLE_KEY` but this project stores the service key as `SUPABASE_KEY` — added fallback.
+- **New env vars:** `OPENAI_API_KEY` (embeddings only), `TAVILY_API_KEY` (web_search + url_loader). New deps: openai, tiktoken, pymupdf, pytesseract, python-docx, notion-client, pysbd, langgraph.
+- **Verified locally:** full ingest→embed→store→search round-trip against real Supabase (top match 0.795); OpenAI + Tavily keys confirmed.
+- **Not yet:** production deploy (vids_branch→main + Render keys), KnowledgeBase page not mounted in nav (only MeetingView pinned-docs path reachable), smart-RAG Phases 1–5.
+
+### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — baseline merged + workspace-scoped + verified locally; production deploy + smart-RAG Phases 1–5 pending. Phases 6–8 pending.
 
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token
