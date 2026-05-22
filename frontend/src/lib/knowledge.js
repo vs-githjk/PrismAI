@@ -12,8 +12,11 @@ async function asJson(r) {
   try { return await r.json() } catch { return {} }
 }
 
-export async function listDocs({ meetingId } = {}) {
-  const qs = meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : ''
+export async function listDocs({ meetingId, workspaceId } = {}) {
+  const params = new URLSearchParams()
+  if (meetingId) params.set('meeting_id', meetingId)
+  if (workspaceId) params.set('workspace_id', workspaceId)
+  const qs = params.toString() ? `?${params.toString()}` : ''
   const data = await asJson(await apiFetch(`/knowledge/docs${qs}`))
   return data.docs || []
 }

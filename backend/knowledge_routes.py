@@ -176,24 +176,46 @@ async def connect_source(req: ConnectSourceRequest, background: BackgroundTasks,
 
 
 @router.get("/docs")
-async def list_docs(meeting_id: Optional[str] = None, user_id: str = Depends(require_user_id)):
+async def list_docs(
+    meeting_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    user_id: str = Depends(require_user_id),
+):
+    """Scope mirrors the rest of the app:
+    - meeting_id set  → docs pinned to that meeting (MeetingView panel)
+    - workspace_id set → that workspace's shared docs (member-gated)
+    - neither          → the caller's personal docs (own, not shared to any workspace)
+    """
     sb = _supabase()
     if not sb:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    # Surface the caller's own docs PLUS docs shared into workspaces they belong to.
-    try:
-        wm = sb.table("workspace_members").select("workspace_id").eq("user_id", user_id).execute()
-        ws_ids = [r["workspace_id"] for r in (wm.data or []) if r.get("workspace_id")]
-    except Exception:
-        ws_ids = []
     q = sb.table("knowledge_docs").select("*").is_("deleted_at", "null")
-    if ws_ids:
-        q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
-    else:
-        q = q.eq("user_id", user_id)
     mid = _coerce_meeting_id(meeting_id)
     if mid is not None:
+        # Pinned docs for a meeting — still scoped to docs the caller can access
+        # (their own, or shared into a workspace they belong to).
+        try:
+            wm = sb.table("workspace_members").select("workspace_id").eq("user_id", user_id).execute()
+            ws_ids = [r["workspace_id"] for r in (wm.data or []) if r.get("workspace_id")]
+        except Exception:
+            ws_ids = []
         q = q.eq("meeting_id", mid)
+        if ws_ids:
+            q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
+        else:
+            q = q.eq("user_id", user_id)
+    elif workspace_id and workspace_id.strip():
+        # Workspace library — verify membership before exposing shared docs.
+        member = (
+            sb.table("workspace_members").select("user_id")
+            .eq("workspace_id", workspace_id).eq("user_id", user_id).execute()
+        )
+        if not (member.data or []):
+            raise HTTPException(status_code=403, detail="Not a member of this workspace")
+        q = q.eq("workspace_id", workspace_id)
+    else:
+        # Personal library — own docs not shared into any workspace.
+        q = q.eq("user_id", user_id).is_("workspace_id", "null")
     try:
         rows = q.order("created_at", desc=True).execute().data or []
     except Exception as exc:

@@ -1077,7 +1077,10 @@ export default function DashboardPage(props) {
           )}
           {activeView === 'knowledge' && (
             <Suspense fallback={<SkeletonCard lines={4} tall />}>
-              <KnowledgeBase workspaceId={activeWorkspaceId} />
+              <KnowledgeBase
+                workspaceId={activeWorkspaceId}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+              />
             </Suspense>
           )}
           </div>
