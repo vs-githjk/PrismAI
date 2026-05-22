@@ -973,6 +973,7 @@ export default function DashboardPage(props) {
         onHistorySearchChange={handleHistorySearchChange}
         activeView={activeView}
         onGoHome={() => persistView('home')}
+        onOpenKnowledge={() => persistView('knowledge')}
         onSelectMeeting={handleSelectMeeting}
         onDeleteMeeting={handleDeleteHistoryEntry}
         currentMeetingId={props.meetingId}
@@ -1072,6 +1073,11 @@ export default function DashboardPage(props) {
                 onSelectMeeting={handleSelectMeeting}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
               />
+            </Suspense>
+          )}
+          {activeView === 'knowledge' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <KnowledgeBase workspaceId={activeWorkspaceId} />
             </Suspense>
           )}
           </div>
