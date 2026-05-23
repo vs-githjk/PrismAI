@@ -37,7 +37,10 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // bg-black/10 was nearly invisible on an already-dark dashboard, so the modal
+        // appeared to "float" with no visual separation. Heavier black + a real blur
+        // create proper depth between the modal and the underlying page.
+        "fixed inset-0 isolate z-50 bg-black/70 duration-150 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
