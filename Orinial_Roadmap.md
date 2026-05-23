@@ -141,7 +141,7 @@ Phase	What it is	Unlocks
 | Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) |
 | Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, streaming) |
 | Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out) |
-| Phase 5 — Knowledge Base / RAG | 🟡 In progress — baseline vector RAG merged + workspace-scoped + verified working locally (ingest→search round-trip). Spec: `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0 ✅ done. Pending: production deploy (vids_branch→main + Render keys), mount KnowledgeBase nav, then smart-RAG Phases 1–5 (contextual retrieval, hybrid, reranking, cross-source, query rewrite). |
+| Phase 5 — Knowledge Base / RAG | 🟢 Baseline live in production — vector RAG merged, workspace-scoped, KnowledgeBase nav-mounted, themed, smoke-tested live on Render+Vercel. Spec `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0 ✅ done. **Next**: smart-RAG Phases 1–5 (contextual retrieval at ingest, hybrid vector+BM25, BGE reranking, cross-source over meeting transcripts, query rewriting) to take RAG quality from "working" to "Notion-AI-grade." |
 | Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists on `fixed-changes` (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt |
 | Phase 7 — Context-Aware Conversation | ⏳ Pending |
 | Phase 8 — Personas | ⏳ Pending |

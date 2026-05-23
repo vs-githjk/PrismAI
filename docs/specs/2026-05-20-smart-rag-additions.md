@@ -187,13 +187,15 @@ Each phase leaves the system in a working, shippable state. Stop after any phase
 5. ✅ `knowledge_routes.py` accepts workspace_id on upload/upload-url/connect-source; `list_docs` returns own + workspace docs; PATCH syncs chunk workspace_id
 6. ⏭️ `meeting_dedup_key` for fan-out-aware pinning — DEFERRED (lower value; most knowledge is global/workspace, not meeting-pinned)
 7. ⏭️ Sensitivity rename `internal`→`workspace` — DEFERRED (kept public/internal/confidential; backend accepts any)
-8. ⏭️ KnowledgeBase "My docs / Workspace docs" sections — DEFERRED (standalone page not yet mounted in nav; only MeetingView pinned-docs path reachable)
+8. ✅ KnowledgeBase "My docs / Workspace docs" sections — done via scope switching: `GET /knowledge/docs` takes `workspace_id` (personal = own unshared, workspace = shared, membership-gated). KnowledgeBase page mounted as a `"knowledge"` view in DashboardSidebar (expanded + collapsed rail) — `<KnowledgeBase workspaceId={activeWorkspaceId} workspaceName={...} />` renders scope-aware header ("Personal documents" / "<Workspace> documents").
 
-Plus fixes found during verification: `text=uuid` RLS cast, `SUPABASE_KEY` env-var fallback in knowledge_service.
+Plus fixes found during verification: `text=uuid` RLS cast, `SUPABASE_KEY` env-var fallback in knowledge_service. Theme polish: KnowledgeBase + KnowledgeDocCard rebuilt on `glassCard` aesthetic; shared Dialog overlay strengthened from `bg-black/10` to `bg-black/70 + backdrop-blur-sm`.
 
-**Verified:** full ingest→embed→store→search round-trip against real Supabase (top match 0.795). OpenAI + Tavily keys confirmed working locally.
+**Verified locally:** full ingest→embed→store→search round-trip against real Supabase (top match 0.795). OpenAI + Tavily keys confirmed working.
 
-**Remaining for full Phase 0 polish (next):** items 6–8 above + production deploy (vids_branch→main, Render env vars) + mounting the KnowledgeBase page in nav.
+**Verified in production (May 23):** merged to `main` at `fb097b4`, Render redeployed cleanly with new Python deps, Vercel deployed frontend, `OPENAI_API_KEY`+`TAVILY_API_KEY` set in Render. Live smoke test passed: Knowledge nav → upload `.txt` → Processing → Ready → workspace chip switch correctly changes scope.
+
+**Phase 0 is closed.** Deferred items 6–7 above can return if real usage demands them.
 
 ### Phase 1 — Cross-source unification: index meeting transcripts (~2 hours)
 

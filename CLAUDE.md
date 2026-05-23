@@ -74,7 +74,9 @@ Vector RAG over user-uploaded docs + (planned) meeting transcripts. `knowledge_r
 
 **Env vars:** `OPENAI_API_KEY` (embeddings only — chat stays on Groq) and `TAVILY_API_KEY` (web_search + url_loader). Both must be set on Render for production RAG. New Python deps: `openai`, `tiktoken`, `pymupdf`, `pytesseract`, `python-docx`, `notion-client`, `pysbd`, `langgraph`.
 
-**Status:** baseline RAG verified working end-to-end locally (ingest→embed→store→search). The smart-RAG upgrades (contextual retrieval, hybrid vector+BM25, reranking, cross-source over meeting transcripts, query rewriting) are spec'd in `docs/specs/2026-05-20-smart-rag-additions.md` — Phase 0 (merge + workspace scoping) done; Phases 1–5 pending. The standalone `KnowledgeBase` page is built but NOT yet mounted in dashboard nav — only the `MeetingView` pinned-docs upload path is reachable.
+**Status:** baseline RAG deployed to production and smoke-tested (sign in → Knowledge → upload doc → ingest goes Ready → query). The smart-RAG upgrades (contextual retrieval, hybrid vector+BM25, reranking, cross-source over meeting transcripts, query rewriting) are spec'd in `docs/specs/2026-05-20-smart-rag-additions.md` — Phase 0 (merge + workspace scoping + nav mount + polish) done; Phases 1–5 pending.
+
+**Frontend UX:** `KnowledgeBase` is mounted as a top-level dashboard view via a "Knowledge" item in `DashboardSidebar` (`activeView === 'knowledge'`), rendered with the active workspace's id+name. The page shows scope-aware content: in Personal it lists your own *unshared* docs; in a workspace it lists that workspace's *shared* docs (membership-gated by the `workspace_id` query param to `GET /knowledge/docs`). `KnowledgeDocCard` follows the dashboard glass-card aesthetic with a status dot + sensitivity pill. The shared Radix Dialog primitive (`ui/dialog.tsx`) uses `bg-black/70 + backdrop-blur-sm` for its overlay — older `bg-black/10` was invisible on the dark dashboard.
 
 ### Frontend Structure
 

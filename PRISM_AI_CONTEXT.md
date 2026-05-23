@@ -536,7 +536,15 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 - **Verified locally:** full ingest→embed→store→search round-trip against real Supabase (top match 0.795); OpenAI + Tavily keys confirmed.
 - **Not yet:** production deploy (vids_branch→main + Render keys), KnowledgeBase page not mounted in nav (only MeetingView pinned-docs path reachable), smart-RAG Phases 1–5.
 
-### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — baseline merged + workspace-scoped + verified locally; production deploy + smart-RAG Phases 1–5 pending. Phases 6–8 pending.
+### Added May 22–23 2026 — KnowledgeBase nav + polish + production deploy
+
+- **KnowledgeBase mounted in dashboard nav** — new "Knowledge" item in `DashboardSidebar` (expanded list + collapsed icon rail) routes to `activeView === 'knowledge'`, rendering `<KnowledgeBase workspaceId={activeWorkspaceId} workspaceName={...} />`. Users can now manage their library directly, not just via the MeetingView pinned-docs path.
+- **Workspace-scoped library** — `GET /knowledge/docs` now takes `workspace_id`. Personal scope (no workspace_id) returns only the caller's own *unshared* docs (`user_id=me AND workspace_id IS NULL`); workspace scope returns that workspace's shared docs, membership-gated. Matches the meetings/insights scoping model. The meeting-pinned-docs branch keeps its access scoping (no security regression). `lib/knowledge.js listDocs` forwards `workspaceId`; KnowledgeBase passes `activeWorkspaceId`.
+- **KnowledgeBase theme polish** — page header restyled to match `MeetingView` (eyebrow + big title that reads "Personal documents" or "<Workspace> documents", scope-aware subtitle); `KnowledgeDocCard` rebuilt on the `glassCard` aesthetic with a status indicator dot (amber pulse / emerald / rose), sensitivity pill, and bordered action row; polished empty state with icon + CTA.
+- **Dialog overlay fix** — the shared Radix Dialog primitive (`ui/dialog.tsx`) used `bg-black/10 + backdrop-blur-xs` which read as no backdrop at all on the dark dashboard, making modals (workspace settings, workspace share/invite) appear to "float" with no visual separation. Bumped to `bg-black/70 + backdrop-blur-sm` and slowed the entrance to 150ms.
+- **Deployed to production (commit `fb097b4` on main)** — Render redeployed cleanly with the new Python deps (openai, pymupdf, tiktoken, pysbd, langgraph, etc.); Vercel auto-deployed the frontend. `OPENAI_API_KEY` + `TAVILY_API_KEY` set on Render. **Smoke-tested live:** sign in → Knowledge → upload `.txt` → flips Processing → Ready → workspace chip switch correctly changes scope. Baseline RAG is live.
+
+### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — baseline merged, workspace-scoped, nav-mounted, themed, **deployed to production & smoke-tested**. Smart-RAG Phases 1–5 (contextual retrieval, hybrid, reranking, cross-source, query rewrite) pending. Phases 6–8 pending.
 
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token
