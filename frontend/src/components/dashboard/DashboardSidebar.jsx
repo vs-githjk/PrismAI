@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bolt,
+  BookOpen,
   Check,
   ChevronDown,
   DoorOpen,
@@ -91,6 +92,7 @@ export default function DashboardSidebar(props) {
     onHistorySearchChange,
     activeView,
     onGoHome,
+    onOpenKnowledge,
     onSelectMeeting,
     onDeleteMeeting,
     currentMeetingId,
@@ -108,6 +110,7 @@ export default function DashboardSidebar(props) {
 
   const groups = useMemo(() => groupMeetings(filteredHistory), [filteredHistory])
   const onHome = activeView === 'home'
+  const onKnowledge = activeView === 'knowledge'
   const hasMeetings = (!!user || isDemoMode) && history.length > 0
 
   // Keep the focused meeting visible when it changes.
@@ -145,6 +148,17 @@ export default function DashboardSidebar(props) {
           title="Home"
         >
           <Home className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onOpenKnowledge}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${
+            onKnowledge ? 'bg-cyan-400/[0.14] text-cyan-200' : 'text-white/45 hover:bg-white/[0.06] hover:text-white/80'
+          }`}
+          aria-label="Knowledge base"
+          title="Knowledge base"
+        >
+          <BookOpen className="h-4 w-4" />
         </button>
         <div className="mt-auto">
           <button
@@ -309,8 +323,8 @@ export default function DashboardSidebar(props) {
         </button>
       </div>
 
-      {/* Pinned: Home */}
-      <div className="px-2.5">
+      {/* Pinned: Home + Knowledge */}
+      <div className="space-y-0.5 px-2.5">
         <button
           type="button"
           onClick={onGoHome}
@@ -322,6 +336,18 @@ export default function DashboardSidebar(props) {
         >
           <Home className="h-4 w-4 shrink-0" />
           Home
+        </button>
+        <button
+          type="button"
+          onClick={onOpenKnowledge}
+          className={`${navItemBase} ${
+            onKnowledge
+              ? 'bg-cyan-400/[0.12] text-cyan-100'
+              : 'text-white/72 hover:bg-white/[0.05] hover:text-white'
+          }`}
+        >
+          <BookOpen className="h-4 w-4 shrink-0" />
+          Knowledge
         </button>
       </div>
 

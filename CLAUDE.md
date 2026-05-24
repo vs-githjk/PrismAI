@@ -66,6 +66,16 @@ User input (paste / upload / record / bot)
 
 All agents import `strip_fences` from `backend/agents/utils.py`. Never redefine it.
 
+### Knowledge Base / RAG (merged from `fixed-changes`, May 2026)
+
+Vector RAG over user-uploaded docs + (planned) meeting transcripts. `knowledge_routes.py` (REST: upload/upload-url/connect-source, docs CRUD, resync, queries audit), `knowledge_service.py` (ingest orchestration + `search_knowledge`), `embeddings.py` (OpenAI `text-embedding-3-small`, batching + retry + quota circuit-breaker), `knowledge_ingest/` (pdf/docx/txt/url/notion/gdrive loaders + sentence-aware chunker), `knowledge_proactive.py` (surfaces relevant chunks every 20 transcript lines via one hook in `realtime_routes._compress_and_persist`). Two registered tools: `tools/knowledge_lookup.py` (grounded retrieval with strict-grounding + `NO_GROUNDED_ANSWER` fallback signal + conflict detection) and `tools/web_search.py` (Tavily fallback with prompt-injection defenses). Anti-hallucination: strict instruction string + citation requirement + conflict flag.
+
+**Workspace scoping:** `knowledge_docs` + `knowledge_chunks` carry a nullable `workspace_id` (null = personal). `search_knowledge` resolves the caller's workspace_ids from `workspace_members` and passes them to the `knowledge_search` RPC, which matches a chunk when `c.user_id = caller OR d.workspace_id = any(caller_workspace_ids)`. `ingest_doc` propagates the doc's `workspace_id` onto every chunk; PATCH keeps chunks in sync when a doc moves scope. `knowledge_service._supabase()` reads `SUPABASE_SERVICE_ROLE_KEY` then falls back to `SUPABASE_KEY` (this project's name for the service-role key).
+
+**Env vars:** `OPENAI_API_KEY` (embeddings only — chat stays on Groq) and `TAVILY_API_KEY` (web_search + url_loader). Both must be set on Render for production RAG. New Python deps: `openai`, `tiktoken`, `pymupdf`, `pytesseract`, `python-docx`, `notion-client`, `pysbd`, `langgraph`.
+
+**Status:** baseline RAG verified working end-to-end locally (ingest→embed→store→search). The smart-RAG upgrades (contextual retrieval, hybrid vector+BM25, reranking, cross-source over meeting transcripts, query rewriting) are spec'd in `docs/specs/2026-05-20-smart-rag-additions.md` — Phase 0 (merge + workspace scoping) done; Phases 1–5 pending. The standalone `KnowledgeBase` page is built but NOT yet mounted in dashboard nav — only the `MeetingView` pinned-docs upload path is reachable.
+
 ### Frontend Structure
 
 `App.jsx` holds all application state, all input modes, all result state, and the landing/share routing. It is intentionally a large file — don't split it without a strong reason. Always use `apiFetch()` from `lib/api.js` instead of raw `fetch()` — it auto-attaches the auth token.
@@ -83,6 +93,8 @@ All agents import `strip_fences` from `backend/agents/utils.py`. Never redefine 
 `SentimentCard.jsx` is a dedicated card in `frontend/src/components/dashboard/` that renders the sentiment agent's full output: color-coded overall label pill, trend arc indicator, animated score bar, notes, per-speaker tone rows, and tension moments. Replaces the prior 2-line inline block in `MeetingView`. Renders on both dashboard and shared meeting view (no `readOnly` guard). The agent vocabulary is `collaborative | aligned | decision-making | exploratory | frictional | divergent | rushed | draining | neutral` — color mapping is in `LABEL_META`. Keep that map in sync if the prompt vocabulary in `backend/agents/sentiment.py` ever changes.
 
 The landing page has a three-layer WebGL stack (all `position:absolute, inset:0, pointer-events:none`): `<Prism />` (ogl, full-page ray-marched prism), a top vignette div, a bottom fade div, and two `<LightPillar />` instances (three.js, one per side edge). Current tuning values are documented in `PRISM_AI_CONTEXT.md` → "Landing Visual Layer".
+
+`ProofSection.jsx` sits between the hero and `HowItWorks` in the landing flow (the "social proof" beat). Three count-up stat tiles (8 agents / ~2s / 100% grounded) with an interactive layer: scramble-then-settle number reveal, cursor-following radial glow + 3D tilt (`--mx/--my/--tilt-x/--tilt-y` CSS vars set on `onPointerMove`), scroll-driven parallax (`--parallax-y`), an aurora background (`mix-blend-mode: screen` blobs), and a breathing top-stripe glow. The hero CTAs are magnetic (cursor-pull within 120px via `--magnet-x/y`, composed with `:hover --hover-y` so neither clobbers the other). All animations are gated behind `prefers-reduced-motion`. The `website-craft` skill's narrative + scroll-choreography guidance informed this section — apply that skill to landing/marketing surfaces (and `next-app/`), never to dashboard/product UI.
 
 Current design direction: use shadcn/radix-style product surfaces with the app's existing cyan/sky accent (`#22d3ee`, `#67e8f9`, `sky-*` / `cyan-*`). Do not make glassmorphism the default visual language for the site or dashboard. Glass-like treatment is only an accent for CTAs, focused highlights, or special moments.
 
@@ -115,6 +127,8 @@ Supabase migrations must be run manually in the SQL editor (in order):
 3. `tools_migration.sql` — linear_api_key, slack_bot_token columns + bot_sessions table
 4. Workspace migrations (run May 2026 — no file yet, run directly in SQL editor):
    - `workspaces` table
-   - `workspace_members` table (with `user_email` column)
+   - `workspace_members` table (with `user_email` column — note: `user_id`/`workspace_id` are stored as `text`, not uuid)
    - `meeting_bots` table
    - `alter table meetings add column workspace_id, recorded_by_user_id, email_claimed_by`
+5. `knowledge_migration.sql` — knowledge_docs + knowledge_chunks (pgvector) + knowledge_queries + knowledge_search RPC. Also create a private Supabase Storage bucket named `knowledge` (50MB) with the RLS policy in the file's header.
+6. `knowledge_workspace_migration.sql` — adds `workspace_id` to knowledge_docs/chunks, RLS for workspace members (casts to text since workspace_members columns are text), and redefines `knowledge_search` with a `caller_workspace_ids uuid[]` param (drops the old 5-arg signature first). Run AFTER `knowledge_migration.sql`.

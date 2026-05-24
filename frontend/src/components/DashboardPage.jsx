@@ -973,6 +973,7 @@ export default function DashboardPage(props) {
         onHistorySearchChange={handleHistorySearchChange}
         activeView={activeView}
         onGoHome={() => persistView('home')}
+        onOpenKnowledge={() => persistView('knowledge')}
         onSelectMeeting={handleSelectMeeting}
         onDeleteMeeting={handleDeleteHistoryEntry}
         currentMeetingId={props.meetingId}
@@ -1057,6 +1058,7 @@ export default function DashboardPage(props) {
                       transcript={props.transcript}
                       onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
                       recordedByEmail={recordedByEmail}
+                      workspaceId={activeWorkspaceId}
                     />
                   </Suspense>
                 </>
@@ -1069,6 +1071,14 @@ export default function DashboardPage(props) {
                 history={props.history}
                 crossMeetingInsights={props.crossMeetingInsights}
                 onSelectMeeting={handleSelectMeeting}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+              />
+            </Suspense>
+          )}
+          {activeView === 'knowledge' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <KnowledgeBase
+                workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
               />
             </Suspense>

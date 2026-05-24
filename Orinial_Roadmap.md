@@ -130,24 +130,37 @@ Phase	What it is	Unlocks
 6	Voice identification	Security story
 7	Context-aware chat	Quality/trust
 8	Personas	Delight/marketing
-Phase 1 is the only thing blocking everything else. Want to start there — schema first, then backend routes, then the workspace switcher?
+-------------------------------------------------------------
+## CURRENT STATUS — updated May 20 2026
 
+**Deployed & live** (main → Render + Vercel auto-deploy):
+
+| Phase | Status |
+|---|---|
+| Phase 1 — Workspace Layer | ✅ Done (CRUD, invites, switcher, attribution) |
+| Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) |
+| Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, streaming) |
+| Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out) |
+| Phase 5 — Knowledge Base / RAG | 🟡 In progress — baseline vector RAG merged + workspace-scoped + verified working locally (ingest→search round-trip). Spec: `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0 ✅ done. Pending: production deploy (vids_branch→main + Render keys), mount KnowledgeBase nav, then smart-RAG Phases 1–5 (contextual retrieval, hybrid, reranking, cross-source, query rewrite). |
+| Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists on `fixed-changes` (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt |
+| Phase 7 — Context-Aware Conversation | ⏳ Pending |
+| Phase 8 — Personas | ⏳ Pending |
+
+**Also shipped this session (not phases):**
+- Sentiment agent reworked — actionable vocabulary + rich `SentimentCard` (was just "neutral")
+- Workspace pre-meeting brief on upcoming meeting cards (`GET /workspaces/{id}/brief`)
+- Duplicate workspace meeting card fix (bot-dedup `recorded_by_user_id` flow)
+- Landing page `ProofSection` — animated stats + cursor glow + 3D tilt + aurora + magnetic CTAs
+- PR #4 merged — agent-pop animation, view crossfade, demo transcript prefill
+
+**Deferred debt (not phases):**
+- `bot_store` in-memory → lost on Render restart. Needs a `bots` Supabase table.
+- Action item completion state is per-member; should be one shared state per workspace meeting.
+- Auto-takeover on bot failure (Option B) — currently manual alert only (Option C).
+
+**Next session picks up at:** Phase 0 of the smart-RAG spec — merge `fixed-changes` into `vids_branch` (expect conflicts in App.jsx, MeetingView.jsx, sentiment.py, storage_routes.py, workspace_routes.py), verify our features survive, then workspace gap fixes. Also: add `TAVILY_API_KEY` + `OPENAI_API_KEY` to local `.env` and Render.
 
 -------------------------------------------------------------
-What's NOT done yet (next session picks up here)
-The app is not yet deployed — everything is on main branch locally, untested against the live backend. First thing next session:
-
-Push to main → Render auto-deploys backend, Vercel auto-deploys frontend
-Smoke test: create workspace → copy invite link → open in incognito → accept → switch workspace chip → verify history scopes correctly
-Remaining phases (6 left)
-What was built here was Phase 1 (Workspaces + Invites) and Phase 4 (Bot Dedup + Fan-out). The remaining six:
-
-Bot store persistence — bot_store in recall_routes.py is in-memory, lost on Render restart. Needs a bots Supabase table. Without this, in-flight meetings are lost on cold start.
-Meeting Pattern Intelligence — cross-workspace analytics UI: decision velocity, recurring themes, action item completion rates. Backend cross_meeting_service.py has the foundation.
-Action item sync across workspace — right now each member has their own completion state. Should be one shared state per workspace meeting.
-LangGraph orchestration — replace asyncio.gather in analysis_service.py with a StateGraph. Cleaner conditional routing, per-agent retry, better observability.
-Graph RAG knowledge base — workspace-scoped document ingestion, entity graph, grounded chat answers instead of transcript-only context.
-Auto-takeover on bot failure — when the active workspace bot errors, notify suppressed members and trigger a new join from one of them automatically. (Option B — we deliberately deferred this, currently using Option C which is just a manual alert.)
 Key files to know
 File	Role
 backend/workspace_routes.py	All workspace + invite logic

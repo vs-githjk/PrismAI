@@ -80,7 +80,7 @@ function BreakdownBar({ label, value, color }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', onBack, recordedByEmail = null }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', onBack, recordedByEmail = null, workspaceId = null }) {
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -365,7 +365,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </div>
           )}
           <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
-                                meetingId={meetingId} onUploaded={refreshDocs} />
+                                meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
         </section>
       )}
 
