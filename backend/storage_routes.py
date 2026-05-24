@@ -35,6 +35,7 @@ class MeetingEntry(BaseModel):
     share_token: str = ""
     workspace_id: str | None = None
     recorded_by_user_id: str | None = None
+    recall_bot_id: str | None = None
 
 
 class MeetingPatch(BaseModel):
@@ -227,6 +228,41 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
 @router.post("/meetings")
 async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_id)):
     client = _require_storage()
+
+    # Server-side enrichment from bot_sessions — the trust boundary.
+    # The frontend sends recall_bot_id as a reference; we look up the structured
+    # transcript segments server-side and only attach them if the caller owns the
+    # bot. If they don't own it (stale local state, bad client), the save still
+    # succeeds with nulls instead of 403 — silent degradation preserves UX.
+    recall_bot_id = entry.recall_bot_id or None
+    recording_provider: str | None = None
+    transcript_segments = None
+    if recall_bot_id:
+        try:
+            bs = (
+                client.table("bot_sessions")
+                .select("user_id, transcript_segments")
+                .eq("bot_id", recall_bot_id)
+                .maybe_single()
+                .execute()
+            )
+            row = bs.data if bs else None
+            if row and row.get("user_id") == user_id:
+                recording_provider = "recall"
+                transcript_segments = row.get("transcript_segments")
+            else:
+                # Caller doesn't own this bot — drop the reference rather than 403
+                recall_bot_id = None
+        except Exception as exc:
+            print(f"[storage] bot_sessions lookup failed for {recall_bot_id}: {exc}")
+            recall_bot_id = None
+
+    # Mutate the entry so _fan_out_to_workspace (called below) sees the same
+    # resolved values — it uses these to populate teammate rows in Task 6.
+    entry.recall_bot_id = recall_bot_id
+    entry.__dict__["_resolved_segments"] = transcript_segments
+    entry.__dict__["_resolved_provider"] = recording_provider
+
     client.table("meetings").upsert({
         "id": entry.id,
         "user_id": user_id,
@@ -238,6 +274,9 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "share_token": entry.share_token or None,
         "workspace_id": entry.workspace_id or None,
         "recorded_by_user_id": entry.recorded_by_user_id or None,
+        "recall_bot_id": recall_bot_id,
+        "recording_provider": recording_provider,
+        "transcript_segments": transcript_segments,
     }).execute()
 
     # Fan out to all other workspace members when a workspace is set.

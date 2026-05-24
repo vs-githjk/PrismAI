@@ -147,5 +147,85 @@ class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
         self.assertIsNone(done_save.get("transcript_segments"))
 
 
+class TestSaveMeetingEnrichment(unittest.TestCase):
+    def _make_client(self, bot_session_row: dict | None):
+        """Build a fake supabase client that returns a specific bot_sessions row."""
+        captured_upserts: list[dict] = []
+
+        class FakeTable:
+            def __init__(self, name): self.name = name
+            def select(self, *a, **k): return self
+            def eq(self, *a, **k): return self
+            def neq(self, *a, **k): return self
+            def maybe_single(self): return self
+            def upsert(self, payload, **k):
+                captured_upserts.append({"table": self.name, "payload": payload})
+                class _Exec:
+                    def execute(_): return MagicMock(data=[])
+                return _Exec()
+            def execute(self):
+                if self.name == "bot_sessions":
+                    return MagicMock(data=bot_session_row)
+                if self.name == "workspace_members":
+                    return MagicMock(data=[])
+                return MagicMock(data=[])
+
+        client = MagicMock()
+        client.table = lambda name: FakeTable(name)
+        client.upserts = captured_upserts
+        return client
+
+    def test_enriches_meeting_row_when_caller_owns_bot(self):
+        import storage_routes
+        client = self._make_client({
+            "bot_id": "bot-A", "user_id": "user-1",
+            "transcript_segments": [{"speaker": "A", "start": 0, "end": 1, "text": "hi"}],
+        })
+        entry = storage_routes.MeetingEntry(
+            id=42, date="2026-05-24T10:00:00Z", title="t", transcript="",
+            result={}, recall_bot_id="bot-A",
+        )
+        with patch.object(storage_routes, "_require_storage", return_value=client):
+            asyncio.run(storage_routes.save_meeting(entry, user_id="user-1"))
+        meetings_upsert = next(u for u in client.upserts if u["table"] == "meetings")
+        self.assertEqual(meetings_upsert["payload"].get("recall_bot_id"), "bot-A")
+        self.assertEqual(meetings_upsert["payload"].get("recording_provider"), "recall")
+        self.assertEqual(meetings_upsert["payload"].get("transcript_segments"),
+                         [{"speaker": "A", "start": 0, "end": 1, "text": "hi"}])
+
+    def test_writes_nulls_when_caller_does_not_own_bot(self):
+        import storage_routes
+        # Bot exists but belongs to user-2; caller is user-1
+        client = self._make_client({
+            "bot_id": "bot-B", "user_id": "user-2",
+            "transcript_segments": [{"speaker": "X", "start": 0, "end": 1, "text": "secret"}],
+        })
+        entry = storage_routes.MeetingEntry(
+            id=43, date="2026-05-24T10:00:00Z", title="t", transcript="",
+            result={}, recall_bot_id="bot-B",
+        )
+        with patch.object(storage_routes, "_require_storage", return_value=client):
+            # Save must SUCCEED (no 403)
+            result = asyncio.run(storage_routes.save_meeting(entry, user_id="user-1"))
+            self.assertEqual(result, {"ok": True})
+        meetings_upsert = next(u for u in client.upserts if u["table"] == "meetings")
+        self.assertIsNone(meetings_upsert["payload"].get("recall_bot_id"))
+        self.assertIsNone(meetings_upsert["payload"].get("recording_provider"))
+        self.assertIsNone(meetings_upsert["payload"].get("transcript_segments"))
+
+    def test_writes_nulls_when_no_recall_bot_id_provided(self):
+        import storage_routes
+        client = self._make_client(None)
+        entry = storage_routes.MeetingEntry(
+            id=44, date="2026-05-24T10:00:00Z", title="t", transcript="",
+            result={},
+        )
+        with patch.object(storage_routes, "_require_storage", return_value=client):
+            asyncio.run(storage_routes.save_meeting(entry, user_id="user-1"))
+        meetings_upsert = next(u for u in client.upserts if u["table"] == "meetings")
+        self.assertIsNone(meetings_upsert["payload"].get("recall_bot_id"))
+        self.assertIsNone(meetings_upsert["payload"].get("recording_provider"))
+
+
 if __name__ == "__main__":
     unittest.main()
