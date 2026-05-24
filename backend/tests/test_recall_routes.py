@@ -28,6 +28,7 @@ async def _fake_run_full_analysis(_transcript: str):
 
 
 fake_analysis_service.run_full_analysis = _fake_run_full_analysis
+fake_analysis_service.build_analysis_transcript = lambda transcript, speakers=None, owner_name=None: transcript
 sys.modules["analysis_service"] = fake_analysis_service
 
 recall_routes = importlib.import_module("recall_routes")
@@ -103,8 +104,12 @@ class RecallRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.json()["status"], "recording")
 
     def test_call_ended_webhook_starts_processing(self):
+        # recall_webhook now reads request.body() (bytes) and parses JSON itself,
+        # so it can verify the HMAC signature on the raw bytes when configured.
+        payload_bytes = b'{"bot_id": "bot-3", "event": "call_ended"}'
         request = types.SimpleNamespace(
-            json=AsyncMock(return_value={"bot_id": "bot-3", "event": "call_ended"})
+            body=AsyncMock(return_value=payload_bytes),
+            headers={},
         )
         original_process = recall_routes._process_bot_transcript
 

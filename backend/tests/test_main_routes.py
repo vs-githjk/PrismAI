@@ -99,11 +99,15 @@ class MainRoutesTestCase(unittest.TestCase):
             async def read(self):
                 return b"audio-bytes"
 
+        class FakeRequest:
+            # transcribe_audio reads request.client.host for per-IP rate limiting
+            client = types.SimpleNamespace(host="127.0.0.1")
+
         router = analysis_routes.create_analysis_router(_FakeAsyncGroq())
         transcribe_endpoint = next(
             route.endpoint for route in router.routes if getattr(route, "path", None) == "/transcribe"
         )
-        response = asyncio.run(transcribe_endpoint(FakeUploadFile()))
+        response = asyncio.run(transcribe_endpoint(FakeRequest(), FakeUploadFile()))
 
         self.assertEqual(response, {"transcript": "mock transcript"})
 

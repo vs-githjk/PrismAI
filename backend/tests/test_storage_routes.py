@@ -56,6 +56,13 @@ class FakeQuery:
         self.filters.append((field, value))
         return self
 
+    def is_(self, field, value):
+        # Mirrors Supabase's .is_("col", None) → SQL `col IS NULL`.
+        # Accepts either the Python None or the string "null" (some callsites use the literal).
+        target = None if value in (None, "null", "NULL") else value
+        self.filters.append((field, ("is_", target)))
+        return self
+
     def ilike(self, field, pattern):
         needle = pattern.strip("%").lower()
         self.filters.append((field, ("ilike", needle)))
@@ -84,15 +91,24 @@ class FakeQuery:
         self.insert_payload = payload
         return self
 
-    def upsert(self, payload):
+    def upsert(self, payload, **kwargs):
+        # on_conflict picks the composite/unique key to match an existing row on.
+        # Default is "id" (covers most tables in the fake); the chats table uses
+        # "meeting_id,user_id" because it has no surrogate id.
         self.mode = "upsert"
         self.upsert_payload = payload
+        self.upsert_conflict_keys = [
+            k.strip() for k in (kwargs.get("on_conflict") or "id").split(",")
+        ]
         return self
 
     def _matches(self, row):
         for field, value in self.filters:
             if isinstance(value, tuple) and value[0] == "ilike":
                 if value[1] not in str(row.get(field, "")).lower():
+                    return False
+            elif isinstance(value, tuple) and value[0] == "is_":
+                if row.get(field) is not value[1]:
                     return False
             elif row.get(field) != value:
                 return False
@@ -141,9 +157,10 @@ class FakeQuery:
 
         if self.mode == "upsert":
             payload = self.upsert_payload.copy()
-            row_id = payload.get("id")
+            conflict_keys = getattr(self, "upsert_conflict_keys", ["id"])
+            key_values = tuple(payload.get(k) for k in conflict_keys)
             for row in rows:
-                if row.get("id") == row_id:
+                if tuple(row.get(k) for k in conflict_keys) == key_values:
                     row.update(payload)
                     return FakeExecuteResult([row.copy()])
             rows.append(payload)

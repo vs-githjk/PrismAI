@@ -6,6 +6,15 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+# Other test files (test_barge_in, test_accumulator_integration, etc.) install a
+# stub pysbd module that returns the whole text as one segment. If voice_pipeline
+# is imported after one of those tests has run in the same unittest discover, it
+# binds to the fake — and these tests, which rely on real sentence segmentation,
+# silently get 1-sentence chunks instead of N. Force-evict any stub and let
+# voice_pipeline pull the real pysbd at import time.
+sys.modules.pop("pysbd", None)
+sys.modules.pop("voice_pipeline", None)
+
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 
 

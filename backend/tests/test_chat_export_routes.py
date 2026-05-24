@@ -200,7 +200,7 @@ class ChatAndExportRoutesTestCase(unittest.TestCase):
             response = self.client.post(
                 "/export/slack",
                 json={
-                    "webhook_url": "https://hooks.slack.test/services/demo",
+                    "webhook_url": "https://hooks.slack.com/services/T00/B00/demo",
                     "title": "Weekly Sync",
                     "result": {
                         "summary": "All good",
@@ -219,7 +219,7 @@ class ChatAndExportRoutesTestCase(unittest.TestCase):
             response = self.client.post(
                 "/export/slack",
                 json={
-                    "webhook_url": "https://hooks.slack.test/services/demo",
+                    "webhook_url": "https://hooks.slack.com/services/T00/B00/demo",
                     "title": "Weekly Sync",
                     "result": {},
                 },

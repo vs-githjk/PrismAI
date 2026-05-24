@@ -16,6 +16,14 @@ fake_supabase_module.create_client = lambda *_a, **_k: None
 fake_supabase_module.Client = object
 sys.modules.setdefault("supabase", fake_supabase_module)
 
+# Other test files install a stub pysbd; evict it so realtime_routes /
+# voice_pipeline pick up the real segmenter when imported below. Without this,
+# tests that assert on N-chunk splitting fail with 1 (the stub returns the whole
+# text as one segment).
+sys.modules.pop("pysbd", None)
+sys.modules.pop("voice_pipeline", None)
+sys.modules.pop("realtime_routes", None)
+
 os.environ.setdefault("GROQ_API_KEY", "test")
 os.environ.setdefault("RECALL_API_KEY", "test")
 
