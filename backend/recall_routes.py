@@ -580,6 +580,14 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "bot_name": "PrismAI",
                 "webhook_url": webhook_url,
                 "recording_config": {
+                    # Video output — required for post-meeting playback.
+                    # speaker_view composites the active speaker as the main pane;
+                    # gallery_view is the multi-tile alternative.
+                    "video_mixed_layout": "speaker_view",
+                    "video_mixed_mp4": {},
+                    # Always-on audio fallback — used by the player when no video
+                    # is captured (phone bridges, screenshare-disabled meetings).
+                    "audio_mixed_mp3": {},
                     "transcript": {
                         "provider": {
                             # endpointing=500 → wait 500ms of silence before finalizing
