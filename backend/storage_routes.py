@@ -341,7 +341,7 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
     res = (
         client.table("meetings")
-        .select("id,date,title,score,transcript,result,share_token,workspace_id,user_id,recorded_by_user_id")
+        .select("id,date,title,score,transcript,result,share_token,workspace_id,user_id,recorded_by_user_id,recall_bot_id,recording_provider,transcript_segments")
         .eq("id", meeting_id)
         .maybe_single()
         .execute()
