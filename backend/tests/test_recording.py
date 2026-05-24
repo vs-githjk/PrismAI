@@ -77,5 +77,75 @@ class TestSegmentsFromRecallData(unittest.TestCase):
         ])
 
 
+import asyncio
+from unittest.mock import patch, AsyncMock, MagicMock
+
+
+class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
+    def test_saves_segments_to_bot_sessions_on_success(self):
+        import recall_routes
+        recall_routes.bot_store["bot-xyz"] = {
+            "status": "processing", "result": None, "error": None,
+            "commands": [], "user_id": "user-1",
+        }
+
+        # Mock _fetch_transcript to return a response with structured segments
+        fake_response = MagicMock()
+        fake_response.json.return_value = [
+            {"speaker": "Alice", "words": [
+                {"text": "hi", "start_time": 0.0, "end_time": 0.3},
+            ]},
+        ]
+
+        # Capture _db_save calls
+        saved_fields: list[dict] = []
+        def fake_db_save(bot_id, fields):
+            saved_fields.append(fields)
+
+        async def fake_run_full_analysis(_t):
+            return {"summary": "ok"}
+
+        with patch.object(recall_routes, "_fetch_transcript", AsyncMock(return_value=fake_response)), \
+             patch.object(recall_routes, "_db_save", side_effect=fake_db_save), \
+             patch.object(recall_routes, "_mb_update_status"), \
+             patch.object(recall_routes, "run_full_analysis", side_effect=fake_run_full_analysis), \
+             patch.object(recall_routes, "build_analysis_transcript", side_effect=lambda t, owner_name=None: t), \
+             patch("realtime_routes.cleanup_bot_state"):
+            asyncio.run(recall_routes._process_bot_transcript("bot-xyz"))
+
+        # Find the final "done" save and confirm segments were included
+        done_save = next((f for f in saved_fields if f.get("status") == "done"), None)
+        self.assertIsNotNone(done_save, "expected a status=done _db_save call")
+        self.assertIn("transcript_segments", done_save)
+        self.assertEqual(done_save["transcript_segments"], [
+            {"speaker": "Alice", "start": 0.0, "end": 0.3, "text": "hi"},
+        ])
+
+    def test_segments_null_when_realtime_buffer_fallback_used(self):
+        import recall_routes
+        recall_routes.bot_store["bot-fb"] = {
+            "status": "processing", "result": None, "error": None,
+            "commands": [], "user_id": "user-1",
+            "realtime_transcript_lines": ["Alice: from buffer"],
+        }
+
+        # _fetch_transcript returns None → triggers realtime-buffer fallback
+        saved_fields: list[dict] = []
+        async def fake_run_full_analysis(_t):
+            return {"summary": "ok"}
+
+        with patch.object(recall_routes, "_fetch_transcript", AsyncMock(return_value=None)), \
+             patch.object(recall_routes, "_db_save", side_effect=lambda b, f: saved_fields.append(f)), \
+             patch.object(recall_routes, "_mb_update_status"), \
+             patch.object(recall_routes, "run_full_analysis", side_effect=fake_run_full_analysis), \
+             patch.object(recall_routes, "build_analysis_transcript", side_effect=lambda t, owner_name=None: t), \
+             patch("realtime_routes.cleanup_bot_state"):
+            asyncio.run(recall_routes._process_bot_transcript("bot-fb"))
+
+        done_save = next((f for f in saved_fields if f.get("status") == "done"), None)
+        self.assertIsNotNone(done_save)
+        self.assertIsNone(done_save.get("transcript_segments"))
+
+
 if __name__ == "__main__":
     unittest.main()

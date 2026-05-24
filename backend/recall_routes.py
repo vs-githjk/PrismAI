@@ -473,12 +473,16 @@ async def _process_bot_transcript(bot_id: str):
         resp = await _fetch_transcript(bot_id)
 
         transcript = ""
+        segments: list[dict] | None = None
         if resp is not None:
             raw = resp.json()
             print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:500]}")
             transcript = _transcript_from_recall_data(raw)
+            segments = _segments_from_recall_data(raw)
 
-        # Fallback: use realtime-streamed transcript lines accumulated during the meeting
+        # Fallback: use realtime-streamed transcript lines accumulated during the meeting.
+        # Segments stay None here — the live buffer has no global timestamps, so the player
+        # gracefully degrades to a plain transcript view for these meetings.
         if not transcript.strip():
             rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
             if rt_lines:
@@ -500,7 +504,13 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
-        _db_save(bot_id, {"status": "done", "transcript": transcript, "result": result})
+        bot_store[bot_id]["transcript_segments"] = segments
+        _db_save(bot_id, {
+            "status": "done",
+            "transcript": transcript,
+            "result": result,
+            "transcript_segments": segments,
+        })
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
         from realtime_routes import cleanup_bot_state
