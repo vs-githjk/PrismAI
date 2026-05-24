@@ -5,10 +5,29 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from urllib.parse import urlparse, parse_qs
+
 from auth import require_user_id, supabase
 from cross_meeting_service import derive_cross_meeting_insights, has_meaningful_result
 from calendar_routes import get_valid_token
 from tools.gmail import gmail_send
+
+
+def parse_expires_hint(url: str | None) -> int | None:
+    """Extract the X-Amz-Expires hint from an S3 presigned URL.
+
+    Returns None when the param is missing, non-integer, or input is empty.
+    The hint is approximate — clients should treat it as a cache TTL guide,
+    not a precise countdown.
+    """
+    if not url:
+        return None
+    try:
+        qs = parse_qs(urlparse(url).query)
+        value = qs.get("X-Amz-Expires", [None])[0]
+        return int(value) if value is not None else None
+    except (ValueError, TypeError):
+        return None
 
 
 router = APIRouter(tags=["storage"])

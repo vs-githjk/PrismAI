@@ -270,5 +270,27 @@ class TestFanOutPropagatesRecordingFields(unittest.TestCase):
             self.assertEqual(p.get("recording_provider"), "recall")
 
 
+class TestParseExpiresHint(unittest.TestCase):
+    def test_returns_int_when_x_amz_expires_present(self):
+        import storage_routes
+        url = "https://example.s3.amazonaws.com/foo.mp4?X-Amz-Expires=3600&X-Amz-Signature=abc"
+        self.assertEqual(storage_routes.parse_expires_hint(url), 3600)
+
+    def test_returns_none_when_param_missing(self):
+        import storage_routes
+        self.assertIsNone(storage_routes.parse_expires_hint("https://x.com/foo.mp4"))
+
+    def test_returns_none_for_non_integer_value(self):
+        import storage_routes
+        self.assertIsNone(storage_routes.parse_expires_hint(
+            "https://x.com/foo.mp4?X-Amz-Expires=forever"
+        ))
+
+    def test_returns_none_for_empty_input(self):
+        import storage_routes
+        self.assertIsNone(storage_routes.parse_expires_hint(""))
+        self.assertIsNone(storage_routes.parse_expires_hint(None))
+
+
 if __name__ == "__main__":
     unittest.main()
