@@ -430,6 +430,39 @@ def _transcript_from_recall_data(raw) -> str:
     return ""
 
 
+def _segments_from_recall_data(raw) -> list[dict] | None:
+    """Normalize Recall's transcript response into Segment[] for video playback sync.
+
+    Returns None when input is empty, missing word-level timestamps, or not a list
+    (e.g., legacy { "transcript": "blob" } responses, plain string fallbacks).
+    None is the sentinel for "no per-line timing available" — the realtime-buffer
+    fallback transcript path also returns None so the player degrades to a plain
+    transcript view.
+    """
+    if not isinstance(raw, list) or not raw:
+        return None
+    segments: list[dict] = []
+    for segment in raw:
+        words = segment.get("words") or []
+        if not words:
+            continue
+        speaker = (
+            segment.get("speaker")
+            or (segment.get("participant") or {}).get("name")
+            or "Speaker"
+        )
+        text = " ".join(w.get("text", "") for w in words).strip()
+        if not text:
+            continue
+        segments.append({
+            "speaker": speaker,
+            "start": words[0].get("start_time", 0.0),
+            "end": words[-1].get("end_time", 0.0),
+            "text": text,
+        })
+    return segments or None
+
+
 async def _process_bot_transcript(bot_id: str):
     # Guarantee bot_store[bot_id] exists for the full duration of processing.
     # remove_bot() can pop the entry at any time; setdefault re-establishes it so
