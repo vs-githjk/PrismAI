@@ -227,5 +227,48 @@ class TestSaveMeetingEnrichment(unittest.TestCase):
         self.assertIsNone(meetings_upsert["payload"].get("recording_provider"))
 
 
+class TestFanOutPropagatesRecordingFields(unittest.TestCase):
+    def test_fan_out_includes_recall_columns(self):
+        import storage_routes
+        captured_upserts: list[dict] = []
+
+        class FakeTable:
+            def __init__(self, name): self.name = name
+            def select(self, *a, **k): return self
+            def eq(self, *a, **k): return self
+            def neq(self, *a, **k): return self
+            def upsert(self, payload, **k):
+                captured_upserts.append({"table": self.name, "payload": payload})
+                class _Exec:
+                    def execute(_): return MagicMock(data=[])
+                return _Exec()
+            def execute(self):
+                if self.name == "workspace_members":
+                    return MagicMock(data=[{"user_id": "teammate-1"}, {"user_id": "teammate-2"}])
+                return MagicMock(data=[])
+
+        client = MagicMock()
+        client.table = lambda name: FakeTable(name)
+
+        entry = storage_routes.MeetingEntry(
+            id=100, date="2026-05-24T10:00:00Z", title="shared",
+            transcript="t", result={"summary": "s"},
+            workspace_id="ws-1", recall_bot_id="bot-shared",
+        )
+
+        asyncio.run(storage_routes._fan_out_to_workspace(
+            client, entry, recorder_user_id="owner-1", workspace_id="ws-1",
+        ))
+
+        fan_payloads = [u["payload"] for u in captured_upserts if u["table"] == "meetings"]
+        self.assertEqual(len(fan_payloads), 2, "expected one upsert per teammate")
+        for p in fan_payloads:
+            self.assertIn("recall_bot_id", p)
+            self.assertIn("recording_provider", p)
+            self.assertIn("transcript_segments", p)
+            self.assertEqual(p.get("recall_bot_id"), "bot-shared")
+            self.assertEqual(p.get("recording_provider"), "recall")
+
+
 if __name__ == "__main__":
     unittest.main()

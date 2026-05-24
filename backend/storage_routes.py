@@ -219,6 +219,17 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
                 "share_token": None,
                 "workspace_id": workspace_id,
                 "recorded_by_user_id": recorder_user_id,
+                # Recording fields propagate so every teammate sees the same player.
+                # The owner-only segments are safe to fan out: workspace_members are
+                # the access boundary, and the player auth already gates by membership.
+                # _resolved_segments / _resolved_provider are set by save_meeting in Task 5.
+                # When the test calls _fan_out_to_workspace directly (no save_meeting
+                # pre-call), these fall back to entry.recall_bot_id / "recall" — same
+                # final shape, no behaviour change.
+                "recall_bot_id": entry.recall_bot_id,
+                "recording_provider": entry.__dict__.get("_resolved_provider")
+                                       or ("recall" if entry.recall_bot_id else None),
+                "transcript_segments": entry.__dict__.get("_resolved_segments"),
             }).execute()
             print(f"[fanout] wrote meeting {fan_id} to member {member_id} in workspace {workspace_id}")
     except Exception as exc:
