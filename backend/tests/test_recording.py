@@ -13,6 +13,12 @@ fake_supabase_module.create_client = lambda *_a, **_k: None
 fake_supabase_module.Client = object
 sys.modules.setdefault("supabase", fake_supabase_module)
 
+# Ensure RECALL_API_KEY is set so storage_routes.RECALL_API_KEY is non-empty
+# when the module is (re-)imported during tests. Tests that exercise the 404/auth
+# path return before this check; tests that mock httpx still need the guard to pass.
+import os as _os
+_os.environ.setdefault("RECALL_API_KEY", "test-key")
+
 fake_groq_module = types.ModuleType("groq")
 class _FakeAsyncGroq:
     def __init__(self, *a, **k): pass
@@ -290,6 +296,179 @@ class TestParseExpiresHint(unittest.TestCase):
         import storage_routes
         self.assertIsNone(storage_routes.parse_expires_hint(""))
         self.assertIsNone(storage_routes.parse_expires_hint(None))
+
+
+class TestGetRecordingEndpoint(unittest.TestCase):
+    def _make_client(self, meeting_row, workspace_member_rows=None):
+        captured: list = []
+        class FakeTable:
+            def __init__(self, name): self.name = name
+            def select(self, *a, **k): return self
+            def eq(self, *a, **k): return self
+            def in_(self, *a, **k): return self
+            def maybe_single(self): return self
+            def execute(self):
+                if self.name == "meetings":
+                    return MagicMock(data=meeting_row)
+                if self.name == "workspace_members":
+                    return MagicMock(data=workspace_member_rows or [])
+                return MagicMock(data=[])
+        client = MagicMock()
+        client.table = lambda name: FakeTable(name)
+        return client
+
+    def _fake_recall_response(self, recordings_payload, status_code=200):
+        async def fake_get(url, headers=None, timeout=None):
+            resp = MagicMock()
+            resp.status_code = status_code
+            resp.json = lambda: {"recordings": recordings_payload}
+            return resp
+        return fake_get
+
+    def test_returns_video_url_when_video_mixed_present(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        recordings = [{
+            "media_shortcuts": {
+                "video_mixed": {"data": {"download_url": "https://s3/foo.mp4?X-Amz-Expires=86400"}},
+                "audio_mixed": {"data": {"download_url": "https://s3/foo.mp3?X-Amz-Expires=86400"}},
+            }
+        }]
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response(recordings)
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result["kind"], "video")
+        self.assertEqual(result["url"], "https://s3/foo.mp4?X-Amz-Expires=86400")
+        self.assertEqual(result["expires_hint_seconds"], 86400)
+
+    def test_falls_back_to_audio_when_only_audio_present(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        recordings = [{
+            "media_shortcuts": {
+                "audio_mixed": {"data": {"download_url": "https://s3/foo.mp3"}},
+            }
+        }]
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response(recordings)
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result["kind"], "audio")
+        self.assertEqual(result["url"], "https://s3/foo.mp3")
+
+    def test_returns_not_ready_when_recording_exists_but_no_urls(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        recordings = [{"media_shortcuts": {}}]
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response(recordings)
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result, {"url": None, "reason": "not_ready"})
+
+    def test_returns_no_recording_when_recordings_array_empty(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response([])
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result, {"url": None, "reason": "no_recording"})
+
+    def test_returns_expired_on_recall_404(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response([], status_code=404)
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result, {"url": None, "reason": "expired"})
+
+    def test_returns_not_found_on_recall_403(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response([], status_code=403)
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result, {"url": None, "reason": "not_found"})
+
+    def test_returns_not_a_bot_meeting_when_recall_bot_id_null(self):
+        import storage_routes
+        client = self._make_client({
+            "id": 1, "user_id": "user-1", "workspace_id": None,
+            "recall_bot_id": None, "recording_provider": None,
+        })
+        with patch.object(storage_routes, "_require_storage", return_value=client):
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result, {"url": None, "reason": "not_a_bot_meeting"})
+
+    def test_returns_404_when_caller_not_owner_or_workspace_member(self):
+        from fastapi import HTTPException
+        import storage_routes
+        # Meeting owned by user-99, no workspace
+        client = self._make_client({
+            "id": 1, "user_id": "user-99", "workspace_id": None,
+            "recall_bot_id": "bot-1", "recording_provider": "recall",
+        })
+        with patch.object(storage_routes, "_require_storage", return_value=client):
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_workspace_member_can_access(self):
+        import storage_routes
+        # Meeting owned by user-99 in workspace ws-1; caller user-1 is a member
+        client = self._make_client(
+            {
+                "id": 1, "user_id": "user-99", "workspace_id": "ws-1",
+                "recall_bot_id": "bot-1", "recording_provider": "recall",
+            },
+            workspace_member_rows=[{"user_id": "user-1"}],
+        )
+        recordings = [{
+            "media_shortcuts": {
+                "video_mixed": {"data": {"download_url": "https://s3/v.mp4"}},
+            }
+        }]
+        with patch.object(storage_routes, "_require_storage", return_value=client), \
+             patch.object(storage_routes, "RECALL_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient") as MockClient:
+            instance = MockClient.return_value.__aenter__.return_value
+            instance.get = self._fake_recall_response(recordings)
+            result = asyncio.run(storage_routes.get_meeting_recording(1, user_id="user-1"))
+        self.assertEqual(result["kind"], "video")
 
 
 if __name__ == "__main__":

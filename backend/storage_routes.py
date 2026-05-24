@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
+import os
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -29,6 +31,9 @@ def parse_expires_hint(url: str | None) -> int | None:
     except (ValueError, TypeError):
         return None
 
+
+RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 
 router = APIRouter(tags=["storage"])
 
@@ -529,3 +534,111 @@ async def send_followup_email(req: SendFollowupRequest, user_id: str = Depends(r
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return {"ok": True}
+
+
+def _caller_can_access_meeting(client, meeting_row: dict, user_id: str) -> bool:
+    """Same auth model as GET /meetings/{id}: owner OR workspace member."""
+    if meeting_row.get("user_id") == user_id:
+        return True
+    workspace_id = meeting_row.get("workspace_id")
+    if not workspace_id:
+        return False
+    try:
+        res = (
+            client.table("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", workspace_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return bool(res and res.data)
+    except Exception:
+        return False
+
+
+@router.get("/meetings/{meeting_id}/recording")
+async def get_meeting_recording(meeting_id: int, user_id: str = Depends(require_user_id)):
+    """Return a fresh signed download URL for the meeting's Recall.ai recording.
+
+    Auth: caller must own the meeting OR be a member of its workspace. Non-members
+    get a 404 (we never confirm existence to non-members).
+
+    Response shapes (see spec for full contract):
+      { "url": "...", "expires_hint_seconds": N, "kind": "video" | "audio" }
+      { "url": None, "reason": "not_ready" | "no_recording" | "expired" |
+                               "not_found" | "not_a_bot_meeting" }
+    """
+    client = _require_storage()
+
+    # Load meeting row
+    try:
+        res = (
+            client.table("meetings")
+            .select("id, user_id, workspace_id, recall_bot_id, recording_provider")
+            .eq("id", meeting_id)
+            .maybe_single()
+            .execute()
+        )
+        meeting = res.data if res else None
+    except Exception:
+        meeting = None
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if not _caller_can_access_meeting(client, meeting, user_id):
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    bot_id = meeting.get("recall_bot_id")
+    if not bot_id:
+        return {"url": None, "reason": "not_a_bot_meeting"}
+
+    if not RECALL_API_KEY:
+        raise HTTPException(status_code=503, detail="Recall.ai not configured")
+
+    # Fetch fresh signed URL from Recall (URLs expire ~24h, can't cache)
+    try:
+        async with httpx.AsyncClient() as recall:
+            resp = await recall.get(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Recall.ai unreachable: {exc}")
+
+    if resp.status_code == 404:
+        return {"url": None, "reason": "expired"}
+    if resp.status_code == 403:
+        return {"url": None, "reason": "not_found"}
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Recall.ai error: {resp.status_code}")
+
+    data = resp.json()
+    recordings = data.get("recordings") or []
+    if not recordings:
+        return {"url": None, "reason": "no_recording"}
+
+    shortcuts = (recordings[0] or {}).get("media_shortcuts") or {}
+    video_url = (
+        ((shortcuts.get("video_mixed") or {}).get("data") or {}).get("download_url")
+    )
+    audio_url = (
+        ((shortcuts.get("audio_mixed") or {}).get("data") or {}).get("download_url")
+    )
+
+    if video_url:
+        payload = {"url": video_url, "kind": "video"}
+        hint = parse_expires_hint(video_url)
+        if hint is not None:
+            payload["expires_hint_seconds"] = hint
+        return payload
+    if audio_url:
+        payload = {"url": audio_url, "kind": "audio"}
+        hint = parse_expires_hint(audio_url)
+        if hint is not None:
+            payload["expires_hint_seconds"] = hint
+        return payload
+
+    return {"url": None, "reason": "not_ready"}
