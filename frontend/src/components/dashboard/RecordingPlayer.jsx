@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 
 const POLL_INTERVAL_MS = 15000
@@ -9,6 +9,16 @@ const REASON_COPY = {
   not_found: 'The bot recording was deleted.',
   no_recording: 'No audio was captured during this meeting.',
   not_a_bot_meeting: null,  // handled by returning null
+}
+
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
+  const total = Math.floor(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const ss = s.toString().padStart(2, '0')
+  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
 export default function RecordingPlayer({
@@ -23,58 +33,71 @@ export default function RecordingPlayer({
   const attemptsRef = useRef(0)
   const timeoutRef = useRef(null)
   const abortRef = useRef(null)
+  // Cap mid-playback URL refreshes at 1 — if a freshly-fetched URL also fails,
+  // the recording is genuinely gone, don't loop.
+  const refreshUsedRef = useRef(false)
 
   // Non-bot meetings render nothing. Must run AFTER hooks above to keep hook order stable.
   const isBotMeeting = recordingProvider === 'recall'
 
+  // Lifted out of the useEffect so onError on the media element can call it
+  // again for the URL-refresh-on-expiry path. Stable identity via useCallback.
+  const fetchRecording = useCallback(async ({ isRefresh = false } = {}) => {
+    if (!isBotMeeting) return
+    const controller = new AbortController()
+    abortRef.current = controller
+    try {
+      const res = await apiFetch(`/meetings/${meetingId}/recording`, { signal: controller.signal })
+      const data = await res.json().catch(() => ({}))
+      if (data.url) {
+        setMedia({ url: data.url, kind: data.kind })
+        setState('ready')
+        return
+      }
+      if (data.reason === 'not_ready') {
+        attemptsRef.current += 1
+        if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
+          setState('processing')
+          setReason('cap_reached')
+          return
+        }
+        setState('processing')
+        timeoutRef.current = setTimeout(() => fetchRecording(), POLL_INTERVAL_MS)
+        return
+      }
+      if (data.reason === 'not_a_bot_meeting') {
+        return  // defensive — provider check above should have prevented this
+      }
+      setReason(data.reason || 'not_found')
+      setState('gone')
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+      setReason(isRefresh ? 'expired' : 'not_found')
+      setState('gone')
+    }
+  }, [meetingId, isBotMeeting])
+
   useEffect(() => {
     if (!isBotMeeting) return
-    let cancelled = false
-
-    const fetchOnce = async () => {
-      const controller = new AbortController()
-      abortRef.current = controller
-      try {
-        const res = await apiFetch(`/meetings/${meetingId}/recording`, { signal: controller.signal })
-        if (cancelled) return
-        const data = await res.json().catch(() => ({}))
-        if (data.url) {
-          setMedia({ url: data.url, kind: data.kind })
-          setState('ready')
-          return
-        }
-        if (data.reason === 'not_ready') {
-          attemptsRef.current += 1
-          if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
-            setState('processing')
-            setReason('cap_reached')
-            return
-          }
-          setState('processing')
-          timeoutRef.current = setTimeout(fetchOnce, POLL_INTERVAL_MS)
-          return
-        }
-        if (data.reason === 'not_a_bot_meeting') {
-          // Defensive — provider check above should have prevented this
-          return
-        }
-        setReason(data.reason || 'not_found')
-        setState('gone')
-      } catch (err) {
-        if (err?.name === 'AbortError' || cancelled) return
-        setReason('not_found')
-        setState('gone')
-      }
-    }
-
-    fetchOnce()
-
+    fetchRecording()
     return () => {
-      cancelled = true
       abortRef.current?.abort()
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-  }, [meetingId, isBotMeeting])
+  }, [meetingId, isBotMeeting, fetchRecording])
+
+  // onError on <video>/<audio>: signed URL likely expired mid-session.
+  // Refresh once. If the refresh succeeds, the media src swap will retry play.
+  // If it fails or the second URL also errors, fall to 'gone' with reason='expired'.
+  const handleMediaError = useCallback(() => {
+    if (refreshUsedRef.current) {
+      setReason('expired')
+      setState('gone')
+      return
+    }
+    refreshUsedRef.current = true
+    fetchRecording({ isRefresh: true })
+  }, [fetchRecording])
 
   if (!isBotMeeting) return null
 
@@ -87,12 +110,23 @@ export default function RecordingPlayer({
   }
 
   if (state === 'processing') {
-    const copy = reason === 'cap_reached'
-      ? 'Recording is taking longer than expected. Refresh the page to try again.'
-      : 'Recording is still being prepared by Recall.ai. This usually takes 1–3 minutes after the meeting ends.'
+    if (reason === 'cap_reached') {
+      return (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+          <div className="mb-2">Recording is taking longer than expected.</div>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10 transition-colors"
+          >
+            Reload page
+          </button>
+        </div>
+      )
+    }
     return (
       <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
-        {copy}
+        Recording is still being prepared by Recall.ai. This usually takes 1–3 minutes after the meeting ends.
       </div>
     )
   }
@@ -113,11 +147,12 @@ export default function RecordingPlayer({
       kind={media.kind}
       segments={transcriptSegments}
       transcriptText={transcriptText}
+      onMediaError={handleMediaError}
     />
   )
 }
 
-function SyncedPlayer({ url, kind, segments, transcriptText }) {
+function SyncedPlayer({ url, kind, segments, transcriptText, onMediaError }) {
   const mediaRef = useRef(null)
   const [activeIdx, setActiveIdx] = useState(-1)
   const lastUpdateRef = useRef(0)
@@ -145,13 +180,19 @@ function SyncedPlayer({ url, kind, segments, transcriptText }) {
     activeRowRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [activeIdx])
 
-  // User-scroll detector
+  // User-scroll detector. Covers wheel, touch, AND keyboard (Arrow/Page/Space) —
+  // anything that produces a scroll event on the container counts as the user
+  // taking over.
   const noteUserScroll = () => {
     userScrolledAtRef.current = performance.now()
   }
 
   const seekTo = (seconds) => {
     if (!mediaRef.current) return
+    // Click-to-seek is an intentional navigation — clear the user-scroll
+    // suppression so auto-scroll resumes tracking from the new playhead
+    // without the 3s delay if the user had scrolled recently.
+    userScrolledAtRef.current = 0
     mediaRef.current.currentTime = seconds
     mediaRef.current.play().catch(() => {})
   }
@@ -166,6 +207,7 @@ function SyncedPlayer({ url, kind, segments, transcriptText }) {
             controls
             className="w-full"
             onTimeUpdate={handleTimeUpdate}
+            onError={onMediaError}
           />
         ) : (
           <video
@@ -174,36 +216,51 @@ function SyncedPlayer({ url, kind, segments, transcriptText }) {
             controls
             className="w-full rounded-lg"
             onTimeUpdate={handleTimeUpdate}
+            onError={onMediaError}
           />
         )}
       </div>
       <div
         ref={listRef}
-        onWheel={noteUserScroll}
-        onTouchMove={noteUserScroll}
+        onScroll={noteUserScroll}
         className="max-h-[420px] overflow-y-auto rounded-lg border border-white/5 bg-white/5 p-3"
       >
         {hasSegments ? (
-          segments.map((seg, i) => (
-            <button
-              key={i}
-              ref={i === activeIdx ? activeRowRef : null}
-              onClick={() => seekTo(seg.start)}
-              className={
-                'block w-full text-left text-xs leading-5 px-2 py-1 rounded transition-colors ' +
-                (i === activeIdx
-                  ? 'text-sky-400 bg-white/5'
-                  : 'text-white/70 hover:text-white hover:bg-white/5')
-              }
-            >
-              <span className="font-medium text-white/90">{seg.speaker}: </span>
-              {seg.text}
-            </button>
-          ))
+          segments.map((seg, i) => {
+            const isActive = i === activeIdx
+            const ts = formatTime(seg.start)
+            const snippet = seg.text.length > 60 ? `${seg.text.slice(0, 60)}…` : seg.text
+            return (
+              <button
+                key={i}
+                ref={isActive ? activeRowRef : null}
+                onClick={() => seekTo(seg.start)}
+                aria-current={isActive ? 'true' : undefined}
+                aria-label={`Jump to ${ts} — ${seg.speaker}: ${snippet}`}
+                className={
+                  'flex w-full items-baseline gap-2 text-left text-xs leading-5 px-2 py-1 rounded transition-colors ' +
+                  (isActive
+                    ? 'text-sky-400 bg-white/5'
+                    : 'text-white/70 hover:text-white hover:bg-white/5')
+                }
+              >
+                <span className="shrink-0 tabular-nums text-[10.5px] text-white/40 font-mono">{ts}</span>
+                <span>
+                  <span className="font-medium text-white/90">{seg.speaker}: </span>
+                  {seg.text}
+                </span>
+              </button>
+            )
+          })
         ) : (
-          <pre className="whitespace-pre-wrap text-xs leading-5 text-white/70">
-            {transcriptText || ''}
-          </pre>
+          <>
+            <p className="mb-2 text-[11px] italic text-white/40">
+              Timestamped transcript not available for this meeting — clicking text won&apos;t seek the recording.
+            </p>
+            <pre className="whitespace-pre-wrap text-xs leading-5 text-white/70">
+              {transcriptText || ''}
+            </pre>
+          </>
         )}
       </div>
     </div>
