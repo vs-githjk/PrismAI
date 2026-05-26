@@ -11,6 +11,8 @@ from .registry import register_tool
 STRICT_INSTRUCTION = (
     "Answer ONLY using the content in `matches` above. "
     "When you answer, cite the source by saying \"According to {doc_name}: ...\". "
+    "For sources where `source_type` is `meeting_transcript`, phrase the citation "
+    "as \"From your meeting on {date from doc_name}: ...\". "
     "If the matches do not contain the answer, respond with exactly the token "
     "NO_GROUNDED_ANSWER so the system can fall back to web_search. "
     "Do not synthesize, infer, or guess beyond the provided content."
@@ -81,10 +83,12 @@ async def knowledge_lookup(args: dict, user_settings: Optional[dict] = None) -> 
 register_tool(
     name="knowledge_lookup",
     description=(
-        "Look up information in the user's uploaded knowledge base "
-        "(PDFs, documents, web pages, Notion, Google Drive). Use this FIRST when the "
-        "user asks a factual question that might be in their documents. Returns "
-        "matched content with source citations. If no match, falls back to web_search."
+        "Look up information in the user's knowledge base — uploaded documents "
+        "(PDFs, DOCX, web pages, Notion, Google Drive) AND past meeting transcripts. "
+        "Use this FIRST when the user asks a factual question that might be in their "
+        "documents or something discussed in a previous meeting. Returns matched "
+        "content with source citations (including meeting dates when relevant). "
+        "If no match, falls back to web_search."
     ),
     parameters={
         "type": "object",
