@@ -64,6 +64,8 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
         fake_sb = _FakeSupabase()
 
         with patch.object(knowledge_transcript, "_supabase", lambda: fake_sb), \
+             patch.object(knowledge_transcript, "check_user_quota",
+                          new=AsyncMock(return_value=None)), \
              patch.object(knowledge_transcript, "embed_batch",
                           new=AsyncMock(return_value=[[0.1] * 1536, [0.2] * 1536])):
             asyncio.run(knowledge_transcript.index_meeting_transcript(
@@ -95,6 +97,46 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
                 transcript="",
             ))
         self.assertEqual(fake_sb.ops, [])
+
+
+    def test_marks_doc_error_when_quota_exceeded(self):
+        import importlib, knowledge_transcript, knowledge_service
+        importlib.reload(knowledge_transcript)
+
+        fake_sb = _FakeSupabase()
+
+        async def raise_quota(*_a, **_k):
+            raise knowledge_service.QuotaExceeded("over limit")
+
+        with patch.object(knowledge_transcript, "_supabase", lambda: fake_sb), \
+             patch.object(knowledge_transcript, "check_user_quota",
+                          new=AsyncMock(side_effect=raise_quota)), \
+             patch.object(knowledge_transcript, "embed_batch",
+                          new=AsyncMock(return_value=[])):
+            asyncio.run(knowledge_transcript.index_meeting_transcript(
+                meeting_id=99,
+                user_id=str(uuid.uuid4()),
+                workspace_id=None,
+                date="2026-05-26T14:00:00",
+                title="Long meeting",
+                transcript="word " * 5000,
+            ))
+
+        # We should have inserted the doc row, then UPDATED it to status="error".
+        # No knowledge_chunks insert should have happened.
+        ops = fake_sb.ops
+        self.assertIn("knowledge_docs", [t for t, _ in ops])
+        self.assertNotIn("knowledge_chunks", [t for t, _ in ops])
+        # Find the error update
+        error_updates = [
+            payload for table, payload in ops
+            if table == "knowledge_docs"
+            and payload is not None
+            and payload[0] == "update"
+            and payload[1].get("status") == "error"
+        ]
+        self.assertEqual(len(error_updates), 1)
+        self.assertIn("over limit", error_updates[0][1].get("error_message", ""))
 
 
 if __name__ == "__main__":

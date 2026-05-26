@@ -7,7 +7,7 @@ import uuid
 
 from embeddings import embed_batch, QuotaExhausted
 from knowledge_ingest.chunker import chunk_text
-from knowledge_service import _supabase, INSERT_BATCH_SIZE, _execute
+from knowledge_service import _supabase, INSERT_BATCH_SIZE, _execute, check_user_quota, QuotaExceeded
 
 
 def _meeting_doc_name(date: str, title: str) -> str:
@@ -62,6 +62,16 @@ async def index_meeting_transcript(
             await _execute(
                 sb.table("knowledge_docs")
                 .update({"status": "ready", "chunk_count": 0})
+                .eq("id", doc_id)
+            )
+            return
+
+        try:
+            await check_user_quota(user_id, len(chunks))
+        except QuotaExceeded as exc:
+            await _execute(
+                sb.table("knowledge_docs")
+                .update({"status": "error", "error_message": str(exc)})
                 .eq("id", doc_id)
             )
             return
