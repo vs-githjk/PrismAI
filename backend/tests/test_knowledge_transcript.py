@@ -44,7 +44,7 @@ class _FakeQuery:
         return self
     def execute(self):
         self.sink.append((self._table, self._payload))
-        return MagicMock(data={"id": "fake-doc-id"})
+        return MagicMock(data=[])
 
 
 class _FakeSupabase:

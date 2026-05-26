@@ -39,9 +39,7 @@ async def index_meeting_transcript(
             .eq("meeting_id", meeting_id)
             .eq("source_type", "meeting_transcript")
         )
-        # Supabase SDK always returns a list for select queries; treat non-list
-        # (e.g. test stubs) as "not found" so idempotency only fires in prod.
-        if isinstance(existing.data, list) and existing.data:
+        if existing.data:
             return
 
         doc_id = str(uuid.uuid4())
