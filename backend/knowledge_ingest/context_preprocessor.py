@@ -62,8 +62,9 @@ async def add_context(chunks: list[dict], doc_name: str, doc_summary: str = "") 
     if not chunks:
         return chunks
 
-    # Fan out preamble generation in parallel — bounded by Groq's rate limits,
-    # but chunks/doc rarely exceeds ~50 so this is safe in practice.
+    # Fan out preamble generation in parallel. Concurrent Groq calls are
+    # capped at 8 by `_GROQ_SEM` inside `_preamble_for_chunk`, so large docs
+    # don't trigger rate-limit 429s regardless of how many chunks they have.
     preambles = await asyncio.gather(*(
         _preamble_for_chunk(c, doc_name, doc_summary) for c in chunks
     ))
