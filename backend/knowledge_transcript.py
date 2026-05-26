@@ -66,6 +66,13 @@ async def index_meeting_transcript(
             )
             return
 
+        # Lightweight, deterministic preamble. Transcripts have no section
+        # headings, so a Groq-generated preamble would just repeat title+date —
+        # build it inline and skip the LLM cost.
+        preamble = f"From your meeting '{title}' on {(date or '')[:10]}."
+        for c in chunks:
+            c["embedded_content"] = f"{preamble} {c['content']}"
+
         try:
             await check_user_quota(user_id, len(chunks))
         except QuotaExceeded as exc:
@@ -76,7 +83,7 @@ async def index_meeting_transcript(
             )
             return
 
-        contents = [c["content"] for c in chunks]
+        contents = [c["embedded_content"] for c in chunks]
         try:
             vectors = await embed_batch(contents)
         except QuotaExhausted:
@@ -94,7 +101,7 @@ async def index_meeting_transcript(
                 "user_id": user_id,
                 "workspace_id": workspace_id,
                 "content": chunks[i]["content"],
-                "embedded_content": chunks[i]["content"],
+                "embedded_content": chunks[i]["embedded_content"],
                 "embedding": vectors[i],
                 "chunk_index": chunks[i]["chunk_index"],
                 "metadata": chunks[i]["metadata"],

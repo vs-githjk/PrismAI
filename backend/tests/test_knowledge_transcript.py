@@ -139,5 +139,39 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
         self.assertIn("over limit", error_updates[0][1].get("error_message", ""))
 
 
+    def test_embeds_content_with_inline_preamble(self):
+        import importlib, knowledge_transcript
+        importlib.reload(knowledge_transcript)
+
+        fake_sb = _FakeSupabase()
+        captured_embed_inputs: list[list[str]] = []
+
+        async def fake_embed(texts):
+            captured_embed_inputs.append(list(texts))
+            return [[0.0] * 1536 for _ in texts]
+
+        with patch.object(knowledge_transcript, "_supabase", lambda: fake_sb), \
+             patch.object(knowledge_transcript, "check_user_quota",
+                          new=AsyncMock(return_value=None)), \
+             patch.object(knowledge_transcript, "embed_batch",
+                          new=AsyncMock(side_effect=fake_embed)):
+            asyncio.run(knowledge_transcript.index_meeting_transcript(
+                meeting_id=7,
+                user_id=str(uuid.uuid4()),
+                workspace_id=None,
+                date="2026-05-26T14:00:00",
+                title="Planning Sync",
+                transcript="Alice: hi. Bob: hi back. " * 30,
+            ))
+
+        # Every embedded string should start with the lightweight preamble.
+        self.assertTrue(captured_embed_inputs, "embed_batch was never called")
+        for text in captured_embed_inputs[0]:
+            self.assertIn("Planning Sync", text)
+            self.assertIn("2026-05-26", text)
+            # AND it should NOT be a Groq-style preamble (no "section" wording)
+            self.assertNotIn("section", text.split(".")[0].lower())
+
+
 if __name__ == "__main__":
     unittest.main()
