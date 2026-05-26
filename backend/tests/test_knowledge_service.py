@@ -106,6 +106,37 @@ class KnowledgeServiceTests(unittest.TestCase):
                 ))
         self.assertTrue(matches[0].get("possible_conflict"))
 
+    def test_search_caps_transcript_results(self):
+        import importlib, knowledge_service
+        importlib.reload(knowledge_service)
+
+        rows = [
+            {"chunk_id": "1", "doc_id": "d1", "doc_name": "Mtg A (2026-05-01)",
+             "source_type": "meeting_transcript", "sensitivity": "internal",
+             "content": "...", "metadata": {}, "score": 0.95},
+            {"chunk_id": "2", "doc_id": "d2", "doc_name": "Mtg B (2026-05-02)",
+             "source_type": "meeting_transcript", "sensitivity": "internal",
+             "content": "...", "metadata": {}, "score": 0.94},
+            {"chunk_id": "3", "doc_id": "d3", "doc_name": "Mtg C (2026-05-03)",
+             "source_type": "meeting_transcript", "sensitivity": "internal",
+             "content": "...", "metadata": {}, "score": 0.93},
+            {"chunk_id": "4", "doc_id": "d4", "doc_name": "Budget.pdf",
+             "source_type": "pdf", "sensitivity": "internal",
+             "content": "...", "metadata": {}, "score": 0.92},
+        ]
+        fake_sb = _FakeSupabase({"rpc:knowledge_search": rows})
+        with patch.object(knowledge_service, "_supabase", lambda: fake_sb), \
+             patch.object(knowledge_service, "embed_text",
+                          new=AsyncMock(return_value=[0.1] * 1536)):
+            matches = asyncio.run(knowledge_service.search_knowledge(
+                "anything", str(uuid.uuid4()), k=5
+            ))
+
+        # At most 2 meeting_transcript results, then PDFs fill remaining slots
+        transcripts = [m for m in matches if m["source_type"] == "meeting_transcript"]
+        self.assertLessEqual(len(transcripts), 2)
+        self.assertEqual(matches[-1]["source_type"], "pdf")
+
 
 class _IngestQuery:
     """Records every (op, table) pair on a fake Supabase so tests can assert

@@ -103,6 +103,22 @@ async def search_knowledge(
         )
     )
     rows = resp.data or []
+
+    # Cap meeting-transcript results to <= 2 in top-k. Transcripts are much
+    # longer than docs and otherwise dominate retrieval. Tunable.
+    MAX_TRANSCRIPT_HITS = 2
+    capped: list[dict] = []
+    transcript_count = 0
+    for r in rows:
+        if r.get("source_type") == "meeting_transcript":
+            if transcript_count >= MAX_TRANSCRIPT_HITS:
+                continue
+            transcript_count += 1
+        capped.append(r)
+        if len(capped) >= k:
+            break
+    rows = capped
+
     if len(rows) >= 2:
         top, second = rows[0], rows[1]
         if (
