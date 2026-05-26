@@ -55,5 +55,40 @@ class ContextPreprocessorTests(unittest.TestCase):
         self.assertEqual(result[0]["embedded_content"], "Q2 budget.")
 
 
+    def test_bounds_concurrent_llm_calls(self):
+        """Fix #3 — concurrent Groq calls should be capped by a semaphore.
+        We verify by counting the maximum number of in-flight _llm_preamble
+        calls during a 50-chunk ingest. With the semaphore, max in-flight
+        must be <= 8."""
+        import importlib
+        from knowledge_ingest import context_preprocessor
+        importlib.reload(context_preprocessor)
+
+        in_flight = 0
+        peak = 0
+
+        async def slow_llm(system, user, **_):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.01)
+            in_flight -= 1
+            return "From 'Doc.pdf'."
+
+        chunks = [
+            {"content": f"chunk {i}", "chunk_index": i, "metadata": {}}
+            for i in range(50)
+        ]
+
+        with patch.object(context_preprocessor, "_llm_preamble",
+                          new=AsyncMock(side_effect=slow_llm)):
+            asyncio.run(context_preprocessor.add_context(
+                chunks, doc_name="Doc.pdf", doc_summary=""
+            ))
+
+        self.assertLessEqual(peak, 8,
+            f"Concurrent _llm_preamble calls peaked at {peak}; expected <= 8")
+
+
 if __name__ == "__main__":
     unittest.main()

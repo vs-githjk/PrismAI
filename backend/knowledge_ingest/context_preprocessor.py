@@ -17,6 +17,11 @@ _PROMPT = (
     "Output ONLY the preamble sentence — no preface, no quotes around the whole output."
 )
 
+# Cap concurrent Groq calls so a big doc doesn't flood the API and get
+# rate-limited (every 429 silently degrades to embedding the raw chunk).
+# 8 is comfortably under Groq's default RPS for our workload.
+_GROQ_SEM = asyncio.Semaphore(8)
+
 # Tiny in-memory cache so resync of an unchanged chunk doesn't pay the Groq cost.
 _cache: dict[str, str] = {}
 
@@ -41,7 +46,8 @@ async def _preamble_for_chunk(chunk: dict, doc_name: str, doc_summary: str) -> s
     if key in _cache:
         return _cache[key]
     try:
-        preamble = (await _llm_preamble(doc_name, doc_summary, heading=heading)).strip()
+        async with _GROQ_SEM:
+            preamble = (await _llm_preamble(doc_name, doc_summary, heading=heading)).strip()
     except Exception:
         preamble = ""
     if preamble:
