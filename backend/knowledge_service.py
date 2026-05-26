@@ -72,6 +72,38 @@ async def check_user_quota(user_id: str, new_chunks: int) -> None:
 # recall_*, and storage_* routers. See caches.py for cache semantics.
 
 
+def _rrf_merge(
+    vector_hits: list[dict],
+    bm25_hits: list[dict],
+    k_rrf: int = 60,
+) -> list[dict]:
+    """Reciprocal Rank Fusion.
+
+    Combines two ranked result lists by summing 1/(k_rrf + rank) per document.
+    Rank-based, so it ignores absolute score scales (cosine ∈ [0,1] vs
+    unbounded BM25), which is why this replaces the min-max normalization
+    approach used in the original smart-RAG plan.
+
+    Returns a single ranked list. Each row's `score` is overwritten with the
+    fused score and `match_type` is set to "hybrid".
+    """
+    by_id: dict[str, dict] = {}
+    fused: dict[str, float] = {}
+    for rank, row in enumerate(vector_hits, start=1):
+        rid = row["id"]
+        by_id[rid] = row
+        fused[rid] = fused.get(rid, 0.0) + 1.0 / (k_rrf + rank)
+    for rank, row in enumerate(bm25_hits, start=1):
+        rid = row["id"]
+        by_id.setdefault(rid, row)
+        fused[rid] = fused.get(rid, 0.0) + 1.0 / (k_rrf + rank)
+    merged = sorted(by_id.values(), key=lambda r: fused[r["id"]], reverse=True)
+    for r in merged:
+        r["score"] = fused[r["id"]]
+        r["match_type"] = "hybrid"
+    return merged
+
+
 async def search_knowledge(
     query: str,
     user_id: str,
