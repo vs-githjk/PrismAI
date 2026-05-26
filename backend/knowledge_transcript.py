@@ -84,6 +84,7 @@ async def index_meeting_transcript(
                 "user_id": user_id,
                 "workspace_id": workspace_id,
                 "content": chunks[i]["content"],
+                "embedded_content": chunks[i]["content"],
                 "embedding": vectors[i],
                 "chunk_index": chunks[i]["chunk_index"],
                 "metadata": chunks[i]["metadata"],

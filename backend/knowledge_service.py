@@ -10,6 +10,7 @@ from supabase import Client, create_client
 from caches import get_user_workspace_ids
 from embeddings import embed_text, embed_batch
 from knowledge_ingest.chunker import chunk_text
+from knowledge_ingest.context_preprocessor import add_context
 from knowledge_ingest.loaders_base import LoaderError
 
 MIN_SCORE_DEFAULT = 0.75
@@ -195,7 +196,15 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
 
         await check_user_quota(user_id, len(chunks))
 
-        contents = [c["content"] for c in chunks]
+        # Phase 2: add contextual preamble before embedding. Failure here falls
+        # back to embedding the raw chunk content (per add_context contract).
+        chunks = await add_context(
+            chunks,
+            doc_name=doc_row.get("name") or "document",
+            doc_summary="",
+        )
+
+        contents = [c["embedded_content"] for c in chunks]
         vectors = await embed_batch(contents)
 
         # Propagate workspace_id from the doc onto each chunk so the similarity
@@ -208,6 +217,7 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
                 "user_id": user_id,
                 "workspace_id": doc_workspace_id,
                 "content": chunks[i]["content"],
+                "embedded_content": chunks[i].get("embedded_content") or chunks[i]["content"],
                 "embedding": vectors[i],
                 "chunk_index": chunks[i]["chunk_index"],
                 "metadata": chunks[i]["metadata"],
