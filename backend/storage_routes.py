@@ -9,6 +9,7 @@ from auth import require_user_id, supabase
 from caches import is_workspace_member
 from cross_meeting_service import derive_cross_meeting_insights, has_meaningful_result
 from calendar_routes import get_valid_token
+from knowledge_transcript import index_meeting_transcript
 from tools.gmail import gmail_send
 
 
@@ -231,6 +232,18 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
     if entry.workspace_id:
         actual_recorder = entry.recorded_by_user_id or user_id
         asyncio.create_task(_fan_out_to_workspace(client, entry, actual_recorder, entry.workspace_id))
+
+    # Index the transcript for cross-source RAG. Fire-and-forget — failures are
+    # logged in index_meeting_transcript itself and must not block the save.
+    indexer_user = entry.recorded_by_user_id or user_id
+    asyncio.create_task(index_meeting_transcript(
+        meeting_id=entry.id,
+        user_id=indexer_user,
+        workspace_id=entry.workspace_id or None,
+        date=entry.date,
+        title=entry.title,
+        transcript=entry.transcript,
+    ))
 
     return {"ok": True}
 
