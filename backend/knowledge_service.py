@@ -86,6 +86,10 @@ def _rrf_merge(
 
     Returns a single ranked list. Each row's `score` is overwritten with the
     fused score and `match_type` is set to "hybrid".
+
+    NOTE: input row dicts are mutated in place (consistent with the rest of
+    knowledge_service — see e.g. `possible_conflict` writes in `search_knowledge`).
+    Pass copies if the caller still needs the originals.
     """
     by_id: dict[str, dict] = {}
     fused: dict[str, float] = {}
