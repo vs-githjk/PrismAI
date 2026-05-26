@@ -98,8 +98,14 @@ class TranscriptGuardTests(unittest.TestCase):
         original_supabase = storage_routes.supabase
         storage_routes.supabase = fake_db
         try:
+            # Close coroutines we don't intend to run (fan-out + the real
+            # transcript indexer when not mocked) so they don't emit
+            # "coroutine was never awaited" RuntimeWarnings.
+            def _drop(c):
+                if hasattr(c, "close"):
+                    c.close()
             with patch("storage_routes.index_meeting_transcript", index_mock), \
-                 patch("storage_routes.asyncio.create_task", side_effect=lambda c: None):
+                 patch("storage_routes.asyncio.create_task", side_effect=_drop):
                 client = self._make_client(user_id=user_id)
                 resp = client.post("/meetings", json=self._payload(recorded_by_user_id=recorded_by_user_id))
         finally:
