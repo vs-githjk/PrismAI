@@ -235,15 +235,21 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
 
     # Index the transcript for cross-source RAG. Fire-and-forget — failures are
     # logged in index_meeting_transcript itself and must not block the save.
-    indexer_user = entry.recorded_by_user_id or user_id
-    asyncio.create_task(index_meeting_transcript(
-        meeting_id=entry.id,
-        user_id=indexer_user,
-        workspace_id=entry.workspace_id or None,
-        date=entry.date,
-        title=entry.title,
-        transcript=entry.transcript,
-    ))
+    #
+    # Only the primary recorder's POST triggers indexing. When the caller is a
+    # workspace-dedup'd teammate (their `recorded_by_user_id` points elsewhere),
+    # the recorder's POST already created — or will create — the doc. Skipping
+    # here prevents N duplicate knowledge_docs rows per shared meeting.
+    if entry.recorded_by_user_id in (None, "", user_id):
+        indexer_user = entry.recorded_by_user_id or user_id
+        asyncio.create_task(index_meeting_transcript(
+            meeting_id=entry.id,
+            user_id=indexer_user,
+            workspace_id=entry.workspace_id or None,
+            date=entry.date,
+            title=entry.title,
+            transcript=entry.transcript,
+        ))
 
     return {"ok": True}
 
