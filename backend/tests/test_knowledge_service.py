@@ -64,7 +64,7 @@ class KnowledgeServiceTests(unittest.TestCase):
             with patch.object(knowledge_service, "embed_text",
                               new=AsyncMock(return_value=[0.1] * 1536)):
                 matches = asyncio.run(knowledge_service.search_knowledge(
-                    "what was the budget", str(user_id), meeting_id=None
+                    "what was the budget", str(user_id), meeting_id=None, hybrid=False
                 ))
 
         self.assertEqual(len(matches), 1)
@@ -81,7 +81,7 @@ class KnowledgeServiceTests(unittest.TestCase):
             with patch.object(knowledge_service, "embed_text",
                               new=AsyncMock(return_value=[0.0] * 1536)):
                 matches = asyncio.run(knowledge_service.search_knowledge(
-                    "unknown", str(uuid.uuid4())
+                    "unknown", str(uuid.uuid4()), hybrid=False
                 ))
         self.assertEqual(matches, [])
 
@@ -102,7 +102,7 @@ class KnowledgeServiceTests(unittest.TestCase):
             with patch.object(knowledge_service, "embed_text",
                               new=AsyncMock(return_value=[0.1] * 1536)):
                 matches = asyncio.run(knowledge_service.search_knowledge(
-                    "what's the strategy", str(uuid.uuid4())
+                    "what's the strategy", str(uuid.uuid4()), hybrid=False
                 ))
         self.assertTrue(matches[0].get("possible_conflict"))
 
@@ -129,7 +129,7 @@ class KnowledgeServiceTests(unittest.TestCase):
              patch.object(knowledge_service, "embed_text",
                           new=AsyncMock(return_value=[0.1] * 1536)):
             matches = asyncio.run(knowledge_service.search_knowledge(
-                "anything", str(uuid.uuid4()), k=5
+                "anything", str(uuid.uuid4()), k=5, hybrid=False
             ))
 
         # At most 2 meeting_transcript results, then PDFs fill remaining slots

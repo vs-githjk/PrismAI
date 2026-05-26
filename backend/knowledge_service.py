@@ -114,10 +114,17 @@ async def search_knowledge(
     meeting_id: Optional[str] = None,
     k: int = 5,
     min_score: float = MIN_SCORE_DEFAULT,
+    hybrid: bool = True,
 ) -> list[dict]:
-    """Embed query, run pgvector similarity search, return matches with conflict flag.
-    Scoped to the caller's own docs plus any docs shared into their workspaces."""
-    query_vec = await embed_text(query)
+    """Embed query, run pgvector + (optionally) BM25, fuse with RRF, return matches.
+
+    Args:
+        hybrid: When True (default), runs both vector and BM25 searches in
+            parallel and fuses with Reciprocal Rank Fusion. When False, keeps
+            the original vector-only behavior — `min_score` is applied as a
+            raw cosine threshold in the RPC and the returned `score` field is
+            the raw cosine similarity.
+    """
     sb = _supabase()
     # meetings.id is bigint; coerce string IDs so PostgREST doesn't bounce them.
     meeting_filter: Optional[int]
@@ -126,23 +133,55 @@ async def search_knowledge(
     except (TypeError, ValueError):
         meeting_filter = None
     workspace_ids = get_user_workspace_ids(sb, user_id)
-    resp = await _execute(
-        sb.rpc(
-            "knowledge_search",
-            {
-                "query_embedding": query_vec,
-                "caller_user_id": user_id,
-                "caller_workspace_ids": workspace_ids,
-                "meeting_filter": meeting_filter,
-                "match_limit": k,
-                "min_score": min_score,
-            },
-        )
-    )
-    rows = resp.data or []
 
-    # Cap meeting-transcript results to <= 2 in top-k. Transcripts are much
-    # longer than docs and otherwise dominate retrieval. Tunable.
+    if not hybrid:
+        # Vector-only path — preserves raw cosine `min_score` semantics.
+        query_vec = await embed_text(query)
+        resp = await _execute(
+            sb.rpc(
+                "knowledge_search",
+                {
+                    "query_embedding": query_vec,
+                    "caller_user_id": user_id,
+                    "caller_workspace_ids": workspace_ids,
+                    "meeting_filter": meeting_filter,
+                    "match_limit": k,
+                    "min_score": min_score,
+                },
+            )
+        )
+        rows = resp.data or []
+    else:
+        # Hybrid path — vector + BM25 in parallel, RRF-fused.
+        # Wider top-N (30) per branch so RRF has enough candidates to work with.
+        query_vec = await embed_text(query)
+        vec_resp, bm25_resp = await asyncio.gather(
+            _execute(sb.rpc(
+                "knowledge_search",
+                {
+                    "query_embedding": query_vec,
+                    "caller_user_id": user_id,
+                    "caller_workspace_ids": workspace_ids,
+                    "meeting_filter": meeting_filter,
+                    "match_limit": 30,
+                    "min_score": min_score,
+                },
+            )),
+            _execute(sb.rpc(
+                "knowledge_search_bm25",
+                {
+                    "query_text": query,
+                    "caller_user_id": user_id,
+                    "caller_workspace_ids": workspace_ids,
+                    "meeting_filter": meeting_filter,
+                    "match_limit": 30,
+                },
+            )),
+        )
+        rows = _rrf_merge(vec_resp.data or [], bm25_resp.data or [])[: k * 3]
+
+    # Cap meeting-transcript results in top-k (transcripts are long and
+    # otherwise dominate retrieval). Tunable.
     MAX_TRANSCRIPT_HITS = 2
     capped: list[dict] = []
     transcript_count = 0
@@ -163,6 +202,7 @@ async def search_knowledge(
             and abs((top.get("score") or 0) - (second.get("score") or 0)) < CONFLICT_THRESHOLD
         ):
             rows[0]["possible_conflict"] = True
+    # TODO(post-AWS): rerank `rows` here with BGE once we have the RAM headroom.
     return rows
 
 
