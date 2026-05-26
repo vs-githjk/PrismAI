@@ -7,6 +7,7 @@ from typing import Optional
 
 from supabase import Client, create_client
 
+from caches import get_user_workspace_ids
 from embeddings import embed_text, embed_batch
 from knowledge_ingest.chunker import chunk_text
 from knowledge_ingest.loaders_base import LoaderError
@@ -23,9 +24,29 @@ def _supabase() -> Client:
     global _sb_client
     if _sb_client is None:
         url = os.getenv("SUPABASE_URL", "")
-        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        # This project stores the service-role key as SUPABASE_KEY (see auth.py).
+        # Accept SUPABASE_SERVICE_ROLE_KEY too in case it's set that way on Render.
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY", "")
         _sb_client = create_client(url, key)
     return _sb_client
+
+
+async def _execute(query):
+    """Run a built Supabase query off the FastAPI event loop.
+
+    Supabase's Python SDK is synchronous (it wraps a sync httpx.Client). Calling
+    `.execute()` directly from an async function blocks the entire loop for the
+    duration of the HTTP round-trip — under load, every other coroutine stalls.
+    `asyncio.to_thread` dispatches the call to the default thread pool so the
+    loop keeps serving requests.
+
+    Use for any chain ending in `.execute()`:
+        await _execute(sb.table("x").update({...}).eq("id", n))
+
+    For storage I/O (.upload, .download) call `asyncio.to_thread` directly —
+    that API isn't query-shaped.
+    """
+    return await asyncio.to_thread(query.execute)
 
 
 class QuotaExceeded(Exception):
@@ -34,13 +55,20 @@ class QuotaExceeded(Exception):
 
 async def check_user_quota(user_id: str, new_chunks: int) -> None:
     sb = _supabase()
-    res = sb.table("knowledge_chunks").select("id", count="exact").eq("user_id", user_id).execute()
+    res = await _execute(
+        sb.table("knowledge_chunks").select("id", count="exact").eq("user_id", user_id)
+    )
     current = getattr(res, "count", 0) or 0
     if current + new_chunks > MAX_CHUNKS_PER_USER:
         raise QuotaExceeded(
             f"Quota exceeded: you have {current} chunks, this would add {new_chunks} "
             f"(limit {MAX_CHUNKS_PER_USER}). Delete some documents first."
         )
+
+
+# `_caller_workspace_ids` was inlined here historically; it now lives in
+# caches.py as `get_user_workspace_ids` and is shared across knowledge_*,
+# recall_*, and storage_* routers. See caches.py for cache semantics.
 
 
 async def search_knowledge(
@@ -50,7 +78,8 @@ async def search_knowledge(
     k: int = 5,
     min_score: float = MIN_SCORE_DEFAULT,
 ) -> list[dict]:
-    """Embed query, run pgvector similarity search, return matches with conflict flag."""
+    """Embed query, run pgvector similarity search, return matches with conflict flag.
+    Scoped to the caller's own docs plus any docs shared into their workspaces."""
     query_vec = await embed_text(query)
     sb = _supabase()
     # meetings.id is bigint; coerce string IDs so PostgREST doesn't bounce them.
@@ -59,16 +88,20 @@ async def search_knowledge(
         meeting_filter = int(meeting_id) if meeting_id not in (None, "") else None
     except (TypeError, ValueError):
         meeting_filter = None
-    resp = sb.rpc(
-        "knowledge_search",
-        {
-            "query_embedding": query_vec,
-            "caller_user_id": user_id,
-            "meeting_filter": meeting_filter,
-            "match_limit": k,
-            "min_score": min_score,
-        },
-    ).execute()
+    workspace_ids = get_user_workspace_ids(sb, user_id)
+    resp = await _execute(
+        sb.rpc(
+            "knowledge_search",
+            {
+                "query_embedding": query_vec,
+                "caller_user_id": user_id,
+                "caller_workspace_ids": workspace_ids,
+                "meeting_filter": meeting_filter,
+                "match_limit": k,
+                "min_score": min_score,
+            },
+        )
+    )
     rows = resp.data or []
     if len(rows) >= 2:
         top, second = rows[0], rows[1]
@@ -80,15 +113,40 @@ async def search_knowledge(
     return rows
 
 
+async def _record_doc_error(sb, doc_id: str, message: str) -> None:
+    """Write an error status for the doc. Wrapped in its own try/except so a
+    DB failure DURING error reporting doesn't propagate out of `ingest_doc`
+    (which is a background task — uncaught raises would just become opaque
+    log noise, leaving the doc stuck in "processing" forever).
+    """
+    try:
+        await _execute(
+            sb.table("knowledge_docs")
+            .update({"status": "error", "error_message": message})
+            .eq("id", doc_id)
+        )
+    except Exception as inner:
+        print(f"[knowledge] failed to write error status for doc {doc_id}: {inner}")
+
+
 async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_settings: dict) -> None:
     """Background worker. Loads → chunks → embeds → inserts.
     Updates status field at each phase. Never raises — errors written to error_message.
+
+    Every Supabase HTTP call runs on a worker thread (via _execute) so the
+    FastAPI event loop stays responsive even for big PDFs (~7-8 blocking
+    calls per ingestion, ~50-200ms each).
     """
     sb = _supabase()
     try:
-        sb.table("knowledge_docs").update({"status": "processing"}).eq("id", doc_id).execute()
+        await _execute(
+            sb.table("knowledge_docs").update({"status": "processing"}).eq("id", doc_id)
+        )
 
-        doc_row = sb.table("knowledge_docs").select("*").eq("id", doc_id).single().execute().data
+        doc_resp = await _execute(
+            sb.table("knowledge_docs").select("*").eq("id", doc_id).single()
+        )
+        doc_row = doc_resp.data
         if not doc_row:
             return
         user_id = doc_row["user_id"]
@@ -124,11 +182,15 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
         contents = [c["content"] for c in chunks]
         vectors = await embed_batch(contents)
 
+        # Propagate workspace_id from the doc onto each chunk so the similarity
+        # search can scope by workspace without joining back to knowledge_docs.
+        doc_workspace_id = doc_row.get("workspace_id")
         rows = [
             {
                 "id": str(uuid.uuid4()),
                 "doc_id": doc_id,
                 "user_id": user_id,
+                "workspace_id": doc_workspace_id,
                 "content": chunks[i]["content"],
                 "embedding": vectors[i],
                 "chunk_index": chunks[i]["chunk_index"],
@@ -136,35 +198,39 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
             }
             for i in range(len(chunks))
         ]
+        # Sequential inserts (not gathered) — keeps DB load predictable and makes
+        # any per-batch failure recoverable without dangling tasks.
         for i in range(0, len(rows), INSERT_BATCH_SIZE):
-            sb.table("knowledge_chunks").insert(rows[i : i + INSERT_BATCH_SIZE]).execute()
+            await _execute(
+                sb.table("knowledge_chunks").insert(rows[i : i + INSERT_BATCH_SIZE])
+            )
 
-        sb.table("knowledge_docs").update({
-            "status": "ready",
-            "chunk_count": len(rows),
-            "last_synced_at": "now()",
-            "error_message": None,
-        }).eq("id", doc_id).execute()
+        await _execute(
+            sb.table("knowledge_docs").update({
+                "status": "ready",
+                "chunk_count": len(rows),
+                "last_synced_at": "now()",
+                "error_message": None,
+            }).eq("id", doc_id)
+        )
 
     except LoaderError as exc:
-        sb.table("knowledge_docs").update({
-            "status": "error", "error_message": str(exc),
-        }).eq("id", doc_id).execute()
+        await _record_doc_error(sb, doc_id, str(exc))
     except QuotaExceeded as exc:
-        sb.table("knowledge_docs").update({
-            "status": "error", "error_message": str(exc),
-        }).eq("id", doc_id).execute()
+        await _record_doc_error(sb, doc_id, str(exc))
     except Exception as exc:
-        sb.table("knowledge_docs").update({
-            "status": "error", "error_message": f"Unexpected error: {str(exc)[:200]}",
-        }).eq("id", doc_id).execute()
+        await _record_doc_error(sb, doc_id, f"Unexpected error: {str(exc)[:200]}")
 
 
 async def soft_delete_doc(doc_id: str, user_id: str) -> None:
     """Mark the doc deleted AND hard-delete its chunks so the user's quota recovers.
     The doc row stays (with deleted_at set) for the 30-day audit/undelete window."""
     sb = _supabase()
-    sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).eq("user_id", user_id).execute()
-    sb.table("knowledge_docs").update(
-        {"deleted_at": "now()", "chunk_count": 0}
-    ).eq("id", doc_id).eq("user_id", user_id).execute()
+    await _execute(
+        sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).eq("user_id", user_id)
+    )
+    await _execute(
+        sb.table("knowledge_docs")
+        .update({"deleted_at": "now()", "chunk_count": 0})
+        .eq("id", doc_id).eq("user_id", user_id)
+    )

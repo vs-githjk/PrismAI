@@ -8,6 +8,9 @@ httpx[http2]>=0.27.0
 pydantic>=2.0.0
 python-multipart>=0.0.9
 supabase>=2.0.0
+# PyJWT: local HS256 verification of Supabase access tokens in auth.py.
+# Pinned <3 because the 3.x line will introduce breaking API changes.
+PyJWT>=2.10.0,<3
 psycopg2-binary>=2.9.0
 tzdata>=2024.1
 edge-tts>=6.1.0

@@ -139,13 +139,8 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
         if not active.data:
             return None
 
-        my_workspaces = (
-            client.table("workspace_members")
-            .select("workspace_id")
-            .eq("user_id", requesting_user_id)
-            .execute()
-        )
-        my_ws_ids = [w["workspace_id"] for w in (my_workspaces.data or [])]
+        from caches import get_user_workspace_ids
+        my_ws_ids = get_user_workspace_ids(client, requesting_user_id)
         if not my_ws_ids:
             return None
 

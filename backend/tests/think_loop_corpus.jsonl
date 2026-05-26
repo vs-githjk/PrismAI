@@ -1,0 +1,72 @@
+{"command": "draft me an email to my professor about my grades", "tool": "gmail_send", "expect": "block", "reason": "draft = COMPOSE"}
+{"command": "write me an email to bob about q4 planning", "tool": "gmail_send", "expect": "block", "reason": "write = COMPOSE"}
+{"command": "compose a follow up email to the team", "tool": "gmail_send", "expect": "block", "reason": "compose = COMPOSE"}
+{"command": "prepare an email to my advisor", "tool": "gmail_send", "expect": "block", "reason": "prepare = COMPOSE"}
+{"command": "sketch out an email to legal about the contract", "tool": "gmail_send", "expect": "block", "reason": "sketch = COMPOSE"}
+{"command": "send an email to bob@x.com about the report", "tool": "gmail_send", "expect": "allow", "reason": "explicit send"}
+{"command": "email it to vidyut0712@gmail.com", "tool": "gmail_send", "expect": "allow", "reason": "explicit email-it verb"}
+{"command": "forward that to sarah", "tool": "gmail_send", "expect": "allow", "reason": "forward verb"}
+{"command": "reply to bob saying yes", "tool": "gmail_send", "expect": "allow", "reason": "reply verb"}
+{"command": "ship it to the team", "tool": "gmail_send", "expect": "allow", "reason": "ship verb"}
+{"command": "draft a slack message for #engineering about the outage", "tool": "slack_post_message", "expect": "block", "reason": "draft slack"}
+{"command": "outline what i should post in standup", "tool": "slack_post_message", "expect": "block", "reason": "outline = COMPOSE"}
+{"command": "post in #general that we're shipping friday", "tool": "slack_post_message", "expect": "allow", "reason": "explicit post"}
+{"command": "send a slack message to alex about budget", "tool": "slack_post_message", "expect": "allow", "reason": "send"}
+{"command": "ping the team in #ops about the deploy", "tool": "slack_post_message", "expect": "allow", "reason": "ping verb"}
+{"command": "tell the channel we hit our q3 number", "tool": "slack_post_message", "expect": "allow", "reason": "tell the channel"}
+{"command": "outline what a ticket for this oauth bug would look like", "tool": "linear_create_issue", "expect": "block", "reason": "outline = COMPOSE"}
+{"command": "draft a ticket for the migration work", "tool": "linear_create_issue", "expect": "block", "reason": "draft ticket"}
+{"command": "what would a linear issue look like for this", "tool": "linear_create_issue", "expect": "block", "reason": "what would = no auth"}
+{"command": "file a ticket for the oauth bug", "tool": "linear_create_issue", "expect": "allow", "reason": "file verb"}
+{"command": "create a ticket for fixing the deploy script", "tool": "linear_create_issue", "expect": "allow", "reason": "create a ticket"}
+{"command": "open an issue for the regression in checkout", "tool": "linear_create_issue", "expect": "allow", "reason": "open an issue"}
+{"command": "log a ticket for the dashboard refactor", "tool": "linear_create_issue", "expect": "allow", "reason": "log a ticket"}
+{"command": "what would be a good time for a follow up with bob", "tool": "calendar_create_event", "expect": "block", "reason": "what would = proposal only"}
+{"command": "draft an agenda for tomorrow's review", "tool": "calendar_create_event", "expect": "block", "reason": "draft agenda"}
+{"command": "should we have a follow up meeting", "tool": "calendar_create_event", "expect": "block", "reason": "no schedule verb"}
+{"command": "schedule a 30 minute follow up with bob tomorrow at 3pm", "tool": "calendar_create_event", "expect": "allow", "reason": "schedule verb"}
+{"command": "book a 1-1 with sarah for friday", "tool": "calendar_create_event", "expect": "allow", "reason": "book verb"}
+{"command": "set up a meeting with the design team next week", "tool": "calendar_create_event", "expect": "allow", "reason": "set up"}
+{"command": "block off an hour for deep work tomorrow morning", "tool": "calendar_create_event", "expect": "allow", "reason": "block off"}
+{"command": "add a 30-min sync with eng to my calendar", "tool": "calendar_create_event", "expect": "allow", "reason": "add to my calendar"}
+{"command": "when is my 3pm meeting", "tool": "calendar_delete_event", "expect": "block", "reason": "no cancel verb"}
+{"command": "do i have anything at 3pm", "tool": "calendar_delete_event", "expect": "block", "reason": "no cancel verb"}
+{"command": "cancel my 3pm", "tool": "calendar_delete_event", "expect": "allow", "reason": "cancel verb"}
+{"command": "delete that calendar entry", "tool": "calendar_delete_event", "expect": "allow", "reason": "delete verb"}
+{"command": "drop the 5pm sync", "tool": "calendar_delete_event", "expect": "allow", "reason": "drop verb"}
+{"command": "is my schedule busy thursday", "tool": "calendar_update_event", "expect": "block", "reason": "no update verb"}
+{"command": "reschedule my 3pm to 4pm", "tool": "calendar_update_event", "expect": "allow", "reason": "reschedule"}
+{"command": "move my 1-1 with bob to friday", "tool": "calendar_update_event", "expect": "allow", "reason": "move verb"}
+{"command": "shift the design review to next week", "tool": "calendar_update_event", "expect": "allow", "reason": "shift verb"}
+{"command": "what's on my calendar tomorrow", "tool": "calendar_list_events", "expect": "allow", "reason": "read tool, never gated"}
+{"command": "did bob email me about q4", "tool": "gmail_read", "expect": "allow", "reason": "read tool"}
+{"command": "search for our pto policy", "tool": "knowledge_lookup", "expect": "allow", "reason": "read tool"}
+{"command": "look up the latest news on the tech sector", "tool": "web_search", "expect": "allow", "reason": "read tool"}
+{"command": "summarize the last 5 minutes", "tool": "gmail_send", "expect": "block", "reason": "ambiguous + destructive"}
+{"command": "explain how oauth works", "tool": "gmail_send", "expect": "block", "reason": "answer mode + destructive"}
+{"command": "vidyut0712@gmail.com about q4 planning", "tool": "gmail_send", "expect": "block", "reason": "no verb, has address"}
+{"command": "send it", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "follow-up after compose"}
+{"command": "go ahead and send to bob@x.com", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "go-ahead + send"}
+{"command": "yes do it", "tool": "gmail_send", "expect": "block", "with_artifact": false, "reason": "follow-up without prior draft"}
+{"command": "can you use this draft and send a mail to vidyut0712@gmail.com", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "noun ref + send a mail to"}
+{"command": "can you use the draft you created and send a mail to vidyut0712@gmail.com", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "noun ref to prior draft"}
+{"command": "use the template and send an email to bob", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "noun ref template"}
+{"command": "with this draft, send to alice", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "with this draft"}
+{"command": "based on the draft, mail it to the team", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "based on the draft"}
+{"command": "the draft you made looks good, send it to bob", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "draft you made + send it"}
+{"command": "use the draft you wrote and post it in #engineering", "tool": "slack_post_message", "expect": "allow", "with_artifact": true, "reason": "draft + post"}
+{"command": "use that ticket and file it in linear", "tool": "linear_create_issue", "expect": "allow", "with_artifact": true, "reason": "use that ticket + file"}
+{"command": "sending an email to bob about q4", "tool": "gmail_send", "expect": "allow", "reason": "inflected send"}
+{"command": "posting in #general that we shipped", "tool": "slack_post_message", "expect": "allow", "reason": "inflected post"}
+{"command": "filing a ticket for the regression", "tool": "linear_create_issue", "expect": "allow", "reason": "inflected file"}
+{"command": "rescheduling my 3pm to 4pm", "tool": "calendar_update_event", "expect": "allow", "reason": "inflected reschedule"}
+{"command": "cancelling my 3pm sync", "tool": "calendar_delete_event", "expect": "allow", "reason": "inflected cancel"}
+{"command": "don't send the email yet", "tool": "gmail_send", "expect": "block", "reason": "negated send"}
+{"command": "do not post this in slack", "tool": "slack_post_message", "expect": "block", "reason": "negated post"}
+{"command": "skip the send for now", "tool": "gmail_send", "expect": "block", "reason": "negated via skip"}
+{"command": "hold off on cancelling that meeting", "tool": "calendar_delete_event", "expect": "block", "reason": "negated cancel"}
+{"command": "no don't send it", "tool": "gmail_send", "expect": "block", "reason": "explicit negation"}
+{"command": "draft and send it to bob", "tool": "gmail_send", "expect": "block", "reason": "draft first wins"}
+{"command": "type up an email to my prof", "tool": "gmail_send", "expect": "block", "reason": "type up = compose"}
+{"command": "phrase a reply to bob's last message", "tool": "gmail_send", "expect": "block", "reason": "phrase = compose"}
+{"command": "go ahead and send the email", "tool": "gmail_send", "expect": "allow", "with_artifact": true, "reason": "go-ahead followup"}

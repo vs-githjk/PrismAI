@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase
+from caches import is_workspace_member
 from cross_meeting_service import derive_cross_meeting_insights, has_meaningful_result
 from calendar_routes import get_valid_token
 from tools.gmail import gmail_send
@@ -84,15 +85,7 @@ async def get_meetings(
     if workspace_id.strip():
         # Workspace mode: return all meetings in this workspace across all members
         # Verify the requester is a member first
-        membership = (
-            client.table("workspace_members")
-            .select("user_id")
-            .eq("workspace_id", workspace_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if not membership.data:
+        if not is_workspace_member(client, user_id, workspace_id):
             raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
         query = (
@@ -144,15 +137,7 @@ async def get_cross_meeting_insights(
     client = _require_storage()
 
     if workspace_id.strip():
-        membership = (
-            client.table("workspace_members")
-            .select("user_id")
-            .eq("workspace_id", workspace_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if not membership.data:
+        if not is_workspace_member(client, user_id, workspace_id):
             raise HTTPException(status_code=403, detail="Not a member of this workspace")
         all_res = (
             client.table("meetings")
@@ -279,17 +264,7 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     # Authorize: owner of the row, or member of its workspace
     if meeting.get("user_id") != user_id:
         ws_id = meeting.get("workspace_id")
-        if not ws_id:
-            raise HTTPException(status_code=403, detail="Not authorized for this meeting")
-        membership = (
-            client.table("workspace_members")
-            .select("user_id")
-            .eq("workspace_id", ws_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if not membership.data:
+        if not ws_id or not is_workspace_member(client, user_id, ws_id):
             raise HTTPException(status_code=403, detail="Not authorized for this meeting")
 
     meeting.pop("user_id", None)

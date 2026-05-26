@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase
+from caches import invalidate_user_workspaces
 
 
 router = APIRouter(tags=["workspaces"])
@@ -62,6 +63,7 @@ async def create_workspace(body: CreateWorkspaceRequest, user_id: str = Depends(
         "role": "owner",
     }).execute()
 
+    invalidate_user_workspaces(user_id)
     return workspace
 
 
@@ -172,6 +174,9 @@ async def delete_workspace(workspace_id: str, user_id: str = Depends(require_use
     _require_owner(client, workspace_id, user_id)
     # meetings.workspace_id → set null on delete (handled by DB constraint)
     client.table("workspaces").delete().eq("id", workspace_id).execute()
+    # Every member of this workspace had it in their cached list; safest to clear all.
+    # Workspace deletions are rare, so the next handful of users pay one DB query each.
+    invalidate_user_workspaces(None)
     return {"ok": True}
 
 
@@ -206,6 +211,7 @@ async def remove_member(workspace_id: str, target_user_id: str, user_id: str = D
                     detail="Cannot leave — you are the only owner. Delete the workspace or transfer ownership first."
                 )
     client.table("workspace_members").delete().eq("workspace_id", workspace_id).eq("user_id", target_user_id).execute()
+    invalidate_user_workspaces(target_user_id)
     return {"ok": True}
 
 
@@ -271,6 +277,7 @@ async def accept_invite(token: str, body: AcceptInviteRequest, user_id: str = De
         ignore_duplicates=True,
     ).execute()
 
+    invalidate_user_workspaces(user_id)
     return {"ok": True, "workspace_id": workspace_id, "workspace_name": ws.data["name"]}
 
 

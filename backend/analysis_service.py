@@ -1,4 +1,5 @@
 import operator
+import os
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -30,6 +31,29 @@ AGENT_MAP = {
 
 TIER1_AGENTS = frozenset({"summarizer", "decisions", "action_items", "sentiment", "speaker_coach"})
 TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester"})
+
+# Tier-2 agents that don't need the full transcript — they synthesize from
+# context (summary + decisions + action_items + sentiment) which tier-1 has
+# already produced. The token saving per meeting is roughly transcript_tokens
+# × len(this set). health_score and calendar_suggester are NOT here because
+# they read transcript-specific signal (engagement patterns, date mentions).
+TIER2_CONTEXT_ONLY = frozenset({"email_drafter"})
+
+
+def _email_from_context_on() -> bool:
+    """Read at call time so tests can flip the flag mid-run."""
+    return os.getenv("PRISM_EMAIL_FROM_CONTEXT", "1") == "1"
+
+
+def _skip_orchestrator_words() -> int:
+    """Word-count threshold above which we bypass the orchestrator's LLM call
+    and just run every agent. Read at call time so tests can patch it cheaply.
+    Long meetings effectively always run all agents anyway — the orchestrator's
+    decision-cost (one full LLM call, ~500-800ms) doesn't pay for itself."""
+    try:
+        return int(os.getenv("PRISM_SKIP_ORCH_WORDS", "1500"))
+    except ValueError:
+        return 1500
 
 DEFAULT_RESULT = {
     "title": "",
@@ -83,7 +107,13 @@ def build_analysis_transcript(transcript: str, speakers: list | None = None, own
 # ── Graph nodes ────────────────────────────────────────────────────
 
 async def _orchestrator_node(state: AnalysisState) -> dict:
-    agents = await orchestrator.run_orchestrator(state["transcript"])
+    transcript = state["transcript"] or ""
+    # Fast-path: long meetings basically always run every agent anyway, so
+    # paying for the orchestrator's LLM round-trip is wasted latency + tokens.
+    # Compare on word count (cheap to compute) — ~1500 words ≈ 2000 tokens.
+    if len(transcript.split()) >= _skip_orchestrator_words():
+        return {"agents_to_run": list(AGENT_MAP.keys())}
+    agents = await orchestrator.run_orchestrator(transcript)
     return {"agents_to_run": [a for a in agents if a in AGENT_MAP]}
 
 
@@ -126,7 +156,17 @@ def _route_tier2(state: AnalysisState) -> list[Send] | str:
 def _make_tier2_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
         try:
-            result = await AGENT_MAP[agent_name](state["transcript"], state.get("context", {}))
+            ctx = state.get("context", {})
+            # Token efficiency: agents in TIER2_CONTEXT_ONLY synthesize from
+            # tier-1's output (summary + decisions + action_items + sentiment)
+            # rather than re-reading the full transcript. Saves transcript-sized
+            # tokens per such agent. Flag-gated so quality regressions can be
+            # rolled back without redeploy.
+            if agent_name in TIER2_CONTEXT_ONLY and _email_from_context_on():
+                transcript_in = ""
+            else:
+                transcript_in = state["transcript"]
+            result = await AGENT_MAP[agent_name](transcript_in, ctx)
         except Exception:
             result = {}
         return {"results": {agent_name: result}}

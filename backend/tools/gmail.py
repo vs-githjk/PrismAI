@@ -101,7 +101,15 @@ async def gmail_read(args: dict, user_settings: dict | None = None) -> dict:
 # Register tools
 register_tool(
     name="gmail_send",
-    description="Send an email on behalf of the user",
+    description=(
+        "Send a finished email on behalf of the user. ONLY call this when the user "
+        "explicitly uses a SEND verb (send, mail, email it, forward, reply, shoot, fire it). "
+        "Do NOT call this when the user asks to draft, write, compose, prepare, sketch, or "
+        "outline an email — in those cases output the email text directly as your reply "
+        "and let the user say 'send it' on the next turn. Requires a confirmed recipient "
+        "address. If the recipient is missing, ask the user once in plain words rather "
+        "than calling the tool with a placeholder."
+    ),
     parameters={
         "type": "object",
         "properties": {

@@ -63,4 +63,5 @@ app.include_router(create_chat_router(groq_client))
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from caches import cache_stats
+    return {"status": "ok", "caches": {"workspace_ids": cache_stats()}}
