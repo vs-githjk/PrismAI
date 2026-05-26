@@ -172,6 +172,19 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
             # AND it should NOT be a Groq-style preamble (no "section" wording)
             self.assertNotIn("section", text.split(".")[0].lower())
 
+        # The stored knowledge_chunks row must also carry the preambled
+        # embedded_content — otherwise the BM25 tsvector (generated from
+        # coalesce(embedded_content, content)) would miss title/date hits.
+        chunk_inserts = [
+            payload for table, payload in fake_sb.ops
+            if table == "knowledge_chunks" and payload and payload[0] == "insert"
+        ]
+        self.assertTrue(chunk_inserts, "No knowledge_chunks insert recorded")
+        for row in chunk_inserts[0][1]:
+            self.assertIn("Planning Sync", row.get("embedded_content", ""))
+            self.assertIn("2026-05-26", row.get("embedded_content", ""))
+            self.assertNotEqual(row["embedded_content"], row["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

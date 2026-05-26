@@ -69,7 +69,7 @@ async def index_meeting_transcript(
         # Lightweight, deterministic preamble. Transcripts have no section
         # headings, so a Groq-generated preamble would just repeat title+date —
         # build it inline and skip the LLM cost.
-        preamble = f"From your meeting '{title}' on {(date or '')[:10]}."
+        preamble = f"From your meeting '{title or 'Meeting'}' on {(date or '')[:10]}."
         for c in chunks:
             c["embedded_content"] = f"{preamble} {c['content']}"
 
