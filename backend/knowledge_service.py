@@ -195,7 +195,11 @@ async def search_knowledge(
             break
     rows = capped
 
-    if len(rows) >= 2:
+    # Conflict detection is calibrated against raw cosine scores (0..1) — in
+    # hybrid mode every score is an RRF value bounded by 2/(k_rrf+1) ≈ 0.033,
+    # so CONFLICT_THRESHOLD=0.05 would fire on every result. Skip in hybrid
+    # mode until a rank-aware heuristic exists.
+    if not hybrid and len(rows) >= 2:
         top, second = rows[0], rows[1]
         if (
             top.get("doc_id") != second.get("doc_id")

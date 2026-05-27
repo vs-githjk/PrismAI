@@ -139,6 +139,37 @@ class SearchKnowledgeHybridTests(unittest.TestCase):
         # At most 2 transcripts in the top-k (existing cap behavior)
         self.assertLessEqual(transcript_count, 2)
 
+    def test_transcript_cap_fills_top_k_with_other_sources(self):
+        """When the cap drops a transcript, the remaining slot must be filled
+        from non-transcript candidates if any are available."""
+        vec = [
+            {"id": "t1", "doc_id": "d-t1", "score": 0.95, "source_type": "meeting_transcript"},
+            {"id": "t2", "doc_id": "d-t2", "score": 0.94, "source_type": "meeting_transcript"},
+            {"id": "t3", "doc_id": "d-t3", "score": 0.93, "source_type": "meeting_transcript"},
+            {"id": "p1", "doc_id": "d-p1", "score": 0.92, "source_type": "pdf"},
+            {"id": "p2", "doc_id": "d-p2", "score": 0.91, "source_type": "pdf"},
+            {"id": "p3", "doc_id": "d-p3", "score": 0.90, "source_type": "pdf"},
+        ]
+        rows = self._patched_search(vec, [], hybrid=True)
+        # k=5, 3 transcripts + 3 pdfs in input; expected output:
+        # t1, t2, (t3 dropped by cap), p1, p2, p3 → 5 results, exactly 2 transcripts.
+        self.assertEqual(len(rows), 5)
+        transcript_count = sum(1 for r in rows if r.get("source_type") == "meeting_transcript")
+        self.assertEqual(transcript_count, 2)
+
+    def test_hybrid_does_not_flag_conflict(self):
+        """RRF scores top out at ~0.033; the raw-cosine CONFLICT_THRESHOLD=0.05
+        would falsely mark virtually every hybrid result as a conflict. The
+        check is gated on hybrid=False — verify nothing flagged here."""
+        vec = [
+            {"id": "a", "doc_id": "d1", "score": 0.91, "source_type": "pdf"},
+            {"id": "b", "doc_id": "d2", "score": 0.90, "source_type": "pdf"},
+        ]
+        rows = self._patched_search(vec, [], hybrid=True)
+        for r in rows:
+            self.assertNotIn("possible_conflict", r,
+                f"hybrid row {r['id']} unexpectedly flagged as possible_conflict")
+
 
 if __name__ == "__main__":
     unittest.main()
