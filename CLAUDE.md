@@ -20,21 +20,11 @@ uvicorn main:app --reload --port 8000
 ```
 Copy `backend/.env.example` → `backend/.env` and fill in keys before running locally.
 
-### Next.js App (new landing — `next-app/`)
-```bash
-cd next-app && npm install
-npm run dev        # localhost:3000 (Turbopack)
-npm run typecheck
-npm run lint
-npm run format
-```
-This app is a fresh scaffold (shadcn/ui + Tailwind v4 + Next 16 + React 19). It is not yet wired to the backend and is being built as a replacement landing experience.
-
 ---
 
 ## Architecture
 
-PrismAI is a meeting intelligence app with three layers: a React+Vite frontend, a FastAPI backend, and a new Next.js app in progress.
+PrismAI is a meeting intelligence app with two layers: a React+Vite frontend and a FastAPI backend.
 
 ### Request → Analysis Flow
 
@@ -121,7 +111,6 @@ Frontend Supabase client (`lib/supabase.js`) returns `null` if env vars are miss
 
 - **Frontend:** Vercel auto-deploys `frontend/` on push to `main`. Build: `npm run build`, output: `dist`.
 - **Backend:** Render auto-deploys from `render.yaml` on push to `main`. Service name is `meeting-copilot-api` (URL is locked to creation-time name regardless of dashboard display name).
-- **Next.js app:** Not yet deployed.
 
 Supabase migrations must be run manually in the SQL editor (in order):
 1. `auth_migration.sql` — meetings + chats tables
