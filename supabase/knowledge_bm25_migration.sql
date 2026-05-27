@@ -53,6 +53,7 @@ as $$
     from knowledge_chunks c
     join knowledge_docs d on d.id = c.doc_id
     where d.deleted_at is null
+      and d.status = 'ready'
       and (
         c.user_id = caller_user_id
         or d.workspace_id = any(caller_workspace_ids)

@@ -157,6 +157,43 @@ class SearchKnowledgeHybridTests(unittest.TestCase):
         transcript_count = sum(1 for r in rows if r.get("source_type") == "meeting_transcript")
         self.assertEqual(transcript_count, 2)
 
+    def test_hybrid_degrades_to_vector_only_when_bm25_rpc_missing(self):
+        """If knowledge_search_bm25 raises (e.g., migration not yet applied
+        or transient Supabase outage), the hybrid path must still return
+        vector results, not crash."""
+        import importlib, knowledge_service
+        importlib.reload(knowledge_service)
+
+        vec = [
+            {"id": "a", "doc_id": "d1", "score": 0.91, "source_type": "pdf"},
+            {"id": "b", "doc_id": "d2", "score": 0.85, "source_type": "pdf"},
+        ]
+
+        def fake_rpc(name, params):
+            class _Q:
+                def execute(self_inner):
+                    if name == "knowledge_search":
+                        return MagicMock(data=list(vec))
+                    if name == "knowledge_search_bm25":
+                        raise RuntimeError("function knowledge_search_bm25 does not exist")
+                    raise AssertionError(f"Unexpected RPC: {name}")
+            return _Q()
+
+        fake_sb = MagicMock()
+        fake_sb.rpc = MagicMock(side_effect=fake_rpc)
+
+        with patch.object(knowledge_service, "_supabase", lambda: fake_sb), \
+             patch.object(knowledge_service, "embed_text",
+                          new=AsyncMock(return_value=[0.0] * 1536)), \
+             patch.object(knowledge_service, "get_user_workspace_ids",
+                          new=lambda *_a, **_k: []):
+            rows = asyncio.run(knowledge_service.search_knowledge(
+                query="q", user_id="u", k=5, hybrid=True,
+            ))
+
+        ids = [r["id"] for r in rows]
+        self.assertEqual(ids, ["a", "b"])
+
     def test_hybrid_does_not_flag_conflict(self):
         """RRF scores top out at ~0.033; the raw-cosine CONFLICT_THRESHOLD=0.05
         would falsely mark virtually every hybrid result as a conflict. The

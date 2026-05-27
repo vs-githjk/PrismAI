@@ -154,6 +154,9 @@ async def search_knowledge(
     else:
         # Hybrid path — vector + BM25 in parallel, RRF-fused.
         # Wider top-N (30) per branch so RRF has enough candidates to work with.
+        # `return_exceptions=True` so a missing BM25 RPC (e.g., migration not
+        # yet applied) or a transient Supabase outage degrades to vector-only
+        # instead of crashing the whole tool call.
         query_vec = await embed_text(query)
         vec_resp, bm25_resp = await asyncio.gather(
             _execute(sb.rpc(
@@ -177,8 +180,13 @@ async def search_knowledge(
                     "match_limit": 30,
                 },
             )),
+            return_exceptions=True,
         )
-        rows = _rrf_merge(vec_resp.data or [], bm25_resp.data or [])[: k * 3]
+        if isinstance(vec_resp, Exception):
+            # Vector failure is fatal — without it we have no semantic signal.
+            raise vec_resp
+        bm25_rows = [] if isinstance(bm25_resp, Exception) else (bm25_resp.data or [])
+        rows = _rrf_merge(vec_resp.data or [], bm25_rows)[: k * 3]
 
     # Cap meeting-transcript results in top-k (transcripts are long and
     # otherwise dominate retrieval). Tunable.
