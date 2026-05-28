@@ -28,14 +28,12 @@ class _Result:
 
 
 class _FakeQuery:
-    """Chainable fake — returns canned rows from `responses` dict keyed by table name."""
-    def __init__(self, responses):
+    """Chainable fake — returns canned rows from `responses` dict keyed by
+    the table name passed at construction time. No mutable state on chain
+    calls so chaining can't accidentally cross-contaminate."""
+    def __init__(self, responses, table_name):
         self.responses = responses
-        self._table = None
-
-    def table(self, name):
-        self._table = name
-        return self
+        self._table = table_name
 
     def select(self, *_a, **_k):
         return self
@@ -51,13 +49,11 @@ class _FakeQuery:
 
 
 def _fake_sb(user_row=None, ws_row=None):
-    """Build a fake Supabase client whose .table().select()...execute() returns
-    the canned rows."""
+    """Build a fake Supabase client whose .table(name).select()...execute()
+    returns the canned rows for that table."""
+    responses = {"user_settings": user_row, "workspaces": ws_row}
     sb = MagicMock()
-    sb.table = lambda name: _FakeQuery({
-        "user_settings": user_row,
-        "workspaces": ws_row,
-    }).table(name)
+    sb.table = lambda name: _FakeQuery(responses, name)
     return sb
 
 

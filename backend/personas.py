@@ -55,7 +55,9 @@ def _cache_on() -> bool:
     return os.getenv("PRISM_PERSONA_CACHE", "1") == "1"
 
 
-_CACHE_TTL_S = int(os.getenv("PRISM_PERSONA_CACHE_TTL_S", "300"))
+# Import-time read (mirrors caches.py). Overriding this in tests requires
+# importlib.reload(personas), not just patch.dict(os.environ, ...).
+_CACHE_TTL_S: int = int(os.getenv("PRISM_PERSONA_CACHE_TTL_S", "300"))
 
 
 # ── State ───────────────────────────────────────────────────────────────────
@@ -167,7 +169,12 @@ async def _fetch(sb, user_id: str, workspace_id: Optional[str]) -> Optional[Reso
                 return ResolvedPersona(ws_preset, PRESETS[ws_preset])
 
         return ResolvedPersona("default", "")
-    except Exception:
+    except Exception as exc:
+        # Broad except mirrors caches.py — a transient DB blip mustn't lock
+        # the user into "default" forever. But unlike caches.py we make two
+        # DB calls here, doubling the failure surface — log so misconfigured
+        # column names or chains don't disappear silently in prod.
+        print(f"[personas] _fetch failed for user={user_id} ws={workspace_id}: {exc!r}")
         return None
 
 
