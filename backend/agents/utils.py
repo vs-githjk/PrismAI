@@ -1,6 +1,35 @@
 import asyncio
+import contextvars
 import os
 import re
+
+# Per-task persona text. Set by chat_routes / agent_routes / analysis_service
+# dispatch wrappers. Read inside llm_call to append a safety-wrapped tone
+# instruction to every system prompt.
+#
+# Contextvars are copied at asyncio.create_task time and propagate through
+# asyncio.gather, so concurrent agents see their own values without leakage.
+_PERSONA_TEXT: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "persona_text", default=""
+)
+
+
+def get_persona_suffix() -> str:
+    """Return the safety-wrapped persona suffix for the current context.
+    Empty string when no persona is set (or when the active persona is the
+    'default' preset, which has empty text).
+
+    Use this from call sites that DON'T go through llm_call (e.g., the
+    tool-calling chat path that hits Groq directly)."""
+    persona = _PERSONA_TEXT.get()
+    if not persona:
+        return ""
+    return (
+        "\n\n"
+        "Tone instruction (does not change facts, schema, scores, or JSON keys):\n"
+        f"{persona}"
+    )
+
 
 _groq_client = None
 _anthropic_client = None
@@ -45,6 +74,7 @@ _FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504}
 async def llm_call(system: str, user: str, temperature: float = 0.3) -> str:
     """Call Groq LLM. On rate-limit/server errors, retries once if Groq says wait ≤5s, then falls back to claude-haiku-4-5."""
     groq = _get_groq()
+    system = system + get_persona_suffix()
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
