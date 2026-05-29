@@ -36,7 +36,8 @@ class CreateWorkspaceRequest(BaseModel):
 
 
 class RenameWorkspaceRequest(BaseModel):
-    name: str
+    name: str | None = None
+    default_persona: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -161,10 +162,22 @@ async def get_workspace(workspace_id: str, user_id: str = Depends(require_user_i
 async def rename_workspace(workspace_id: str, body: RenameWorkspaceRequest, user_id: str = Depends(require_user_id)):
     client = _require_storage()
     _require_owner(client, workspace_id, user_id)
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Workspace name is required")
-    client.table("workspaces").update({"name": name}).eq("id", workspace_id).execute()
+    update: dict = {}
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Workspace name is required")
+        update["name"] = name
+    if body.default_persona is not None:
+        # DB CHECK constraint enforces the allowed value set — frontend
+        # restricts the picker too. Don't second-guess here.
+        update["default_persona"] = body.default_persona
+    if not update:
+        return {"ok": True}
+    client.table("workspaces").update(update).eq("id", workspace_id).execute()
+    if "default_persona" in update:
+        from personas import invalidate_persona
+        invalidate_persona(workspace_id=workspace_id)
     return {"ok": True}
 
 
