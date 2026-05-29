@@ -39,6 +39,42 @@ TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester"}
 # they read transcript-specific signal (engagement patterns, date mentions).
 TIER2_CONTEXT_ONLY = frozenset({"email_drafter"})
 
+# Per-agent allowlist of personas. Structured-output agents (decisions,
+# action_items, sentiment, scores) are restricted to register-only presets
+# (default/concise/formal) so 'cheeky' or 'socratic' tone can't distort the
+# data model (e.g., action items phrased as questions). Free-text agents
+# (summarizer, email_drafter) take any preset including custom.
+AGENT_PERSONA_WHITELIST: dict[str, set[str]] = {
+    "summarizer":         {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "decisions":          {"default", "concise", "formal"},
+    "action_items":       {"default", "concise", "formal"},
+    "sentiment":          {"default", "concise", "formal"},
+    "speaker_coach":      {"default", "concise", "formal"},
+    "email_drafter":      {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "health_score":       {"default", "concise", "formal"},
+    "calendar_suggester": {"default", "concise", "formal"},
+}
+
+
+def _persona_text_for_agent(agent_name: str, state: "AnalysisState") -> str:
+    """Resolve the persona text to inject for this specific agent, honoring
+    AGENT_PERSONA_WHITELIST. Returns empty string when:
+      - no persona_preset in state
+      - preset is 'default'
+      - preset is not in the agent's whitelist (silent fallback)
+      - preset is 'custom' but persona_custom_prompt is empty
+    """
+    from personas import PRESETS  # local import to avoid module-load cycle
+
+    preset = state.get("persona_preset") or "default"
+    if preset == "default":
+        return ""
+    if preset not in AGENT_PERSONA_WHITELIST.get(agent_name, set()):
+        return ""
+    if preset == "custom":
+        return (state.get("persona_custom_prompt") or "").strip()
+    return PRESETS.get(preset, "")
+
 
 def _email_from_context_on() -> bool:
     """Read at call time so tests can flip the flag mid-run."""
@@ -80,11 +116,13 @@ AGENT_RESULT_KEY = {
 }
 
 
-class AnalysisState(TypedDict):
+class AnalysisState(TypedDict, total=False):
     transcript: str
     agents_to_run: list[str]
     results: Annotated[dict, operator.or_]
     context: dict
+    persona_preset: str           # 'default' | 'concise' | 'formal' | 'cheeky' | 'socratic' | 'custom'
+    persona_custom_prompt: str    # only when persona_preset == 'custom'
 
 
 def build_analysis_transcript(transcript: str, speakers: list | None = None, owner_name: str | None = None) -> str:
@@ -126,10 +164,14 @@ def _route_tier1(state: AnalysisState) -> list[Send] | str:
 
 def _make_tier1_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
+        from agents.utils import _PERSONA_TEXT
+        token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
         try:
             result = await AGENT_MAP[agent_name](state["transcript"])
         except Exception:
             result = {}
+        finally:
+            _PERSONA_TEXT.reset(token)
         return {"results": {agent_name: result}}
     return node
 
@@ -155,6 +197,8 @@ def _route_tier2(state: AnalysisState) -> list[Send] | str:
 
 def _make_tier2_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
+        from agents.utils import _PERSONA_TEXT
+        token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
         try:
             ctx = state.get("context", {})
             # Token efficiency: agents in TIER2_CONTEXT_ONLY synthesize from
@@ -169,6 +213,8 @@ def _make_tier2_node(agent_name: str):
             result = await AGENT_MAP[agent_name](transcript_in, ctx)
         except Exception:
             result = {}
+        finally:
+            _PERSONA_TEXT.reset(token)
         return {"results": {agent_name: result}}
     return node
 

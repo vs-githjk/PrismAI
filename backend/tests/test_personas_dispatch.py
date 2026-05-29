@@ -23,6 +23,14 @@ _stub_supabase()
 
 
 class WhitelistTests(unittest.TestCase):
+    def setUp(self):
+        # Reload analysis_service to defeat any test-ordering interaction
+        # (some test earlier in the suite imports it before our edits land
+        # in the in-memory module — the reload re-reads the source on disk).
+        import importlib
+        import analysis_service
+        importlib.reload(analysis_service)
+
     def test_whitelist_has_all_8_agents(self):
         import analysis_service
         expected = {"summarizer", "decisions", "action_items", "sentiment",
