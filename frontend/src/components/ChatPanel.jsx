@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import { apiFetch } from '../lib/api'
+import PersonaChip from './PersonaChip'
 
 // Pool of generic, meeting-agnostic prompts. 3 are picked at random on every new blank chat.
 const SUGGESTED_QUESTIONS = [
@@ -88,6 +89,10 @@ export default function ChatPanel({
   result,
   onResultUpdate,
   isSignedIn = false,
+  personaPreset = 'default',
+  personaCustomPrompt = '',
+  workspaceDefaultPersona = null,
+  onSavePersona,
 }) {
   const [messages, setMessages] = useState(initialMessages)
   const [input, setInput] = useState('')
@@ -269,6 +274,14 @@ export default function ChatPanel({
               agent-aware
             </span>
           )}
+
+          <PersonaChip
+            personaPreset={personaPreset}
+            personaCustomPrompt={personaCustomPrompt}
+            workspaceDefault={workspaceDefaultPersona}
+            onSave={({ preset, customPrompt }) => onSavePersona?.(preset, customPrompt)}
+            variant="chip"
+          />
 
           {isSignedIn && pastSessions.length > 0 && (
             <div className="relative" ref={historyRef}>
