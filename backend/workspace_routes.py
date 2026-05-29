@@ -190,6 +190,10 @@ async def delete_workspace(workspace_id: str, user_id: str = Depends(require_use
     # Every member of this workspace had it in their cached list; safest to clear all.
     # Workspace deletions are rare, so the next handful of users pay one DB query each.
     invalidate_user_workspaces(None)
+    # Drop any persona cache entries pinned to this workspace so a removed
+    # member doesn't keep seeing the workspace default for up to the TTL.
+    from personas import invalidate_persona
+    invalidate_persona(workspace_id=workspace_id)
     return {"ok": True}
 
 
@@ -225,6 +229,11 @@ async def remove_member(workspace_id: str, target_user_id: str, user_id: str = D
                 )
     client.table("workspace_members").delete().eq("workspace_id", workspace_id).eq("user_id", target_user_id).execute()
     invalidate_user_workspaces(target_user_id)
+    # Removed member shouldn't keep resolving the workspace default for up to
+    # the persona cache TTL. Both the user's own key and the workspace key get
+    # dropped (their cached entry may have been keyed under either).
+    from personas import invalidate_persona
+    invalidate_persona(user_id=target_user_id, workspace_id=workspace_id)
     return {"ok": True}
 
 

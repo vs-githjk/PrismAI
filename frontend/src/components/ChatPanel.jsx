@@ -93,6 +93,7 @@ export default function ChatPanel({
   personaCustomPrompt = '',
   workspaceDefaultPersona = null,
   onSavePersona,
+  activeWorkspaceId = null,
 }) {
   const [messages, setMessages] = useState(initialMessages)
   const [input, setInput] = useState('')
@@ -173,7 +174,16 @@ export default function ChatPanel({
         const res = await apiFetch('/agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agent: agentIntent, transcript, instruction: msg, existing_items: existingItems }),
+          body: JSON.stringify({
+            agent: agentIntent,
+            transcript,
+            instruction: msg,
+            existing_items: existingItems,
+            // /agent is unauthenticated — ship the viewer's persona so the
+            // re-run matches the tone of the rest of the meeting card.
+            persona_preset: personaPreset || 'default',
+            persona_custom_prompt: personaPreset === 'custom' ? (personaCustomPrompt || '') : null,
+          }),
         })
         if (!res.ok) throw new Error('Agent call failed')
         const data = await res.json()
@@ -223,7 +233,13 @@ export default function ChatPanel({
       } else {
         const res = await apiFetch('/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // Backend resolves persona via resolve_persona(user_id, active_ws).
+            // Without this header, workspace-default personas would never apply
+            // for users who only set their default at the workspace level.
+            ...(activeWorkspaceId ? { 'x-active-workspace': activeWorkspaceId } : {}),
+          },
           body: JSON.stringify({ message: msg, transcript }),
         })
         if (!res.ok) throw new Error('Chat failed')

@@ -1153,6 +1153,7 @@ export default function DashboardPage(props) {
                 personaCustomPrompt={props.personaCustomPrompt}
                 workspaceDefaultPersona={workspaces.find(w => w.id === activeWorkspaceId)?.default_persona || null}
                 onSavePersona={props.onSavePersonalPersona}
+                activeWorkspaceId={activeWorkspaceId}
               />
             </Suspense>
           </div>
