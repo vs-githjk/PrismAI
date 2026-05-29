@@ -25,6 +25,8 @@ def _require_storage():
 class UserToolSettings(BaseModel):
     linear_api_key: str | None = None
     slack_bot_token: str | None = None
+    persona_preset: str | None = None
+    persona_custom_prompt: str | None = None
 
 
 class MeetingEntry(BaseModel):
@@ -37,6 +39,7 @@ class MeetingEntry(BaseModel):
     share_token: str = ""
     workspace_id: str | None = None
     recorded_by_user_id: str | None = None
+    persona_used: str | None = None
 
 
 class MeetingPatch(BaseModel):
@@ -60,6 +63,8 @@ async def get_user_settings(user_id: str = Depends(require_user_id)):
         "linear_api_key": row.get("linear_api_key") or "",
         "slack_bot_token": row.get("slack_bot_token") or "",
         "calendar_connected": row.get("calendar_connected", False),
+        "persona_preset": row.get("persona_preset") or "default",
+        "persona_custom_prompt": row.get("persona_custom_prompt") or "",
     }
 
 
@@ -71,7 +76,27 @@ async def save_user_settings(settings: UserToolSettings, user_id: str = Depends(
         upsert_data["linear_api_key"] = settings.linear_api_key or None
     if settings.slack_bot_token is not None:
         upsert_data["slack_bot_token"] = settings.slack_bot_token or None
+    persona_touched = False
+    if settings.persona_preset is not None:
+        upsert_data["persona_preset"] = settings.persona_preset
+        persona_touched = True
+        # D3: if the user picked anything other than 'custom', drop any stale
+        # custom prompt so it can't silently re-activate when they switch back.
+        if settings.persona_preset != "custom":
+            upsert_data["persona_custom_prompt"] = None
+        elif settings.persona_custom_prompt is not None:
+            upsert_data["persona_custom_prompt"] = settings.persona_custom_prompt or None
+    elif settings.persona_custom_prompt is not None:
+        # Custom prompt update without preset change — only honored when the
+        # existing preset is already 'custom' (the DB row is the source of
+        # truth for that; we just write the value and let the user discover
+        # the mismatch when they next look).
+        upsert_data["persona_custom_prompt"] = settings.persona_custom_prompt or None
+        persona_touched = True
     client.table("user_settings").upsert(upsert_data, on_conflict="user_id").execute()
+    if persona_touched:
+        from personas import invalidate_persona
+        invalidate_persona(user_id=user_id)
     return {"ok": True}
 
 
@@ -204,6 +229,7 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
                 "share_token": None,
                 "workspace_id": workspace_id,
                 "recorded_by_user_id": recorder_user_id,
+                "persona_used": entry.persona_used or None,
             }).execute()
             print(f"[fanout] wrote meeting {fan_id} to member {member_id} in workspace {workspace_id}")
     except Exception as exc:
@@ -224,6 +250,7 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "share_token": entry.share_token or None,
         "workspace_id": entry.workspace_id or None,
         "recorded_by_user_id": entry.recorded_by_user_id or None,
+        "persona_used": entry.persona_used or None,
     }).execute()
 
     # Fan out to all other workspace members when a workspace is set.
