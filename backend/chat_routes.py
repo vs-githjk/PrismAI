@@ -8,7 +8,9 @@ from pydantic import BaseModel
 from groq import AsyncGroq
 
 from auth import require_user_id, supabase
-from analysis_service import AGENT_MAP
+from analysis_service import AGENT_MAP, _persona_text_for_agent
+from agents.utils import _PERSONA_TEXT, get_persona_suffix
+from personas import resolve_persona
 
 # Server-side store for tools awaiting confirmation.
 # Key: (user_id, pending_id) → {tool, arguments, expires_at}
@@ -66,6 +68,11 @@ class AgentRequest(BaseModel):
     transcript: str
     instruction: str = ""
     existing_items: list | None = None
+    # Persona — resolved client-side. /agent is unauthenticated so the
+    # frontend ships the active preset (and custom prompt if any) in the
+    # payload.
+    persona_preset: str | None = None
+    persona_custom_prompt: str | None = None
 
 
 class ConfirmToolRequest(BaseModel):
@@ -204,6 +211,13 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
     async def run_agent(req: AgentRequest):
         if req.agent not in AGENT_MAP:
             raise HTTPException(status_code=400, detail=f"Unknown agent: {req.agent}")
+        # Apply per-agent whitelist + set the contextvar so llm_call appends
+        # the safety-wrapped persona to the agent's system prompt.
+        fake_state = {
+            "persona_preset": req.persona_preset or "default",
+            "persona_custom_prompt": req.persona_custom_prompt or "",
+        }
+        _PERSONA_TEXT.set(_persona_text_for_agent(req.agent, fake_state))
         augmented = req.transcript
         if req.existing_items is not None:
             try:
@@ -219,6 +233,13 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
     @local_router.post("/chat")
     async def chat(req: ChatRequest, request: Request):
         user_id = await _optional_user_id(request)
+        # Resolve persona for the duration of this request. The contextvar
+        # is per-task in asyncio — when this handler returns the value dies
+        # with the task, so no reset is needed.
+        if user_id and supabase:
+            active_ws = request.headers.get("x-active-workspace") or None
+            resolved = await resolve_persona(supabase, user_id, active_ws)
+            _PERSONA_TEXT.set(resolved.text)
         user_settings = await _get_user_settings(user_id) if user_id else {}
 
         context = ""
@@ -239,6 +260,9 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 "ask the user to confirm before executing."
             )
         system_content += context
+        # Persona is appended LAST so it sits closest to the user turn —
+        # gives the LLM the most-recent tone instruction context.
+        system_content += get_persona_suffix()
 
         messages = [
             {"role": "system", "content": system_content},
@@ -264,6 +288,11 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
     async def chat_global(req: GlobalChatRequest, user_id: str = Depends(require_user_id)):
         if not supabase:
             raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Persona is workspace-aware via the active-workspace header.
+        active_ws = None  # global chat is cross-workspace; no specific workspace context
+        resolved = await resolve_persona(supabase, user_id, active_ws)
+        _PERSONA_TEXT.set(resolved.text)
 
         user_settings = await _get_user_settings(user_id)
 
@@ -336,6 +365,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 "creating calendar events, and creating Linear issues. Use them when asked."
             )
         system_content += f"\n\nMeeting history ({len(parts)} meetings):\n{context}"
+        system_content += get_persona_suffix()
 
         messages = [
             {"role": "system", "content": system_content},
