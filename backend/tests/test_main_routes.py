@@ -51,9 +51,19 @@ fake_analysis_service = types.ModuleType("analysis_service")
 fake_analysis_service.AGENT_MAP = {}
 fake_analysis_service.AGENT_RESULT_KEY = {}
 fake_analysis_service.build_analysis_transcript = lambda transcript, speakers=None, owner_name=None: transcript
+fake_analysis_service.AGENT_PERSONA_WHITELIST = {
+    "summarizer":         {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "decisions":          {"default", "concise", "formal"},
+    "action_items":       {"default", "concise", "formal"},
+    "sentiment":          {"default", "concise", "formal"},
+    "speaker_coach":      {"default", "concise", "formal"},
+    "email_drafter":      {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "health_score":       {"default", "concise", "formal"},
+    "calendar_suggester": {"default", "concise", "formal"},
+}
 
 
-async def _fake_run_full_analysis(_transcript: str):
+async def _fake_run_full_analysis(_transcript: str, **_kwargs):
     return {"summary": "ok", "agents_run": []}
 
 

@@ -23,7 +23,7 @@ sys.modules.setdefault("supabase", fake_supabase_module)
 fake_analysis_service = types.ModuleType("analysis_service")
 
 
-async def _fake_run_full_analysis(_transcript: str):
+async def _fake_run_full_analysis(_transcript: str, **_kwargs):
     return {"summary": "ok", "agents_run": []}
 
 
