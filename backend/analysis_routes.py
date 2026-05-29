@@ -18,6 +18,10 @@ class AnalyzeRequest(BaseModel):
     transcript: str
     speakers: list = []
     owner_name: str | None = None
+    # Persona — resolved client-side (the analyze endpoint is unauthenticated,
+    # so the server can't look up the user's effective persona on its own).
+    persona_preset: str | None = None
+    persona_custom_prompt: str | None = None
 
 
 def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
@@ -29,7 +33,11 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
             raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
         transcript = build_analysis_transcript(req.transcript, req.speakers, req.owner_name)
-        return await run_full_analysis(transcript)
+        return await run_full_analysis(
+            transcript,
+            persona_preset=req.persona_preset,
+            persona_custom_prompt=req.persona_custom_prompt,
+        )
 
     @router.post("/analyze-stream")
     async def analyze_stream(req: AnalyzeRequest):
@@ -39,7 +47,11 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
         transcript = build_analysis_transcript(req.transcript, req.speakers, req.owner_name)
 
         async def event_stream():
-            initial = {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {}}
+            initial: dict = {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {}}
+            if req.persona_preset:
+                initial["persona_preset"] = req.persona_preset
+            if req.persona_custom_prompt:
+                initial["persona_custom_prompt"] = req.persona_custom_prompt
             succeeded_agents = []
 
             async for chunk in _GRAPH.astream(initial, stream_mode="updates"):

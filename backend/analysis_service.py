@@ -297,8 +297,20 @@ def _state_to_result(state: AnalysisState) -> dict:
     return result
 
 
-async def run_full_analysis(transcript: str) -> dict:
-    final_state = await _GRAPH.ainvoke(
-        {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {}}
-    )
+async def run_full_analysis(
+    transcript: str,
+    persona_preset: str | None = None,
+    persona_custom_prompt: str | None = None,
+) -> dict:
+    initial: dict = {
+        "transcript": transcript,
+        "agents_to_run": [],
+        "results": {},
+        "context": {},
+    }
+    if persona_preset:
+        initial["persona_preset"] = persona_preset
+    if persona_custom_prompt:
+        initial["persona_custom_prompt"] = persona_custom_prompt
+    final_state = await _GRAPH.ainvoke(initial)
     return _state_to_result(final_state)
