@@ -1,9 +1,13 @@
 import asyncio
 import hashlib
+import os
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+
+from urllib.parse import urlparse, parse_qs
 
 from auth import require_user_id, supabase
 from caches import is_workspace_member
@@ -12,6 +16,26 @@ from calendar_routes import get_valid_token
 from knowledge_transcript import index_meeting_transcript
 from tools.gmail import gmail_send
 
+
+def parse_expires_hint(url: str | None) -> int | None:
+    """Extract the X-Amz-Expires hint from an S3 presigned URL.
+
+    Returns None when the param is missing, non-integer, or input is empty.
+    The hint is approximate — clients should treat it as a cache TTL guide,
+    not a precise countdown.
+    """
+    if not url:
+        return None
+    try:
+        qs = parse_qs(urlparse(url).query)
+        value = qs.get("X-Amz-Expires", [None])[0]
+        return int(value) if value is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
+RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 
 router = APIRouter(tags=["storage"])
 
@@ -40,6 +64,7 @@ class MeetingEntry(BaseModel):
     workspace_id: str | None = None
     recorded_by_user_id: str | None = None
     persona_used: str | None = None
+    recall_bot_id: str | None = None
 
 
 class MeetingPatch(BaseModel):
@@ -116,7 +141,7 @@ async def get_meetings(
 
         query = (
             client.table("meetings")
-            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id,user_id")
+            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id,user_id,recall_bot_id,recording_provider")
             .eq("workspace_id", workspace_id)
             .order("id", desc=True)
             .limit(400)
@@ -125,7 +150,7 @@ async def get_meetings(
         # Personal mode: only the user's own meetings with no workspace
         query = (
             client.table("meetings")
-            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id")
+            .select("id,date,title,score,transcript,result,share_token,workspace_id,recorded_by_user_id,recall_bot_id,recording_provider")
             .eq("user_id", user_id)
             .is_("workspace_id", None)
             .order("id", desc=True)
@@ -230,6 +255,17 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
                 "workspace_id": workspace_id,
                 "recorded_by_user_id": recorder_user_id,
                 "persona_used": entry.persona_used or None,
+                # Recording fields propagate so every teammate sees the same player.
+                # The owner-only segments are safe to fan out: workspace_members are
+                # the access boundary, and the player auth already gates by membership.
+                # _resolved_segments / _resolved_provider are set by save_meeting in Task 5.
+                # When the test calls _fan_out_to_workspace directly (no save_meeting
+                # pre-call), these fall back to entry.recall_bot_id / "recall" — same
+                # final shape, no behaviour change.
+                "recall_bot_id": entry.recall_bot_id,
+                "recording_provider": entry.__dict__.get("_resolved_provider")
+                                       or ("recall" if entry.recall_bot_id else None),
+                "transcript_segments": entry.__dict__.get("_resolved_segments"),
             }).execute()
             print(f"[fanout] wrote meeting {fan_id} to member {member_id} in workspace {workspace_id}")
     except Exception as exc:
@@ -239,6 +275,41 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
 @router.post("/meetings")
 async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_id)):
     client = _require_storage()
+
+    # Server-side enrichment from bot_sessions — the trust boundary.
+    # The frontend sends recall_bot_id as a reference; we look up the structured
+    # transcript segments server-side and only attach them if the caller owns the
+    # bot. If they don't own it (stale local state, bad client), the save still
+    # succeeds with nulls instead of 403 — silent degradation preserves UX.
+    recall_bot_id = entry.recall_bot_id or None
+    recording_provider: str | None = None
+    transcript_segments = None
+    if recall_bot_id:
+        try:
+            bs = (
+                client.table("bot_sessions")
+                .select("user_id, transcript_segments")
+                .eq("bot_id", recall_bot_id)
+                .maybe_single()
+                .execute()
+            )
+            row = bs.data if bs else None
+            if row and row.get("user_id") == user_id:
+                recording_provider = "recall"
+                transcript_segments = row.get("transcript_segments")
+            else:
+                # Caller doesn't own this bot — drop the reference rather than 403
+                recall_bot_id = None
+        except Exception as exc:
+            print(f"[storage] bot_sessions lookup failed for {recall_bot_id}: {exc}")
+            recall_bot_id = None
+
+    # Mutate the entry so _fan_out_to_workspace (called below) sees the same
+    # resolved values — it uses these to populate teammate rows in Task 6.
+    entry.recall_bot_id = recall_bot_id
+    entry.__dict__["_resolved_segments"] = transcript_segments
+    entry.__dict__["_resolved_provider"] = recording_provider
+
     client.table("meetings").upsert({
         "id": entry.id,
         "user_id": user_id,
@@ -251,6 +322,9 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "workspace_id": entry.workspace_id or None,
         "recorded_by_user_id": entry.recorded_by_user_id or None,
         "persona_used": entry.persona_used or None,
+        "recall_bot_id": recall_bot_id,
+        "recording_provider": recording_provider,
+        "transcript_segments": transcript_segments,
     }).execute()
 
     # Fan out to all other workspace members when a workspace is set.
@@ -298,7 +372,7 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
     res = (
         client.table("meetings")
-        .select("id,date,title,score,transcript,result,share_token,workspace_id,user_id,recorded_by_user_id")
+        .select("id,date,title,score,transcript,result,share_token,workspace_id,user_id,recorded_by_user_id,recall_bot_id,recording_provider,transcript_segments")
         .eq("id", meeting_id)
         .maybe_single()
         .execute()
@@ -481,3 +555,111 @@ async def send_followup_email(req: SendFollowupRequest, user_id: str = Depends(r
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return {"ok": True}
+
+
+def _caller_can_access_meeting(client, meeting_row: dict, user_id: str) -> bool:
+    """Same auth model as GET /meetings/{id}: owner OR workspace member."""
+    if meeting_row.get("user_id") == user_id:
+        return True
+    workspace_id = meeting_row.get("workspace_id")
+    if not workspace_id:
+        return False
+    try:
+        res = (
+            client.table("workspace_members")
+            .select("user_id")
+            .eq("workspace_id", workspace_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return bool(res and res.data)
+    except Exception:
+        return False
+
+
+@router.get("/meetings/{meeting_id}/recording")
+async def get_meeting_recording(meeting_id: int, user_id: str = Depends(require_user_id)):
+    """Return a fresh signed download URL for the meeting's Recall.ai recording.
+
+    Auth: caller must own the meeting OR be a member of its workspace. Non-members
+    get a 404 (we never confirm existence to non-members).
+
+    Response shapes (see spec for full contract):
+      { "url": "...", "expires_hint_seconds": N, "kind": "video" | "audio" }
+      { "url": None, "reason": "not_ready" | "no_recording" | "expired" |
+                               "not_found" | "not_a_bot_meeting" }
+    """
+    client = _require_storage()
+
+    # Load meeting row
+    try:
+        res = (
+            client.table("meetings")
+            .select("id, user_id, workspace_id, recall_bot_id, recording_provider")
+            .eq("id", meeting_id)
+            .maybe_single()
+            .execute()
+        )
+        meeting = res.data if res else None
+    except Exception:
+        meeting = None
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if not _caller_can_access_meeting(client, meeting, user_id):
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    bot_id = meeting.get("recall_bot_id")
+    if not bot_id:
+        return {"url": None, "reason": "not_a_bot_meeting"}
+
+    if not RECALL_API_KEY:
+        raise HTTPException(status_code=503, detail="Recall.ai not configured")
+
+    # Fetch fresh signed URL from Recall (URLs expire ~24h, can't cache)
+    try:
+        async with httpx.AsyncClient() as recall:
+            resp = await recall.get(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Recall.ai unreachable: {exc}")
+
+    if resp.status_code == 404:
+        return {"url": None, "reason": "expired"}
+    if resp.status_code == 403:
+        return {"url": None, "reason": "not_found"}
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Recall.ai error: {resp.status_code}")
+
+    data = resp.json()
+    recordings = data.get("recordings") or []
+    if not recordings:
+        return {"url": None, "reason": "no_recording"}
+
+    shortcuts = (recordings[0] or {}).get("media_shortcuts") or {}
+    video_url = (
+        ((shortcuts.get("video_mixed") or {}).get("data") or {}).get("download_url")
+    )
+    audio_url = (
+        ((shortcuts.get("audio_mixed") or {}).get("data") or {}).get("download_url")
+    )
+
+    if video_url:
+        payload = {"url": video_url, "kind": "video"}
+        hint = parse_expires_hint(video_url)
+        if hint is not None:
+            payload["expires_hint_seconds"] = hint
+        return payload
+    if audio_url:
+        payload = {"url": audio_url, "kind": "audio"}
+        hint = parse_expires_hint(audio_url)
+        if hint is not None:
+            payload["expires_hint_seconds"] = hint
+        return payload
+
+    return {"url": None, "reason": "not_ready"}

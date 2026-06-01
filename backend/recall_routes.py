@@ -425,6 +425,39 @@ def _transcript_from_recall_data(raw) -> str:
     return ""
 
 
+def _segments_from_recall_data(raw) -> list[dict] | None:
+    """Normalize Recall's transcript response into Segment[] for video playback sync.
+
+    Returns None when input is empty, missing word-level timestamps, or not a list
+    (e.g., legacy { "transcript": "blob" } responses, plain string fallbacks).
+    None is the sentinel for "no per-line timing available" — the realtime-buffer
+    fallback transcript path also returns None so the player degrades to a plain
+    transcript view.
+    """
+    if not isinstance(raw, list) or not raw:
+        return None
+    segments: list[dict] = []
+    for segment in raw:
+        words = segment.get("words") or []
+        if not words:
+            continue
+        speaker = (
+            segment.get("speaker")
+            or (segment.get("participant") or {}).get("name")
+            or "Speaker"
+        )
+        text = " ".join(w.get("text", "") for w in words).strip()
+        if not text:
+            continue
+        segments.append({
+            "speaker": speaker,
+            "start": words[0].get("start_time", 0.0),
+            "end": words[-1].get("end_time", 0.0),
+            "text": text,
+        })
+    return segments or None
+
+
 async def _process_bot_transcript(bot_id: str):
     # Guarantee bot_store[bot_id] exists for the full duration of processing.
     # remove_bot() can pop the entry at any time; setdefault re-establishes it so
@@ -435,12 +468,16 @@ async def _process_bot_transcript(bot_id: str):
         resp = await _fetch_transcript(bot_id)
 
         transcript = ""
+        segments: list[dict] | None = None
         if resp is not None:
             raw = resp.json()
             print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:500]}")
             transcript = _transcript_from_recall_data(raw)
+            segments = _segments_from_recall_data(raw)
 
-        # Fallback: use realtime-streamed transcript lines accumulated during the meeting
+        # Fallback: use realtime-streamed transcript lines accumulated during the meeting.
+        # Segments stay None here — the live buffer has no global timestamps, so the player
+        # gracefully degrades to a plain transcript view for these meetings.
         if not transcript.strip():
             rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
             if rt_lines:
@@ -462,7 +499,13 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
-        _db_save(bot_id, {"status": "done", "transcript": transcript, "result": result})
+        bot_store[bot_id]["transcript_segments"] = segments
+        _db_save(bot_id, {
+            "status": "done",
+            "transcript": transcript,
+            "result": result,
+            "transcript_segments": segments,
+        })
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
         from realtime_routes import cleanup_bot_state
@@ -532,6 +575,14 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "bot_name": "PrismAI",
                 "webhook_url": webhook_url,
                 "recording_config": {
+                    # Video output — required for post-meeting playback.
+                    # speaker_view composites the active speaker as the main pane;
+                    # gallery_view is the multi-tile alternative.
+                    "video_mixed_layout": "speaker_view",
+                    "video_mixed_mp4": {},
+                    # Always-on audio fallback — used by the player when no video
+                    # is captured (phone bridges, screenshare-disabled meetings).
+                    "audio_mixed_mp3": {},
                     "transcript": {
                         "provider": {
                             # endpointing=500 → wait 500ms of silence before finalizing

@@ -1815,7 +1815,7 @@ export default function App() {
             setTranscriptForTab(data.transcript || '', 'paste')
             setSessionId(s => s + 1)
             setResult(data.result)
-            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId)
+            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId, activeBotId)
             const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
             void deliverMeetingRecap(meetingTitle, data.result, entry?.id)
             setBotTranscriptReady(false)
@@ -1989,7 +1989,7 @@ export default function App() {
     }).sort((a, b) => b.id - a.id)
   }
 
-  const saveToHistory = (t, r, recordedByUserId = null) => {
+  const saveToHistory = (t, r, recordedByUserId = null, recallBotId = null) => {
     if (!user) {
       setMeetingId(null)
       setShareToken(null)
@@ -2012,6 +2012,13 @@ export default function App() {
       workspace_id: activeWorkspaceId || null,
       recorded_by_user_id: recordedByUserId,
       persona_used: personaPreset || 'default',
+      recall_bot_id: recallBotId || null,
+      // Set provider client-side so the RecordingPlayer gate
+      // (meeting.recording_provider === 'recall') fires immediately after
+      // analysis — without waiting for the server round-trip to echo back
+      // the enriched row through the next history fetch. The server is the
+      // source of truth and will overwrite this on the next merge.
+      recording_provider: recallBotId ? 'recall' : null,
     }
     setHistory(prev => mergeHistoryEntries([entry, ...prev]))
     setMeetingId(id)
