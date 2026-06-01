@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from './lib/sessionKeys'
 import { deriveDisplayTitle } from './lib/insights'
-import Prism from './components/Prism'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
 import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
-import ProofSection from './components/ProofSection'
 import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
 import SignupDialog from './components/SignupDialog'
@@ -909,78 +907,28 @@ function LandingScreen({ onViewDashboard }) {
     return () => obs.disconnect()
   }, [])
 
-  // Magnetic CTA buttons — within ~120px of either hero button, the cursor
-  // pulls the button toward itself at decaying strength. Restores smoothly
-  // when cursor leaves the radius. rAF-throttled to stay 60fps.
-  useEffect(() => {
-    if (typeof window.matchMedia === 'function' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      return
-    }
-    const buttons = document.querySelectorAll('.landing-button-primary, .landing-button-secondary')
-    if (!buttons.length) return
-    const RANGE = 120
-    let raf = 0
-    let pending = false
-    let lastE = null
-    const apply = () => {
-      pending = false
-      if (!lastE) return
-      buttons.forEach((btn) => {
-        const r = btn.getBoundingClientRect()
-        const cx = r.left + r.width / 2
-        const cy = r.top + r.height / 2
-        const dx = lastE.clientX - cx
-        const dy = lastE.clientY - cy
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < RANGE) {
-          const strength = (1 - dist / RANGE) * 0.32
-          btn.style.setProperty('--magnet-x', `${dx * strength}px`)
-          btn.style.setProperty('--magnet-y', `${dy * strength}px`)
-        } else {
-          btn.style.setProperty('--magnet-x', '0px')
-          btn.style.setProperty('--magnet-y', '0px')
-        }
-      })
-    }
-    const onMove = (e) => {
-      lastE = e
-      if (pending) return
-      pending = true
-      raf = requestAnimationFrame(apply)
-    }
-    window.addEventListener('pointermove', onMove)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('pointermove', onMove)
-      buttons.forEach((btn) => {
-        btn.style.removeProperty('--magnet-x')
-        btn.style.removeProperty('--magnet-y')
-      })
-    }
-  }, [])
-
   return (
     <div className="landing-page-shell">
       {/* Fixed prism — persists behind all sections */}
       <div className="landing-bg-prism" aria-hidden="true">
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -48%)', width: 'max(1080px, 100vw)', height: 'max(1080px, 100vh)' }}>
-          <Prism
-            height={2}
-            baseWidth={3}
-            animationType="rotate3d"
-            glow={1.1}
-            noise={0.1}
-            transparent
-            scale={2.9}
-            hueShift={5.6}
-            colorFrequency={1}
-            hoverStrength={0}
-            inertia={0.04}
-            bloom={0.9}
-            timeScale={0.3}
-          />
-        </div>
+        <video
+          src="/prism-loop.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            pointerEvents: 'none',
+          }}
+        />
       </div>
 
       <div
@@ -1052,7 +1000,6 @@ function LandingScreen({ onViewDashboard }) {
         </section>
 
         <div className="landing-post-hero">
-          <ProofSection />
           <HowItWorks />
           <PricingSection onGetStarted={openSignup} />
           <TeamSection />

@@ -40,7 +40,7 @@ User input (paste / upload / record / bot)
   → [DONE] event triggers save to Supabase
 ```
 
-8 agents total — all use `llama-3.3-70b-versatile` via Groq. Conditional agents (sentiment, calendar_suggester) only run when the orchestrator selects them. Tier 2 agents receive a `context` dict built from Tier 1 results: `{summary, decisions, action_items, sentiment}`. This produces richer emails, more accurate health scores, and better calendar reasoning.
+8 agents total — all go through `llm_call()` in `backend/agents/utils.py`, which calls Groq's `llama-3.3-70b-versatile` and falls back to `claude-haiku-4-5-20251001` on Groq rate-limit / 5xx (retries once if Groq says wait ≤5s before falling back). Never bypass `llm_call`. Conditional agents (sentiment, calendar_suggester) only run when the orchestrator selects them. Tier 2 agents receive a `context` dict built from Tier 1 results: `{summary, decisions, action_items, sentiment}`. This produces richer emails, more accurate health scores, and better calendar reasoning.
 
 ### Backend Structure
 
@@ -56,6 +56,16 @@ User input (paste / upload / record / bot)
 
 All agents import `strip_fences` from `backend/agents/utils.py`. Never redefine it.
 
+`realtime_routes.py` is the live-meeting surface: receives Recall.ai transcript + chat webhooks, runs the utterance accumulator → command detection → tool execution → optional TTS response loop. Also exposes the live-share index (token gated by `bot_sessions.live_token`) and the realtime SSE for the dashboard's live view. This file is large by design — much of the live-meeting product surface lives here.
+
+`chat_routes.py` exposes three chat surfaces in priority order matched by `ChatPanel.jsx`: `POST /chat` (per-meeting chat against transcript), `POST /chat/global` (auth-gated cross-meeting chat), `POST /agent` (intent → tool call). All three call Groq directly (not via `llm_call`) because they handle their own streaming + history shaping.
+
+`calendar_routes.py` owns the Google Calendar OAuth callback exchange, `GET /calendar/events` (lists next-N upcoming events with `attendee_emails` for workspace matching), and the per-meeting bot auto-join settings. `calendar_resolution.py` is pure logic for parsing natural-language date/time references ("next Tuesday at 3pm") used by the calendar_suggester agent.
+
+`cross_meeting_service.py` powers `/insights` and cross-meeting chat: rolls per-meeting agent outputs into themes (most-common decisions, top action owners, sentiment trend, health-score trend) over a workspace or user's last N meetings. `meeting_memory.py` is the three-layer memory used during a live bot session (raw recent window + rolling compressed summary + entity slots). `utterance_accumulator.py` turns wire-level Recall chunks into bounded semantic utterances (speaker change / pause / punctuation / max-length). `perception_state.py` is the pre-perception observability layer (event-id dedup, partial-drop ratio) gated by `PRISM_PRE_PERCEPTION=1`. `voice_pipeline.py` is the streaming sentence segmenter + TTS dispatch policy (pysbd-based; tests-only until wired in).
+
+`clients.py` is the shared Groq / Anthropic / Recall HTTP client provider (use these via `Depends`, do not instantiate clients per-request). `analysis_routes.py` is the SSE-streamed `/analyze` and `/analyze-stream` surface that drives the dashboard analysis flow; logic lives in `analysis_service.py`. `export_routes.py` is a small one-file router for transcript/summary export.
+
 ### Knowledge Base / RAG (merged from `fixed-changes`, May 2026)
 
 Vector RAG over user-uploaded docs + (planned) meeting transcripts. `knowledge_routes.py` (REST: upload/upload-url/connect-source, docs CRUD, resync, queries audit), `knowledge_service.py` (ingest orchestration + `search_knowledge`), `embeddings.py` (OpenAI `text-embedding-3-small`, batching + retry + quota circuit-breaker), `knowledge_ingest/` (pdf/docx/txt/url/notion/gdrive loaders + sentence-aware chunker), `knowledge_proactive.py` (surfaces relevant chunks every 20 transcript lines via one hook in `realtime_routes._compress_and_persist`). Two registered tools: `tools/knowledge_lookup.py` (grounded retrieval with strict-grounding + `NO_GROUNDED_ANSWER` fallback signal + conflict detection) and `tools/web_search.py` (Tavily fallback with prompt-injection defenses). Anti-hallucination: strict instruction string + citation requirement + conflict flag.
@@ -64,7 +74,7 @@ Vector RAG over user-uploaded docs + (planned) meeting transcripts. `knowledge_r
 
 **Env vars:** `OPENAI_API_KEY` (embeddings only — chat stays on Groq) and `TAVILY_API_KEY` (web_search + url_loader). Both must be set on Render for production RAG. New Python deps: `openai`, `tiktoken`, `pymupdf`, `pytesseract`, `python-docx`, `notion-client`, `pysbd`, `langgraph`.
 
-**Status:** baseline RAG deployed to production and smoke-tested (sign in → Knowledge → upload doc → ingest goes Ready → query). The smart-RAG upgrades (contextual retrieval, hybrid vector+BM25, reranking, cross-source over meeting transcripts, query rewriting) are spec'd in `docs/specs/2026-05-20-smart-rag-additions.md` — Phase 0 (merge + workspace scoping + nav mount + polish) done; Phases 1–5 pending.
+**Status:** baseline RAG deployed to production and smoke-tested (sign in → Knowledge → upload doc → ingest goes Ready → query). The smart-RAG upgrades (contextual retrieval, hybrid vector+BM25, reranking, cross-source over meeting transcripts, query rewriting) are spec'd in `docs/specs/2026-05-20-smart-rag-additions.md` — Phase 0 (merge + workspace scoping + nav mount + polish) done; Phases 1–5 pending. Handoff brief for a teammate picking this up: `docs/briefs/2026-05-23-smart-rag-handoff.md`.
 
 **Frontend UX:** `KnowledgeBase` is mounted as a top-level dashboard view via a "Knowledge" item in `DashboardSidebar` (`activeView === 'knowledge'`), rendered with the active workspace's id+name. The page shows scope-aware content: in Personal it lists your own *unshared* docs; in a workspace it lists that workspace's *shared* docs (membership-gated by the `workspace_id` query param to `GET /knowledge/docs`). `KnowledgeDocCard` follows the dashboard glass-card aesthetic with a status dot + sensitivity pill. The shared Radix Dialog primitive (`ui/dialog.tsx`) uses `bg-black/70 + backdrop-blur-sm` for its overlay — older `bg-black/10` was invisible on the dark dashboard.
 
@@ -86,8 +96,6 @@ Vector RAG over user-uploaded docs + (planned) meeting transcripts. `knowledge_r
 
 The landing page has a three-layer WebGL stack (all `position:absolute, inset:0, pointer-events:none`): `<Prism />` (ogl, full-page ray-marched prism), a top vignette div, a bottom fade div, and two `<LightPillar />` instances (three.js, one per side edge). Current tuning values are documented in `PRISM_AI_CONTEXT.md` → "Landing Visual Layer".
 
-`ProofSection.jsx` sits between the hero and `HowItWorks` in the landing flow (the "social proof" beat). Three count-up stat tiles (8 agents / ~2s / 100% grounded) with an interactive layer: scramble-then-settle number reveal, cursor-following radial glow + 3D tilt (`--mx/--my/--tilt-x/--tilt-y` CSS vars set on `onPointerMove`), scroll-driven parallax (`--parallax-y`), an aurora background (`mix-blend-mode: screen` blobs), and a breathing top-stripe glow. The hero CTAs are magnetic (cursor-pull within 120px via `--magnet-x/y`, composed with `:hover --hover-y` so neither clobbers the other). All animations are gated behind `prefers-reduced-motion`. The `website-craft` skill's narrative + scroll-choreography guidance informed this section — apply that skill to landing/marketing surfaces (and `next-app/`), never to dashboard/product UI.
-
 Current design direction: use shadcn/radix-style product surfaces with the app's existing cyan/sky accent (`#22d3ee`, `#67e8f9`, `sky-*` / `cyan-*`). Do not make glassmorphism the default visual language for the site or dashboard. Glass-like treatment is only an accent for CTAs, focused highlights, or special moments.
 
 `ChatPanel.jsx` runs three chat modes in priority order: agent intent (regex → `POST /agent`), global intent (regex → `POST /chat/global`, requires auth), regular chat (`POST /chat`).
@@ -101,7 +109,7 @@ Frontend Supabase client (`lib/supabase.js`) returns `null` if env vars are miss
 - `bot_store` in `recall_routes.py` is in-memory — lost on Render restart. Fix requires a `bots` Supabase table.
 - Bot endpoints (`/join-meeting`, `/bot-status`, `/recall-webhook`, `/realtime-events`) are unauthenticated by design — bot results are not user-scoped.
 - Render free tier cold starts take 30–60s.
-- All workspace frontend steps (6–8) are complete. First-run workspace nudge added. Phase 2 (Meeting Pattern Intelligence) complete. Phase 3 (LangGraph two-tier orchestration) complete. Phases 5–8 pending.
+- Roadmap state (per `PRISM_AI_CONTEXT.md`): Phases 1–4 complete and deployed (workspaces, meeting pattern intelligence, LangGraph two-tier orchestration, bot dedup). Phase 5 (RAG) — baseline live in production; smart-RAG upgrades (Phases 1–5 of the smart-RAG sub-plan) pending. Phases 6–8 (voice ID, context-aware conversation, personas) pending.
 - `MeetingView.jsx` header renders when `onBack || meeting` is truthy — not just when `meeting` is set. This ensures fresh analyses (which have `onBack` but no `meeting` object) still show the title and back arrow. Use `meeting?.date` not `meeting.date`.
 - `StatsCanvas.jsx` `SingleMeetingState`: centered layout matching the multi-meeting welcome style. Shown when history has exactly 1 entry.
 
@@ -112,14 +120,22 @@ Frontend Supabase client (`lib/supabase.js`) returns `null` if env vars are miss
 - **Frontend:** Vercel auto-deploys `frontend/` on push to `main`. Build: `npm run build`, output: `dist`.
 - **Backend:** Render auto-deploys from `render.yaml` on push to `main`. Service name is `meeting-copilot-api` (URL is locked to creation-time name regardless of dashboard display name).
 
-Supabase migrations must be run manually in the SQL editor (in order):
-1. `auth_migration.sql` — meetings + chats tables
-2. `calendar_migration.sql` — user_settings table
-3. `tools_migration.sql` — linear_api_key, slack_bot_token columns + bot_sessions table
-4. Workspace migrations (run May 2026 — no file yet, run directly in SQL editor):
-   - `workspaces` table
-   - `workspace_members` table (with `user_email` column — note: `user_id`/`workspace_id` are stored as `text`, not uuid)
-   - `meeting_bots` table
-   - `alter table meetings add column workspace_id, recorded_by_user_id, email_claimed_by`
-5. `knowledge_migration.sql` — knowledge_docs + knowledge_chunks (pgvector) + knowledge_queries + knowledge_search RPC. Also create a private Supabase Storage bucket named `knowledge` (50MB) with the RLS policy in the file's header.
-6. `knowledge_workspace_migration.sql` — adds `workspace_id` to knowledge_docs/chunks, RLS for workspace members (casts to text since workspace_members columns are text), and redefines `knowledge_search` with a `caller_workspace_ids uuid[]` param (drops the old 5-arg signature first). Run AFTER `knowledge_migration.sql`.
+All Supabase migrations live in `supabase/`. Two ways to apply them:
+
+- **Runner (preferred):** `python supabase/migrate.py` applies every migration in dependency order. Requires `DATABASE_URL` in `backend/.env` (Supabase connection pooler URL). All migrations are idempotent (`IF NOT EXISTS` guards), safe to re-run.
+- **SQL editor (fallback):** paste files into the Supabase SQL Editor in the order listed below. `full_schema_fix.sql` is a consolidated idempotent script that covers calendar + tools + bot_commands in one shot if you'd rather not run them individually.
+
+Migration order (dependency-correct):
+
+1. `auth_migration.sql` — meetings + chats tables.
+2. `calendar_migration.sql` — `user_settings` table.
+3. `tools_migration.sql` — `linear_api_key` / `slack_bot_token` columns + `bot_sessions` table.
+4. `bot_sessions_live_token_migration.sql` — `bot_sessions.live_token` (unique) so the live-share index survives Render restarts.
+5. `bot_commands_migration.sql` — `append_bot_command()` RPC for atomic command appends (avoids read-modify-write race on `bot_sessions.commands`).
+6. `memory_migration.sql` — `bot_sessions.memory_summary` (TEXT) + `bot_sessions.live_state` (JSONB) for the three-layer live-meeting memory system.
+7. `chat_sessions_migration.sql` — per-meeting ephemeral `chat_sessions` table (replaces single-row `chats` model; backend prunes to 3 most recent per meeting).
+8. `chats_unique_migration.sql` — unique constraint on `chats(meeting_id, user_id)` so legacy upsert paths stop racing. Deduplicates existing rows first.
+9. `action_refs_migration.sql` — `action_refs` table tracking action items resolved into external tools (Linear/Slack/Gmail).
+10. `workspace_migration.sql` — `workspaces` + `workspace_members` (note: `user_id` / `workspace_id` stored as `text`, not uuid) + `meeting_bots` + adds `workspace_id` / `recorded_by_user_id` / `email_claimed_by` columns to `meetings`.
+11. `knowledge_migration.sql` — `knowledge_docs` + `knowledge_chunks` (pgvector) + `knowledge_queries` + `knowledge_search` RPC. Also create a private Supabase Storage bucket named `knowledge` (50MB) with the RLS policy in the file's header.
+12. `knowledge_workspace_migration.sql` — adds `workspace_id` to `knowledge_docs` / `knowledge_chunks`, RLS for workspace members (casts to text since `workspace_members` columns are text), and redefines `knowledge_search` with a `caller_workspace_ids uuid[]` param (drops the old 5-arg signature first). Run AFTER `knowledge_migration.sql`.

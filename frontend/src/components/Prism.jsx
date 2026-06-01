@@ -17,7 +17,8 @@ const Prism = ({
   inertia = 0.05,
   bloom = 1,
   suspendWhenOffscreen = false,
-  timeScale = 0.5
+  timeScale = 0.5,
+  captureHandle = null
 }) => {
   const containerRef = useRef(null);
 
@@ -29,7 +30,8 @@ const Prism = ({
     const BW = Math.max(0.001, baseWidth);
     const BASE_HALF = BW * 0.5;
     const GLOW = Math.max(0.0, glow);
-    const NOISE = Math.max(0.0, noise);
+    const CAPTURE = !!captureHandle;
+    const NOISE = CAPTURE ? 0.0 : Math.max(0.0, noise);
     const offX = offset?.x ?? 0;
     const offY = offset?.y ?? 0;
     const SAT = transparent ? 1.5 : 1;
@@ -383,7 +385,27 @@ const Prism = ({
       }
     };
 
-    if (suspendWhenOffscreen) {
+    if (CAPTURE) {
+      captureHandle.current = {
+        renderAt(timeSec) {
+          program.uniforms.iTime.value = timeSec;
+          const tScaled = timeSec * TS;
+          if (animationType === '3drotate') {
+            yaw = tScaled * wY;
+            pitch = Math.sin(tScaled * wX + phX) * 0.6;
+            roll = Math.sin(tScaled * wZ + phZ) * 0.5;
+            program.uniforms.uRot.value = setMat3FromEuler(yaw, pitch, roll, rotBuf);
+          } else if (animationType !== 'hover') {
+            rotBuf[0] = 1; rotBuf[1] = 0; rotBuf[2] = 0;
+            rotBuf[3] = 0; rotBuf[4] = 1; rotBuf[5] = 0;
+            rotBuf[6] = 0; rotBuf[7] = 0; rotBuf[8] = 1;
+            program.uniforms.uRot.value = rotBuf;
+          }
+          renderer.render({ scene: mesh });
+        },
+        canvas: gl.canvas
+      };
+    } else if (suspendWhenOffscreen) {
       const io = new IntersectionObserver(entries => {
         const vis = entries.some(e => e.isIntersecting);
         if (vis) startRAF();
@@ -398,6 +420,7 @@ const Prism = ({
 
     return () => {
       stopRAF();
+      if (CAPTURE && captureHandle) captureHandle.current = null;
       ro.disconnect();
       if (animationType === 'hover') {
         if (onPointerMove) window.removeEventListener('pointermove', onPointerMove);
