@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase
+from caches import invalidate_user_workspaces
 
 
 router = APIRouter(tags=["workspaces"])
@@ -35,7 +36,8 @@ class CreateWorkspaceRequest(BaseModel):
 
 
 class RenameWorkspaceRequest(BaseModel):
-    name: str
+    name: str | None = None
+    default_persona: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +64,7 @@ async def create_workspace(body: CreateWorkspaceRequest, user_id: str = Depends(
         "role": "owner",
     }).execute()
 
+    invalidate_user_workspaces(user_id)
     return workspace
 
 
@@ -159,10 +162,22 @@ async def get_workspace(workspace_id: str, user_id: str = Depends(require_user_i
 async def rename_workspace(workspace_id: str, body: RenameWorkspaceRequest, user_id: str = Depends(require_user_id)):
     client = _require_storage()
     _require_owner(client, workspace_id, user_id)
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Workspace name is required")
-    client.table("workspaces").update({"name": name}).eq("id", workspace_id).execute()
+    update: dict = {}
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Workspace name is required")
+        update["name"] = name
+    if body.default_persona is not None:
+        # DB CHECK constraint enforces the allowed value set — frontend
+        # restricts the picker too. Don't second-guess here.
+        update["default_persona"] = body.default_persona
+    if not update:
+        return {"ok": True}
+    client.table("workspaces").update(update).eq("id", workspace_id).execute()
+    if "default_persona" in update:
+        from personas import invalidate_persona
+        invalidate_persona(workspace_id=workspace_id)
     return {"ok": True}
 
 
@@ -172,6 +187,13 @@ async def delete_workspace(workspace_id: str, user_id: str = Depends(require_use
     _require_owner(client, workspace_id, user_id)
     # meetings.workspace_id → set null on delete (handled by DB constraint)
     client.table("workspaces").delete().eq("id", workspace_id).execute()
+    # Every member of this workspace had it in their cached list; safest to clear all.
+    # Workspace deletions are rare, so the next handful of users pay one DB query each.
+    invalidate_user_workspaces(None)
+    # Drop any persona cache entries pinned to this workspace so a removed
+    # member doesn't keep seeing the workspace default for up to the TTL.
+    from personas import invalidate_persona
+    invalidate_persona(workspace_id=workspace_id)
     return {"ok": True}
 
 
@@ -206,6 +228,12 @@ async def remove_member(workspace_id: str, target_user_id: str, user_id: str = D
                     detail="Cannot leave — you are the only owner. Delete the workspace or transfer ownership first."
                 )
     client.table("workspace_members").delete().eq("workspace_id", workspace_id).eq("user_id", target_user_id).execute()
+    invalidate_user_workspaces(target_user_id)
+    # Removed member shouldn't keep resolving the workspace default for up to
+    # the persona cache TTL. Both the user's own key and the workspace key get
+    # dropped (their cached entry may have been keyed under either).
+    from personas import invalidate_persona
+    invalidate_persona(user_id=target_user_id, workspace_id=workspace_id)
     return {"ok": True}
 
 
@@ -271,6 +299,7 @@ async def accept_invite(token: str, body: AcceptInviteRequest, user_id: str = De
         ignore_duplicates=True,
     ).execute()
 
+    invalidate_user_workspaces(user_id)
     return {"ok": True, "workspace_id": workspace_id, "workspace_name": ws.data["name"]}
 
 

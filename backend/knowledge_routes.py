@@ -1,5 +1,6 @@
 """Knowledge Base REST API."""
 
+import asyncio
 import uuid
 from typing import Optional
 
@@ -7,10 +8,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase as auth_supabase
+from caches import get_user_workspace_ids
 from knowledge_service import (
     ingest_doc,
     soft_delete_doc,
     search_knowledge,
+    _execute,
 )
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -28,7 +31,9 @@ async def _user_settings(user_id: str) -> dict:
     if not sb:
         return {}
     try:
-        resp = sb.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
+        resp = await _execute(
+            sb.table("user_settings").select("*").eq("user_id", user_id).maybe_single()
+        )
         return (resp.data if resp else None) or {}
     except Exception:
         # Brand-new users have no row yet — non-fatal.
@@ -68,25 +73,27 @@ def _coerce_meeting_id(value) -> Optional[int]:
         return None
 
 
-def _insert_doc_row(sb, *, user_id: str, name: str, source_type: str,
-                    source_url: Optional[str] = None, file_path: Optional[str] = None,
-                    size_bytes: Optional[int] = None, meeting_id: Optional[str] = None,
-                    workspace_id: Optional[str] = None,
-                    sensitivity: str = "internal") -> str:
+async def _insert_doc_row(sb, *, user_id: str, name: str, source_type: str,
+                          source_url: Optional[str] = None, file_path: Optional[str] = None,
+                          size_bytes: Optional[int] = None, meeting_id: Optional[str] = None,
+                          workspace_id: Optional[str] = None,
+                          sensitivity: str = "internal") -> str:
     doc_id = str(uuid.uuid4())
-    sb.table("knowledge_docs").insert({
-        "id": doc_id,
-        "user_id": user_id,
-        "name": name,
-        "source_type": source_type,
-        "source_url": source_url,
-        "file_path": file_path,
-        "size_bytes": size_bytes,
-        "meeting_id": _coerce_meeting_id(meeting_id),
-        "workspace_id": (workspace_id or None),
-        "sensitivity": sensitivity,
-        "status": "processing",
-    }).execute()
+    await _execute(
+        sb.table("knowledge_docs").insert({
+            "id": doc_id,
+            "user_id": user_id,
+            "name": name,
+            "source_type": source_type,
+            "source_url": source_url,
+            "file_path": file_path,
+            "size_bytes": size_bytes,
+            "meeting_id": _coerce_meeting_id(meeting_id),
+            "workspace_id": (workspace_id or None),
+            "sensitivity": sensitivity,
+            "status": "processing",
+        })
+    )
     return doc_id
 
 
@@ -114,9 +121,13 @@ async def upload_file(
 
     file_path = f"{user_id}/{uuid.uuid4()}.{ext}"
     try:
-        sb.storage.from_("knowledge").upload(
-            file_path, content,
-            {"content-type": file.content_type or "application/octet-stream"}
+        # Storage uploads can be 50MB → seconds of blocking I/O. Off the loop
+        # so concurrent chat/webhook requests don't stall.
+        await asyncio.to_thread(
+            sb.storage.from_("knowledge").upload,
+            file_path,
+            content,
+            {"content-type": file.content_type or "application/octet-stream"},
         )
     except Exception as exc:
         msg = str(exc)
@@ -126,7 +137,7 @@ async def upload_file(
         raise HTTPException(status_code=502, detail=f"Storage upload failed: {msg[:200]}")
 
     try:
-        doc_id = _insert_doc_row(
+        doc_id = await _insert_doc_row(
             sb, user_id=user_id, name=file.filename or "Untitled",
             source_type=source_type, file_path=file_path, size_bytes=len(content),
             meeting_id=meeting_id, workspace_id=workspace_id, sensitivity=sensitivity,
@@ -148,7 +159,7 @@ async def upload_url(req: UploadUrlRequest, background: BackgroundTasks, user_id
     sb = _supabase()
     if not sb:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    doc_id = _insert_doc_row(
+    doc_id = await _insert_doc_row(
         sb, user_id=user_id, name=req.url, source_type="url",
         source_url=req.url, meeting_id=req.meeting_id,
         workspace_id=req.workspace_id, sensitivity=req.sensitivity,
@@ -165,7 +176,7 @@ async def connect_source(req: ConnectSourceRequest, background: BackgroundTasks,
     sb = _supabase()
     if not sb:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    doc_id = _insert_doc_row(
+    doc_id = await _insert_doc_row(
         sb, user_id=user_id, name=req.name, source_type=req.source_type,
         source_url=req.source_id, meeting_id=req.meeting_id,
         workspace_id=req.workspace_id, sensitivity=req.sensitivity,
@@ -194,11 +205,7 @@ async def list_docs(
     if mid is not None:
         # Pinned docs for a meeting — still scoped to docs the caller can access
         # (their own, or shared into a workspace they belong to).
-        try:
-            wm = sb.table("workspace_members").select("workspace_id").eq("user_id", user_id).execute()
-            ws_ids = [r["workspace_id"] for r in (wm.data or []) if r.get("workspace_id")]
-        except Exception:
-            ws_ids = []
+        ws_ids = get_user_workspace_ids(sb, user_id)
         q = q.eq("meeting_id", mid)
         if ws_ids:
             q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
@@ -260,20 +267,26 @@ async def resync_doc(doc_id: str, background: BackgroundTasks, user_id: str = De
     sb = _supabase()
     if not sb:
         raise HTTPException(status_code=503, detail="Storage not configured")
-    doc = sb.table("knowledge_docs").select("*").eq("id", doc_id).eq("user_id", user_id).single().execute().data
+    doc_resp = await _execute(
+        sb.table("knowledge_docs").select("*").eq("id", doc_id).eq("user_id", user_id).single()
+    )
+    doc = doc_resp.data
     if not doc:
         raise HTTPException(status_code=404, detail="Doc not found")
 
     settings = await _user_settings(user_id)
-    sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).execute()
-    sb.table("knowledge_docs").update({"status": "processing"}).eq("id", doc_id).execute()
+    await _execute(sb.table("knowledge_chunks").delete().eq("doc_id", doc_id))
+    await _execute(
+        sb.table("knowledge_docs").update({"status": "processing"}).eq("id", doc_id)
+    )
 
     src = doc["source_type"]
     if src in ("url", "notion", "gdrive"):
         content = doc.get("source_url") or ""
     else:
         file_path = doc["file_path"]
-        content = sb.storage.from_("knowledge").download(file_path)
+        # Storage downloads can be large — off the event loop.
+        content = await asyncio.to_thread(sb.storage.from_("knowledge").download, file_path)
     background.add_task(ingest_doc, doc_id, content, src, settings)
     return {"ok": True}
 

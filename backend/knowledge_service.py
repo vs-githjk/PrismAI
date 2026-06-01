@@ -7,8 +7,10 @@ from typing import Optional
 
 from supabase import Client, create_client
 
+from caches import get_user_workspace_ids
 from embeddings import embed_text, embed_batch
 from knowledge_ingest.chunker import chunk_text
+from knowledge_ingest.context_preprocessor import add_context
 from knowledge_ingest.loaders_base import LoaderError
 
 MIN_SCORE_DEFAULT = 0.75
@@ -30,13 +32,33 @@ def _supabase() -> Client:
     return _sb_client
 
 
+async def _execute(query):
+    """Run a built Supabase query off the FastAPI event loop.
+
+    Supabase's Python SDK is synchronous (it wraps a sync httpx.Client). Calling
+    `.execute()` directly from an async function blocks the entire loop for the
+    duration of the HTTP round-trip — under load, every other coroutine stalls.
+    `asyncio.to_thread` dispatches the call to the default thread pool so the
+    loop keeps serving requests.
+
+    Use for any chain ending in `.execute()`:
+        await _execute(sb.table("x").update({...}).eq("id", n))
+
+    For storage I/O (.upload, .download) call `asyncio.to_thread` directly —
+    that API isn't query-shaped.
+    """
+    return await asyncio.to_thread(query.execute)
+
+
 class QuotaExceeded(Exception):
     pass
 
 
 async def check_user_quota(user_id: str, new_chunks: int) -> None:
     sb = _supabase()
-    res = sb.table("knowledge_chunks").select("id", count="exact").eq("user_id", user_id).execute()
+    res = await _execute(
+        sb.table("knowledge_chunks").select("id", count="exact").eq("user_id", user_id)
+    )
     current = getattr(res, "count", 0) or 0
     if current + new_chunks > MAX_CHUNKS_PER_USER:
         raise QuotaExceeded(
@@ -45,19 +67,45 @@ async def check_user_quota(user_id: str, new_chunks: int) -> None:
         )
 
 
-def _caller_workspace_ids(sb, user_id: str) -> list[str]:
-    """Workspaces the caller belongs to — used to scope retrieval to shared docs.
-    Failures are non-fatal: fall back to personal-only (empty list)."""
-    try:
-        res = (
-            sb.table("workspace_members")
-            .select("workspace_id")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        return [r["workspace_id"] for r in (res.data or []) if r.get("workspace_id")]
-    except Exception:
-        return []
+# `_caller_workspace_ids` was inlined here historically; it now lives in
+# caches.py as `get_user_workspace_ids` and is shared across knowledge_*,
+# recall_*, and storage_* routers. See caches.py for cache semantics.
+
+
+def _rrf_merge(
+    vector_hits: list[dict],
+    bm25_hits: list[dict],
+    k_rrf: int = 60,
+) -> list[dict]:
+    """Reciprocal Rank Fusion.
+
+    Combines two ranked result lists by summing 1/(k_rrf + rank) per document.
+    Rank-based, so it ignores absolute score scales (cosine ∈ [0,1] vs
+    unbounded BM25), which is why this replaces the min-max normalization
+    approach used in the original smart-RAG plan.
+
+    Returns a single ranked list. Each row's `score` is overwritten with the
+    fused score and `match_type` is set to "hybrid".
+
+    NOTE: input row dicts are mutated in place (consistent with the rest of
+    knowledge_service — see e.g. `possible_conflict` writes in `search_knowledge`).
+    Pass copies if the caller still needs the originals.
+    """
+    by_id: dict[str, dict] = {}
+    fused: dict[str, float] = {}
+    for rank, row in enumerate(vector_hits, start=1):
+        rid = row["id"]
+        by_id[rid] = row
+        fused[rid] = fused.get(rid, 0.0) + 1.0 / (k_rrf + rank)
+    for rank, row in enumerate(bm25_hits, start=1):
+        rid = row["id"]
+        by_id.setdefault(rid, row)
+        fused[rid] = fused.get(rid, 0.0) + 1.0 / (k_rrf + rank)
+    merged = sorted(by_id.values(), key=lambda r: fused[r["id"]], reverse=True)
+    for r in merged:
+        r["score"] = fused[r["id"]]
+        r["match_type"] = "hybrid"
+    return merged
 
 
 async def search_knowledge(
@@ -66,10 +114,17 @@ async def search_knowledge(
     meeting_id: Optional[str] = None,
     k: int = 5,
     min_score: float = MIN_SCORE_DEFAULT,
+    hybrid: bool = True,
 ) -> list[dict]:
-    """Embed query, run pgvector similarity search, return matches with conflict flag.
-    Scoped to the caller's own docs plus any docs shared into their workspaces."""
-    query_vec = await embed_text(query)
+    """Embed query, run pgvector + (optionally) BM25, fuse with RRF, return matches.
+
+    Args:
+        hybrid: When True (default), runs both vector and BM25 searches in
+            parallel and fuses with Reciprocal Rank Fusion. When False, keeps
+            the original vector-only behavior — `min_score` is applied as a
+            raw cosine threshold in the RPC and the returned `score` field is
+            the raw cosine similarity.
+    """
     sb = _supabase()
     # meetings.id is bigint; coerce string IDs so PostgREST doesn't bounce them.
     meeting_filter: Optional[int]
@@ -77,38 +132,126 @@ async def search_knowledge(
         meeting_filter = int(meeting_id) if meeting_id not in (None, "") else None
     except (TypeError, ValueError):
         meeting_filter = None
-    workspace_ids = _caller_workspace_ids(sb, user_id)
-    resp = sb.rpc(
-        "knowledge_search",
-        {
-            "query_embedding": query_vec,
-            "caller_user_id": user_id,
-            "caller_workspace_ids": workspace_ids,
-            "meeting_filter": meeting_filter,
-            "match_limit": k,
-            "min_score": min_score,
-        },
-    ).execute()
-    rows = resp.data or []
-    if len(rows) >= 2:
+    workspace_ids = get_user_workspace_ids(sb, user_id)
+
+    if not hybrid:
+        # Vector-only path — preserves raw cosine `min_score` semantics.
+        query_vec = await embed_text(query)
+        resp = await _execute(
+            sb.rpc(
+                "knowledge_search",
+                {
+                    "query_embedding": query_vec,
+                    "caller_user_id": user_id,
+                    "caller_workspace_ids": workspace_ids,
+                    "meeting_filter": meeting_filter,
+                    "match_limit": k,
+                    "min_score": min_score,
+                },
+            )
+        )
+        rows = resp.data or []
+    else:
+        # Hybrid path — vector + BM25 in parallel, RRF-fused.
+        # Wider top-N (30) per branch so RRF has enough candidates to work with.
+        # `return_exceptions=True` so a missing BM25 RPC (e.g., migration not
+        # yet applied) or a transient Supabase outage degrades to vector-only
+        # instead of crashing the whole tool call.
+        query_vec = await embed_text(query)
+        vec_resp, bm25_resp = await asyncio.gather(
+            _execute(sb.rpc(
+                "knowledge_search",
+                {
+                    "query_embedding": query_vec,
+                    "caller_user_id": user_id,
+                    "caller_workspace_ids": workspace_ids,
+                    "meeting_filter": meeting_filter,
+                    "match_limit": 30,
+                    "min_score": min_score,
+                },
+            )),
+            _execute(sb.rpc(
+                "knowledge_search_bm25",
+                {
+                    "query_text": query,
+                    "caller_user_id": user_id,
+                    "caller_workspace_ids": workspace_ids,
+                    "meeting_filter": meeting_filter,
+                    "match_limit": 30,
+                },
+            )),
+            return_exceptions=True,
+        )
+        if isinstance(vec_resp, Exception):
+            # Vector failure is fatal — without it we have no semantic signal.
+            raise vec_resp
+        bm25_rows = [] if isinstance(bm25_resp, Exception) else (bm25_resp.data or [])
+        rows = _rrf_merge(vec_resp.data or [], bm25_rows)[: k * 3]
+
+    # Cap meeting-transcript results in top-k (transcripts are long and
+    # otherwise dominate retrieval). Tunable.
+    MAX_TRANSCRIPT_HITS = 2
+    capped: list[dict] = []
+    transcript_count = 0
+    for r in rows:
+        if r.get("source_type") == "meeting_transcript":
+            if transcript_count >= MAX_TRANSCRIPT_HITS:
+                continue
+            transcript_count += 1
+        capped.append(r)
+        if len(capped) >= k:
+            break
+    rows = capped
+
+    # Conflict detection is calibrated against raw cosine scores (0..1) — in
+    # hybrid mode every score is an RRF value bounded by 2/(k_rrf+1) ≈ 0.033,
+    # so CONFLICT_THRESHOLD=0.05 would fire on every result. Skip in hybrid
+    # mode until a rank-aware heuristic exists.
+    if not hybrid and len(rows) >= 2:
         top, second = rows[0], rows[1]
         if (
             top.get("doc_id") != second.get("doc_id")
             and abs((top.get("score") or 0) - (second.get("score") or 0)) < CONFLICT_THRESHOLD
         ):
             rows[0]["possible_conflict"] = True
+    # TODO(post-AWS): rerank `rows` here with BGE once we have the RAM headroom.
     return rows
+
+
+async def _record_doc_error(sb, doc_id: str, message: str) -> None:
+    """Write an error status for the doc. Wrapped in its own try/except so a
+    DB failure DURING error reporting doesn't propagate out of `ingest_doc`
+    (which is a background task — uncaught raises would just become opaque
+    log noise, leaving the doc stuck in "processing" forever).
+    """
+    try:
+        await _execute(
+            sb.table("knowledge_docs")
+            .update({"status": "error", "error_message": message})
+            .eq("id", doc_id)
+        )
+    except Exception as inner:
+        print(f"[knowledge] failed to write error status for doc {doc_id}: {inner}")
 
 
 async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_settings: dict) -> None:
     """Background worker. Loads → chunks → embeds → inserts.
     Updates status field at each phase. Never raises — errors written to error_message.
+
+    Every Supabase HTTP call runs on a worker thread (via _execute) so the
+    FastAPI event loop stays responsive even for big PDFs (~7-8 blocking
+    calls per ingestion, ~50-200ms each).
     """
     sb = _supabase()
     try:
-        sb.table("knowledge_docs").update({"status": "processing"}).eq("id", doc_id).execute()
+        await _execute(
+            sb.table("knowledge_docs").update({"status": "processing"}).eq("id", doc_id)
+        )
 
-        doc_row = sb.table("knowledge_docs").select("*").eq("id", doc_id).single().execute().data
+        doc_resp = await _execute(
+            sb.table("knowledge_docs").select("*").eq("id", doc_id).single()
+        )
+        doc_row = doc_resp.data
         if not doc_row:
             return
         user_id = doc_row["user_id"]
@@ -141,7 +284,15 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
 
         await check_user_quota(user_id, len(chunks))
 
-        contents = [c["content"] for c in chunks]
+        # Phase 2: add contextual preamble before embedding. Failure here falls
+        # back to embedding the raw chunk content (per add_context contract).
+        chunks = await add_context(
+            chunks,
+            doc_name=doc_row.get("name") or "document",
+            doc_summary="",
+        )
+
+        contents = [c["embedded_content"] for c in chunks]
         vectors = await embed_batch(contents)
 
         # Propagate workspace_id from the doc onto each chunk so the similarity
@@ -154,41 +305,46 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
                 "user_id": user_id,
                 "workspace_id": doc_workspace_id,
                 "content": chunks[i]["content"],
+                "embedded_content": chunks[i].get("embedded_content") or chunks[i]["content"],
                 "embedding": vectors[i],
                 "chunk_index": chunks[i]["chunk_index"],
                 "metadata": chunks[i]["metadata"],
             }
             for i in range(len(chunks))
         ]
+        # Sequential inserts (not gathered) — keeps DB load predictable and makes
+        # any per-batch failure recoverable without dangling tasks.
         for i in range(0, len(rows), INSERT_BATCH_SIZE):
-            sb.table("knowledge_chunks").insert(rows[i : i + INSERT_BATCH_SIZE]).execute()
+            await _execute(
+                sb.table("knowledge_chunks").insert(rows[i : i + INSERT_BATCH_SIZE])
+            )
 
-        sb.table("knowledge_docs").update({
-            "status": "ready",
-            "chunk_count": len(rows),
-            "last_synced_at": "now()",
-            "error_message": None,
-        }).eq("id", doc_id).execute()
+        await _execute(
+            sb.table("knowledge_docs").update({
+                "status": "ready",
+                "chunk_count": len(rows),
+                "last_synced_at": "now()",
+                "error_message": None,
+            }).eq("id", doc_id)
+        )
 
     except LoaderError as exc:
-        sb.table("knowledge_docs").update({
-            "status": "error", "error_message": str(exc),
-        }).eq("id", doc_id).execute()
+        await _record_doc_error(sb, doc_id, str(exc))
     except QuotaExceeded as exc:
-        sb.table("knowledge_docs").update({
-            "status": "error", "error_message": str(exc),
-        }).eq("id", doc_id).execute()
+        await _record_doc_error(sb, doc_id, str(exc))
     except Exception as exc:
-        sb.table("knowledge_docs").update({
-            "status": "error", "error_message": f"Unexpected error: {str(exc)[:200]}",
-        }).eq("id", doc_id).execute()
+        await _record_doc_error(sb, doc_id, f"Unexpected error: {str(exc)[:200]}")
 
 
 async def soft_delete_doc(doc_id: str, user_id: str) -> None:
     """Mark the doc deleted AND hard-delete its chunks so the user's quota recovers.
     The doc row stays (with deleted_at set) for the 30-day audit/undelete window."""
     sb = _supabase()
-    sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).eq("user_id", user_id).execute()
-    sb.table("knowledge_docs").update(
-        {"deleted_at": "now()", "chunk_count": 0}
-    ).eq("id", doc_id).eq("user_id", user_id).execute()
+    await _execute(
+        sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).eq("user_id", user_id)
+    )
+    await _execute(
+        sb.table("knowledge_docs")
+        .update({"deleted_at": "now()", "chunk_count": 0})
+        .eq("id", doc_id).eq("user_id", user_id)
+    )

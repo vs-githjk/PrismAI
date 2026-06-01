@@ -1,4 +1,5 @@
 import operator
+import os
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -31,6 +32,65 @@ AGENT_MAP = {
 TIER1_AGENTS = frozenset({"summarizer", "decisions", "action_items", "sentiment", "speaker_coach"})
 TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester"})
 
+# Tier-2 agents that don't need the full transcript — they synthesize from
+# context (summary + decisions + action_items + sentiment) which tier-1 has
+# already produced. The token saving per meeting is roughly transcript_tokens
+# × len(this set). health_score and calendar_suggester are NOT here because
+# they read transcript-specific signal (engagement patterns, date mentions).
+TIER2_CONTEXT_ONLY = frozenset({"email_drafter"})
+
+# Per-agent allowlist of personas. Structured-output agents (decisions,
+# action_items, sentiment, scores) are restricted to register-only presets
+# (default/concise/formal) so 'cheeky' or 'socratic' tone can't distort the
+# data model (e.g., action items phrased as questions). Free-text agents
+# (summarizer, email_drafter) take any preset including custom.
+AGENT_PERSONA_WHITELIST: dict[str, set[str]] = {
+    "summarizer":         {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "decisions":          {"default", "concise", "formal"},
+    "action_items":       {"default", "concise", "formal"},
+    "sentiment":          {"default", "concise", "formal"},
+    "speaker_coach":      {"default", "concise", "formal"},
+    "email_drafter":      {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "health_score":       {"default", "concise", "formal"},
+    "calendar_suggester": {"default", "concise", "formal"},
+}
+
+
+def _persona_text_for_agent(agent_name: str, state: "AnalysisState") -> str:
+    """Resolve the persona text to inject for this specific agent, honoring
+    AGENT_PERSONA_WHITELIST. Returns empty string when:
+      - no persona_preset in state
+      - preset is 'default'
+      - preset is not in the agent's whitelist (silent fallback)
+      - preset is 'custom' but persona_custom_prompt is empty
+    """
+    from personas import PRESETS  # local import to avoid module-load cycle
+
+    preset = state.get("persona_preset") or "default"
+    if preset == "default":
+        return ""
+    if preset not in AGENT_PERSONA_WHITELIST.get(agent_name, set()):
+        return ""
+    if preset == "custom":
+        return (state.get("persona_custom_prompt") or "").strip()
+    return PRESETS.get(preset, "")
+
+
+def _email_from_context_on() -> bool:
+    """Read at call time so tests can flip the flag mid-run."""
+    return os.getenv("PRISM_EMAIL_FROM_CONTEXT", "1") == "1"
+
+
+def _skip_orchestrator_words() -> int:
+    """Word-count threshold above which we bypass the orchestrator's LLM call
+    and just run every agent. Read at call time so tests can patch it cheaply.
+    Long meetings effectively always run all agents anyway — the orchestrator's
+    decision-cost (one full LLM call, ~500-800ms) doesn't pay for itself."""
+    try:
+        return int(os.getenv("PRISM_SKIP_ORCH_WORDS", "1500"))
+    except ValueError:
+        return 1500
+
 DEFAULT_RESULT = {
     "title": "",
     "summary": "",
@@ -56,11 +116,13 @@ AGENT_RESULT_KEY = {
 }
 
 
-class AnalysisState(TypedDict):
+class AnalysisState(TypedDict, total=False):
     transcript: str
     agents_to_run: list[str]
     results: Annotated[dict, operator.or_]
     context: dict
+    persona_preset: str           # 'default' | 'concise' | 'formal' | 'cheeky' | 'socratic' | 'custom'
+    persona_custom_prompt: str    # only when persona_preset == 'custom'
 
 
 def build_analysis_transcript(transcript: str, speakers: list | None = None, owner_name: str | None = None) -> str:
@@ -83,7 +145,13 @@ def build_analysis_transcript(transcript: str, speakers: list | None = None, own
 # ── Graph nodes ────────────────────────────────────────────────────
 
 async def _orchestrator_node(state: AnalysisState) -> dict:
-    agents = await orchestrator.run_orchestrator(state["transcript"])
+    transcript = state["transcript"] or ""
+    # Fast-path: long meetings basically always run every agent anyway, so
+    # paying for the orchestrator's LLM round-trip is wasted latency + tokens.
+    # Compare on word count (cheap to compute) — ~1500 words ≈ 2000 tokens.
+    if len(transcript.split()) >= _skip_orchestrator_words():
+        return {"agents_to_run": list(AGENT_MAP.keys())}
+    agents = await orchestrator.run_orchestrator(transcript)
     return {"agents_to_run": [a for a in agents if a in AGENT_MAP]}
 
 
@@ -96,10 +164,14 @@ def _route_tier1(state: AnalysisState) -> list[Send] | str:
 
 def _make_tier1_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
+        from agents.utils import _PERSONA_TEXT
+        token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
         try:
             result = await AGENT_MAP[agent_name](state["transcript"])
         except Exception:
             result = {}
+        finally:
+            _PERSONA_TEXT.reset(token)
         return {"results": {agent_name: result}}
     return node
 
@@ -125,10 +197,24 @@ def _route_tier2(state: AnalysisState) -> list[Send] | str:
 
 def _make_tier2_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
+        from agents.utils import _PERSONA_TEXT
+        token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
         try:
-            result = await AGENT_MAP[agent_name](state["transcript"], state.get("context", {}))
+            ctx = state.get("context", {})
+            # Token efficiency: agents in TIER2_CONTEXT_ONLY synthesize from
+            # tier-1's output (summary + decisions + action_items + sentiment)
+            # rather than re-reading the full transcript. Saves transcript-sized
+            # tokens per such agent. Flag-gated so quality regressions can be
+            # rolled back without redeploy.
+            if agent_name in TIER2_CONTEXT_ONLY and _email_from_context_on():
+                transcript_in = ""
+            else:
+                transcript_in = state["transcript"]
+            result = await AGENT_MAP[agent_name](transcript_in, ctx)
         except Exception:
             result = {}
+        finally:
+            _PERSONA_TEXT.reset(token)
         return {"results": {agent_name: result}}
     return node
 
@@ -211,8 +297,20 @@ def _state_to_result(state: AnalysisState) -> dict:
     return result
 
 
-async def run_full_analysis(transcript: str) -> dict:
-    final_state = await _GRAPH.ainvoke(
-        {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {}}
-    )
+async def run_full_analysis(
+    transcript: str,
+    persona_preset: str | None = None,
+    persona_custom_prompt: str | None = None,
+) -> dict:
+    initial: dict = {
+        "transcript": transcript,
+        "agents_to_run": [],
+        "results": {},
+        "context": {},
+    }
+    if persona_preset:
+        initial["persona_preset"] = persona_preset
+    if persona_custom_prompt:
+        initial["persona_custom_prompt"] = persona_custom_prompt
+    final_state = await _GRAPH.ainvoke(initial)
     return _state_to_result(final_state)

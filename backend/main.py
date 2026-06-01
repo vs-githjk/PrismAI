@@ -63,4 +63,12 @@ app.include_router(create_chat_router(groq_client))
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from caches import cache_stats
+    from personas import cache_stats as persona_cache_stats
+    return {
+        "status": "ok",
+        "caches": {
+            "workspace_ids": cache_stats(),
+            "personas": persona_cache_stats(),
+        },
+    }

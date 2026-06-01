@@ -1313,7 +1313,9 @@ export default function App() {
     auto_send_slack: localStorage.getItem('prism_auto_send_slack') === '1',
     auto_send_notion: localStorage.getItem('prism_auto_send_notion') === '1',
   }))
-  // Load tool settings from backend when signed in
+  const [personaPreset, setPersonaPreset] = useState('default')
+  const [personaCustomPrompt, setPersonaCustomPrompt] = useState('')
+  // Load tool settings + persona from backend when signed in
   useEffect(() => {
     if (!user || isTestAccount) return
     apiFetch('/user-settings').then(async (res) => {
@@ -1324,8 +1326,25 @@ export default function App() {
         linear_api_key: data.linear_api_key || '',
         slack_bot_token: data.slack_bot_token || '',
       }))
+      setPersonaPreset(data.persona_preset || 'default')
+      setPersonaCustomPrompt(data.persona_custom_prompt || '')
     }).catch(() => {})
   }, [user?.id, isTestAccount])
+
+  const savePersonalPersona = async (preset, customPrompt) => {
+    const res = await apiFetch('/user-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        persona_preset: preset,
+        persona_custom_prompt: preset === 'custom' ? customPrompt : null,
+      }),
+    })
+    if (res.ok) {
+      setPersonaPreset(preset)
+      setPersonaCustomPrompt(preset === 'custom' ? (customPrompt || '') : '')
+    }
+  }
 
   const [exportingSlack, setExportingSlack] = useState(false)
   const [exportingNotion, setExportingNotion] = useState(false)
@@ -1796,7 +1815,7 @@ export default function App() {
             setTranscriptForTab(data.transcript || '', 'paste')
             setSessionId(s => s + 1)
             setResult(data.result)
-            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId)
+            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId, activeBotId)
             const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
             void deliverMeetingRecap(meetingTitle, data.result, entry?.id)
             setBotTranscriptReady(false)
@@ -1970,7 +1989,7 @@ export default function App() {
     }).sort((a, b) => b.id - a.id)
   }
 
-  const saveToHistory = (t, r, recordedByUserId = null) => {
+  const saveToHistory = (t, r, recordedByUserId = null, recallBotId = null) => {
     if (!user) {
       setMeetingId(null)
       setShareToken(null)
@@ -1992,6 +2011,14 @@ export default function App() {
       share_token,
       workspace_id: activeWorkspaceId || null,
       recorded_by_user_id: recordedByUserId,
+      persona_used: personaPreset || 'default',
+      recall_bot_id: recallBotId || null,
+      // Set provider client-side so the RecordingPlayer gate
+      // (meeting.recording_provider === 'recall') fires immediately after
+      // analysis — without waiting for the server round-trip to echo back
+      // the enriched row through the next history fetch. The server is the
+      // source of truth and will overwrite this on the next merge.
+      recording_provider: recallBotId ? 'recall' : null,
     }
     setHistory(prev => mergeHistoryEntries([entry, ...prev]))
     setMeetingId(id)
@@ -2312,6 +2339,9 @@ export default function App() {
           transcript: t,
           speakers: validSpeakers,
           owner_name: authSession?.user?.user_metadata?.full_name || null,
+          // Persona — resolved client-side because /analyze-stream is unauthenticated.
+          persona_preset: personaPreset || 'default',
+          persona_custom_prompt: personaPreset === 'custom' ? (personaCustomPrompt || '') : null,
         }),
         signal: controller.signal,
       })
@@ -2708,6 +2738,9 @@ export default function App() {
             setActiveWorkspaceId(wsId)
             sessionStorage.setItem('prism_active_workspace', wsId)
           }}
+          personaPreset={personaPreset}
+          personaCustomPrompt={personaCustomPrompt}
+          onSavePersonalPersona={savePersonalPersona}
         />
 
         {showSpeakerModal && (

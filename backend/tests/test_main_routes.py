@@ -51,9 +51,19 @@ fake_analysis_service = types.ModuleType("analysis_service")
 fake_analysis_service.AGENT_MAP = {}
 fake_analysis_service.AGENT_RESULT_KEY = {}
 fake_analysis_service.build_analysis_transcript = lambda transcript, speakers=None, owner_name=None: transcript
+fake_analysis_service.AGENT_PERSONA_WHITELIST = {
+    "summarizer":         {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "decisions":          {"default", "concise", "formal"},
+    "action_items":       {"default", "concise", "formal"},
+    "sentiment":          {"default", "concise", "formal"},
+    "speaker_coach":      {"default", "concise", "formal"},
+    "email_drafter":      {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "health_score":       {"default", "concise", "formal"},
+    "calendar_suggester": {"default", "concise", "formal"},
+}
 
 
-async def _fake_run_full_analysis(_transcript: str):
+async def _fake_run_full_analysis(_transcript: str, **_kwargs):
     return {"summary": "ok", "agents_run": []}
 
 
@@ -99,11 +109,15 @@ class MainRoutesTestCase(unittest.TestCase):
             async def read(self):
                 return b"audio-bytes"
 
+        class FakeRequest:
+            # transcribe_audio reads request.client.host for per-IP rate limiting
+            client = types.SimpleNamespace(host="127.0.0.1")
+
         router = analysis_routes.create_analysis_router(_FakeAsyncGroq())
         transcribe_endpoint = next(
             route.endpoint for route in router.routes if getattr(route, "path", None) == "/transcribe"
         )
-        response = asyncio.run(transcribe_endpoint(FakeUploadFile()))
+        response = asyncio.run(transcribe_endpoint(FakeRequest(), FakeUploadFile()))
 
         self.assertEqual(response, {"transcript": "mock transcript"})
 

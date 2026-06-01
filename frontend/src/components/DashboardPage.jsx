@@ -717,6 +717,20 @@ export default function DashboardPage(props) {
     }
   }
 
+  async function saveWorkspacePersona(workspaceId, defaultPersona) {
+    const r = await apiFetch(`/workspaces/${workspaceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default_persona: defaultPersona }),
+    })
+    if (r.ok) {
+      setWsDetails(prev => prev ? { ...prev, default_persona: defaultPersona } : prev)
+      setWorkspaces(prev => prev.map(ws =>
+        ws.id === workspaceId ? { ...ws, default_persona: defaultPersona } : ws
+      ))
+    }
+  }
+
   async function removeMember(wsId, targetUserId) {
     const r = await apiFetch(`/workspaces/${wsId}/members/${targetUserId}`, { method: 'DELETE' })
     if (r.ok) {
@@ -965,6 +979,10 @@ export default function DashboardPage(props) {
         copyInviteLink={copyInviteLink}
         inviteCopied={inviteCopied}
         closeWsSettings={closeWsSettings}
+        personaPreset={props.personaPreset}
+        personaCustomPrompt={props.personaCustomPrompt}
+        onSavePersonalPersona={props.onSavePersonalPersona}
+        onSaveWorkspacePersona={saveWorkspacePersona}
         history={props.history || []}
         filteredHistory={filteredHistory}
         historySearch={props.historySearch}
@@ -1131,6 +1149,11 @@ export default function DashboardPage(props) {
                 result={props.result}
                 onResultUpdate={(patch) => props.setResult((prev) => prev ? { ...prev, ...patch } : patch)}
                 isSignedIn={!!props.user}
+                personaPreset={props.personaPreset}
+                personaCustomPrompt={props.personaCustomPrompt}
+                workspaceDefaultPersona={workspaces.find(w => w.id === activeWorkspaceId)?.default_persona || null}
+                onSavePersona={props.onSavePersonalPersona}
+                activeWorkspaceId={activeWorkspaceId}
               />
             </Suspense>
           </div>

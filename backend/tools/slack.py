@@ -157,7 +157,13 @@ register_tool(
 
 register_tool(
     name="slack_post_message",
-    description="Post a message to a Slack channel",
+    description=(
+        "Post a finished message to a Slack channel. ONLY call this when the user "
+        "explicitly uses a POST/SEND verb (post, send, share in #X, drop in, ping the "
+        "channel). Do NOT call this when the user asks to draft, write, compose, or "
+        "prepare a Slack message — in those cases output the message text directly "
+        "as your reply. Requires a confirmed channel (name or ID)."
+    ),
     parameters={
         "type": "object",
         "properties": {

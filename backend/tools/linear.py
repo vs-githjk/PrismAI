@@ -104,7 +104,13 @@ async def linear_create_issue(args: dict, user_settings: dict | None = None) -> 
 # Register tool
 register_tool(
     name="linear_create_issue",
-    description="Create a Linear issue from an action item or task",
+    description=(
+        "Create a Linear issue. ONLY call this when the user explicitly uses a "
+        "CREATE/FILE/OPEN/LOG verb for a ticket (create a ticket, file an issue, log "
+        "this, open a Linear). Do NOT call this when the user asks to draft a ticket, "
+        "outline a ticket, or describe what a ticket would look like — output the "
+        "ticket text directly as your reply in that case."
+    ),
     parameters={
         "type": "object",
         "properties": {

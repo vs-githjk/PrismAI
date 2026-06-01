@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bolt,
   BookOpen,
   Check,
   ChevronDown,
@@ -17,6 +16,15 @@ import {
 } from 'lucide-react'
 import { deriveDisplayTitle } from '../../lib/insights'
 import { formatHistoryDate, IntegrationsIcon } from './chrome'
+import PersonaChip from '../PersonaChip'
+
+const WORKSPACE_PERSONAS = [
+  { key: 'default',  label: 'Default'  },
+  { key: 'concise',  label: 'Concise'  },
+  { key: 'formal',   label: 'Formal'   },
+  { key: 'cheeky',   label: 'Cheeky'   },
+  { key: 'socratic', label: 'Socratic' },
+]
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,6 +92,10 @@ export default function DashboardSidebar(props) {
     copyInviteLink,
     inviteCopied,
     closeWsSettings,
+    personaPreset,
+    personaCustomPrompt,
+    onSavePersonalPersona,
+    onSaveWorkspacePersona,
     history = [],
     filteredHistory = [],
     historySearch,
@@ -509,14 +521,15 @@ export default function DashboardSidebar(props) {
                 <IntegrationsIcon className="h-4 w-4 shrink-0 text-white/62" />
                 Integrations
               </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled
-                className="gap-3 px-3 py-2 text-xs font-semibold text-white/40"
-              >
-                <Bolt className="h-4 w-4 shrink-0 text-white/30" aria-hidden="true" />
-                Settings
-                <span className="ml-auto text-[9.5px] font-medium text-white/28">Soon</span>
-              </DropdownMenuItem>
+              <div className="px-0 py-0">
+                <PersonaChip
+                  personaPreset={personaPreset || 'default'}
+                  personaCustomPrompt={personaCustomPrompt || ''}
+                  workspaceDefault={null}
+                  onSave={({ preset, customPrompt }) => onSavePersonalPersona?.(preset, customPrompt)}
+                  variant="menuItem"
+                />
+              </div>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -580,6 +593,31 @@ export default function DashboardSidebar(props) {
                   </button>
                 )}
               </div>
+
+              {wsDetails.your_role === 'owner' && (
+                <div>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">
+                    Default persona
+                  </p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                    {WORKSPACE_PERSONAS.map((p) => (
+                      <label key={p.key} className="flex cursor-pointer items-center gap-1.5 text-[12px] text-white/80">
+                        <input
+                          type="radio"
+                          name="workspace-persona"
+                          checked={(wsDetails.default_persona || 'default') === p.key}
+                          onChange={() => onSaveWorkspacePersona?.(wsSettingsId, p.key)}
+                          className="accent-cyan-400"
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[10px] text-white/35">
+                    Members inherit this unless they set their own.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">

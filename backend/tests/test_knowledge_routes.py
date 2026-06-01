@@ -54,10 +54,19 @@ class KnowledgeRoutesTests(unittest.TestCase):
         app, kr = self._app()
         client = TestClient(app)
 
+        # Chain now filters soft-deleted via .is_("deleted_at","null") BEFORE the
+        # per-scope filters, so the call sequence on the personal-library path is:
+        #   table → select → is_(deleted_at) → eq(user_id) → is_(workspace_id) → order → execute
+        # MagicMock auto-chains identical attributes, so we configure one terminal.
         mock_sb = MagicMock()
-        mock_sb.table.return_value.select.return_value.eq.return_value.is_.return_value.order.return_value.execute.return_value.data = [
-            {"id": "d1", "name": "test.pdf", "status": "ready"},
-        ]
+        (
+            mock_sb.table.return_value.select.return_value
+            .is_.return_value
+            .eq.return_value
+            .is_.return_value
+            .order.return_value
+            .execute.return_value.data
+        ) = [{"id": "d1", "name": "test.pdf", "status": "ready"}]
         with patch.object(kr, "_supabase", lambda: mock_sb):
             resp = client.get("/knowledge/docs")
         self.assertEqual(resp.status_code, 200)

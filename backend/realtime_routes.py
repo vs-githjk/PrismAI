@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request
 
 import meeting_memory
 import perception_state
+import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences
 from clients import get_groq, get_http
@@ -264,13 +265,24 @@ def _build_static_prefix(has_gmail: bool, has_calendar: bool) -> str:
     invalidates that synthesis turn's cache. The ACROSS-command cache (first
     turn of command N+1) is unaffected because that turn rebuilds with
     untainted schemas. See Phase C plan in conversation log 2026-05-15.
+
+    Think+Loop directive (PRISM_THINK_LOOP=1): appends the <thinking> block
+    instructions so the model plans before acting. Kept inside the cached
+    prefix so it costs nothing after the first call. The flag controls
+    inclusion so today's behavior is preserved when off.
     """
-    return (
+    base = (
         _STATIC_PERSONA
         + (_STATIC_GMAIL_ON if has_gmail else _STATIC_GMAIL_OFF)
         + (_STATIC_CALENDAR_ON if has_calendar else _STATIC_CALENDAR_OFF)
         + _STATIC_STYLE
     )
+    # Think+Loop's prompt-side directive was removed 2026-05-23 after a Groq+Llama
+    # 3.3 interaction caused web_search calls to emit malformed <function=...>
+    # syntax (e.g. <function=name:"web_search" >{...}</function>). The remaining
+    # think_loop primitives — verb_gate, artifact handoff, strip_thinking —
+    # cover the misfire risk without touching the tool-call format.
+    return base
 
 
 def _build_command_messages(
@@ -1583,6 +1595,23 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             is_owner=is_owner,
         )
 
+        # ── Think+Loop artifact handoff ─────────────────────────────────────
+        # If a prior turn produced a draft (COMPOSE) and the current command
+        # looks like a follow-up ("send it", "go ahead"), inject the draft
+        # as a system message right before the user turn so the model can
+        # reuse the body in its tool call without re-asking. Cache-safe
+        # because the hint sits AFTER the cached static + dynamic system
+        # messages and before the user message — it doesn't invalidate the
+        # cache prefix.
+        if think_loop.think_loop_on():
+            _prior_art = think_loop.get_fresh_artifact(state)
+            if _prior_art and any(
+                p in (command or "").lower() for p in think_loop.FOLLOWUP_ACT_PHRASES
+            ):
+                _hint = {"role": "system", "content": think_loop.artifact_system_hint(_prior_art)}
+                messages.insert(-1, _hint)
+                print(f"[realtime] think_loop artifact_injected bot={bot_id[:8]} age_s={int(time.time()-_prior_art['ts'])}")
+
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
@@ -1659,6 +1688,34 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                                     "draft it in chat and let the owner send."
                                 ),
                             }),
+                        })
+                        continue
+
+                # ── Think+Loop verb gate ────────────────────────────────────
+                # Refuses destructive tool calls (gmail_send, slack_post,
+                # calendar_create/update/delete, linear_create_issue) when the
+                # original command lacked an authorizing verb (send/post/
+                # schedule/cancel/...). Catches the "draft email" → gmail_send
+                # class of misfires without blocking legitimate follow-ups
+                # like "send it" when a prior turn produced a draft.
+                if think_loop.think_loop_on():
+                    _has_artifact = think_loop.get_fresh_artifact(state) is not None
+                    _block_reason = think_loop.verb_gate(
+                        command=command,
+                        tool_name=tc_name,
+                        has_prior_artifact=_has_artifact,
+                    )
+                    if _block_reason:
+                        perception_state.bump(state, "think_loop_verb_blocks")
+                        print(
+                            f"[realtime] think_loop_verb_block tool={tc_name!r} "
+                            f"command={command[:80]!r}"
+                        )
+                        tools_used.append(tc_name)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": json.dumps({"error": _block_reason}),
                         })
                         continue
 
@@ -1824,6 +1881,25 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             except Exception:
                 reply = "Done."
 
+        # ── Think+Loop post-processing ──────────────────────────────────────
+        # Strip any <thinking>...</thinking> block before the reply hits TTS.
+        # The hidden thinking is preserved in the log entry for debugging.
+        # Then, if the reply looks like a draft and the command was a COMPOSE
+        # request, stash it on bot state so the next "send it" follow-up can
+        # reuse the body. ACT/destructive commands clear any prior artifact.
+        hidden_thinking = ""
+        if think_loop.think_loop_on() and reply:
+            visible, hidden_thinking = think_loop.strip_thinking(reply)
+            if visible:
+                reply = visible
+            if think_loop.looks_like_compose_command(command) and think_loop.looks_like_artifact(reply):
+                think_loop.set_artifact(state, reply, command)
+                print(f"[realtime] think_loop artifact stashed bot={bot_id[:8]} len={len(reply)}")
+            elif tools_used:
+                # An ACT successfully ran — drop the prior draft so it can't
+                # leak into a future unrelated send.
+                think_loop.clear_artifact(state)
+
         # Log command to bot_store and Supabase
         cmd_entry = {
             "command": command,
@@ -1832,9 +1908,15 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             "reply": reply,
             "ts": time.time(),
         }
+        if hidden_thinking:
+            cmd_entry["thinking"] = hidden_thinking[:1000]
         if bot_id in bot_store:
             bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
         _db_append_command(bot_id, cmd_entry)
+        async with perception_state.get_memory_lock(state):
+            state["transcript_buffer"].append(f"Prism: {reply}")
+            if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
+                state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
 
         # Respond via voice + chat — fire in parallel so the chat message doesn't
         # add a Recall round-trip to TTFB before TTS begins.
@@ -1884,6 +1966,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                     if bot_id in bot_store:
                         bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
                     _db_append_command(bot_id, cmd_entry)
+                    async with perception_state.get_memory_lock(state):
+                        state["transcript_buffer"].append(f"Prism: {reply}")
+                        if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
+                            state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
                     print(f"[realtime] haiku fallback reply={reply!r}")
                     await _send_chat_response(bot_id, f"✓ {reply}")
                     await _send_voice_response(bot_id, reply)

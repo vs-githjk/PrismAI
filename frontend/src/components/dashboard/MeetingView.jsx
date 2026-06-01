@@ -5,6 +5,7 @@ import EmailCard from './EmailCard'
 import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
+import RecordingPlayer from './RecordingPlayer'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
 import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
@@ -149,6 +150,15 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             <p className="mt-1 text-[11px] text-white/38">Recorded by {recordedByEmail}</p>
           )}
         </div>
+      )}
+
+      {meeting?.id && meeting?.recording_provider === 'recall' && (
+        <RecordingPlayer
+          meetingId={meeting.id}
+          recordingProvider={meeting.recording_provider}
+          transcriptSegments={meeting.transcript_segments}
+          transcriptText={transcript}
+        />
       )}
 
       {transcript && (

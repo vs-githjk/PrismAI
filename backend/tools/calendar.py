@@ -181,7 +181,13 @@ async def calendar_update_event(args: dict, user_settings: dict | None = None) -
 # Register tools
 register_tool(
     name="calendar_create_event",
-    description="Create a Google Calendar event / schedule a follow-up meeting",
+    description=(
+        "Create a Google Calendar event. ONLY call this when the user explicitly uses "
+        "a SCHEDULE/BOOK/CREATE verb (schedule, book, set up, add to my calendar, block "
+        "off, create a meeting). Do NOT call this when the user is asking for time "
+        "suggestions, drafting an agenda, or discussing a potential meeting without "
+        "confirmation. Requires a confirmed title AND start/end time."
+    ),
     parameters={
         "type": "object",
         "properties": {

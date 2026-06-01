@@ -17,10 +17,13 @@ _DEFAULT = {"follow_up_email": {"subject": "", "body": ""}}
 
 
 async def run(transcript: str, context: dict = {}) -> dict:
-    user_content = f"Transcript:\n{transcript}"
-
+    # Build the user message from whichever inputs are present. The analysis
+    # pipeline normally passes empty transcript + populated context (token
+    # efficiency — see analysis_service.TIER2_CONTEXT_ONLY). The chat_routes
+    # re-run flow passes the full transcript (with [User instruction: ...]
+    # appended) + empty context. Both must work, so build additively.
+    parts = []
     if context:
-        parts = []
         if context.get("summary"):
             parts.append(f"Meeting summary: {context['summary']}")
         if context.get("decisions"):
@@ -34,8 +37,12 @@ async def run(transcript: str, context: dict = {}) -> dict:
                 for a in context["action_items"]
             )
             parts.append(f"Action items:\n{items_text}")
-        if parts:
-            user_content = "\n\n".join(parts) + "\n\n---\n\n" + user_content
+    if transcript:
+        parts.append(f"Transcript:\n{transcript}")
+
+    # Fail-safe: if absolutely nothing was provided, give the model the bare
+    # transcript header so it doesn't see an empty user message.
+    user_content = "\n\n---\n\n".join(parts) if parts else "Transcript:\n"
 
     for attempt in range(2):
         try:
