@@ -3,6 +3,12 @@
 -- Run AFTER knowledge_workspace_migration.sql and knowledge_contextual_migration.sql.
 -- Apply in the Supabase SQL editor.
 
+-- 0. Bump maintenance_work_mem for THIS session so the GIN build doesn't
+--    fail with "memory required is N MB, maintenance_work_mem is 32 MB"
+--    on Supabase's default config. SET is session-scoped — once the editor
+--    tab closes, the setting reverts; no permanent change to your project.
+SET maintenance_work_mem = '128MB';
+
 -- 1. Generated tsvector column (auto-updated by Postgres on every write).
 alter table knowledge_chunks
   add column if not exists content_tsv tsvector
