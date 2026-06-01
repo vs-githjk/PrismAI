@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 
 const PRESETS = [
-  { key: 'default',  label: 'Default'  },
-  { key: 'concise',  label: 'Concise'  },
-  { key: 'formal',   label: 'Formal'   },
-  { key: 'cheeky',   label: 'Cheeky'   },
-  { key: 'socratic', label: 'Socratic' },
+  { key: 'default',    label: 'Default'    },
+  { key: 'concise',    label: 'Concise'    },
+  { key: 'formal',     label: 'Formal'     },
+  { key: 'cheeky',     label: 'Cheeky'     },
+  { key: 'socratic',   label: 'Socratic'   },
+  { key: 'warm',       label: 'Warm'       },
+  { key: 'analytical', label: 'Analytical' },
 ]
 
 const CUSTOM_MAX = 500

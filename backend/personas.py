@@ -43,6 +43,17 @@ PRESETS: dict[str, str] = {
         "direct answer exists, give it; where the request is ambiguous, name "
         "the ambiguity and pose one or two clarifying questions."
     ),
+    "warm": (
+        "Lead with warmth. Acknowledge what the user is dealing with before "
+        "diving in. Use 'we' and 'let's' where it fits. Keep substance first — "
+        "empathy decorates the answer, never replaces it."
+    ),
+    "analytical": (
+        "Lead with the answer, then the evidence. Use numbered points to "
+        "compare options or weigh trade-offs. Quantify where possible; name "
+        "the key assumption when you can't. No hedging — if confidence is "
+        "mixed, say so explicitly."
+    ),
 }
 
 CUSTOM_PROMPT_MAX_CHARS = 500

@@ -188,6 +188,29 @@ class ResolvePersonaTests(unittest.TestCase):
         self.assertEqual(personas.cache_stats()["failures"], 1)
         self.assertEqual(personas.cache_stats()["size"], 0)
 
+    def test_warm_preset_resolves(self):
+        """Sanity: 'warm' preset is registered and resolves to non-empty text."""
+        import personas
+        sb = _fake_sb(
+            user_row={"persona_preset": "warm", "persona_custom_prompt": None},
+            ws_row=None,
+        )
+        rp = asyncio.run(personas.resolve_persona(sb, "u1", None))
+        self.assertEqual(rp.preset, "warm")
+        self.assertIn("warmth", rp.text.lower())
+
+    def test_analytical_preset_resolves(self):
+        """Sanity: 'analytical' preset is registered and resolves to non-empty text."""
+        import personas
+        sb = _fake_sb(
+            user_row={"persona_preset": "analytical", "persona_custom_prompt": None},
+            ws_row=None,
+        )
+        rp = asyncio.run(personas.resolve_persona(sb, "u1", None))
+        self.assertEqual(rp.preset, "analytical")
+        # Distinctive marker — analytical leads with structure & numbers.
+        self.assertIn("evidence", rp.text.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
