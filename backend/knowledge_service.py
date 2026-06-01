@@ -115,15 +115,24 @@ async def search_knowledge(
     k: int = 5,
     min_score: float = MIN_SCORE_DEFAULT,
     hybrid: bool = True,
+    rerank: bool = False,
+    rewrite_query: bool = False,
+    conversation_history: Optional[list[str]] = None,
 ) -> list[dict]:
     """Embed query, run pgvector + (optionally) BM25, fuse with RRF, return matches.
 
     Args:
-        hybrid: When True (default), runs both vector and BM25 searches in
-            parallel and fuses with Reciprocal Rank Fusion. When False, keeps
-            the original vector-only behavior — `min_score` is applied as a
-            raw cosine threshold in the RPC and the returned `score` field is
-            the raw cosine similarity.
+        hybrid: vector + BM25 RRF (default). When False, vector-only with raw
+            cosine min_score semantics — preserved for back-compat.
+        rerank: Phase 4 — run a Groq LLM reranker on the fused top-N to
+            reorder by relevance. Adds ~300-500ms. Opt-in (default OFF) so the
+            proactive surfacing path stays light at ~150ms.
+        rewrite_query: Phase 5 — rewrite terse / follow-up queries into
+            standalone form via Groq before embedding+BM25. Heuristic gate
+            avoids the call when the query is already clear. Opt-in.
+        conversation_history: prior turns (most recent last) used by the
+            query rewriter to resolve references like "and engineering?". Only
+            consulted when rewrite_query=True.
     """
     sb = _supabase()
     # meetings.id is bigint; coerce string IDs so PostgREST doesn't bounce them.
@@ -134,9 +143,17 @@ async def search_knowledge(
         meeting_filter = None
     workspace_ids = get_user_workspace_ids(sb, user_id)
 
+    # Phase 5: query rewriting (lazy import keeps proactive path free of the
+    # extra module load — and avoids any circular-import surprises since both
+    # modules sit in the backend package and reach for agents.utils).
+    effective_query = query
+    if rewrite_query:
+        from knowledge_query_rewriter import maybe_rewrite_query
+        effective_query = await maybe_rewrite_query(query, conversation_history)
+
     if not hybrid:
         # Vector-only path — preserves raw cosine `min_score` semantics.
-        query_vec = await embed_text(query)
+        query_vec = await embed_text(effective_query)
         resp = await _execute(
             sb.rpc(
                 "knowledge_search",
@@ -145,7 +162,7 @@ async def search_knowledge(
                     "caller_user_id": user_id,
                     "caller_workspace_ids": workspace_ids,
                     "meeting_filter": meeting_filter,
-                    "match_limit": k,
+                    "match_limit": k if not rerank else max(30, k * 3),
                     "min_score": min_score,
                 },
             )
@@ -157,7 +174,7 @@ async def search_knowledge(
         # `return_exceptions=True` so a missing BM25 RPC (e.g., migration not
         # yet applied) or a transient Supabase outage degrades to vector-only
         # instead of crashing the whole tool call.
-        query_vec = await embed_text(query)
+        query_vec = await embed_text(effective_query)
         vec_resp, bm25_resp = await asyncio.gather(
             _execute(sb.rpc(
                 "knowledge_search",
@@ -173,7 +190,7 @@ async def search_knowledge(
             _execute(sb.rpc(
                 "knowledge_search_bm25",
                 {
-                    "query_text": query,
+                    "query_text": effective_query,
                     "caller_user_id": user_id,
                     "caller_workspace_ids": workspace_ids,
                     "meeting_filter": meeting_filter,
@@ -187,6 +204,15 @@ async def search_knowledge(
             raise vec_resp
         bm25_rows = [] if isinstance(bm25_resp, Exception) else (bm25_resp.data or [])
         rows = _rrf_merge(vec_resp.data or [], bm25_rows)[: k * 3]
+
+    # Phase 4: reranking. Skipped on proactive (rerank=False default).
+    # When reranking, we trust the LLM's relevance judgment over the
+    # transcript-count heuristic, so the transcript cap is bypassed —
+    # the reranker should already deprioritize over-long transcript hits
+    # if they're not actually the best answer.
+    if rerank and len(rows) > 1:
+        from knowledge_reranker import rerank as _rerank
+        return await _rerank(effective_query, rows, top_k=k)
 
     # Cap meeting-transcript results in top-k (transcripts are long and
     # otherwise dominate retrieval). Tunable.

@@ -48,10 +48,25 @@ async def knowledge_lookup(args: dict, user_settings: Optional[dict] = None) -> 
     user_id = settings.get("user_id") or args.get("user_id") or ""
     meeting_id = settings.get("meeting_id") or args.get("meeting_id")
     bot_id = settings.get("bot_id") or args.get("bot_id")
+    # Conversation history threaded in by the chat/agent caller so the Phase 5
+    # rewriter can resolve "and Q3?" style follow-ups. Optional — None is fine.
+    conversation_history = settings.get("conversation_history") or args.get("conversation_history")
     if not query or not user_id:
         return {"error": "Both query and user_id are required"}
 
-    matches = await search_knowledge(query, user_id, meeting_id=meeting_id, k=5, min_score=0.75)
+    # On-demand path: enable Phase 4 (rerank) + Phase 5 (rewrite). The proactive
+    # surfacing path calls `search_knowledge` directly with both off so it stays
+    # ~150ms; this tool path budgets ~800ms and can afford the extra LLM hops.
+    matches = await search_knowledge(
+        query,
+        user_id,
+        meeting_id=meeting_id,
+        k=5,
+        min_score=0.75,
+        rerank=True,
+        rewrite_query=True,
+        conversation_history=conversation_history,
+    )
 
     if not matches:
         await _log_query(user_id, bot_id, query, None, None, None)

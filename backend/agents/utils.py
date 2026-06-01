@@ -71,8 +71,17 @@ def _get_anthropic():
 _FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
-async def llm_call(system: str, user: str, temperature: float = 0.3) -> str:
-    """Call Groq LLM. On rate-limit/server errors, retries once if Groq says wait ≤5s, then falls back to claude-haiku-4-5."""
+async def llm_call(
+    system: str,
+    user: str,
+    temperature: float = 0.3,
+    max_tokens: int | None = None,
+) -> str:
+    """Call Groq LLM. On rate-limit/server errors, retries once if Groq says wait ≤5s, then falls back to claude-haiku-4-5.
+
+    max_tokens: optional cap on response length. Useful for short, structured
+    outputs (e.g. context preambles, reranker decisions, query rewrites) so
+    we don't pay for runaway generation."""
     groq = _get_groq()
     system = system + get_persona_suffix()
     messages = [
@@ -82,11 +91,14 @@ async def llm_call(system: str, user: str, temperature: float = 0.3) -> str:
     groq_exc = None
     for attempt in range(2):
         try:
-            resp = await groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                temperature=temperature,
-                messages=messages,
-            )
+            groq_kwargs = {
+                "model": "llama-3.3-70b-versatile",
+                "temperature": temperature,
+                "messages": messages,
+            }
+            if max_tokens is not None:
+                groq_kwargs["max_tokens"] = max_tokens
+            resp = await groq.chat.completions.create(**groq_kwargs)
             return resp.choices[0].message.content
         except Exception as exc:
             status_code = getattr(exc, "status_code", None)
@@ -113,7 +125,7 @@ async def llm_call(system: str, user: str, temperature: float = 0.3) -> str:
         print(f"[agent] Groq failed ({groq_exc!r}), falling back to claude-haiku-4-5")
         resp = await anthropic_client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
+            max_tokens=max_tokens if max_tokens is not None else 2048,
             temperature=temperature,
             system=system,
             messages=[{"role": "user", "content": user}],
