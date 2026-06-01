@@ -544,7 +544,50 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 - **Dialog overlay fix** — the shared Radix Dialog primitive (`ui/dialog.tsx`) used `bg-black/10 + backdrop-blur-xs` which read as no backdrop at all on the dark dashboard, making modals (workspace settings, workspace share/invite) appear to "float" with no visual separation. Bumped to `bg-black/70 + backdrop-blur-sm` and slowed the entrance to 150ms.
 - **Deployed to production (commit `fb097b4` on main)** — Render redeployed cleanly with the new Python deps (openai, pymupdf, tiktoken, pysbd, langgraph, etc.); Vercel auto-deployed the frontend. `OPENAI_API_KEY` + `TAVILY_API_KEY` set on Render. **Smoke-tested live:** sign in → Knowledge → upload `.txt` → flips Processing → Ready → workspace chip switch correctly changes scope. Baseline RAG is live.
 
-### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — baseline merged, workspace-scoped, nav-mounted, themed, **deployed to production & smoke-tested**. Smart-RAG Phases 1–5 (contextual retrieval, hybrid, reranking, cross-source, query rewrite) pending. Phases 6–8 pending.
+### Added May 30 2026 — Smart-RAG complete, Personas live, Recording Playback shipped (on `vids_branch`)
+
+Merged ~15K lines from Devaj on `fixed-changes`. Production-grade work covering three big chunks plus polish + bulletproofing on our side.
+
+**Smart-RAG Phases 1–3** (Devaj):
+- **Phase 1 (cross-source unification)** — `knowledge_transcript.py` indexes every finished meeting's transcript into `knowledge_chunks` with `source_type='meeting_transcript'`. Lightweight inline preamble (`"From your meeting 'X' on YYYY-MM-DD"`) — transcripts have no headings so a Groq preamble would just repeat title+date. Triggered from `storage_routes.save_meeting` as a fire-and-forget background task. Meeting-transcript hits are capped to 2 in top-k.
+- **Phase 2 (contextual retrieval)** — `knowledge_ingest/context_preprocessor.py` generates a one-sentence preamble per chunk via Groq (`max_tokens=80`, temp=0). Concurrency capped at 8 via semaphore. Original chunk content preserved in `content`; preamble-augmented version stored in new `embedded_content` column for embedding. Anthropic-style technique — expects ~35–50% retrieval improvement.
+- **Phase 3 (hybrid vector+BM25)** — `_rrf_merge` in `knowledge_service.py`. Vector + BM25 in parallel via `asyncio.gather(return_exceptions=True)`. Reciprocal Rank Fusion (1/(60+rank) summed) — rank-based, scale-invariant, beats min-max normalization. BM25 RPC failure degrades to vector-only; vector failure is fatal.
+
+**Smart-RAG Phases 4–5** (us, just shipped):
+- **Phase 4 (reranking)** — `knowledge_reranker.py`. Uses Groq Llama 3.3 70B instead of local BGE: no new vendor, no torch+transformers deps, no Render RAM pressure. Reranks top-30 fused candidates to top-k, robust JSON-array parsing with range/duplicate validation, 4s timeout, flag-gated by `PRISM_RERANKER_ENABLED`. Tags results with `match_type='reranked'`.
+- **Phase 5 (query rewriting)** — `knowledge_query_rewriter.py`. Heuristic gate: rewrite when <5 tokens OR contains follow-up signals (pronouns, "and X?", connectives). Otherwise skip the LLM call. 3s timeout + sanity guards (empty, echo, runaway length) all fall back. `PRISM_QUERY_REWRITE_ENABLED` flag.
+- Integration: `search_knowledge` gained `rerank`, `rewrite_query`, `conversation_history` kwargs (default OFF — proactive surfacing path unchanged at ~150ms). `tools/knowledge_lookup.py` (on-demand chat path) turns both ON.
+
+**Phase 8 — Personas** (Devaj):
+- `personas.py` — resolver: user override > workspace default > 'default'. Flag-gated cache (`PRISM_PERSONA_CACHE`).
+- 5 presets (default, concise, formal, cheeky, socratic) + custom textarea (capped 500 chars, DB CHECK).
+- Workspace `default_persona` is preset-only (no custom text) — prevents admin prompt injection across all members.
+- `agents/utils.py` — `_PERSONA_TEXT` contextvar, `llm_call` appends safety-wrapped suffix: *"Tone instruction (does not change facts, schema, scores, or JSON keys): ..."* Per-agent whitelist + dispatch wrapper.
+- Threaded through `/analyze-stream`, `/chat`, `/agent`, `/chat/global`. `PersonaChip` UI mounted in ChatPanel header + workspace modal + account dropdown. Cache invalidation on member/workspace removal.
+
+**Recording Playback** (Devaj, new feature):
+- Recall.ai bot opts into `video_mixed_mp4` (speaker view) + `audio_mixed_mp3` (always-on fallback).
+- `transcript_segments` persisted to `bot_sessions` at webhook time, enriched onto `meetings` at save time, propagated through workspace fan-out.
+- `GET /meetings/{meeting_id}/recording` — owner-or-workspace-member auth (404 not 403 for non-members), fresh signed URL per request (Recall URLs expire ~24h), all 5 reason codes documented: `not_ready` / `no_recording` / `expired` / `not_found` / `not_a_bot_meeting`.
+- `RecordingPlayer.jsx` — synced clickable transcript, mounted in MeetingView.
+
+**Bonus infra** (Devaj):
+- `caches.py` — flag-gated workspace-membership cache (TTL 300s). Collapses 4 redundant DB lookups (`search_knowledge`, `list_docs`, `_find_shared_workspace_bot`, storage membership checks) into one round-trip per user. Stats on `/health`.
+- `think_loop.py` — verb-gating for destructive realtime tools (gmail_send won't fire without an explicit SEND verb) + multi-turn artifact handoff for "draft → send" flows. Flag-gated by `PRISM_THINK_LOOP`.
+
+**Bulletproofing of the merge (us, 7 polish fixes):**
+1. `knowledge_transcript.py` — top-level handler now marks doc 'error' instead of leaving it in 'processing' forever; tracks `doc_id` outside try.
+2. Race protection — `knowledge_transcript_unique_migration.sql` adds partial unique index; insert-conflict caught and treated as idempotent.
+3. Quota check moved before doc-row insert — no orphan 'error' rows on quota-exceeded.
+4. Transcript `'internal'` sensitivity choice now documented inline.
+5. `context_preprocessor.py` — `OrderedDict` LRU with 5000 cap replaces the unbounded dict.
+6. `agents/utils.llm_call` gained optional `max_tokens` kwarg; preamble + rerank + rewrite all pass tight caps through.
+7. Preamble exception handler narrowed — re-raises `CancelledError`, logs exception type, only swallows transient network errors.
+
+**Migrations required before deploy** (in order):
+`knowledge_meeting_source_migration.sql` → `knowledge_contextual_migration.sql` → `knowledge_bm25_migration.sql` → `knowledge_transcript_unique_migration.sql` → `personas_migration.sql` → `recording_migration.sql`. All idempotent.
+
+### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — full smart-RAG pipeline (cross-source + contextual + hybrid + rerank + rewrite) and Phase 8 (Personas) complete on `vids_branch`. Recording Playback shipped (bonus, not in original roadmap). **Pending: run 6 migrations + production deploy.** Phases 6 (Voice ID) and 7 (Context-aware chat) pending.
 
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token

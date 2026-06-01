@@ -141,7 +141,9 @@ Phase	What it is	Unlocks
 | Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) |
 | Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, streaming) |
 | Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out) |
-| Phase 5 — Knowledge Base / RAG | 🟢 Baseline live in production — vector RAG merged, workspace-scoped, KnowledgeBase nav-mounted, themed, smoke-tested live on Render+Vercel. Spec `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0 ✅ done. **Next**: smart-RAG Phases 1–5 (contextual retrieval at ingest, hybrid vector+BM25, BGE reranking, cross-source over meeting transcripts, query rewriting) to take RAG quality from "working" to "Notion-AI-grade." |
+| Phase 5 — Knowledge Base / RAG | 🟢 **All phases complete on `vids_branch`** — baseline (workspace-scoped + nav-mounted) deployed; smart-RAG Phases 1–5 (cross-source meeting transcripts, contextual preamble, hybrid vector+BM25 with RRF, Groq LLM reranker, query rewriter) shipped. Spec `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0–5 ✅ done. **Pending: run 6 Supabase migrations + production deploy.** |
+| Phase 8 — Personas | 🟢 **Shipped on `vids_branch`** — 5 presets + custom textarea (500-char cap), workspace default (preset-only, no admin injection), per-agent whitelist, contextvar isolation, PersonaChip UI in ChatPanel + workspace modal + account dropdown. Cache + invalidation hooks. **Pending: run personas_migration.sql + deploy.** |
+| Bonus — Recording Playback | 🟢 **Shipped on `vids_branch`** — Recall.ai video_mixed_mp4 + audio_mixed_mp3, RecordingPlayer with synced transcript, fresh signed URL per request, all 5 reason codes documented. Not in original 8-phase plan but solid value-add. |
 | Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists on `fixed-changes` (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt |
 | Phase 7 — Context-Aware Conversation | ⏳ Pending |
 | Phase 8 — Personas | ⏳ Pending |
