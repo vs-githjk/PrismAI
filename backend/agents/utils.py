@@ -14,21 +14,39 @@ _PERSONA_TEXT: contextvars.ContextVar[str] = contextvars.ContextVar(
 )
 
 
-def get_persona_suffix() -> str:
-    """Return the safety-wrapped persona suffix for the current context.
-    Empty string when no persona is set (or when the active persona is the
-    'default' preset, which has empty text).
-
-    Use this from call sites that DON'T go through llm_call (e.g., the
-    tool-calling chat path that hits Groq directly)."""
-    persona = _PERSONA_TEXT.get()
-    if not persona:
+def persona_suffix(text: str) -> str:
+    """Canonical safety-wrapped tone suffix for an explicit persona string.
+    Empty when text is empty/whitespace (or the 'default' preset, which has
+    empty text). Used by the analysis agents via get_persona_suffix."""
+    if not text or not text.strip():
         return ""
     return (
         "\n\n"
         "Tone instruction (does not change facts, schema, scores, or JSON keys):\n"
-        f"{persona}"
+        f"{text}"
     )
+
+
+def persona_suffix_agentic(text: str) -> str:
+    """Tool-aware variant for agentic surfaces (the live meeting bot) that
+    decide whether and which tools to call. Fences persona to wording only so
+    a tone preset can't suppress or distort a real tool call."""
+    if not text or not text.strip():
+        return ""
+    return (
+        "\n\n"
+        "Tone and style instruction (applies to your wording only — it does "
+        "not change the facts, your available tools, or whether and how you "
+        "call them):\n"
+        f"{text}"
+    )
+
+
+def get_persona_suffix() -> str:
+    """Safety-wrapped persona suffix for the current contextvar. Empty when no
+    persona is set. Use from call sites that DON'T go through llm_call (e.g.,
+    the tool-calling chat path that hits Groq directly)."""
+    return persona_suffix(_PERSONA_TEXT.get())
 
 
 _groq_client = None
