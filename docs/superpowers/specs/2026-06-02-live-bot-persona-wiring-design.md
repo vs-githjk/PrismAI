@@ -270,10 +270,53 @@ No schema, route, or frontend changes. No new env vars.
 
 - **Idea-engine persona** (`_maybe_generate_idea`) — fast follow-up via the
   contextvar if desired (R5).
-- **Workspace-default persona for the bot** — needs `workspace_id` plumbed into
-  the join flow + `bot_store` (R1).
+- ~~**Workspace-default persona for the bot**~~ — **implemented**, see Amendment below.
 - **Per-meeting persona override UI** at the join/bot panel.
 - **App-side per-meeting cost cap / provider budget** — separate concern.
+
+---
+
+## Amendment (2026-06-02): workspace-default support
+
+**Why:** A post-ship live test (`/diagnose`) showed the bot still speaking in
+the default tone even though the owner had set a persona. **Root cause (H5):**
+the owner set the *workspace default* persona, but R1 resolved the *personal*
+persona with `workspace_id=None` — and `JoinMeetingRequest`/`bot_store` carried
+no `workspace_id` at all, so the workspace persona was unreachable by
+construction. Not a code defect — the R1 scope decision didn't match how people
+naturally set a persona for a *workspace* meeting.
+
+**R6 — full precedence for the bot.** The live bot now resolves
+**personal override → workspace default → ''**, matching the rest of the app.
+
+**Resolution mechanism (chosen):** a new `personas.persona_text_resolved(sb,
+user_row, workspace_id)` async helper. It reuses `_resolve_user_persona(user_row)`
+for the personal portion (so `user_settings` is **not** re-fetched — EDGE A
+preserved) and only queries the `workspaces` row when the owner is on the
+`default` preset AND a `workspace_id` is present. Failures degrade to `''`.
+
+**Plumbing (4 touch points):**
+
+| File | Change |
+|------|--------|
+| `frontend/src/App.jsx` (`joinMeeting`) | send `workspace_id: activeWorkspaceId \| null` in the `/join-meeting` body |
+| `recall_routes.py` `JoinMeetingRequest` | add `workspace_id: str \| None = None` |
+| `recall_routes.py` bot_store entry | store `"workspace_id": req.workspace_id` |
+| `realtime_routes._get_settings_for_bot` | read `workspace_id` from `bot_store`; `persona_text = await persona_text_resolved(supabase, row, workspace_id)` |
+
+**Observability:** `_process_command` logs
+`[realtime] persona for bot <id>: active=<bool> len=<n> preview=<...>` per
+command (kept as permanent observability — mirrors the existing tools log).
+
+**Edge cases:** workspace persona is preset-only (no custom) per the personas
+migration; a bot joined without `workspace_id` (personal meeting / old client)
+falls back to personal→default (backward compatible); the workspace persona is
+also stable per meeting, so it rides the same cached prefix benefit (EDGE G).
+
+**Tests added:** `persona_text_resolved` (personal-wins / workspace-fallback /
+no-ws / ws-default-of-default) in `test_personas.py`; workspace-fallback in
+`_get_settings_for_bot` + `JoinMeetingRequest.workspace_id` in
+`test_realtime_persona.py`.
 
 ---
 

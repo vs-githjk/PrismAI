@@ -19,7 +19,7 @@ import perception_state
 import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences, persona_suffix_agentic
-from personas import persona_text_from_settings
+from personas import persona_text_resolved
 from clients import get_groq, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
@@ -790,12 +790,16 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
 
     # Look up user_id from the bot record, then fetch their per-user tokens
     user_id = (bot_store.get(bot_id) or {}).get("user_id")
+    workspace_id = (bot_store.get(bot_id) or {}).get("workspace_id")
     token_seconds_until_expiry: float | None = None
     if user_id and supabase:
         try:
             resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
             row = (resp.data if resp is not None else None) or {}
-            settings["persona_text"] = persona_text_from_settings(row)
+            # Full precedence: personal override → workspace default → ''.
+            # Reuses the row just fetched (no second user_settings query); only
+            # hits the workspaces table when the owner is on the default preset.
+            settings["persona_text"] = await persona_text_resolved(supabase, row, workspace_id)
             if row.get("google_access_token"):
                 # Pass the already-fetched row so get_valid_token skips its own
                 # Supabase round-trip when the token is still fresh.
@@ -1543,6 +1547,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
 
         tool_names = [t["function"]["name"] for t in tools]
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
+        print(f"[realtime] persona for bot {bot_id[:8]}: active={bool(persona_text)} len={len(persona_text)} preview={persona_text[:40]!r}")
 
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")

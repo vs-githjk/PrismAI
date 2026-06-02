@@ -164,12 +164,39 @@ def _resolve_user_persona(row: dict) -> Optional[ResolvedPersona]:
 
 
 def persona_text_from_settings(row: dict) -> str:
-    """Live-bot entry point: raw persona text from an already-fetched
-    user_settings row (no DB call), or '' for the 'default' preset. Workspace
-    defaults are intentionally NOT consulted here (the live bot resolves the
-    owner's personal persona only)."""
+    """Pure, no-I/O entry point: raw persona text from an already-fetched
+    user_settings row, or '' for the 'default' preset. Personal portion only —
+    no workspace fallback. Prefer persona_text_resolved when a workspace_id is
+    available."""
     hit = _resolve_user_persona(row)
     return hit.text if hit else ""
+
+
+async def persona_text_resolved(sb, user_row: dict, workspace_id: Optional[str]) -> str:
+    """Full-precedence persona TEXT for the live bot, reusing an
+    already-fetched user_settings row (personal override → workspace default →
+    ''). Reuses _resolve_user_persona for the personal portion so user_settings
+    is NOT re-fetched; only queries the workspaces row when the user is on
+    'default' AND a workspace_id is given. Failures degrade to ''."""
+    hit = _resolve_user_persona(user_row)
+    if hit is not None:
+        return hit.text
+    if not workspace_id:
+        return ""
+    try:
+        ws_res = await _execute(
+            sb.table("workspaces")
+            .select("default_persona")
+            .eq("id", workspace_id)
+            .maybe_single()
+        )
+        ws = (ws_res.data or {}) if ws_res else {}
+        ws_preset = ws.get("default_persona") or "default"
+        if ws_preset != "default" and ws_preset in PRESETS:
+            return PRESETS[ws_preset]
+    except Exception as exc:
+        print(f"[personas] persona_text_resolved ws fetch failed ws={workspace_id}: {exc!r}")
+    return ""
 
 
 async def _fetch(sb, user_id: str, workspace_id: Optional[str]) -> Optional[ResolvedPersona]:

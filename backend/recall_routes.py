@@ -176,6 +176,7 @@ def _mb_update_status(bot_id: str, status: str):
 class JoinMeetingRequest(BaseModel):
     meeting_url: str
     owner_name: str | None = None
+    workspace_id: str | None = None
 
 
 def _extract_recall_error(resp: httpx.Response) -> str:
@@ -639,6 +640,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         "user_id": user_id,
         "live_token": live_token,
         "owner_name": req.owner_name,
+        "workspace_id": req.workspace_id,
         "realtime_token": realtime_token,
     }
     _live_token_index[live_token] = bot_id
