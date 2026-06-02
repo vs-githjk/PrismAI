@@ -18,7 +18,8 @@ import meeting_memory
 import perception_state
 import think_loop
 import utterance_accumulator
-from agents.utils import llm_call, strip_fences
+from agents.utils import llm_call, strip_fences, persona_suffix_agentic
+from personas import persona_text_from_settings
 from clients import get_groq, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
@@ -249,7 +250,7 @@ _STATIC_CALENDAR_OFF = (
 _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses under 3 sentences."
 
 
-def _build_static_prefix(has_gmail: bool, has_calendar: bool) -> str:
+def _build_static_prefix(has_gmail: bool, has_calendar: bool, persona_text: str = "") -> str:
     """Static system prompt — byte-identical across commands within a meeting
     when the user's tool grants don't change. This is the cache-eligible
     prefix; Groq prompt caching matches by exact byte prefix (50% discount on
@@ -282,7 +283,11 @@ def _build_static_prefix(has_gmail: bool, has_calendar: bool) -> str:
     # syntax (e.g. <function=name:"web_search" >{...}</function>). The remaining
     # think_loop primitives — verb_gate, artifact handoff, strip_thinking —
     # cover the misfire risk without touching the tool-call format.
-    return base
+    #
+    # Persona is the bot owner's tone preset. It rides the cached prefix so it
+    # costs nothing per command after the first. The tool-aware wrapper fences
+    # it off from tool-calling decisions. Empty persona → byte-identical prefix.
+    return base + persona_suffix_agentic(persona_text)
 
 
 def _build_command_messages(
@@ -296,6 +301,7 @@ def _build_command_messages(
     prompt_cache_on: bool,
     injection_guard_on: bool = False,
     is_owner: bool = True,
+    persona_text: str = "",
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
@@ -314,7 +320,7 @@ def _build_command_messages(
     user_msg = {"role": "user", "content": user_content}
     if prompt_cache_on:
         return [
-            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar)},
+            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text)},
             {
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
@@ -326,7 +332,7 @@ def _build_command_messages(
         {
             "role": "system",
             "content": (
-                _build_static_prefix(has_gmail, has_calendar)
+                _build_static_prefix(has_gmail, has_calendar, persona_text)
                 + "\n"
                 + f"Current date and time: {now_str}.\n\n"
                 + memory_context

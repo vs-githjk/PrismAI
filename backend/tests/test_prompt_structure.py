@@ -184,5 +184,62 @@ class MemoryLockTests(unittest.TestCase):
         self.assertIn("session_lock", src)
 
 
+class PersonaInPrefixTests(unittest.TestCase):
+    """Persona belongs in the cached static prefix (msgs[0]), never the user
+    turn — this locks in the chosen design (Approach A)."""
+
+    def _msgs(self, persona_text):
+        return rr._build_command_messages(
+            has_gmail=False, has_calendar=False,
+            now_str="t", memory_context="m",
+            speaker="Alice", command="check the weather",
+            prompt_cache_on=True, persona_text=persona_text,
+        )
+
+    def test_persona_lands_in_static_prefix(self):
+        msgs = self._msgs("Be terse.")
+        self.assertIn("Be terse.", msgs[0]["content"])      # static prefix
+        self.assertNotIn("Be terse.", msgs[1]["content"])   # dynamic system
+        self.assertNotIn("Be terse.", msgs[-1]["content"])  # user turn
+
+    def test_prefix_uses_agentic_wrapper(self):
+        msgs = self._msgs("Be terse.")
+        self.assertIn("your available tools", msgs[0]["content"])
+
+    def test_default_persona_prefix_byte_identical(self):
+        # Empty persona must leave the prefix byte-identical to no-persona.
+        with_default = self._msgs("")[0]["content"]
+        without_arg = rr._build_command_messages(
+            has_gmail=False, has_calendar=False,
+            now_str="t", memory_context="m",
+            speaker="Alice", command="check the weather",
+            prompt_cache_on=True,
+        )[0]["content"]
+        self.assertEqual(_h(with_default), _h(without_arg))
+
+    def test_persona_prefix_stable_across_commands(self):
+        # Same persona, evolving per-call state → prefix byte-identical (cache).
+        m1 = rr._build_command_messages(
+            has_gmail=False, has_calendar=False, now_str="A",
+            memory_context="X", speaker="A", command="c1",
+            prompt_cache_on=True, persona_text="Be terse.",
+        )
+        m2 = rr._build_command_messages(
+            has_gmail=False, has_calendar=False, now_str="B",
+            memory_context="Y", speaker="A", command="c2",
+            prompt_cache_on=True, persona_text="Be terse.",
+        )
+        self.assertEqual(_h(m1[0]["content"]), _h(m2[0]["content"]))
+
+    def test_persona_in_legacy_single_system_message(self):
+        msgs = rr._build_command_messages(
+            has_gmail=False, has_calendar=False, now_str="t",
+            memory_context="m", speaker="A", command="c",
+            prompt_cache_on=False, persona_text="Be terse.",
+        )
+        self.assertEqual(len(msgs), 2)
+        self.assertIn("Be terse.", msgs[0]["content"])
+
+
 if __name__ == "__main__":
     unittest.main()
