@@ -149,6 +149,29 @@ async def _execute(query):
     return await asyncio.to_thread(query.execute)
 
 
+def _resolve_user_persona(row: dict) -> Optional[ResolvedPersona]:
+    """User-portion resolution from a user_settings row. Returns a
+    ResolvedPersona for a non-default override, or None if the user is on
+    'default' (caller decides the fallback — workspace default or system
+    default). Single source of truth for preset→PRESETS + custom handling."""
+    preset = (row or {}).get("persona_preset") or "default"
+    custom = ((row or {}).get("persona_custom_prompt") or "")[:CUSTOM_PROMPT_MAX_CHARS]
+    if preset == "custom" and custom.strip():
+        return ResolvedPersona("custom", custom)
+    if preset != "default" and preset in PRESETS:
+        return ResolvedPersona(preset, PRESETS[preset])
+    return None
+
+
+def persona_text_from_settings(row: dict) -> str:
+    """Live-bot entry point: raw persona text from an already-fetched
+    user_settings row (no DB call), or '' for the 'default' preset. Workspace
+    defaults are intentionally NOT consulted here (the live bot resolves the
+    owner's personal persona only)."""
+    hit = _resolve_user_persona(row)
+    return hit.text if hit else ""
+
+
 async def _fetch(sb, user_id: str, workspace_id: Optional[str]) -> Optional[ResolvedPersona]:
     """Returns the resolved persona on success, None on failure."""
     try:
@@ -159,13 +182,9 @@ async def _fetch(sb, user_id: str, workspace_id: Optional[str]) -> Optional[Reso
             .maybe_single()
         )
         u = (user_res.data or {}) if user_res else {}
-        preset = u.get("persona_preset") or "default"
-        custom = (u.get("persona_custom_prompt") or "")[:CUSTOM_PROMPT_MAX_CHARS]
-
-        if preset == "custom" and custom:
-            return ResolvedPersona("custom", custom)
-        if preset != "default" and preset in PRESETS:
-            return ResolvedPersona(preset, PRESETS[preset])
+        hit = _resolve_user_persona(u)
+        if hit is not None:
+            return hit
 
         if workspace_id:
             ws_res = await _execute(

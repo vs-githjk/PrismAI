@@ -212,5 +212,46 @@ class ResolvePersonaTests(unittest.TestCase):
         self.assertIn("evidence", rp.text.lower())
 
 
+class PersonaTextFromSettingsTests(unittest.TestCase):
+    """Row-only resolution used by the live bot (no DB call, user-portion only)."""
+
+    def test_empty_row_returns_empty(self):
+        import personas
+        self.assertEqual(personas.persona_text_from_settings({}), "")
+
+    def test_default_preset_returns_empty(self):
+        import personas
+        self.assertEqual(
+            personas.persona_text_from_settings({"persona_preset": "default"}), ""
+        )
+
+    def test_preset_returns_preset_text(self):
+        import personas
+        out = personas.persona_text_from_settings({"persona_preset": "concise"})
+        self.assertEqual(out, personas.PRESETS["concise"])
+
+    def test_custom_returns_verbatim(self):
+        import personas
+        out = personas.persona_text_from_settings(
+            {"persona_preset": "custom", "persona_custom_prompt": "Talk like a pirate."}
+        )
+        self.assertEqual(out, "Talk like a pirate.")
+
+    def test_custom_whitespace_falls_through_to_empty(self):
+        import personas
+        out = personas.persona_text_from_settings(
+            {"persona_preset": "custom", "persona_custom_prompt": "   "}
+        )
+        self.assertEqual(out, "")
+
+    def test_custom_capped_at_max_chars(self):
+        import personas
+        long = "x" * (personas.CUSTOM_PROMPT_MAX_CHARS + 50)
+        out = personas.persona_text_from_settings(
+            {"persona_preset": "custom", "persona_custom_prompt": long}
+        )
+        self.assertEqual(len(out), personas.CUSTOM_PROMPT_MAX_CHARS)
+
+
 if __name__ == "__main__":
     unittest.main()
