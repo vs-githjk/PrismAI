@@ -780,6 +780,7 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
         return dict(cached[1])  # copy so caller mutations don't poison cache
 
     settings = {}
+    settings["persona_text"] = ""  # owner's tone preset; overridden from the row below
 
     # Env-level fallbacks
     if SLACK_BOT_TOKEN:
@@ -794,6 +795,7 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
         try:
             resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
             row = (resp.data if resp is not None else None) or {}
+            settings["persona_text"] = persona_text_from_settings(row)
             if row.get("google_access_token"):
                 # Pass the already-fetched row so get_valid_token skips its own
                 # Supabase round-trip when the token is still fresh.
@@ -1536,6 +1538,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
     messages = None  # ensure always in scope for haiku fallback
     try:
         user_settings = await _get_settings_for_bot(bot_id)
+        persona_text = user_settings.get("persona_text", "")
         tools = get_available_tools(user_settings)
 
         tool_names = [t["function"]["name"] for t in tools]
@@ -1599,6 +1602,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             prompt_cache_on=_prompt_cache_on(),
             injection_guard_on=injection_guard,
             is_owner=is_owner,
+            persona_text=persona_text,
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
