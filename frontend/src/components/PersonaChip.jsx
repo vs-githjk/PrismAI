@@ -1,5 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Sparkles } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const PRESETS = [
   { key: 'default',    label: 'Default'    },
@@ -37,16 +43,12 @@ export default function PersonaChip({
   const [open, setOpen] = useState(false)
   const [draftPreset, setDraftPreset] = useState(personaPreset || 'default')
   const [draftCustom, setDraftCustom] = useState(personaCustomPrompt || '')
-  const ref = useRef(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onClick = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [open])
+  // Note: the picker used to be an absolute-positioned popover inside the
+  // trigger's container. That broke when this component is mounted inside a
+  // Radix DropdownMenu (account dropdown) — the popover got clipped and the
+  // outside-click handler closed it immediately. The shared Dialog primitive
+  // handles its own portal + dismiss, so nesting Just Works.
 
   useEffect(() => {
     if (open) {
@@ -74,11 +76,11 @@ export default function PersonaChip({
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       {variant === 'chip' ? (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(true)}
           className="rounded-full border border-cyan-400/25 bg-cyan-400/[0.10] px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-cyan-200/90 hover:bg-cyan-400/[0.16]"
           aria-haspopup="dialog"
           aria-expanded={open}
@@ -88,7 +90,7 @@ export default function PersonaChip({
       ) : (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(true)}
           className="flex w-full items-center gap-3 px-3 py-2 text-xs font-semibold text-white/84 hover:bg-cyan-300/[0.08]"
         >
           <Sparkles className="h-4 w-4 shrink-0 text-white/62" aria-hidden="true" />
@@ -99,15 +101,13 @@ export default function PersonaChip({
         </button>
       )}
 
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Pick persona"
-          className="absolute right-0 z-50 mt-1.5 w-[280px] rounded-xl border border-[#2f2f2f] bg-[#0b0b0b] p-3 text-white shadow-xl"
-        >
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-white/35">
-            Persona
-          </p>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0b0b0b] text-white sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-semibold text-white">
+              Pick persona
+            </DialogTitle>
+          </DialogHeader>
 
           <div className="space-y-1.5">
             {PRESETS.map((p) => (
@@ -179,8 +179,8 @@ export default function PersonaChip({
               Save
             </button>
           </div>
-        </div>
-      )}
-    </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
