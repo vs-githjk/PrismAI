@@ -141,12 +141,12 @@ Phase	What it is	Unlocks
 | Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) |
 | Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, streaming) |
 | Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out) |
-| Phase 5 — Knowledge Base / RAG | 🟢 **All phases complete on `vids_branch`** — baseline (workspace-scoped + nav-mounted) deployed; smart-RAG Phases 1–5 (cross-source meeting transcripts, contextual preamble, hybrid vector+BM25 with RRF, Groq LLM reranker, query rewriter) shipped. Spec `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0–5 ✅ done. **Pending: run 6 Supabase migrations + production deploy.** |
-| Phase 8 — Personas | 🟢 **Shipped on `vids_branch`** — 5 presets + custom textarea (500-char cap), workspace default (preset-only, no admin injection), per-agent whitelist, contextvar isolation, PersonaChip UI in ChatPanel + workspace modal + account dropdown. Cache + invalidation hooks. **Pending: run personas_migration.sql + deploy.** |
+| Phase 5 — Knowledge Base / RAG | 🟢 **All phases complete on `vids_branch`** — baseline (workspace-scoped + nav-mounted) deployed; smart-RAG Phases 1–5 (cross-source meeting transcripts, contextual preamble, hybrid vector+BM25 with RRF, Groq LLM reranker, query rewriter) shipped. Spec `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0–5 ✅ done. **All 7 migrations run** (Jun 1). **Pending: production deploy (`vids_branch` → `main` push).** |
+| Phase 8 — Personas | 🟢 **Shipped on `vids_branch`** — 7 presets (default, concise, formal, cheeky, socratic, warm, analytical) + custom textarea (500-char cap), workspace default (preset-only, no admin injection), per-agent whitelist, contextvar isolation, PersonaChip UI in ChatPanel + workspace modal + account dropdown. Cache + invalidation hooks. **Pending: production deploy.** |
 | Bonus — Recording Playback | 🟢 **Shipped on `vids_branch`** — Recall.ai video_mixed_mp4 + audio_mixed_mp3, RecordingPlayer with synced transcript, fresh signed URL per request, all 5 reason codes documented. Not in original 8-phase plan but solid value-add. |
+| Bonus — Landing redesign (Devaj) | 🟢 **Merged into `vids_branch`** Jun 2 — HowItWorks rewrite + `PrismCapture` pipeline (`prism-loop.mp4` replaces the live ray-marched shader on landing for GPU savings) + returner-aware CTAs ("Go to dashboard" instead of signup for known users). `ProofSection` retired in favor of the new HowItWorks. |
 | Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists on `fixed-changes` (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt |
 | Phase 7 — Context-Aware Conversation | ⏳ Pending |
-| Phase 8 — Personas | ⏳ Pending |
 
 **Also shipped this session (not phases):**
 - Sentiment agent reworked — actionable vocabulary + rich `SentimentCard` (was just "neutral")

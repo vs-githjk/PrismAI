@@ -587,7 +587,13 @@ Merged ~15K lines from Devaj on `fixed-changes`. Production-grade work covering 
 **Migrations required before deploy** (in order):
 `knowledge_meeting_source_migration.sql` → `knowledge_contextual_migration.sql` → `knowledge_bm25_migration.sql` → `knowledge_transcript_unique_migration.sql` → `personas_migration.sql` → `recording_migration.sql`. All idempotent.
 
-### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — full smart-RAG pipeline (cross-source + contextual + hybrid + rerank + rewrite) and Phase 8 (Personas) complete on `vids_branch`. Recording Playback shipped (bonus, not in original roadmap). **Pending: run 6 migrations + production deploy.** Phases 6 (Voice ID) and 7 (Context-aware chat) pending.
+### Added Jun 1–2 2026 — Warm/Analytical personas + Devaj's landing redesign + migrations run
+
+- **Two new persona presets** — `warm` (lead-with-empathy register; "we"/"let's" framing) and `analytical` (answer-first, numbered trade-offs, named assumptions, no hedging). Total preset vocabulary now 7. Migration `personas_warm_analytical_migration.sql` drops + recreates the CHECK constraints on `user_settings.persona_preset` + `workspaces.default_persona`. Test coverage in `test_personas.py` confirms both resolve. Workspace default still preset-only (no admin injection).
+- **All 7 Supabase migrations run** (Jun 1) — `knowledge_meeting_source` → `knowledge_contextual` → `knowledge_bm25` (with `SET maintenance_work_mem='128MB'` fix for GIN build OOM on Supabase's default 32MB) → `knowledge_transcript_unique` → `personas` → `recording` → `personas_warm_analytical`. All idempotent; all verified via column/RPC/index probe queries.
+- **Devaj's landing redesign merged into `vids_branch`** (Jun 2) — HowItWorks fully rewritten (~3700 lines of JSX + CSS), new `PrismCapture.jsx` + `scripts/capture-prism.mjs` pre-render a video loop (`prism-loop.mp4`) of the WebGL prism for GPU-cheap landing playback. `LandingNav` returner-aware (shows "Go to dashboard" instead of signup for known users). `ProofSection.jsx` retired — its role absorbed into the new HowItWorks. Conflict during merge was confined to `CLAUDE.md` (resolved by combining Devaj's more-complete migration list with our smart-RAG additions) and `App.jsx` (auto-merged cleanly). Frontend build + backend imports clean post-merge.
+
+### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — full smart-RAG pipeline (cross-source + contextual + hybrid + rerank + rewrite) and Phase 8 (Personas, 7 presets + custom) complete on `vids_branch`. Recording Playback shipped (bonus). All migrations run. **Pending: production deploy (push `vids_branch` → `main`).** Phases 6 (Voice ID) and 7 (Context-aware chat) pending.
 
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token

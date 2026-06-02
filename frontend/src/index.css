@@ -582,26 +582,6 @@ h1, h2, h3, .font-display {
   transform: translateY(-1px);
 }
 
-/* Magnetic CTA: compose cursor-driven --magnet-x/y with hover --hover-y so
-   both effects coexist. Without this, an inline style.transform from the
-   magnet JS would clobber the :hover translateY -1px. */
-.landing-button-primary,
-.landing-button-secondary {
-  --magnet-x: 0px;
-  --magnet-y: 0px;
-  --hover-y: 0px;
-  transform: translate(var(--magnet-x), calc(var(--magnet-y) + var(--hover-y)));
-  transition:
-    background-color var(--landing-transition-fast),
-    border-color var(--landing-transition-fast),
-    color var(--landing-transition-fast),
-    box-shadow var(--landing-transition-fast),
-    transform 0.18s ease-out;
-}
-.landing-button-primary:hover,
-.landing-button-secondary:hover {
-  --hover-y: -1px;
-}
 
 .landing-button:active,
 .landing-button-primary:active,
