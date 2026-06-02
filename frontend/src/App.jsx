@@ -875,7 +875,7 @@ Daniel: Agreed. The early-ship only happened because of weekend buffer, and that
 Priya: Noted. Let's protect the new plan and not quietly refill the freed capacity. Recap: rotating review owner with a 45-minute morning cap, Marcus owns auto-tagging plus the schedule before planning, Elena reforecasts to 28 points by Wednesday and escalates slips early. Thanks everyone.`
 
 // ── Landing / Hero screen ────────────────────────────────────────
-function LandingScreen({ onViewDashboard }) {
+function LandingScreen({ onViewDashboard, authReady = true, isReturner = false, onGoToDashboard }) {
   const [signupOpen, setSignupOpen] = useState(false)
   const [signupMode, setSignupMode] = useState('signup')
   const [scrollCueVisible, setScrollCueVisible] = useState(true)
@@ -937,7 +937,13 @@ function LandingScreen({ onViewDashboard }) {
       >
         {/* Sticky nav — sits above all sections while scrolling */}
         <div className="landing-nav-sticky">
-          <LandingNav onSignup={openSignup} onLogin={openLogin} />
+          <LandingNav
+            onSignup={openSignup}
+            onLogin={openLogin}
+            authReady={authReady}
+            isReturner={isReturner}
+            onGoToDashboard={onGoToDashboard}
+          />
         </div>
 
         <section ref={heroRef} id="prism" className="landing-hero scroll-section">
@@ -988,14 +994,17 @@ function LandingScreen({ onViewDashboard }) {
             </div>
           </div>
 
-          {/* CTA buttons — centerline at 69% */}
-          <div style={{ position: 'absolute', top: '69%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'center', padding: '0 1.5rem' }}>
-            <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s' }}>
-              <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
-              <span className="cta-or">or</span>
-              <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>Try it out</button>
+          {/* CTA buttons — centerline at 69%. Returners get no hero CTA (their
+              only action is "Go to dashboard" in the nav); hidden until auth resolves. */}
+          {authReady && !isReturner && (
+            <div style={{ position: 'absolute', top: '69%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'center', padding: '0 1.5rem' }}>
+              <div className="cta-row animate-fade-in-up" style={{ animationDelay: '0.65s' }}>
+                <button type="button" className="btn-primary landing-button-primary" onClick={openSignup}>Get started</button>
+                <span className="cta-or">or</span>
+                <button type="button" className="btn-ghost landing-button-secondary" onClick={onViewDashboard}>Try it out</button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
         </section>
 
@@ -1069,6 +1078,13 @@ export default function App() {
     sessionStorage.removeItem('prism_last_meeting_id')
     sessionStorage.removeItem('prism_active_view')
     window.location.href = `/dashboard?${TEST_RUN_QUERY_PARAM}=1`
+  }
+
+  // Returning authenticated user clicking "Go to dashboard" from the landing —
+  // straight to their real dashboard, no test-run swap, no logout.
+  const goToRealDashboard = () => {
+    sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+    window.location.href = '/dashboard'
   }
 
   const [sessionId, setSessionId] = useState(0)
@@ -2387,7 +2403,14 @@ export default function App() {
 
   // Landing screen — shown to first-time visitors
   if (showLanding) {
-    return <LandingScreen onViewDashboard={enterDashboardTestRun} />
+    return (
+      <LandingScreen
+        onViewDashboard={enterDashboardTestRun}
+        authReady={authReady}
+        isReturner={authReady && !!user && !isTestAccount}
+        onGoToDashboard={goToRealDashboard}
+      />
+    )
   }
 
   // Live meeting view — shown when URL is #live/{token}
