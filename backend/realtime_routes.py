@@ -19,7 +19,7 @@ import perception_state
 import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences, persona_suffix_agentic
-from personas import persona_text_resolved
+from personas import persona_identity_resolved, DEFAULT_BOT_NAME
 from clients import get_groq, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
@@ -64,7 +64,10 @@ def unregister_realtime_token(bot_id: str) -> None:
     for tok in [t for t, b in _realtime_token_index.items() if b == bot_id]:
         _realtime_token_index.pop(tok, None)
 
-# Trigger patterns — "prism" or "prismai" followed by a command
+# Trigger patterns — "prism" or "prismai" followed by a command. The persona
+# name (e.g. "Flash" when the owner is on the concise preset) is an ADDITIONAL
+# wake alias for that specific bot; "prism" remains an always-on fallback so
+# users are never stranded if they forget the persona name.
 TRIGGER_PATTERN = re.compile(
     r"\b(?:prism|prismai|prism ai)\b[,:]?\s*(.+)",
     re.IGNORECASE,
@@ -74,6 +77,37 @@ TRIGGER_PATTERN = re.compile(
 # _run_proactive_checker uses the integer counter fields in state, not pattern objects.
 
 TRIGGER_WORD_PATTERN = re.compile(r"\b(?:prism|prismai|prism ai)\b", re.IGNORECASE)
+
+
+# Per-bot wake alias (the active persona's display name, e.g. "Flash"). Populated
+# by _get_settings_for_bot whenever the bot's settings are resolved; cleared in
+# cleanup_bot_state. Empty string / "Prism" means no extra alias.
+_BOT_WAKE_ALIAS: dict[str, str] = {}
+
+# Compiled-pattern cache keyed by the lower-cased alias string. The set of
+# distinct aliases is bounded by the 7 persona presets, so this cache stays tiny.
+_WAKE_PATTERN_CACHE: dict[str, tuple[re.Pattern, re.Pattern]] = {}
+
+
+def _wake_patterns_for_alias(alias: str) -> tuple[re.Pattern, re.Pattern]:
+    """Return (command_pattern, word_pattern) honoring an additional wake alias.
+    Falls back to the default Prism-only patterns when alias is empty / already
+    inside the base alternation."""
+    key = (alias or "").strip().lower()
+    if not key or key in ("prism", "prismai", "prism ai"):
+        return (TRIGGER_PATTERN, TRIGGER_WORD_PATTERN)
+    hit = _WAKE_PATTERN_CACHE.get(key)
+    if hit is not None:
+        return hit
+    names = f"prism|prismai|prism ai|{re.escape(key)}"
+    cmd_pat = re.compile(rf"\b(?:{names})\b[,:]?\s*(.+)", re.IGNORECASE)
+    word_pat = re.compile(rf"\b(?:{names})\b", re.IGNORECASE)
+    _WAKE_PATTERN_CACHE[key] = (cmd_pat, word_pat)
+    return (cmd_pat, word_pat)
+
+
+def _wake_patterns_for_bot(bot_id: str) -> tuple[re.Pattern, re.Pattern]:
+    return _wake_patterns_for_alias(_BOT_WAKE_ALIAS.get(bot_id, ""))
 
 # Seconds to wait for the command after a bare trigger word OR for an incomplete same-fragment command to finish
 PENDING_TRIGGER_WINDOW = 8
@@ -250,7 +284,12 @@ _STATIC_CALENDAR_OFF = (
 _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses under 3 sentences."
 
 
-def _build_static_prefix(has_gmail: bool, has_calendar: bool, persona_text: str = "") -> str:
+def _build_static_prefix(
+    has_gmail: bool,
+    has_calendar: bool,
+    persona_text: str = "",
+    bot_name: str = "",
+) -> str:
     """Static system prompt — byte-identical across commands within a meeting
     when the user's tool grants don't change. This is the cache-eligible
     prefix; Groq prompt caching matches by exact byte prefix (50% discount on
@@ -287,7 +326,19 @@ def _build_static_prefix(has_gmail: bool, has_calendar: bool, persona_text: str 
     # Persona is the bot owner's tone preset. It rides the cached prefix so it
     # costs nothing per command after the first. The tool-aware wrapper fences
     # it off from tool-calling decisions. Empty persona → byte-identical prefix.
-    return base + persona_suffix_agentic(persona_text)
+    #
+    # Bot name: when the owner's persona has a Prism-family display name (Flash,
+    # Crystal, Glint, Echo, Glow, Spectrum) the bot identifies itself by that
+    # name everywhere — including when asked "what's your name". Empty / "Prism"
+    # is a no-op so the default-preset prefix stays byte-identical to today.
+    name_line = ""
+    if bot_name and bot_name != DEFAULT_BOT_NAME:
+        name_line = (
+            f"\n\nYour name in this meeting is {bot_name}. When someone "
+            f"addresses you, refers to you, or asks who you are, respond as "
+            f"{bot_name}. Do not call yourself Prism in this meeting."
+        )
+    return base + name_line + persona_suffix_agentic(persona_text)
 
 
 def _build_command_messages(
@@ -302,6 +353,7 @@ def _build_command_messages(
     injection_guard_on: bool = False,
     is_owner: bool = True,
     persona_text: str = "",
+    bot_name: str = "",
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
@@ -320,7 +372,7 @@ def _build_command_messages(
     user_msg = {"role": "user", "content": user_content}
     if prompt_cache_on:
         return [
-            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text)},
+            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)},
             {
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
@@ -332,7 +384,7 @@ def _build_command_messages(
         {
             "role": "system",
             "content": (
-                _build_static_prefix(has_gmail, has_calendar, persona_text)
+                _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)
                 + "\n"
                 + f"Current date and time: {now_str}.\n\n"
                 + memory_context
@@ -587,7 +639,7 @@ async def _dispatch_slow_path_command(
     With the accumulator, the utterance is already complete — no need
     for the 8-second pending-fragment window from the legacy path.
     """
-    command = _detect_command(u.text)
+    command = _detect_command(u.text, bot_id)
     if not command:
         return
     print(
@@ -735,13 +787,17 @@ def _normalize_cmd(text: str) -> str:
 _LEADING_PUNCT_RE = re.compile(r'^[\s,.:;!?\-—–"\'`]+')
 
 
-def _detect_command(text: str) -> str | None:
+def _detect_command(text: str, bot_id: str | None = None) -> str | None:
     """Return the command portion if text contains a trigger + actionable command, else None.
 
     Strips leading punctuation: with smart_format on, Deepgram emits 'Hi, Prism. Who are you?'
     so the regex captures '. Who are you?'; we want 'Who are you?'.
+
+    When ``bot_id`` is provided, the bot's active persona name (e.g. "Flash")
+    is honored as an additional wake alias on top of the base Prism aliases.
     """
-    match = TRIGGER_PATTERN.search(text)
+    cmd_pattern, _ = _wake_patterns_for_bot(bot_id) if bot_id else (TRIGGER_PATTERN, TRIGGER_WORD_PATTERN)
+    match = cmd_pattern.search(text)
     if match:
         cmd = _LEADING_PUNCT_RE.sub("", match.group(1)).strip()
         if cmd:
@@ -749,9 +805,10 @@ def _detect_command(text: str) -> str | None:
     return None
 
 
-def _has_trigger_word(text: str) -> bool:
-    """Return True if text contains the trigger word."""
-    return bool(TRIGGER_WORD_PATTERN.search(text))
+def _has_trigger_word(text: str, bot_id: str | None = None) -> bool:
+    """Return True if text contains the trigger word (Prism + the bot's persona alias)."""
+    _, word_pattern = _wake_patterns_for_bot(bot_id) if bot_id else (TRIGGER_PATTERN, TRIGGER_WORD_PATTERN)
+    return bool(word_pattern.search(text))
 
 
 # Per-bot settings cache to skip redundant Supabase + Google-refresh round-trips
@@ -781,6 +838,7 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
 
     settings = {}
     settings["persona_text"] = ""  # owner's tone preset; overridden from the row below
+    settings["bot_name"] = DEFAULT_BOT_NAME  # display name + wake alias; overridden below
 
     # Env-level fallbacks
     if SLACK_BOT_TOKEN:
@@ -799,7 +857,16 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
             # Full precedence: personal override → workspace default → ''.
             # Reuses the row just fetched (no second user_settings query); only
             # hits the workspaces table when the owner is on the default preset.
-            settings["persona_text"] = await persona_text_resolved(supabase, row, workspace_id)
+            # Single resolver returns (name, persona_text, preset) so the bot's
+            # identity (display name + wake-word alias) follows the same precedence.
+            bot_name, persona_text, _resolved_preset = await persona_identity_resolved(
+                supabase, row, workspace_id
+            )
+            settings["persona_text"] = persona_text
+            settings["bot_name"] = bot_name
+            # Register this bot's persona name as an extra wake-word alias.
+            # Empty / "Prism" is a no-op (falls through to the base aliases).
+            _BOT_WAKE_ALIAS[bot_id] = "" if bot_name == DEFAULT_BOT_NAME else bot_name
             if row.get("google_access_token"):
                 # Pass the already-fetched row so get_valid_token skips its own
                 # Supabase round-trip when the token is still fresh.
@@ -1459,13 +1526,18 @@ async def _run_proactive_checker(bot_id: str):
         if now - state["intervention_last_ts"] < 600:
             continue
 
+        # Resolve the bot's display name once per loop iteration. _get_settings_for_bot
+        # is cached 60s so this is a dict read on the steady-state path; we tell users
+        # to say "<persona-name>, ..." when their persona renames the bot.
+        bot_name = _BOT_WAKE_ALIAS.get(bot_id, "") or DEFAULT_BOT_NAME
+
         # Trigger 1: No decisions logged after 30 minutes
         if elapsed_min >= 30 and state["decisions_detected"] == 0 and not state["sent_30min_nudge"]:
             state["sent_30min_nudge"] = True
             state["intervention_last_ts"] = now
             await _send_chat_response(
                 bot_id,
-                "📋 30 minutes in — no decisions logged yet. Say 'Prism, summarize what's been decided' to capture them.",
+                f"📋 30 minutes in — no decisions logged yet. Say '{bot_name}, summarize what's been decided' to capture them.",
             )
             continue
 
@@ -1480,7 +1552,7 @@ async def _run_proactive_checker(bot_id: str):
             state["intervention_last_ts"] = now
             await _send_chat_response(
                 bot_id,
-                "👤 Some action items may not have clear owners yet. Say 'Prism, who owns what?' to clarify.",
+                f"👤 Some action items may not have clear owners yet. Say '{bot_name}, who owns what?' to clarify.",
             )
             continue
 
@@ -1490,7 +1562,7 @@ async def _run_proactive_checker(bot_id: str):
             state["intervention_last_ts"] = now
             await _send_chat_response(
                 bot_id,
-                "⏱️ Meeting approaching 1 hour. Say 'Prism, list the action items so far' to make sure everything is captured before wrapping up.",
+                f"⏱️ Meeting approaching 1 hour. Say '{bot_name}, list the action items so far' to make sure everything is captured before wrapping up.",
             )
             continue
 
@@ -1543,11 +1615,12 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
     try:
         user_settings = await _get_settings_for_bot(bot_id)
         persona_text = user_settings.get("persona_text", "")
+        bot_name = user_settings.get("bot_name", DEFAULT_BOT_NAME)
         tools = get_available_tools(user_settings)
 
         tool_names = [t["function"]["name"] for t in tools]
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
-        print(f"[realtime] persona for bot {bot_id[:8]}: active={bool(persona_text)} len={len(persona_text)} preview={persona_text[:40]!r}")
+        print(f"[realtime] persona for bot {bot_id[:8]}: name={bot_name} active={bool(persona_text)} len={len(persona_text)} preview={persona_text[:40]!r}")
 
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
@@ -1608,6 +1681,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             injection_guard_on=injection_guard,
             is_owner=is_owner,
             persona_text=persona_text,
+            bot_name=bot_name,
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
@@ -1936,7 +2010,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         # Respond via voice + chat — fire in parallel so the chat message doesn't
         # add a Recall round-trip to TTFB before TTS begins.
         print(f"[realtime] command='{command}' tools={tools_used} reply='{reply}'")
-        chat_task = asyncio.create_task(_send_chat_response(bot_id, f"✓ {reply}"))
+        chat_task = asyncio.create_task(_send_chat_response(bot_id, reply))
         if voice_already_streamed:
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
@@ -1986,7 +2060,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                         if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
                             state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
                     print(f"[realtime] haiku fallback reply={reply!r}")
-                    await _send_chat_response(bot_id, f"✓ {reply}")
+                    await _send_chat_response(bot_id, reply)
                     await _send_voice_response(bot_id, reply)
                     return
                 except Exception as haiku_exc:
@@ -2393,7 +2467,7 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # ., !, ? OR has >= _COMMAND_MIN_WORDS_FOR_DISPATCH words). Otherwise we
             # stash it and let follow-up fragments from the same speaker extend it
             # until completion or PENDING_TRIGGER_WINDOW elapses.
-            command = _detect_command(text)
+            command = _detect_command(text, bot_id)
             within_window = (
                 state["pending_trigger_ts"]
                 and time.time() - state["pending_trigger_ts"] < PENDING_TRIGGER_WINDOW
@@ -2412,7 +2486,7 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     state["pending_trigger_ts"] = time.time()
                     state["pending_trigger_speaker"] = speaker
                     state["pending_command_parts"] = [command]
-            elif _has_trigger_word(text):
+            elif _has_trigger_word(text, bot_id):
                 # Bare trigger word with no command on this fragment — open the window.
                 state["pending_trigger_ts"] = time.time()
                 state["pending_trigger_speaker"] = speaker
@@ -2472,7 +2546,7 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
 
         if message_text.strip():
             # Check for command trigger in chat
-            command = _detect_command(message_text)
+            command = _detect_command(message_text, bot_id)
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
@@ -2492,6 +2566,7 @@ def cleanup_bot_state(bot_id: str) -> None:
     state = _bot_state.pop(bot_id, None)
     _ingress_log.pop(bot_id, None)
     _invalidate_bot_settings_cache(bot_id)
+    _BOT_WAKE_ALIAS.pop(bot_id, None)
     unregister_realtime_token(bot_id)
     perception_state.cleanup_bot(bot_id)
     if state is not None:
