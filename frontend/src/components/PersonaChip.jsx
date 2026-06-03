@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Triangle, Zap, Gem, Radio, Sun, BarChart3 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -7,20 +7,28 @@ import {
   DialogTitle,
 } from './ui/dialog'
 
+// Names + icons mirror backend/personas.py PERSONA_NAMES. Keep in sync — the
+// bot self-identifies by these names in meetings, so the picker MUST show them.
 const PRESETS = [
-  { key: 'default',    label: 'Default'    },
-  { key: 'concise',    label: 'Concise'    },
-  { key: 'formal',     label: 'Formal'     },
-  { key: 'cheeky',     label: 'Cheeky'     },
-  { key: 'socratic',   label: 'Socratic'   },
-  { key: 'warm',       label: 'Warm'       },
-  { key: 'analytical', label: 'Analytical' },
+  { key: 'default',    label: 'Default',    name: 'Prism',    Icon: Triangle,  iconClass: 'text-cyan-300/90'    },
+  { key: 'concise',    label: 'Concise',    name: 'Flash',    Icon: Zap,       iconClass: 'text-amber-300/90'   },
+  { key: 'formal',     label: 'Formal',     name: 'Crystal',  Icon: Gem,       iconClass: 'text-slate-200/90'   },
+  { key: 'cheeky',     label: 'Cheeky',     name: 'Glint',    Icon: Sparkles,  iconClass: 'text-fuchsia-300/90' },
+  { key: 'socratic',   label: 'Socratic',   name: 'Echo',     Icon: Radio,     iconClass: 'text-indigo-300/90'  },
+  { key: 'warm',       label: 'Warm',       name: 'Glow',     Icon: Sun,       iconClass: 'text-orange-300/90'  },
+  { key: 'analytical', label: 'Analytical', name: 'Spectrum', Icon: BarChart3, iconClass: 'text-violet-300/90'  },
 ]
+
+const PRESET_BY_KEY = Object.fromEntries(PRESETS.map((p) => [p.key, p]))
 
 const CUSTOM_MAX = 500
 
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
+}
+
+function presetInfo(key) {
+  return PRESET_BY_KEY[key] || PRESET_BY_KEY.default
 }
 
 /**
@@ -63,9 +71,13 @@ export default function PersonaChip({
       ? '👤 '
       : '🏢 '
 
-  const chipLabel = personaPreset === 'custom'
-    ? 'Custom'
-    : capitalize(personaPreset || 'default')
+  const isCustom = personaPreset === 'custom'
+  const chipLabel = isCustom ? 'Custom' : capitalize(personaPreset || 'default')
+  // Custom presets are tone-only — the bot still calls itself Prism, so the
+  // name shown here matches what the user will actually say in the meeting.
+  const chipName = isCustom ? 'Prism' : presetInfo(personaPreset || 'default').name
+  const ChipIcon = isCustom ? Sparkles : presetInfo(personaPreset || 'default').Icon
+  const chipIconClass = isCustom ? 'text-cyan-300/90' : presetInfo(personaPreset || 'default').iconClass
 
   const handleSave = () => {
     onSave({
@@ -81,11 +93,13 @@ export default function PersonaChip({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-full border border-cyan-400/25 bg-cyan-400/[0.10] px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-cyan-200/90 hover:bg-cyan-400/[0.16]"
+          className="inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-400/[0.10] px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-cyan-200/90 hover:bg-cyan-400/[0.16]"
           aria-haspopup="dialog"
           aria-expanded={open}
         >
-          {sourcePrefix}Persona: {chipLabel} ▾
+          <ChipIcon className={`h-3 w-3 shrink-0 ${chipIconClass}`} aria-hidden="true" />
+          {sourcePrefix}
+          {chipLabel} · {chipName} ▾
         </button>
       ) : (
         <button
@@ -93,10 +107,10 @@ export default function PersonaChip({
           onClick={() => setOpen(true)}
           className="flex w-full items-center gap-3 px-3 py-2 text-xs font-semibold text-white/84 hover:bg-cyan-300/[0.08]"
         >
-          <Sparkles className="h-4 w-4 shrink-0 text-white/62" aria-hidden="true" />
+          <ChipIcon className={`h-4 w-4 shrink-0 ${chipIconClass}`} aria-hidden="true" />
           Persona
           <span className="ml-auto text-[10px] font-medium text-white/40">
-            {chipLabel}
+            {chipLabel} · <span className="text-white/70">{chipName}</span>
           </span>
         </button>
       )}
@@ -110,18 +124,28 @@ export default function PersonaChip({
           </DialogHeader>
 
           <div className="space-y-1.5">
-            {PRESETS.map((p) => (
-              <label key={p.key} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-white/[0.04]">
-                <input
-                  type="radio"
-                  name="persona-preset"
-                  checked={draftPreset === p.key}
-                  onChange={() => setDraftPreset(p.key)}
-                  className="accent-cyan-400"
-                />
-                <span>{p.label}</span>
-              </label>
-            ))}
+            {PRESETS.map((p) => {
+              const Icon = p.Icon
+              return (
+                <label
+                  key={p.key}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-white/[0.04]"
+                >
+                  <input
+                    type="radio"
+                    name="persona-preset"
+                    checked={draftPreset === p.key}
+                    onChange={() => setDraftPreset(p.key)}
+                    className="accent-cyan-400"
+                  />
+                  <Icon className={`h-3.5 w-3.5 shrink-0 ${p.iconClass}`} aria-hidden="true" />
+                  <span>{p.label}</span>
+                  <span className="ml-auto text-[11px] text-white/50">
+                    {p.key === 'default' ? 'Prism' : p.name}
+                  </span>
+                </label>
+              )
+            })}
             <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-white/[0.04]">
               <input
                 type="radio"
@@ -130,7 +154,9 @@ export default function PersonaChip({
                 onChange={() => setDraftPreset('custom')}
                 className="accent-cyan-400"
               />
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-cyan-300/90" aria-hidden="true" />
               <span>Custom…</span>
+              <span className="ml-auto text-[11px] text-white/40">Prism</span>
             </label>
           </div>
 
@@ -155,7 +181,7 @@ export default function PersonaChip({
               onClick={() => setDraftPreset('default')}
               className="mt-2 w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-2 py-1.5 text-left text-[11px] text-white/55 hover:border-white/[0.16]"
             >
-              Use workspace default ({capitalize(workspaceDefault)})
+              Use workspace default ({capitalize(workspaceDefault)} · {presetInfo(workspaceDefault).name})
             </button>
           )}
 
