@@ -212,5 +212,91 @@ class ResolvePersonaTests(unittest.TestCase):
         self.assertIn("evidence", rp.text.lower())
 
 
+class PersonaTextFromSettingsTests(unittest.TestCase):
+    """Row-only resolution used by the live bot (no DB call, user-portion only)."""
+
+    def test_empty_row_returns_empty(self):
+        import personas
+        self.assertEqual(personas.persona_text_from_settings({}), "")
+
+    def test_default_preset_returns_empty(self):
+        import personas
+        self.assertEqual(
+            personas.persona_text_from_settings({"persona_preset": "default"}), ""
+        )
+
+    def test_preset_returns_preset_text(self):
+        import personas
+        out = personas.persona_text_from_settings({"persona_preset": "concise"})
+        self.assertEqual(out, personas.PRESETS["concise"])
+
+    def test_custom_returns_verbatim(self):
+        import personas
+        out = personas.persona_text_from_settings(
+            {"persona_preset": "custom", "persona_custom_prompt": "Talk like a pirate."}
+        )
+        self.assertEqual(out, "Talk like a pirate.")
+
+    def test_custom_whitespace_falls_through_to_empty(self):
+        import personas
+        out = personas.persona_text_from_settings(
+            {"persona_preset": "custom", "persona_custom_prompt": "   "}
+        )
+        self.assertEqual(out, "")
+
+    def test_custom_capped_at_max_chars(self):
+        import personas
+        long = "x" * (personas.CUSTOM_PROMPT_MAX_CHARS + 50)
+        out = personas.persona_text_from_settings(
+            {"persona_preset": "custom", "persona_custom_prompt": long}
+        )
+        self.assertEqual(len(out), personas.CUSTOM_PROMPT_MAX_CHARS)
+
+
+class PersonaTextResolvedTests(unittest.TestCase):
+    """Full-precedence TEXT resolution reusing a pre-fetched user_settings row
+    (personal override → workspace default → ''). Used by the live bot."""
+
+    def setUp(self):
+        import personas
+        personas._reset_for_tests()
+        async def _exec(q):
+            return q.execute()
+        self._exec_patch = patch.object(personas, "_execute", _exec)
+        self._exec_patch.start()
+
+    def tearDown(self):
+        self._exec_patch.stop()
+
+    def test_personal_override_wins_without_ws_fetch(self):
+        import personas
+        # ws_row present but must be ignored when personal override exists.
+        sb = _fake_sb(ws_row={"default_persona": "formal"})
+        out = asyncio.run(personas.persona_text_resolved(
+            sb, {"persona_preset": "concise", "persona_custom_prompt": None}, "ws1"))
+        self.assertEqual(out, personas.PRESETS["concise"])
+
+    def test_workspace_default_used_when_personal_is_default(self):
+        import personas
+        sb = _fake_sb(ws_row={"default_persona": "formal"})
+        out = asyncio.run(personas.persona_text_resolved(
+            sb, {"persona_preset": "default"}, "ws1"))
+        self.assertEqual(out, personas.PRESETS["formal"])
+
+    def test_no_workspace_id_falls_to_empty(self):
+        import personas
+        sb = _fake_sb()
+        out = asyncio.run(personas.persona_text_resolved(
+            sb, {"persona_preset": "default"}, None))
+        self.assertEqual(out, "")
+
+    def test_workspace_default_of_default_returns_empty(self):
+        import personas
+        sb = _fake_sb(ws_row={"default_persona": "default"})
+        out = asyncio.run(personas.persona_text_resolved(
+            sb, {"persona_preset": "default"}, "ws1"))
+        self.assertEqual(out, "")
+
+
 if __name__ == "__main__":
     unittest.main()

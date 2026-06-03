@@ -1714,6 +1714,7 @@ export default function App() {
         body: JSON.stringify({
           meeting_url: meetingUrl,
           owner_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || null,
+          workspace_id: activeWorkspaceId || null,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')

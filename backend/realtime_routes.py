@@ -18,7 +18,8 @@ import meeting_memory
 import perception_state
 import think_loop
 import utterance_accumulator
-from agents.utils import llm_call, strip_fences
+from agents.utils import llm_call, strip_fences, persona_suffix_agentic
+from personas import persona_text_resolved
 from clients import get_groq, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
@@ -249,7 +250,7 @@ _STATIC_CALENDAR_OFF = (
 _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses under 3 sentences."
 
 
-def _build_static_prefix(has_gmail: bool, has_calendar: bool) -> str:
+def _build_static_prefix(has_gmail: bool, has_calendar: bool, persona_text: str = "") -> str:
     """Static system prompt — byte-identical across commands within a meeting
     when the user's tool grants don't change. This is the cache-eligible
     prefix; Groq prompt caching matches by exact byte prefix (50% discount on
@@ -282,7 +283,11 @@ def _build_static_prefix(has_gmail: bool, has_calendar: bool) -> str:
     # syntax (e.g. <function=name:"web_search" >{...}</function>). The remaining
     # think_loop primitives — verb_gate, artifact handoff, strip_thinking —
     # cover the misfire risk without touching the tool-call format.
-    return base
+    #
+    # Persona is the bot owner's tone preset. It rides the cached prefix so it
+    # costs nothing per command after the first. The tool-aware wrapper fences
+    # it off from tool-calling decisions. Empty persona → byte-identical prefix.
+    return base + persona_suffix_agentic(persona_text)
 
 
 def _build_command_messages(
@@ -296,6 +301,7 @@ def _build_command_messages(
     prompt_cache_on: bool,
     injection_guard_on: bool = False,
     is_owner: bool = True,
+    persona_text: str = "",
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
@@ -314,7 +320,7 @@ def _build_command_messages(
     user_msg = {"role": "user", "content": user_content}
     if prompt_cache_on:
         return [
-            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar)},
+            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text)},
             {
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
@@ -326,7 +332,7 @@ def _build_command_messages(
         {
             "role": "system",
             "content": (
-                _build_static_prefix(has_gmail, has_calendar)
+                _build_static_prefix(has_gmail, has_calendar, persona_text)
                 + "\n"
                 + f"Current date and time: {now_str}.\n\n"
                 + memory_context
@@ -774,6 +780,7 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
         return dict(cached[1])  # copy so caller mutations don't poison cache
 
     settings = {}
+    settings["persona_text"] = ""  # owner's tone preset; overridden from the row below
 
     # Env-level fallbacks
     if SLACK_BOT_TOKEN:
@@ -783,11 +790,16 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
 
     # Look up user_id from the bot record, then fetch their per-user tokens
     user_id = (bot_store.get(bot_id) or {}).get("user_id")
+    workspace_id = (bot_store.get(bot_id) or {}).get("workspace_id")
     token_seconds_until_expiry: float | None = None
     if user_id and supabase:
         try:
             resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
             row = (resp.data if resp is not None else None) or {}
+            # Full precedence: personal override → workspace default → ''.
+            # Reuses the row just fetched (no second user_settings query); only
+            # hits the workspaces table when the owner is on the default preset.
+            settings["persona_text"] = await persona_text_resolved(supabase, row, workspace_id)
             if row.get("google_access_token"):
                 # Pass the already-fetched row so get_valid_token skips its own
                 # Supabase round-trip when the token is still fresh.
@@ -1530,10 +1542,12 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
     messages = None  # ensure always in scope for haiku fallback
     try:
         user_settings = await _get_settings_for_bot(bot_id)
+        persona_text = user_settings.get("persona_text", "")
         tools = get_available_tools(user_settings)
 
         tool_names = [t["function"]["name"] for t in tools]
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
+        print(f"[realtime] persona for bot {bot_id[:8]}: active={bool(persona_text)} len={len(persona_text)} preview={persona_text[:40]!r}")
 
         if not GROQ_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
@@ -1593,6 +1607,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             prompt_cache_on=_prompt_cache_on(),
             injection_guard_on=injection_guard,
             is_owner=is_owner,
+            persona_text=persona_text,
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
