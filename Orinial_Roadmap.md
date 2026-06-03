@@ -141,12 +141,14 @@ Phase	What it is	Unlocks
 | Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) |
 | Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, streaming) |
 | Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out) |
-| Phase 5 — Knowledge Base / RAG | 🟢 **All phases complete on `vids_branch`** — baseline (workspace-scoped + nav-mounted) deployed; smart-RAG Phases 1–5 (cross-source meeting transcripts, contextual preamble, hybrid vector+BM25 with RRF, Groq LLM reranker, query rewriter) shipped. Spec `docs/specs/2026-05-20-smart-rag-additions.md` Phase 0–5 ✅ done. **All 7 migrations run** (Jun 1). **Pending: production deploy (`vids_branch` → `main` push).** |
-| Phase 8 — Personas | 🟢 **Shipped on `vids_branch`** — 7 presets (default, concise, formal, cheeky, socratic, warm, analytical) + custom textarea (500-char cap), workspace default (preset-only, no admin injection), per-agent whitelist, contextvar isolation, PersonaChip UI in ChatPanel + workspace modal + account dropdown. Cache + invalidation hooks. **Pending: production deploy.** |
-| Bonus — Recording Playback | 🟢 **Shipped on `vids_branch`** — Recall.ai video_mixed_mp4 + audio_mixed_mp3, RecordingPlayer with synced transcript, fresh signed URL per request, all 5 reason codes documented. Not in original 8-phase plan but solid value-add. |
-| Bonus — Landing redesign (Devaj) | 🟢 **Merged into `vids_branch`** Jun 2 — HowItWorks rewrite + `PrismCapture` pipeline (`prism-loop.mp4` replaces the live ray-marched shader on landing for GPU savings) + returner-aware CTAs ("Go to dashboard" instead of signup for known users). `ProofSection` retired in favor of the new HowItWorks. |
-| Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists on `fixed-changes` (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt |
-| Phase 7 — Context-Aware Conversation | ⏳ Pending |
+| Phase 5 — Knowledge Base / RAG | ✅ **Done & deployed.** Baseline (workspace-scoped + nav-mounted) + smart-RAG Phases 1–5 (cross-source meeting transcripts, contextual preamble, hybrid vector+BM25 with RRF, Groq LLM reranker, query rewriter). Spec `docs/specs/2026-05-20-smart-rag-additions.md`. |
+| Phase 8 — Personas | ✅ **Done & deployed.** 7 presets (default, concise, formal, cheeky, socratic, warm, analytical) + custom textarea (500-char cap), workspace default (preset-only), per-agent whitelist, contextvar isolation, PersonaChip UI in ChatPanel + workspace modal + account dropdown. **Live-bot persona wiring shipped Jun 2** (PR #5 / commit `b1ac47a`) — cached system-prefix injection, tool-aware wrapper, full personal→workspace→'' precedence. **Persona identity shipped Jun 3** (commit `7a57831`) — each preset renames the bot (Prism / Flash / Crystal / Glint / Echo / Glow / Spectrum), persona-flavored intro greeting, name carries into the cached system prefix, per-bot wake-word aliases ("Flash, summarize…"), removed the `✓ ` reply prefix, picker shows the names + per-persona lucide icons. |
+| Bonus — Recording Playback | ✅ **Done & deployed.** Recall.ai video_mixed_mp4 + audio_mixed_mp3, RecordingPlayer with synced transcript, fresh signed URL per request, all 5 reason codes documented. |
+| Bonus — Landing redesign (Devaj) | ✅ **Done & deployed.** HowItWorks rewrite + `PrismCapture` pipeline (`prism-loop.mp4` replaces the live ray-marched shader on landing for GPU savings) + returner-aware CTAs. `ProofSection` retired. |
+| **AWS migration** | ⏳ **Next major item.** Replace Render → ECS Fargate, Vercel → S3 + CloudFront. Supabase stays. Plan at `AWS_MIGRATION_PLAN.md` (untracked) — needs refresh before executing. |
+| Bonus — Notifications system | ⏳ **Drafted Jun 3, deferred until after AWS.** Plan at `docs/specs/2026-06-03-notifications-system-plan.md`. New Supabase `notifications` table + thin `notify()` backend helper + Realtime delivery + bell/dropdown/toast UI. Foundation for deferred bot-takeover (Option B), Phase 6, Phase 7. ~2-3 days of focused work. |
+| Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt. |
+| Phase 7 — Context-Aware Conversation | ⏳ Pending. |
 
 **Also shipped this session (not phases):**
 - Sentiment agent reworked — actionable vocabulary + rich `SentimentCard` (was just "neutral")
@@ -160,7 +162,7 @@ Phase	What it is	Unlocks
 - Action item completion state is per-member; should be one shared state per workspace meeting.
 - Auto-takeover on bot failure (Option B) — currently manual alert only (Option C).
 
-**Next session picks up at:** Phase 0 of the smart-RAG spec — merge `fixed-changes` into `vids_branch` (expect conflicts in App.jsx, MeetingView.jsx, sentiment.py, storage_routes.py, workspace_routes.py), verify our features survive, then workspace gap fixes. Also: add `TAVILY_API_KEY` + `OPENAI_API_KEY` to local `.env` and Render.
+**Next session picks up at:** AWS migration. Refresh `AWS_MIGRATION_PLAN.md` (untracked at project root — predates Phase 5/8/Recording/Landing) to reflect the current dep list (`openai`, `tiktoken`, `pymupdf`, `pytesseract`, `python-docx`, `notion-client`, `pysbd`, `langgraph`), env vars (`OPENAI_API_KEY`, `TAVILY_API_KEY`, plus the `PRISM_*` flag vars), 19 migrations, custom-domain pieces (Route 53 + 2 ACM certs: one in us-east-1 for CloudFront, one in the ALB's region). Then verify pre-migration checklist (AWS CLI + Docker installed locally) before kicking off Dockerization. Production gate pattern applies — pause before every step that affects production. After AWS: notifications phase, then Phase 6 Voice ID, then Phase 7 Context-Aware Chat.
 
 -------------------------------------------------------------
 Key files to know

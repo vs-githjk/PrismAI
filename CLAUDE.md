@@ -102,6 +102,8 @@ Personas: 7 presets defined in `backend/personas.py PRESETS` — `default`, `con
 
 Bot reply formatting: chat replies are sent verbatim (no `✓` prefix — removed Jun 2026). Proactive nudges and the knowledge-proactive surfacing message both use the active persona name when telling the user how to invoke the bot (`Say 'Flash, summarize…'` rather than `Say 'Prism, summarize…'`).
 
+**Persona picker UI (Jun 3 2026):** `PersonaChip.jsx` shows the bot's display name alongside the preset label everywhere it mounts. Each preset has a matching lucide icon with a subtle per-persona accent color — `default→Triangle (cyan)`, `concise→Zap (amber)`, `formal→Gem (slate)`, `cheeky→Sparkles (fuchsia)`, `socratic→Radio (indigo)`, `warm→Sun (orange)`, `analytical→BarChart3 (violet)`. The chip in the chat header reads e.g. `⚡ Concise · Flash ▾`; the account dropdown row shows `⚡ Persona  ‹Concise · Flash›`; picker dialog rows show icon + label + name. The `PRESETS` array (icon + name + iconClass) is the single source of frontend truth — keep it in sync with `backend/personas.py PERSONA_NAMES`. Custom personas keep the "Prism" name in the chip (custom is tone-only on the backend).
+
 Current design direction: use shadcn/radix-style product surfaces with the app's existing cyan/sky accent (`#22d3ee`, `#67e8f9`, `sky-*` / `cyan-*`). Do not make glassmorphism the default visual language for the site or dashboard. Glass-like treatment is only an accent for CTAs, focused highlights, or special moments.
 
 `ChatPanel.jsx` runs three chat modes in priority order: agent intent (regex → `POST /agent`), global intent (regex → `POST /chat/global`, requires auth), regular chat (`POST /chat`).
