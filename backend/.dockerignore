@@ -1,0 +1,31 @@
+# Secrets — NEVER bake into the image
+.env
+.env.*
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+*.egg-info/
+
+# Local venvs
+.venv/
+venv/
+env/
+
+# Test code — runs in CI, not in production image
+tests/
+
+# Docs / metadata
+*.md
+.git/
+.gitignore
+
+# Editor cruft
+.vscode/
+.idea/
+.DS_Store
