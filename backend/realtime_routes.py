@@ -590,6 +590,8 @@ async def _dispatch_slow_path_command(
     With the accumulator, the utterance is already complete — no need
     for the 8-second pending-fragment window from the legacy path.
     """
+    if ambient_loop.autonomous_enabled() and ambient_loop.detect_mute_command(u.text):
+        return  # mute/unmute is handled by the ambient interjection layer, not as a command
     command = _detect_command(u.text)
     if not command:
         return
@@ -616,35 +618,57 @@ def _is_ambient_silent(reply: str) -> bool:
 
 
 async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
-    """Ambient (no-wake-word) branch. Runs the mode machine, then — only in
-    autonomous mode and only when there's no explicit 'prism' command — runs the
-    ambient funnel. Explicit commands are handled by _dispatch_slow_path_command."""
+    """Ambient (no-wake-word) branch → consent-based interjection (v2).
+    Mute/unmute directives are routed to the interjection layer even though they
+    contain the wake word; otherwise only autonomous mode (and no explicit
+    command) runs the funnel. Explicit commands go to _dispatch_slow_path_command."""
     now = time.time()
+    if ambient_loop.detect_mute_command(u.text):
+        await _run_interject(bot_id, state, u, now)
+        return
     mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
     if _detect_command(u.text):
         return  # explicit command path owns this utterance
     if mode != "autonomous":
         return
+    await _run_interject(bot_id, state, u, now)
+
+
+async def _run_interject(bot_id: str, state: dict, u, now: float) -> None:
     try:
-        await ambient_loop.evaluate(
+        await ambient_loop.interject(
             bot_id, state, u.text, u.speaker_name,
-            run_generator=_ambient_run_generator,
-            surface_idea=_ambient_surface_idea,
+            speak_offer=_ambient_speak_offer,
+            run_delivery=_ambient_run_delivery,
             now=now,
         )
     except Exception as e:
-        print(f"[ambient] evaluate error bot={bot_id[:8]}: {e}")
+        print(f"[ambient] interject error bot={bot_id[:8]}: {e}")
 
 
-async def _ambient_run_generator(bot_id: str, utterance: str, speaker: str):
-    """Generator wrapper for the ambient funnel — reuses _process_command with
-    ambient framing. Returns the spoken text, or None if it declined (SILENT)."""
-    return await _process_command(bot_id, utterance, speaker, ambient=True)
+async def _ambient_speak_offer(bot_id: str, text: str) -> bool:
+    """Speak the brief consent-seeking offer (chat + voice). Returns True if
+    delivered (best-effort; False on failure → treated as talked-over)."""
+    asyncio.create_task(_send_chat_response(bot_id, text))
+    try:
+        if os.getenv("PRISM_STREAMED_TTS") == "1":
+            await _send_voice_response_streamed(bot_id, text, cmd_detected_ts=time.time())
+        else:
+            await _send_voice_response(bot_id, text)
+        return True
+    except Exception as e:
+        print(f"[ambient] speak_offer error bot={bot_id[:8]}: {e}")
+        return False
 
 
-async def _ambient_surface_idea(bot_id: str, state: dict) -> None:
-    """Borderline-'no' handoff → existing Idea Engine (side panel, best-effort)."""
-    await _maybe_generate_idea(bot_id, state)
+async def _ambient_run_delivery(bot_id: str, subject: str, speaker: str):
+    """Deliver the offered info after consent — full generator + tools. Strong
+    delivery frame so it doesn't decline something the humans just agreed to."""
+    cmd = (
+        f"You offered to share information about '{subject}' and the team said yes. "
+        f"Share what you have now, concisely and directly. Do not decline."
+    )
+    return await _process_command(bot_id, cmd, speaker, ambient=True)
 
 
 def _ensure_accumulator_tick_task(bot_id: str, state: dict) -> None:

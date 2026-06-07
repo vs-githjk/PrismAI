@@ -45,12 +45,12 @@ class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_explicit_command_skips_ambient(self):
         called = []
-        async def fake_eval(*a, **k):
-            called.append(True)
-            return {"action": "spoke"}
+        async def fake_interject(*a, **k):
+            called.append(a[2])
+            return {"action": "offered"}
         self.state["mode"] = "autonomous"
         self.state["mode_since_ts"] = time.time()
-        with mock.patch.object(realtime_routes.ambient_loop, "evaluate", fake_eval):
+        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
             await realtime_routes._ambient_on_utterance(
                 "bot1", self.state, FakeUtterance("Prism, send the email")
             )
@@ -58,10 +58,10 @@ class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_utterance_mode_skips_ambient(self):
         called = []
-        async def fake_eval(*a, **k):
-            called.append(True)
-            return {"action": "spoke"}
-        with mock.patch.object(realtime_routes.ambient_loop, "evaluate", fake_eval):
+        async def fake_interject(*a, **k):
+            called.append(a[2])
+            return {"action": "offered"}
+        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
             await realtime_routes._ambient_on_utterance(
                 "bot1", self.state, FakeUtterance("the numbers look fine to me")
             )
@@ -69,17 +69,30 @@ class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_autonomous_mode_runs_ambient(self):
         called = []
-        async def fake_eval(*a, **k):
-            called.append(True)
-            return {"action": "spoke"}
+        async def fake_interject(*a, **k):
+            called.append(a[2])
+            return {"action": "offered"}
         self.state["mode"] = "autonomous"
         self.state["mode_entry_reason"] = "handoff"
         self.state["mode_since_ts"] = time.time()
-        with mock.patch.object(realtime_routes.ambient_loop, "evaluate", fake_eval):
+        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
             await realtime_routes._ambient_on_utterance(
                 "bot1", self.state, FakeUtterance("what was our Q3 number")
             )
-        self.assertEqual(called, [True])
+        self.assertEqual(called, ["what was our Q3 number"])
+
+    async def test_mute_command_routes_to_interject(self):
+        # "Prism, stay quiet" contains the wake word but must reach the
+        # interjection layer (to set muted), not the generic command path.
+        called = []
+        async def fake_interject(*a, **k):
+            called.append(a[2])
+            return {"action": "muted"}
+        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+            await realtime_routes._ambient_on_utterance(
+                "bot1", self.state, FakeUtterance("Prism, stay quiet")
+            )
+        self.assertEqual(called, ["Prism, stay quiet"])
 
 
 class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):
