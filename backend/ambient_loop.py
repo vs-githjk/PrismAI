@@ -236,6 +236,59 @@ async def decide(state: dict) -> dict:
     return parse_decider_output(raw)
 
 
+# ── Consent interjection: consent classifier (8B) ─────────────────────────────
+_CONSENT_TOKEN_RE = re.compile(r"\b(yes|no|unclear)\b", re.IGNORECASE)
+
+_CONSENT_SYSTEM = (
+    "An AI meeting assistant offered to share some information and asked if the "
+    "humans want to hear it. Given the human's reply, decide whether they agreed "
+    "to hear it. Watch for tricky cases: 'No way, tell me!' is YES; 'yeah, no, "
+    "we're good' is NO; a bare 'okay' is usually just acknowledgement, not "
+    "agreement (UNCLEAR). Answer with one word: YES, NO, or UNCLEAR."
+)
+
+
+def parse_consent(raw: str | None) -> str:
+    """Map the classifier's reply to 'yes' | 'no' | 'unclear'. Fail-safe to
+    'unclear' (never deliver on ambiguity)."""
+    if not raw or not isinstance(raw, str):
+        return "unclear"
+    m = _CONSENT_TOKEN_RE.search(raw)
+    if not m:
+        return "unclear"
+    return m.group(1).lower()
+
+
+async def _call_consent_model(system: str, user: str) -> str:
+    """8B consent classification call (direct Groq). Isolated for test mocking."""
+    groq = get_groq()
+    resp = await groq.chat.completions.create(
+        model=decider_model(),  # reuse the cheap 8B decider model
+        temperature=0.0,
+        max_tokens=8,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    )
+    return resp.choices[0].message.content or ""
+
+
+async def classify_consent(subject: str, utterance: str) -> str:
+    """Did the human agree to hear the offered info? 'yes' | 'no' | 'unclear'."""
+    user = (
+        f"The assistant offered to share information about: {subject or 'something relevant'}.\n"
+        f"The human then said: \"{utterance}\"\n"
+        "Did they agree to hear it? Answer YES, NO, or UNCLEAR."
+    )
+    try:
+        raw = await _call_consent_model(_CONSENT_SYSTEM, user)
+    except Exception as e:
+        print(f"[ambient] consent classifier error: {e}")
+        return "unclear"
+    return parse_consent(raw)
+
+
 # ── Stage 1: free recall gate ─────────────────────────────────────────────────
 _REQUEST_RE = re.compile(
     r"\b(can|could|would|should|let'?s|we need|i need|do we|please|"

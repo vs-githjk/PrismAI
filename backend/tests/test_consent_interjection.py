@@ -108,5 +108,38 @@ class OfferGenTests(unittest.TestCase):
         self.assertFalse(ambient_loop.subject_already_offered(s, "meteor timing"))
 
 
+class ParseConsentTests(unittest.TestCase):
+    def test_yes(self):
+        import ambient_loop
+        for r in ["YES", "yes", "Answer: YES", '{"consent":"yes"}', "yes, go ahead"]:
+            self.assertEqual(ambient_loop.parse_consent(r), "yes", r)
+
+    def test_no(self):
+        import ambient_loop
+        for r in ["NO", "no", "Answer: NO", '{"consent":"no"}']:
+            self.assertEqual(ambient_loop.parse_consent(r), "no", r)
+
+    def test_unclear_failsafe(self):
+        import ambient_loop
+        for r in ["", None, "unclear", "maybe", "I don't know", "banana"]:
+            self.assertEqual(ambient_loop.parse_consent(r), "unclear", r)
+
+
+class ClassifyConsentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_classify_yes(self):
+        import ambient_loop
+        async def fake(system, user):
+            return "YES"
+        with mock.patch.object(ambient_loop, "_call_consent_model", fake):
+            self.assertEqual(await ambient_loop.classify_consent("vendor forecast", "yeah go ahead"), "yes")
+
+    async def test_classify_error_is_unclear(self):
+        import ambient_loop
+        async def boom(system, user):
+            raise RuntimeError("down")
+        with mock.patch.object(ambient_loop, "_call_consent_model", boom):
+            self.assertEqual(await ambient_loop.classify_consent("x", "sure"), "unclear")
+
+
 if __name__ == "__main__":
     unittest.main()
