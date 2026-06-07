@@ -2599,6 +2599,22 @@ async def set_bot_mode(bot_id: str, body: dict):
     return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
 
 
+@router.post("/bot/{bot_id}/mute")
+async def set_bot_mute(bot_id: str, body: dict):
+    """Mute / unmute the bot's proactive offers (consent-interjection v2).
+    body={"muted": bool}. Muting also drops any pending offer. Unauthenticated
+    like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    muted = bool(body.get("muted"))
+    state = _get_bot_state(bot_id)
+    state["muted"] = muted
+    if muted:
+        state["interjection_state"] = "idle"
+        state["pending_offer"] = None
+        perception_state.bump(state, "mutes")
+    print(f"[ambient] mute via API bot={bot_id[:8]} muted={muted}")
+    return {"muted": state.get("muted")}
+
+
 def init_bot_realtime(bot_id: str):
     """Initialize real-time state for a bot. Called when a bot is created."""
     _get_bot_state(bot_id)

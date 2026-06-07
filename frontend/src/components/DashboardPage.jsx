@@ -337,9 +337,25 @@ function NewMeetingPanel(props) {
                      props.botStatus === 'recording' ? 'Bot is recording…' :
                      'Meeting ended — analyzing…'}
                   </p>
-                  <button type="button" onClick={props.cancelBot} className="ml-auto text-[10px] text-white/36 hover:text-white/60">
-                    Cancel
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    {props.botStatus === 'recording' && (
+                      <button
+                        type="button"
+                        onClick={props.toggleBotMute}
+                        title={props.botMuted ? 'Prism will not offer suggestions' : 'Stop Prism from chiming in'}
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                          props.botMuted
+                            ? 'bg-amber-400/15 text-amber-300 hover:bg-amber-400/25'
+                            : 'bg-white/[0.06] text-white/55 hover:text-white/85'
+                        }`}
+                      >
+                        {props.botMuted ? 'Muted' : 'Mute Prism'}
+                      </button>
+                    )}
+                    <button type="button" onClick={props.cancelBot} className="text-[10px] text-white/36 hover:text-white/60">
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
 

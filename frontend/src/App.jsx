@@ -1109,6 +1109,21 @@ export default function App() {
   const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
   const [dedupBotInfo, setDedupBotInfo] = useState(null) // { botId, ownerUserId, ownerUserEmail }
   const [activeLiveToken, setActiveLiveToken] = useState(() => sessionStorage.getItem('prism_active_live_token') || null)
+  const [botMuted, setBotMuted] = useState(false)
+  const toggleBotMute = async () => {
+    if (!activeBotId) return
+    const next = !botMuted
+    setBotMuted(next)  // optimistic
+    try {
+      await apiFetch(`/bot/${activeBotId}/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ muted: next }),
+      })
+    } catch {
+      setBotMuted(!next)  // revert on failure
+    }
+  }
   const [liveShareCopied, setLiveShareCopied] = useState(false)
   const [liveCommands, setLiveCommands] = useState([]) // commands executed during live meeting
   const pollRef = useRef(null)
@@ -2672,6 +2687,8 @@ export default function App() {
           joinMode={joinMode}
           setJoinMode={setJoinMode}
           joinMeeting={joinMeeting}
+          botMuted={botMuted}
+          toggleBotMute={toggleBotMute}
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}
           botStatus={botStatus}

@@ -119,6 +119,22 @@ class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):
             realtime_routes.cleanup_bot_state(bot_id)
 
 
+class MuteEndpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_mute_toggle(self):
+        bot_id = "bot-mute-test"
+        state = realtime_routes._get_bot_state(bot_id)
+        try:
+            res = await realtime_routes.set_bot_mute(bot_id, {"muted": True})
+            self.assertTrue(res["muted"])
+            self.assertTrue(state["muted"])
+            self.assertIsNone(state["pending_offer"])
+
+            res = await realtime_routes.set_bot_mute(bot_id, {"muted": False})
+            self.assertFalse(state["muted"])
+        finally:
+            realtime_routes.cleanup_bot_state(bot_id)
+
+
 class PreJoinModeSeedTests(unittest.TestCase):
     def test_initial_mode_seeds_manual_override(self):
         bot_id = "bot-prejoin-test"
