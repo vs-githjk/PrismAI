@@ -679,7 +679,7 @@ async def _accumulator_tick_loop(bot_id: str, state: dict) -> None:
                         acc.tick()
                     if ambient_loop.autonomous_enabled():
                         if ambient_loop.check_lull(state, time.time()) == "autonomous":
-                            print(f"[ambient] lull → autonomous bot={bot_id[:8]}")
+                            print(f"[ambient] lull -> autonomous bot={bot_id[:8]}")
             except asyncio.CancelledError:
                 return
             except Exception as e:
@@ -2563,7 +2563,7 @@ async def set_bot_mode(bot_id: str, body: dict):
     state["manual_mode"] = mode
     if mode in ("utterance", "autonomous"):
         ambient_loop.update_mode(state, "", "", time.time())
-    print(f"[ambient] manual mode override bot={bot_id[:8]} → {mode!r}")
+    print(f"[ambient] manual mode override bot={bot_id[:8]} -> {mode!r}")
     return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
 
 
