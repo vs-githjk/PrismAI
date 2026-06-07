@@ -250,5 +250,128 @@ class DecideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["reason"], "decider_error")
 
 
+class EvaluateTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+        self.s["transcript_buffer"] = ["Abhinav: what's our Q3 number?"]
+        self.spoke = []
+        self.ideas = []
+
+    async def _gen(self, bot_id, utterance, speaker):
+        self.spoke.append((utterance, speaker))
+        return "Our Q3 number was 4.2M."
+
+    async def _gen_silent(self, bot_id, utterance, speaker):
+        self.spoke.append((utterance, speaker))
+        return None
+
+    async def _idea(self, bot_id, state):
+        self.ideas.append(bot_id)
+
+    def _patch_decide(self, result):
+        import ambient_loop
+        async def fake(state):
+            return result
+        return mock.patch.object(ambient_loop, "decide", fake)
+
+    async def test_gate_miss_returns_early(self):
+        import ambient_loop
+        self.s["_ambient_last_gate_ts"] = 100.0
+        out = await ambient_loop.evaluate(
+            "bot1", self.s, "nice weather", "X",
+            run_generator=self._gen, surface_idea=self._idea, now=101.0,
+        )
+        self.assertEqual(out["action"], "gate_miss")
+        self.assertEqual(self.spoke, [])
+
+    async def test_yes_speaks(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             self._patch_decide({"respond": True, "confidence": 0.9, "reason": "q"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "spoke")
+        self.assertEqual(len(self.spoke), 1)
+        self.assertEqual(self.s["ambient_last_spoke_ts"], 200.0)
+
+    async def test_below_threshold_silent(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             self._patch_decide({"respond": True, "confidence": 0.5, "reason": "meh"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "below_threshold")
+        self.assertEqual(self.spoke, [])
+
+    async def test_moderate_no_routes_to_idea_engine(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             self._patch_decide({"respond": False, "confidence": 0.5, "reason": "maybe"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "idea")
+        self.assertEqual(self.ideas, ["bot1"])
+
+    async def test_low_no_stays_silent(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             self._patch_decide({"respond": False, "confidence": 0.1, "reason": "chit-chat"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "silent")
+        self.assertEqual(self.ideas, [])
+
+    async def test_shadow_never_speaks(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS_SHADOW": "1"}, clear=True), \
+             self._patch_decide({"respond": True, "confidence": 0.95, "reason": "q"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "shadow")
+        self.assertEqual(self.spoke, [])
+
+    async def test_cooldown_blocks_speak(self):
+        import ambient_loop
+        self.s["ambient_last_spoke_ts"] = 190.0
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             self._patch_decide({"respond": True, "confidence": 0.95, "reason": "q"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "cooldown")
+        self.assertEqual(self.spoke, [])
+
+    async def test_generator_decline_suppressed(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             self._patch_decide({"respond": True, "confidence": 0.95, "reason": "q"}):
+            out = await ambient_loop.evaluate(
+                "bot1", self.s, "what's our Q3 number?", "Abhinav",
+                run_generator=self._gen_silent, surface_idea=self._idea, now=200.0,
+            )
+        self.assertEqual(out["action"], "declined")
+        self.assertNotEqual(self.s["ambient_last_spoke_ts"], 200.0)
+
+    async def test_mutex_blocks_concurrent(self):
+        import ambient_loop
+        self.s["_ambient_evaluating"] = True
+        out = await ambient_loop.evaluate(
+            "bot1", self.s, "what's our Q3 number?", "Abhinav",
+            run_generator=self._gen, surface_idea=self._idea, now=200.0,
+        )
+        self.assertEqual(out["action"], "busy")
+
+
 if __name__ == "__main__":
     unittest.main()

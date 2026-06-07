@@ -202,6 +202,66 @@ def recall_gate(state: dict, utterance_text: str, now: float) -> bool:
     return False
 
 
+# ── Orchestration ─────────────────────────────────────────────────────────────
+async def evaluate(
+    bot_id: str,
+    state: dict,
+    utterance_text: str,
+    speaker: str,
+    *,
+    run_generator,        # async (bot_id, utterance, speaker) -> str | None (spoken text)
+    surface_idea,         # async (bot_id, state) -> None
+    now: float | None = None,
+) -> dict:
+    """Run the funnel for one utterance (autonomous mode only — caller checks mode).
+    recall_gate → decide → guards → generator → TTS. Returns an action dict for
+    observability/tests. Never raises into the caller's create_task."""
+    now = time.time() if now is None else now
+    if state.get("_ambient_evaluating"):
+        return {"action": "busy"}
+    if not recall_gate(state, utterance_text, now):
+        return {"action": "gate_miss"}
+    state["_ambient_last_gate_ts"] = now
+    perception_state.bump(state, "ambient_gate_fires")
+
+    state["_ambient_evaluating"] = True
+    try:
+        decision = await decide(state)
+        conf = decision["confidence"]
+
+        if not decision["respond"]:
+            perception_state.bump(state, "ambient_decider_no")
+            if conf >= MODERATE_NO_FLOOR:
+                perception_state.bump(state, "ambient_idea_handoff")
+                try:
+                    await surface_idea(bot_id, state)
+                except Exception as e:
+                    print(f"[ambient] idea handoff error: {e}")
+                return {"action": "idea", "confidence": conf}
+            return {"action": "silent", "confidence": conf}
+
+        # respond == True
+        perception_state.bump(state, "ambient_decider_yes")
+        if conf < decider_threshold():
+            return {"action": "below_threshold", "confidence": conf}
+        if shadow_mode():
+            perception_state.bump(state, "ambient_shadow_would_speak")
+            print(f"[ambient] SHADOW would speak bot={bot_id[:8]} conf={conf:.2f} reason={decision['reason']!r}")
+            return {"action": "shadow", "confidence": conf}
+        if (now - state.get("ambient_last_spoke_ts", 0.0)) < cooldown_s():
+            return {"action": "cooldown", "confidence": conf}
+
+        spoken = await run_generator(bot_id, utterance_text, speaker)
+        if spoken:
+            state["ambient_last_spoke_ts"] = now
+            perception_state.bump(state, "ambient_spoke")
+            return {"action": "spoke", "confidence": conf}
+        perception_state.bump(state, "ambient_suppressed_decline")
+        return {"action": "declined", "confidence": conf}
+    finally:
+        state["_ambient_evaluating"] = False
+
+
 def check_lull(state: dict, now: float) -> str | None:
     """Called from the accumulator tick loop (NOT on an utterance). If the
     meeting has been active but silent for > lull_threshold_s and we're in
