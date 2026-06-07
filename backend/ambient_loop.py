@@ -114,6 +114,62 @@ def parse_decider_output(raw: str | None) -> dict:
     }
 
 
+_DECIDER_SYSTEM = (
+    "You are the response gate for an AI meeting assistant that is listening "
+    "silently. Decide ONLY whether the assistant should speak right now. Say yes "
+    "only when there is a clear, helpful, NON-interrupting contribution: an "
+    "unanswered question it can answer, a relevant fact to surface, or a real "
+    "risk to flag. Default to staying silent for chit-chat, rhetorical questions, "
+    "or anything already being handled by the people talking.\n"
+    "Respond with JSON ONLY, no prose: "
+    '{"respond": <true|false>, "confidence": <0.0-1.0>, "reason": "<short>"}'
+)
+
+
+def _signal_summary(state: dict) -> str:
+    """Cheap structured signals fed to the decider alongside the memory context."""
+    decisions = state.get("live_decisions") or []
+    actions = state.get("live_action_items") or []
+    entities = state.get("live_entities") or {}
+    top = ", ".join(w for w, _ in entities.most_common(8)) if hasattr(entities, "most_common") else ""
+    return (
+        f"decisions_so_far={len(decisions)} action_items={len(actions)}\n"
+        f"key_topics: {top}"
+    )
+
+
+async def _call_decider_model(system: str, user: str) -> str:
+    """The only I/O in the decider. Calls Groq directly (llm_call is hardcoded to
+    70B) so we can run the cheap 8B model. Isolated for easy test mocking."""
+    groq = get_groq()
+    resp = await groq.chat.completions.create(
+        model=decider_model(),
+        temperature=0.1,
+        max_tokens=120,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    )
+    return resp.choices[0].message.content or ""
+
+
+async def decide(state: dict) -> dict:
+    """Stage 2: should the assistant speak now? Returns {respond, confidence, reason}.
+    Fed the rolling memory context + cheap signals — not a generated candidate."""
+    context = meeting_memory.build_memory_context(state)
+    user = (
+        f"{context}\n\n[SIGNALS]\n{_signal_summary(state)}\n\n"
+        "[TASK] Should the assistant speak now? JSON only."
+    )
+    try:
+        raw = await _call_decider_model(_DECIDER_SYSTEM, user)
+    except Exception as e:  # fail-safe silent on any model/transport error
+        print(f"[ambient] decider error: {e}")
+        return {"respond": False, "confidence": 0.0, "reason": "decider_error"}
+    return parse_decider_output(raw)
+
+
 # ── Stage 1: free recall gate ─────────────────────────────────────────────────
 _REQUEST_RE = re.compile(
     r"\b(can|could|would|should|let'?s|we need|i need|do we|please|"

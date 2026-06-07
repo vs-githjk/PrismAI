@@ -226,5 +226,29 @@ class ParseDeciderTests(unittest.TestCase):
         self.assertEqual(out["confidence"], 1.0)
 
 
+class DecideTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+        self.s["transcript_buffer"] = ["Abhinav: what's our Q3 number?"]
+
+    async def test_decide_parses_model_output(self):
+        import ambient_loop
+        async def fake_call(system, user):
+            return '{"respond": true, "confidence": 0.8, "reason": "open question"}'
+        with mock.patch.object(ambient_loop, "_call_decider_model", fake_call):
+            out = await ambient_loop.decide(self.s)
+        self.assertTrue(out["respond"])
+        self.assertEqual(out["confidence"], 0.8)
+
+    async def test_decide_model_error_fails_safe(self):
+        import ambient_loop
+        async def boom(system, user):
+            raise RuntimeError("groq down")
+        with mock.patch.object(ambient_loop, "_call_decider_model", boom):
+            out = await ambient_loop.decide(self.s)
+        self.assertFalse(out["respond"])
+        self.assertEqual(out["reason"], "decider_error")
+
+
 if __name__ == "__main__":
     unittest.main()
