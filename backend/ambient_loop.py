@@ -57,6 +57,45 @@ def autonomy_cap_s() -> float:
     return float(os.getenv("PRISM_AUTONOMY_CAP_S", "300"))
 
 
+# ── Consent interjection: warmup + mute (v2) ──────────────────────────────────
+WARMUP_MIN_ENTITIES = 5  # distinct named entities ⇒ meeting has substance
+
+
+def past_warmup(state: dict) -> bool:
+    """True once the meeting has substantive content — so the bot doesn't offer
+    during intros / small talk. Substance = a decision/action captured, or enough
+    distinct named entities. Requires the meeting to have actually started."""
+    if not state.get("meeting_start_ts"):
+        return False
+    if (state.get("live_decisions") or state.get("live_action_items")):
+        return True
+    return len(state.get("live_entities") or {}) >= WARMUP_MIN_ENTITIES
+
+
+_MUTE_RE = re.compile(
+    r"\b(?:prism|prismai|prism ai)\b[,:\s]+"
+    r"(?:stay\s+quiet|be\s+quiet|stay\s+silent|mute|stop\s+talking|stop\s+interrupting|"
+    r"quiet\s+down|hush)\b",
+    re.IGNORECASE,
+)
+_UNMUTE_RE = re.compile(
+    r"\b(?:prism|prismai|prism ai)\b[,:\s]+"
+    r"(?:chime\s+in|you\s+can\s+talk|you\s+can\s+chime|talk\s+again|unmute|"
+    r"start\s+talking|speak\s+up)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_mute_command(text: str) -> str | None:
+    """'mute' | 'unmute' | None for an explicit mute/unmute directive to Prism."""
+    t = text or ""
+    if _UNMUTE_RE.search(t):
+        return "unmute"
+    if _MUTE_RE.search(t):
+        return "mute"
+    return None
+
+
 # ── Mode state machine ────────────────────────────────────────────────────────
 # Handoff: "prism" + a delegation verb. Reuses the wake-word cousins loosely.
 _HANDOFF_RE = re.compile(

@@ -42,5 +42,49 @@ class StateFieldTests(unittest.TestCase):
         self.assertEqual(snap["interjection_state"], "offer_pending")
 
 
+class WarmupTests(unittest.TestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+
+    def test_no_warmup_before_meeting_start(self):
+        import ambient_loop
+        self.assertFalse(ambient_loop.past_warmup(self.s))
+
+    def test_no_warmup_without_substance(self):
+        import ambient_loop
+        self.s["meeting_start_ts"] = 1000.0
+        self.assertFalse(ambient_loop.past_warmup(self.s))
+
+    def test_warmup_with_a_decision(self):
+        import ambient_loop
+        self.s["meeting_start_ts"] = 1000.0
+        self.s["live_decisions"] = [{"text": "ship friday", "speaker": "A", "ts": 1.0}]
+        self.assertTrue(ambient_loop.past_warmup(self.s))
+
+    def test_warmup_with_enough_entities(self):
+        import ambient_loop
+        from collections import Counter
+        self.s["meeting_start_ts"] = 1000.0
+        self.s["live_entities"] = Counter({"Q3": 2, "Migration": 1, "Budget": 1, "Vendor": 1, "Roadmap": 1})
+        self.assertTrue(ambient_loop.past_warmup(self.s))
+
+
+class MuteCommandTests(unittest.TestCase):
+    def test_mute_phrases(self):
+        import ambient_loop
+        for t in ["Prism, stay quiet", "prism be quiet", "Prism, mute yourself", "prism stop talking"]:
+            self.assertEqual(ambient_loop.detect_mute_command(t), "mute", t)
+
+    def test_unmute_phrases(self):
+        import ambient_loop
+        for t in ["Prism, you can chime in", "prism chime in again", "Prism, you can talk", "prism unmute"]:
+            self.assertEqual(ambient_loop.detect_mute_command(t), "unmute", t)
+
+    def test_non_mute(self):
+        import ambient_loop
+        for t in ["let's discuss the budget", "what time is it", ""]:
+            self.assertIsNone(ambient_loop.detect_mute_command(t))
+
+
 if __name__ == "__main__":
     unittest.main()
