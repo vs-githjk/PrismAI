@@ -467,6 +467,118 @@ async def evaluate(
         state["_ambient_evaluating"] = False
 
 
+# ── Consent interjection: state machine (v2) ──────────────────────────────────
+async def interject(
+    bot_id: str,
+    state: dict,
+    utterance_text: str,
+    speaker: str,
+    *,
+    speak_offer,      # async (bot_id, text) -> bool  (True if the offer was spoken, False if talked over)
+    run_delivery,     # async (bot_id, subject, speaker) -> str | None  (full answer about subject)
+    now: float | None = None,
+) -> dict:
+    """v2 consent-based interjection. One call per completed utterance in
+    autonomous mode. IDLE → (offer) → OFFER_PENDING → (consent) → deliver/drop.
+    Returns an action dict for observability/tests. Never raises into the caller."""
+    now = time.time() if now is None else now
+
+    # 0. Mute / unmute — always honored (no mutex; synchronous).
+    cmd = detect_mute_command(utterance_text)
+    if cmd == "mute":
+        state["muted"] = True
+        state["interjection_state"] = "idle"
+        state["pending_offer"] = None
+        perception_state.bump(state, "mutes")
+        print(f"[ambient] muted bot={bot_id[:8]}")
+        return {"action": "muted"}
+    if cmd == "unmute":
+        state["muted"] = False
+        print(f"[ambient] unmuted bot={bot_id[:8]}")
+        return {"action": "unmuted"}
+    if state.get("muted"):
+        return {"action": "muted_skip"}
+
+    if state.get("_ambient_evaluating"):
+        return {"action": "busy"}
+    state["_ambient_evaluating"] = True
+    try:
+        # 1. OFFER_PENDING → consent handling (suppresses new offers).
+        if state.get("interjection_state") == "offer_pending":
+            return await _handle_pending_offer(bot_id, state, utterance_text, speaker, now, run_delivery)
+
+        # 2. IDLE → maybe offer.
+        if not past_warmup(state):
+            return {"action": "warmup"}
+        if (now - state.get("offer_last_ts", 0.0)) < offer_cooldown_s():
+            return {"action": "cooldown"}
+        if not recall_gate(state, utterance_text, now):
+            return {"action": "gate_miss"}
+        state["_ambient_last_gate_ts"] = now
+
+        # Cheap 8B substance prefilter, then the 70B read-the-room offer-decider.
+        pre = await decide(state)
+        if not pre["respond"]:
+            return {"action": "prefilter_stop", "confidence": pre["confidence"]}
+        od = await offer_decider(state)
+        if not od["offer"] or od["confidence"] < offer_threshold():
+            return {"action": "no_offer", "confidence": od["confidence"]}
+        subject = od["subject"]
+        if subject_already_offered(state, subject):
+            return {"action": "dup_subject", "subject": subject}
+
+        if shadow_mode():
+            perception_state.bump(state, "offers_made")
+            print(f"[ambient] SHADOW would offer bot={bot_id[:8]} subject={subject!r} conf={od['confidence']:.2f}")
+            return {"action": "shadow_offer", "subject": subject}
+
+        spoke = await speak_offer(bot_id, make_offer(subject))
+        if not spoke:
+            perception_state.bump(state, "offers_talked_over")
+            return {"action": "offer_talked_over", "subject": subject}
+
+        perception_state.bump(state, "offers_made")
+        record_offered_subject(state, subject)
+        state["interjection_state"] = "offer_pending"
+        state["pending_offer"] = {"subject": subject, "ts": now, "turns": 0}
+        state["offer_last_ts"] = now
+        print(f"[ambient] offered bot={bot_id[:8]} subject={subject!r} conf={od['confidence']:.2f}")
+        return {"action": "offered", "subject": subject}
+    finally:
+        state["_ambient_evaluating"] = False
+
+
+async def _handle_pending_offer(bot_id, state, utterance_text, speaker, now, run_delivery) -> dict:
+    """An offer is out; classify the human's reply and deliver / drop / wait."""
+    po = state.get("pending_offer") or {}
+    subject = po.get("subject", "")
+    po["turns"] = po.get("turns", 0) + 1
+
+    consent = await classify_consent(subject, utterance_text)
+    if consent == "yes":
+        state["interjection_state"] = "idle"
+        state["pending_offer"] = None
+        perception_state.bump(state, "offers_accepted")
+        spoken = await run_delivery(bot_id, subject, speaker)
+        state["offer_last_ts"] = now
+        print(f"[ambient] delivered bot={bot_id[:8]} subject={subject!r} spoke={bool(spoken)}")
+        return {"action": "delivered" if spoken else "delivery_declined", "subject": subject}
+    if consent == "no":
+        state["interjection_state"] = "idle"
+        state["pending_offer"] = None
+        perception_state.bump(state, "offers_declined")
+        return {"action": "declined", "subject": subject}
+
+    # unclear → wait, unless the consent window has passed (time or turns).
+    expired = (now - po.get("ts", now)) > offer_consent_window_s() or po["turns"] >= 2
+    if expired:
+        state["interjection_state"] = "idle"
+        state["pending_offer"] = None
+        perception_state.bump(state, "offers_expired")
+        return {"action": "expired", "subject": subject}
+    return {"action": "awaiting_consent", "subject": subject, "turns": po["turns"]}
+
+
 def check_lull(state: dict, now: float) -> str | None:
     """Called from the accumulator tick loop (NOT on an utterance). If the
     meeting has been active but silent for > lull_threshold_s and we're in

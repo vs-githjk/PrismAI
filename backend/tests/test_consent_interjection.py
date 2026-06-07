@@ -194,5 +194,171 @@ class OfferDeciderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(ambient_loop.offer_decider_model(), "llama-3.3-70b-versatile")
 
 
+class InterjectTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+        self.s["transcript_buffer"] = ["Abhinav: do you wanna check the vendor forecast?"]
+        self.s["meeting_start_ts"] = 1000.0
+        self.s["live_decisions"] = [{"text": "ship friday", "speaker": "A", "ts": 1.0}]  # past warmup
+        self.offered = []
+        self.delivered = []
+
+    async def _speak_offer(self, bot_id, text):
+        self.offered.append(text)
+        return True
+
+    async def _speak_offer_talkedover(self, bot_id, text):
+        self.offered.append(text)
+        return False
+
+    async def _run_delivery(self, bot_id, subject, speaker):
+        self.delivered.append(subject)
+        return f"Here's what I found about {subject}."
+
+    def _patch(self, *, pre=True, offer=True, subject="vendor forecast", conf=0.8, consent="unclear"):
+        import ambient_loop
+        async def fake_decide(state):
+            return {"respond": pre, "confidence": 0.9, "reason": ""}
+        async def fake_offer(state):
+            return {"offer": offer, "subject": subject, "confidence": conf, "reason": ""}
+        async def fake_consent(subj, utt):
+            return consent
+        return (
+            mock.patch.object(ambient_loop, "decide", fake_decide),
+            mock.patch.object(ambient_loop, "offer_decider", fake_offer),
+            mock.patch.object(ambient_loop, "classify_consent", fake_consent),
+        )
+
+    async def _interject(self, text, speaker="Abhinav", now=5000.0, speak=None):
+        import ambient_loop
+        return await ambient_loop.interject(
+            "bot1", self.s, text, speaker,
+            speak_offer=speak or self._speak_offer, run_delivery=self._run_delivery, now=now,
+        )
+
+    # ── mute ──
+    async def test_mute_command(self):
+        out = await self._interject("Prism, stay quiet")
+        self.assertEqual(out["action"], "muted")
+        self.assertTrue(self.s["muted"])
+
+    async def test_unmute_command(self):
+        self.s["muted"] = True
+        out = await self._interject("Prism, chime in again")
+        self.assertEqual(out["action"], "unmuted")
+        self.assertFalse(self.s["muted"])
+
+    async def test_muted_skips(self):
+        self.s["muted"] = True
+        with mock.patch.dict(os.environ, {}, clear=True):
+            out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "muted_skip")
+        self.assertEqual(self.offered, [])
+
+    # ── warmup / cooldown ──
+    async def test_warmup_blocks(self):
+        self.s["live_decisions"] = []
+        self.s["live_action_items"] = []
+        with mock.patch.dict(os.environ, {}, clear=True):
+            out = await self._interject("anything substantive?")
+        self.assertEqual(out["action"], "warmup")
+
+    async def test_cooldown_blocks(self):
+        self.s["offer_last_ts"] = 4950.0  # 50s ago < 90s
+        with mock.patch.dict(os.environ, {}, clear=True):
+            out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "cooldown")
+
+    # ── offer path ──
+    async def test_happy_offer(self):
+        p = self._patch(offer=True, subject="vendor forecast", conf=0.8)
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "offered")
+        self.assertEqual(self.s["interjection_state"], "offer_pending")
+        self.assertEqual(self.s["pending_offer"]["subject"], "vendor forecast")
+        self.assertEqual(len(self.offered), 1)
+        self.assertIn("vendor forecast", self.offered[0])
+
+    async def test_no_offer(self):
+        p = self._patch(offer=False)
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "no_offer")
+        self.assertEqual(self.offered, [])
+
+    async def test_dup_subject_suppressed(self):
+        self.s["offered_subjects"] = ["vendor forecast"]
+        p = self._patch(offer=True, subject="Vendor Forecast", conf=0.9)
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "dup_subject")
+
+    async def test_offer_talked_over(self):
+        p = self._patch(offer=True, conf=0.9)
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("do you wanna check the vendor forecast?", speak=self._speak_offer_talkedover)
+        self.assertEqual(out["action"], "offer_talked_over")
+        self.assertNotEqual(self.s["interjection_state"], "offer_pending")
+
+    async def test_shadow_offer_never_speaks(self):
+        p = self._patch(offer=True, conf=0.9)
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS_SHADOW": "1"}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "shadow_offer")
+        self.assertEqual(self.offered, [])
+
+    # ── consent path ──
+    def _set_pending(self, ts=5000.0, turns=0, subject="vendor forecast"):
+        self.s["interjection_state"] = "offer_pending"
+        self.s["pending_offer"] = {"subject": subject, "ts": ts, "turns": turns}
+
+    async def test_consent_yes_delivers(self):
+        self._set_pending()
+        p = self._patch(consent="yes")
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("yeah go ahead", now=5005.0)
+        self.assertEqual(out["action"], "delivered")
+        self.assertEqual(self.delivered, ["vendor forecast"])
+        self.assertEqual(self.s["interjection_state"], "idle")
+
+    async def test_consent_no_drops(self):
+        self._set_pending()
+        p = self._patch(consent="no")
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("no we're good", now=5005.0)
+        self.assertEqual(out["action"], "declined")
+        self.assertEqual(self.delivered, [])
+        self.assertEqual(self.s["interjection_state"], "idle")
+
+    async def test_consent_unclear_waits(self):
+        self._set_pending(ts=5000.0, turns=0)
+        p = self._patch(consent="unclear")
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("so anyway about the roadmap", now=5005.0)
+        self.assertEqual(out["action"], "awaiting_consent")
+        self.assertEqual(self.s["interjection_state"], "offer_pending")
+
+    async def test_consent_unclear_expires_by_turns(self):
+        self._set_pending(ts=5000.0, turns=1)
+        p = self._patch(consent="unclear")
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("and another thing", now=5005.0)
+        self.assertEqual(out["action"], "expired")
+        self.assertEqual(self.s["interjection_state"], "idle")
+
+    async def test_consent_unclear_expires_by_time(self):
+        self._set_pending(ts=5000.0, turns=0)
+        p = self._patch(consent="unclear")
+        with mock.patch.dict(os.environ, {}, clear=True), p[0], p[1], p[2]:
+            out = await self._interject("much later", now=5050.0)  # >25s
+        self.assertEqual(out["action"], "expired")
+
+    async def test_mutex_busy(self):
+        self.s["_ambient_evaluating"] = True
+        out = await self._interject("do you wanna check the vendor forecast?")
+        self.assertEqual(out["action"], "busy")
+
+
 if __name__ == "__main__":
     unittest.main()
