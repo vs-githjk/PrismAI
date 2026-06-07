@@ -96,6 +96,33 @@ def detect_mute_command(text: str) -> str | None:
     return None
 
 
+# ── Consent interjection: offer line + subject dedup ──────────────────────────
+_MAX_OFFERED_SUBJECTS = 25
+
+
+def make_offer(subject: str) -> str:
+    """The brief, templated consent-seeking offer. No tools, no answer content."""
+    subject = (subject or "").strip()
+    if not subject:
+        return "Actually, I think I have something relevant here. Would you like to know more?"
+    return f"Actually, I have some information about {subject}. Would you like to know more?"
+
+
+def subject_already_offered(state: dict, subject: str) -> bool:
+    return (subject or "").strip().lower() in (state.get("offered_subjects") or [])
+
+
+def record_offered_subject(state: dict, subject: str) -> None:
+    key = (subject or "").strip().lower()
+    if not key:
+        return
+    subs = state.setdefault("offered_subjects", [])
+    if key not in subs:
+        subs.append(key)
+        if len(subs) > _MAX_OFFERED_SUBJECTS:
+            del subs[: len(subs) - _MAX_OFFERED_SUBJECTS]
+
+
 # ── Mode state machine ────────────────────────────────────────────────────────
 # Handoff: "prism" + a delegation verb. Reuses the wake-word cousins loosely.
 _HANDOFF_RE = re.compile(

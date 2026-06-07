@@ -86,5 +86,27 @@ class MuteCommandTests(unittest.TestCase):
             self.assertIsNone(ambient_loop.detect_mute_command(t))
 
 
+class OfferGenTests(unittest.TestCase):
+    def test_make_offer_includes_subject(self):
+        import ambient_loop
+        line = ambient_loop.make_offer("the vendor forecast")
+        self.assertIn("vendor forecast", line)
+        self.assertIn("?", line)
+
+    def test_make_offer_empty_subject_is_generic(self):
+        import ambient_loop
+        line = ambient_loop.make_offer("")
+        self.assertTrue(line.strip().endswith("?"))
+        self.assertGreater(len(line), 10)
+
+    def test_subject_dedup(self):
+        import ambient_loop
+        s = meeting_memory.get_initial_memory_state()
+        self.assertFalse(ambient_loop.subject_already_offered(s, "Vendor Forecast"))
+        ambient_loop.record_offered_subject(s, "Vendor Forecast")
+        self.assertTrue(ambient_loop.subject_already_offered(s, "vendor forecast"))
+        self.assertFalse(ambient_loop.subject_already_offered(s, "meteor timing"))
+
+
 if __name__ == "__main__":
     unittest.main()
