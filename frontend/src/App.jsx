@@ -1103,6 +1103,7 @@ export default function App() {
   // Join Meeting state
   const [inputTab, setInputTab] = useState('join') // 'paste' | 'join'
   const [meetingUrl, setMeetingUrl] = useState('')
+  const [joinMode, setJoinMode] = useState('utterance')  // pre-join response mode: 'utterance' | 'autonomous'
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
   const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
@@ -1715,6 +1716,7 @@ export default function App() {
           meeting_url: meetingUrl,
           owner_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || null,
           workspace_id: activeWorkspaceId || null,
+          mode: joinMode,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
@@ -2667,6 +2669,8 @@ export default function App() {
           initialMessages={initialMessages}
           meetingUrl={meetingUrl}
           setMeetingUrl={setMeetingUrl}
+          joinMode={joinMode}
+          setJoinMode={setJoinMode}
           joinMeeting={joinMeeting}
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}

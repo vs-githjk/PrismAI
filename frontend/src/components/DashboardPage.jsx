@@ -290,6 +290,36 @@ function NewMeetingPanel(props) {
                 className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 disabled:opacity-50"
               />
 
+              <div className="space-y-1.5">
+                <p className="text-[10.5px] font-medium uppercase tracking-wide text-white/40">Response mode</p>
+                <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
+                  {[
+                    { id: 'utterance', label: 'Utterance', hint: 'Only responds when addressed ("Prism, …")' },
+                    { id: 'autonomous', label: 'Automatic', hint: 'Decides on its own when to chime in' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      disabled={botActive}
+                      title={m.hint}
+                      onClick={() => props.setJoinMode?.(m.id)}
+                      className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        (props.joinMode || 'utterance') === m.id
+                          ? 'bg-cyan-400/[0.16] text-cyan-200'
+                          : 'text-white/50 hover:text-white/75'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-white/30">
+                  {(props.joinMode || 'utterance') === 'autonomous'
+                    ? 'Prism will proactively contribute throughout the meeting.'
+                    : 'Prism stays silent until you address it by name.'}
+                </p>
+              </div>
+
               {props.dedupBotInfo && (
                 <div className="flex items-center gap-2 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-3 py-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
