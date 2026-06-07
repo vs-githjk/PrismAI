@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 
+import ambient_loop
 import meeting_memory
 import perception_state
 import think_loop
@@ -578,6 +579,8 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
     # re-acquire the memory lock internally.
     asyncio.create_task(_compress_and_persist(bot_id, state))
     asyncio.create_task(_dispatch_slow_path_command(state, bot_id, u))
+    if ambient_loop.autonomous_enabled():
+        asyncio.create_task(_ambient_on_utterance(bot_id, state, u))
 
 
 async def _dispatch_slow_path_command(
@@ -595,6 +598,53 @@ async def _dispatch_slow_path_command(
         f"utt={u.utterance_id}"
     )
     _dispatch_command(state, bot_id, command, u.speaker_name)
+
+
+# ── Ambient response loop wiring (PRISM_AUTONOMOUS) ───────────────────────────
+_AMBIENT_PREAMBLE = (
+    "You are listening silently to a live meeting. No one addressed you by name. "
+    "You have determined you may have a brief, useful contribution. Speak ONLY if "
+    "it is genuinely additive — answer an open question, surface a relevant fact, "
+    "or flag a real risk. If on reflection you have nothing additive to add, reply "
+    "with exactly: SILENT. Keep it to one or two sentences."
+)
+
+
+def _is_ambient_silent(reply: str) -> bool:
+    """True if an ambient-mode generation declined to contribute."""
+    return (reply or "").strip().upper().rstrip(".!") == "SILENT"
+
+
+async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
+    """Ambient (no-wake-word) branch. Runs the mode machine, then — only in
+    autonomous mode and only when there's no explicit 'prism' command — runs the
+    ambient funnel. Explicit commands are handled by _dispatch_slow_path_command."""
+    now = time.time()
+    mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
+    if _detect_command(u.text):
+        return  # explicit command path owns this utterance
+    if mode != "autonomous":
+        return
+    try:
+        await ambient_loop.evaluate(
+            bot_id, state, u.text, u.speaker_name,
+            run_generator=_ambient_run_generator,
+            surface_idea=_ambient_surface_idea,
+            now=now,
+        )
+    except Exception as e:
+        print(f"[ambient] evaluate error bot={bot_id[:8]}: {e}")
+
+
+async def _ambient_run_generator(bot_id: str, utterance: str, speaker: str):
+    """Generator wrapper for the ambient funnel — reuses _process_command with
+    ambient framing. Returns the spoken text, or None if it declined (SILENT)."""
+    return await _process_command(bot_id, utterance, speaker, ambient=True)
+
+
+async def _ambient_surface_idea(bot_id: str, state: dict) -> None:
+    """Borderline-'no' handoff → existing Idea Engine (side panel, best-effort)."""
+    await _maybe_generate_idea(bot_id, state)
 
 
 def _ensure_accumulator_tick_task(bot_id: str, state: dict) -> None:
@@ -627,6 +677,9 @@ async def _accumulator_tick_loop(bot_id: str, state: dict) -> None:
                     acc = state.get("accumulator")
                     if acc is not None:
                         acc.tick()
+                    if ambient_loop.autonomous_enabled():
+                        if ambient_loop.check_lull(state, time.time()) == "autonomous":
+                            print(f"[ambient] lull → autonomous bot={bot_id[:8]}")
             except asyncio.CancelledError:
                 return
             except Exception as e:
@@ -1502,8 +1555,12 @@ async def _run_proactive_checker(bot_id: str):
             state["recurring_blocker_checked"] = True
 
 
-async def _process_command(bot_id: str, command: str, speaker: str = ""):
-    """Process a detected command: use LLM to pick tools, execute, respond."""
+async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False):
+    """Process a detected command: use LLM to pick tools, execute, respond.
+
+    ambient=True is the no-wake-word path: a one-line preamble is injected so the
+    model speaks only if genuinely additive (else replies SILENT → suppressed),
+    and the finalized reply text is returned (None on decline)."""
     state = _get_bot_state(bot_id)
 
     # Debounce — don't process commands within 15 seconds of each other
@@ -1626,6 +1683,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 _hint = {"role": "system", "content": think_loop.artifact_system_hint(_prior_art)}
                 messages.insert(-1, _hint)
                 print(f"[realtime] think_loop artifact_injected bot={bot_id[:8]} age_s={int(time.time()-_prior_art['ts'])}")
+
+        # Ambient framing — inject the preamble as a system message right before
+        # the user turn (cache-safe, mirrors the think_loop artifact insert).
+        if ambient:
+            messages.insert(-1, {"role": "system", "content": _AMBIENT_PREAMBLE})
 
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
@@ -1915,6 +1977,12 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 # leak into a future unrelated send.
                 think_loop.clear_artifact(state)
 
+        # Ambient decline — the generator decided it had nothing additive. Skip
+        # logging/chat/voice entirely; return None so evaluate() counts it.
+        if ambient and _is_ambient_silent(reply):
+            print(f"[ambient] generator declined (SILENT) bot={bot_id[:8]}")
+            return None
+
         # Log command to bot_store and Supabase
         cmd_entry = {
             "command": command,
@@ -1950,6 +2018,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             await chat_task
         except Exception as chat_exc:
             print(f"[realtime] chat post failed: {chat_exc}")
+
+        if ambient:
+            return reply
 
     except Exception as exc:
         err_str = str(exc)
