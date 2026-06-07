@@ -195,5 +195,36 @@ class RecallGateTests(unittest.TestCase):
         self.assertTrue(ambient_loop.recall_gate(self.s, "the weather is nice today", 100.0 + 9.0))
 
 
+class ParseDeciderTests(unittest.TestCase):
+    def test_clean_json(self):
+        import ambient_loop
+        out = ambient_loop.parse_decider_output('{"respond": true, "confidence": 0.82, "reason": "open question"}')
+        self.assertTrue(out["respond"])
+        self.assertEqual(out["confidence"], 0.82)
+        self.assertEqual(out["reason"], "open question")
+
+    def test_fenced_json(self):
+        import ambient_loop
+        out = ambient_loop.parse_decider_output('```json\n{"respond": false, "confidence": 0.1, "reason": "chit-chat"}\n```')
+        self.assertFalse(out["respond"])
+
+    def test_json_with_prose_around_it(self):
+        import ambient_loop
+        out = ambient_loop.parse_decider_output('Sure! {"respond": true, "confidence": 0.9, "reason": "x"} hope that helps')
+        self.assertTrue(out["respond"])
+
+    def test_garbage_fails_safe_silent(self):
+        import ambient_loop
+        for bad in ["", None, "respond yes", "{not json", "{}", '{"confidence": 0.9}']:
+            out = ambient_loop.parse_decider_output(bad)
+            self.assertFalse(out["respond"])
+            self.assertEqual(out["confidence"], 0.0)
+
+    def test_confidence_clamped(self):
+        import ambient_loop
+        out = ambient_loop.parse_decider_output('{"respond": true, "confidence": 5, "reason": "x"}')
+        self.assertEqual(out["confidence"], 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()

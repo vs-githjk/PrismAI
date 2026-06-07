@@ -85,6 +85,35 @@ def _enter(state: dict, mode: str, reason: str, now: float, renew: bool) -> str:
     return mode
 
 
+# ── Stage 2: decider ──────────────────────────────────────────────────────────
+def parse_decider_output(raw: str | None) -> dict:
+    """Parse the decider's reply into {respond, confidence, reason}. ANY drift
+    (empty, non-JSON, missing/!bool respond) fails safe to respond=False."""
+    fallback = {"respond": False, "confidence": 0.0, "reason": "parse_failed"}
+    if not raw or not isinstance(raw, str):
+        return fallback
+    s = strip_fences(raw).strip()
+    start, end = s.find("{"), s.rfind("}")
+    if start < 0 or end <= start:
+        return fallback
+    try:
+        obj = json.loads(s[start:end + 1])
+    except Exception:
+        return fallback
+    if not isinstance(obj, dict) or not isinstance(obj.get("respond"), bool):
+        return fallback
+    try:
+        conf = float(obj.get("confidence", 0.0))
+    except Exception:
+        conf = 0.0
+    conf = max(0.0, min(1.0, conf))
+    return {
+        "respond": obj["respond"],
+        "confidence": conf,
+        "reason": str(obj.get("reason", ""))[:200],
+    }
+
+
 # ── Stage 1: free recall gate ─────────────────────────────────────────────────
 _REQUEST_RE = re.compile(
     r"\b(can|could|would|should|let'?s|we need|i need|do we|please|"
