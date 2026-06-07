@@ -117,6 +117,13 @@ def get_initial_memory_state() -> dict:
         "ambient_last_spoke_ts": 0.0,   # last unsolicited spoken response ts
         "_ambient_last_gate_ts": 0.0,   # last recall-gate pass (pause debounce)
         "_ambient_evaluating": False,   # mutex — one funnel eval at a time per bot
+
+        # ── Consent-based interjection (autonomous v2) ────────────────────────
+        "interjection_state": "idle",   # 'idle' | 'offer_pending'
+        "pending_offer": None,          # {subject:str, ts:float, turns:int} while offer_pending
+        "offered_subjects": [],         # lowercased subjects already offered (dedup)
+        "offer_last_ts": 0.0,           # last offer made (offer cooldown)
+        "muted": False,                 # humans muted proactive offers
     }
 
 
@@ -532,6 +539,8 @@ def get_memory_snapshot(state: dict) -> dict:
         "memory_summary": state.get("memory_summary") or "",
         "mode": state.get("mode") or "utterance",
         "mode_entry_reason": state.get("mode_entry_reason") or "",
+        "muted": bool(state.get("muted")),
+        "interjection_state": state.get("interjection_state") or "idle",
         "live_decisions": state.get("live_decisions") or [],
         "live_action_items": state.get("live_action_items") or [],
         "top_entities": [w for w, _ in entities.most_common(10)],

@@ -249,6 +249,13 @@ _DEFAULT_COUNTERS = {
     "ambient_mode_shifts": 0,
     "ambient_shadow_would_speak": 0,
     "ambient_idea_handoff": 0,
+    # Consent-based interjection (autonomous v2)
+    "offers_made": 0,
+    "offers_accepted": 0,
+    "offers_declined": 0,
+    "offers_expired": 0,
+    "offers_talked_over": 0,
+    "mutes": 0,
 }
 
 
@@ -284,6 +291,12 @@ _OPERATIONAL_KEYS = (
     "ambient_mode_shifts",
     "ambient_shadow_would_speak",
     "ambient_idea_handoff",
+    "offers_made",
+    "offers_accepted",
+    "offers_declined",
+    "offers_expired",
+    "offers_talked_over",
+    "mutes",
 )
 
 _SECURITY_KEYS = (
