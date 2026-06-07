@@ -49,5 +49,34 @@ class StateFieldTests(unittest.TestCase):
         self.assertEqual(snap["mode_entry_reason"], "handoff")
 
 
+class FlagTests(unittest.TestCase):
+    def test_flags_default_off(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(ambient_loop.autonomous_enabled())
+            self.assertFalse(ambient_loop.shadow_mode())
+
+    def test_flags_on(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS": "1", "PRISM_AUTONOMOUS_SHADOW": "1"}):
+            self.assertTrue(ambient_loop.autonomous_enabled())
+            self.assertTrue(ambient_loop.shadow_mode())
+
+    def test_param_defaults(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(ambient_loop.decider_model(), "llama-3.1-8b-instant")
+            self.assertEqual(ambient_loop.decider_threshold(), 0.7)
+            self.assertEqual(ambient_loop.cooldown_s(), 40.0)
+            self.assertEqual(ambient_loop.pause_debounce_s(), 8.0)
+            self.assertEqual(ambient_loop.lull_threshold_s(), 35.0)
+            self.assertEqual(ambient_loop.autonomy_cap_s(), 300.0)
+
+    def test_param_override(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {"PRISM_DECIDER_THRESHOLD": "0.55"}):
+            self.assertEqual(ambient_loop.decider_threshold(), 0.55)
+
+
 if __name__ == "__main__":
     unittest.main()
