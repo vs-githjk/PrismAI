@@ -85,6 +85,27 @@ def _enter(state: dict, mode: str, reason: str, now: float, renew: bool) -> str:
     return mode
 
 
+def check_lull(state: dict, now: float) -> str | None:
+    """Called from the accumulator tick loop (NOT on an utterance). If the
+    meeting has been active but silent for > lull_threshold_s and we're in
+    utterance mode, shift to autonomous (reason=lull). Returns the new mode
+    on a shift, else None. The next utterance is then evaluated through the
+    funnel; lull-entered autonomous reverts on active cross-talk (update_mode).
+    """
+    if state.get("manual_mode") in ("utterance", "autonomous"):
+        return None
+    if state.get("mode") != "utterance":
+        return None
+    if not state.get("meeting_start_ts"):
+        return None
+    last = state.get("last_activity_ts", 0.0)
+    if last <= 0:
+        return None
+    if (now - last) <= lull_threshold_s():
+        return None
+    return _enter(state, "autonomous", "lull", now, renew=True)
+
+
 def update_mode(state: dict, utterance_text: str, speaker_name: str, now: float) -> str:
     """Detect handoff / stop / cap / lull-revert on a completed utterance.
     Mutates + returns state['mode'] ('utterance' | 'autonomous'). Also records

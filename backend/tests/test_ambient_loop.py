@@ -132,5 +132,37 @@ class UpdateModeTests(unittest.TestCase):
         self.assertEqual(mode, "autonomous")
 
 
+class CheckLullTests(unittest.TestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+        self.s["meeting_start_ts"] = 1000.0
+        self.s["last_activity_ts"] = 1000.0
+
+    def test_lull_shifts_to_autonomous(self):
+        import ambient_loop
+        mode = ambient_loop.check_lull(self.s, 1000.0 + 40.0)
+        self.assertEqual(mode, "autonomous")
+        self.assertEqual(self.s["mode_entry_reason"], "lull")
+
+    def test_no_lull_when_recent_activity(self):
+        import ambient_loop
+        self.assertIsNone(ambient_loop.check_lull(self.s, 1000.0 + 10.0))
+
+    def test_no_lull_when_already_autonomous(self):
+        import ambient_loop
+        self.s["mode"] = "autonomous"
+        self.assertIsNone(ambient_loop.check_lull(self.s, 1000.0 + 40.0))
+
+    def test_no_lull_before_meeting_start(self):
+        import ambient_loop
+        self.s["meeting_start_ts"] = None
+        self.assertIsNone(ambient_loop.check_lull(self.s, 1000.0 + 40.0))
+
+    def test_manual_override_blocks_lull(self):
+        import ambient_loop
+        self.s["manual_mode"] = "utterance"
+        self.assertIsNone(ambient_loop.check_lull(self.s, 1000.0 + 40.0))
+
+
 if __name__ == "__main__":
     unittest.main()
