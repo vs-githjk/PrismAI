@@ -82,5 +82,29 @@ class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(called, [True])
 
 
+class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_manual_mode(self):
+        bot_id = "bot-override-test"
+        state = realtime_routes._get_bot_state(bot_id)
+        try:
+            res = await realtime_routes.set_bot_mode(bot_id, {"mode": "autonomous"})
+            self.assertEqual(res["mode"], "autonomous")
+            self.assertEqual(state["manual_mode"], "autonomous")
+
+            res = await realtime_routes.set_bot_mode(bot_id, {"mode": None})
+            self.assertIsNone(state["manual_mode"])
+        finally:
+            realtime_routes.cleanup_bot_state(bot_id)
+
+    async def test_invalid_mode_rejected(self):
+        bot_id = "bot-override-test-2"
+        realtime_routes._get_bot_state(bot_id)
+        try:
+            res = await realtime_routes.set_bot_mode(bot_id, {"mode": "bogus"})
+            self.assertIn("error", res)
+        finally:
+            realtime_routes.cleanup_bot_state(bot_id)
+
+
 if __name__ == "__main__":
     unittest.main()

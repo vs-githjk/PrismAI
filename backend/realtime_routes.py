@@ -2551,6 +2551,22 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
     return {"ok": True}
 
 
+@router.post("/bot/{bot_id}/mode")
+async def set_bot_mode(bot_id: str, body: dict):
+    """Owner manual override of the live bot's mode. body={"mode": "utterance"
+    |"autonomous"|null}. null clears the override (auto state machine resumes).
+    Unauthenticated like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    mode = body.get("mode")
+    if mode not in (None, "utterance", "autonomous"):
+        return {"error": "mode must be 'utterance', 'autonomous', or null"}
+    state = _get_bot_state(bot_id)
+    state["manual_mode"] = mode
+    if mode in ("utterance", "autonomous"):
+        ambient_loop.update_mode(state, "", "", time.time())
+    print(f"[ambient] manual mode override bot={bot_id[:8]} → {mode!r}")
+    return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
+
+
 def init_bot_realtime(bot_id: str):
     """Initialize real-time state for a bot. Called when a bot is created."""
     _get_bot_state(bot_id)
