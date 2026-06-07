@@ -751,6 +751,14 @@ def _get_bot_state(bot_id: str) -> dict:
             # Memory system fields (Layers 1-3) — managed by meeting_memory.py
             **meeting_memory.get_initial_memory_state(),
         }
+        # Seed the pre-join response mode (from /join-meeting) as a manual
+        # override so it's a stable choice for the whole meeting (not subject
+        # to the autonomy cap / lull-revert in ambient_loop.update_mode).
+        _initial_mode = (bot_store.get(bot_id) or {}).get("initial_mode")
+        if _initial_mode in ("utterance", "autonomous"):
+            _bot_state[bot_id]["manual_mode"] = _initial_mode
+            _bot_state[bot_id]["mode"] = _initial_mode
+            _bot_state[bot_id]["mode_since_ts"] = time.time()
         # Build accumulator AFTER the state dict exists, so the on_flush
         # closure can capture the same state object.
         if _accumulator_on():

@@ -106,5 +106,29 @@ class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):
             realtime_routes.cleanup_bot_state(bot_id)
 
 
+class PreJoinModeSeedTests(unittest.TestCase):
+    def test_initial_mode_seeds_manual_override(self):
+        bot_id = "bot-prejoin-test"
+        realtime_routes.bot_store[bot_id] = {"initial_mode": "autonomous"}
+        try:
+            state = realtime_routes._get_bot_state(bot_id)
+            self.assertEqual(state["manual_mode"], "autonomous")
+            self.assertEqual(state["mode"], "autonomous")
+        finally:
+            realtime_routes.cleanup_bot_state(bot_id)
+            realtime_routes.bot_store.pop(bot_id, None)
+
+    def test_no_initial_mode_leaves_default(self):
+        bot_id = "bot-prejoin-test-2"
+        realtime_routes.bot_store[bot_id] = {}
+        try:
+            state = realtime_routes._get_bot_state(bot_id)
+            self.assertIsNone(state["manual_mode"])
+            self.assertEqual(state["mode"], "utterance")
+        finally:
+            realtime_routes.cleanup_bot_state(bot_id)
+            realtime_routes.bot_store.pop(bot_id, None)
+
+
 if __name__ == "__main__":
     unittest.main()
