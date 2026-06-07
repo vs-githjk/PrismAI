@@ -78,5 +78,59 @@ class FlagTests(unittest.TestCase):
             self.assertEqual(ambient_loop.decider_threshold(), 0.55)
 
 
+class UpdateModeTests(unittest.TestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+        self.s["meeting_start_ts"] = 1000.0
+
+    def test_handoff_enters_autonomous(self):
+        import ambient_loop
+        mode = ambient_loop.update_mode(self.s, "Prism, take it from here", "Abhinav", 1100.0)
+        self.assertEqual(mode, "autonomous")
+        self.assertEqual(self.s["mode_entry_reason"], "handoff")
+
+    def test_plain_utterance_stays_utterance(self):
+        import ambient_loop
+        mode = ambient_loop.update_mode(self.s, "I think the numbers look fine", "Abhinav", 1100.0)
+        self.assertEqual(mode, "utterance")
+
+    def test_stop_reverts_to_utterance(self):
+        import ambient_loop
+        ambient_loop.update_mode(self.s, "Prism, run with this", "Abhinav", 1100.0)
+        mode = ambient_loop.update_mode(self.s, "Prism, stop", "Abhinav", 1110.0)
+        self.assertEqual(mode, "utterance")
+
+    def test_manual_override_wins(self):
+        import ambient_loop
+        self.s["manual_mode"] = "autonomous"
+        mode = ambient_loop.update_mode(self.s, "just a normal sentence", "Abhinav", 1100.0)
+        self.assertEqual(mode, "autonomous")
+        self.assertEqual(self.s["mode_entry_reason"], "manual")
+
+    def test_autonomy_cap_reverts(self):
+        import ambient_loop
+        ambient_loop.update_mode(self.s, "Prism, run with this", "Abhinav", 1100.0)
+        mode = ambient_loop.update_mode(self.s, "still going", "Abhinav", 1100.0 + 400.0)
+        self.assertEqual(mode, "utterance")
+
+    def test_lull_entered_reverts_on_active_crosstalk(self):
+        import ambient_loop
+        self.s["mode"] = "autonomous"
+        self.s["mode_entry_reason"] = "lull"
+        self.s["mode_since_ts"] = 1100.0
+        ambient_loop.update_mode(self.s, "a", "X", 1101.0)
+        ambient_loop.update_mode(self.s, "b", "Y", 1102.0)
+        mode = ambient_loop.update_mode(self.s, "c", "Z", 1103.0)
+        self.assertEqual(mode, "utterance")
+
+    def test_handoff_entered_persists_through_activity(self):
+        import ambient_loop
+        ambient_loop.update_mode(self.s, "Prism, take it from here", "Abhinav", 1100.0)
+        ambient_loop.update_mode(self.s, "a", "X", 1101.0)
+        ambient_loop.update_mode(self.s, "b", "Y", 1102.0)
+        mode = ambient_loop.update_mode(self.s, "c", "Z", 1103.0)
+        self.assertEqual(mode, "autonomous")
+
+
 if __name__ == "__main__":
     unittest.main()
