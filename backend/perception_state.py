@@ -240,6 +240,15 @@ _DEFAULT_COUNTERS = {
     "owner_impersonation_attempts": 0,
     "ingress_rate_limited": 0,
     "accumulator_evictions": 0,
+    # Ambient response loop
+    "ambient_gate_fires": 0,
+    "ambient_decider_yes": 0,
+    "ambient_decider_no": 0,
+    "ambient_spoke": 0,
+    "ambient_suppressed_decline": 0,
+    "ambient_mode_shifts": 0,
+    "ambient_shadow_would_speak": 0,
+    "ambient_idea_handoff": 0,
 }
 
 
@@ -267,6 +276,14 @@ _OPERATIONAL_KEYS = (
     "replace_depth_hits",
     "cousin_hit_no_match",
     "stop_command_fired",
+    "ambient_gate_fires",
+    "ambient_decider_yes",
+    "ambient_decider_no",
+    "ambient_spoke",
+    "ambient_suppressed_decline",
+    "ambient_mode_shifts",
+    "ambient_shadow_would_speak",
+    "ambient_idea_handoff",
 )
 
 _SECURITY_KEYS = (

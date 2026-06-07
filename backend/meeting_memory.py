@@ -106,6 +106,17 @@ def get_initial_memory_state() -> dict:
         "_idea_generating": False,        # mutex flag — prevents concurrent idea generation per bot
         "previous_idea_summaries": [],    # last 5 one-line summaries of posted ideas; injected to prevent repeats
         "gaps_flagged": set(),            # set[str]: gap categories already surfaced this meeting (cost, timeline…)
+
+        # ── Ambient response loop (mode machine + funnel) ─────────────────────
+        "mode": "utterance",            # 'utterance' | 'autonomous'
+        "mode_entry_reason": "",        # '' | 'lull' | 'handoff' | 'manual'
+        "mode_since_ts": 0.0,           # wall-clock ts the current mode was entered
+        "manual_mode": None,            # owner override: None | 'utterance' | 'autonomous'
+        "last_activity_ts": 0.0,        # last utterance-flush ts (for lull detection)
+        "recent_utterance_ts": [],      # rolling flush ts within ACTIVE_WINDOW_S
+        "ambient_last_spoke_ts": 0.0,   # last unsolicited spoken response ts
+        "_ambient_last_gate_ts": 0.0,   # last recall-gate pass (pause debounce)
+        "_ambient_evaluating": False,   # mutex — one funnel eval at a time per bot
     }
 
 
@@ -519,6 +530,8 @@ def get_memory_snapshot(state: dict) -> dict:
     return {
         # Top-level fields returned by the /live API endpoint
         "memory_summary": state.get("memory_summary") or "",
+        "mode": state.get("mode") or "utterance",
+        "mode_entry_reason": state.get("mode_entry_reason") or "",
         "live_decisions": state.get("live_decisions") or [],
         "live_action_items": state.get("live_action_items") or [],
         "top_entities": [w for w, _ in entities.most_common(10)],
