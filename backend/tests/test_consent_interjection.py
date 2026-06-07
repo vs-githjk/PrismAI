@@ -141,5 +141,58 @@ class ClassifyConsentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await ambient_loop.classify_consent("x", "sure"), "unclear")
 
 
+class ParseOfferTests(unittest.TestCase):
+    def test_clean(self):
+        import ambient_loop
+        out = ambient_loop.parse_offer_output('{"offer": true, "subject": "vendor forecast", "confidence": 0.8, "reason": "x"}')
+        self.assertTrue(out["offer"])
+        self.assertEqual(out["subject"], "vendor forecast")
+        self.assertEqual(out["confidence"], 0.8)
+
+    def test_fenced_and_prose(self):
+        import ambient_loop
+        out = ambient_loop.parse_offer_output('```json\n{"offer": false, "subject": "", "confidence": 0.1, "reason": "small talk"}\n```')
+        self.assertFalse(out["offer"])
+
+    def test_garbage_failsafe(self):
+        import ambient_loop
+        for bad in ["", None, "{nope", "{}", '{"subject":"x"}']:
+            out = ambient_loop.parse_offer_output(bad)
+            self.assertFalse(out["offer"])
+
+    def test_confidence_clamped(self):
+        import ambient_loop
+        out = ambient_loop.parse_offer_output('{"offer": true, "subject": "x", "confidence": 9}')
+        self.assertEqual(out["confidence"], 1.0)
+
+
+class OfferDeciderTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+        self.s["transcript_buffer"] = ["Abhinav: do you wanna check the vendor forecast?"]
+
+    async def test_offer_decider_parses(self):
+        import ambient_loop
+        async def fake(system, user):
+            return '{"offer": true, "subject": "vendor forecast", "confidence": 0.82, "reason": "open topic"}'
+        with mock.patch.object(ambient_loop, "_call_offer_model", fake):
+            out = await ambient_loop.offer_decider(self.s)
+        self.assertTrue(out["offer"])
+        self.assertEqual(out["subject"], "vendor forecast")
+
+    async def test_offer_decider_error_failsafe(self):
+        import ambient_loop
+        async def boom(system, user):
+            raise RuntimeError("down")
+        with mock.patch.object(ambient_loop, "_call_offer_model", boom):
+            out = await ambient_loop.offer_decider(self.s)
+        self.assertFalse(out["offer"])
+
+    def test_offer_decider_model_default(self):
+        import ambient_loop
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(ambient_loop.offer_decider_model(), "llama-3.3-70b-versatile")
+
+
 if __name__ == "__main__":
     unittest.main()

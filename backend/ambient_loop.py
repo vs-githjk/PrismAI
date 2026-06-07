@@ -56,6 +56,18 @@ def lull_threshold_s() -> float:
 def autonomy_cap_s() -> float:
     return float(os.getenv("PRISM_AUTONOMY_CAP_S", "300"))
 
+def offer_decider_model() -> str:
+    return os.getenv("PRISM_OFFER_DECIDER_MODEL", "llama-3.3-70b-versatile")
+
+def offer_cooldown_s() -> float:
+    return float(os.getenv("PRISM_OFFER_COOLDOWN_S", "90"))
+
+def offer_consent_window_s() -> float:
+    return float(os.getenv("PRISM_OFFER_CONSENT_WINDOW_S", "25"))
+
+def offer_threshold() -> float:
+    return float(os.getenv("PRISM_OFFER_THRESHOLD", "0.6"))
+
 
 # ── Consent interjection: warmup + mute (v2) ──────────────────────────────────
 WARMUP_MIN_ENTITIES = 5  # distinct named entities ⇒ meeting has substance
@@ -234,6 +246,80 @@ async def decide(state: dict) -> dict:
         print(f"[ambient] decider error: {e}")
         return {"respond": False, "confidence": 0.0, "reason": "decider_error"}
     return parse_decider_output(raw)
+
+
+# ── Consent interjection: offer-decider (70B, reads the room) ─────────────────
+_OFFER_SYSTEM = (
+    "You are a thoughtful AI colleague listening to a live meeting. Decide whether "
+    "to BRIEFLY offer to share genuinely useful, on-topic information right now — "
+    "like a polite person who has something valuable to add and asks first.\n"
+    "Offer ONLY when ALL hold: (a) the moment is substantive (a real question, "
+    "decision, or work topic — NOT greetings, rapport, jokes, or small talk); "
+    "(b) you likely have valuable, non-obvious information to add; (c) it has not "
+    "already been answered or handled by the people talking. When people are just "
+    "chatting or socializing, do NOT offer.\n"
+    "If you offer, name the SUBJECT in a few words. Output JSON ONLY: "
+    '{"offer": <true|false>, "subject": "<short>", "confidence": <0.0-1.0>, "reason": "<short>"}'
+)
+
+
+def parse_offer_output(raw: str | None) -> dict:
+    """Parse the offer-decider reply. Fail-safe to offer=False on any drift."""
+    fallback = {"offer": False, "subject": "", "confidence": 0.0, "reason": "parse_failed"}
+    if not raw or not isinstance(raw, str):
+        return fallback
+    s = strip_fences(raw).strip()
+    start, end = s.find("{"), s.rfind("}")
+    if start < 0 or end <= start:
+        return fallback
+    try:
+        obj = json.loads(s[start:end + 1])
+    except Exception:
+        return fallback
+    if not isinstance(obj, dict) or not isinstance(obj.get("offer"), bool):
+        return fallback
+    try:
+        conf = float(obj.get("confidence", 0.0))
+    except Exception:
+        conf = 0.0
+    conf = max(0.0, min(1.0, conf))
+    return {
+        "offer": obj["offer"],
+        "subject": str(obj.get("subject", ""))[:80].strip(),
+        "confidence": conf,
+        "reason": str(obj.get("reason", ""))[:200],
+    }
+
+
+async def _call_offer_model(system: str, user: str) -> str:
+    """70B offer-decision call (direct Groq). Isolated for test mocking."""
+    groq = get_groq()
+    resp = await groq.chat.completions.create(
+        model=offer_decider_model(),
+        temperature=0.2,
+        max_tokens=120,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    )
+    return resp.choices[0].message.content or ""
+
+
+async def offer_decider(state: dict) -> dict:
+    """70B 'read the room': should the bot offer to share info, and about what?
+    Returns {offer, subject, confidence, reason}; fail-safe offer=False."""
+    context = meeting_memory.build_memory_context(state)
+    user = (
+        f"{context}\n\n[SIGNALS]\n{_signal_summary(state)}\n\n"
+        "[TASK] Should you briefly offer to share useful info now? JSON only."
+    )
+    try:
+        raw = await _call_offer_model(_OFFER_SYSTEM, user)
+    except Exception as e:
+        print(f"[ambient] offer-decider error: {e}")
+        return {"offer": False, "subject": "", "confidence": 0.0, "reason": "decider_error"}
+    return parse_offer_output(raw)
 
 
 # ── Consent interjection: consent classifier (8B) ─────────────────────────────
