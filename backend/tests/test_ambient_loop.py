@@ -164,5 +164,36 @@ class CheckLullTests(unittest.TestCase):
         self.assertIsNone(ambient_loop.check_lull(self.s, 1000.0 + 40.0))
 
 
+class RecallGateTests(unittest.TestCase):
+    def setUp(self):
+        self.s = meeting_memory.get_initial_memory_state()
+
+    def test_question_mark_fires(self):
+        import ambient_loop
+        self.assertTrue(ambient_loop.recall_gate(self.s, "What was our Q3 revenue?", 100.0))
+
+    def test_question_word_fires(self):
+        import ambient_loop
+        self.assertTrue(ambient_loop.recall_gate(self.s, "who owns the migration", 100.0))
+
+    def test_request_phrase_fires(self):
+        import ambient_loop
+        self.assertTrue(ambient_loop.recall_gate(self.s, "can you pull up the doc", 100.0))
+
+    def test_decision_pattern_fires(self):
+        import ambient_loop
+        self.assertTrue(ambient_loop.recall_gate(self.s, "we decided to ship Friday", 100.0))
+
+    def test_plain_statement_misses_within_debounce(self):
+        import ambient_loop
+        self.s["_ambient_last_gate_ts"] = 100.0
+        self.assertFalse(ambient_loop.recall_gate(self.s, "the weather is nice today", 101.0))
+
+    def test_plain_statement_fires_after_debounce(self):
+        import ambient_loop
+        self.s["_ambient_last_gate_ts"] = 100.0
+        self.assertTrue(ambient_loop.recall_gate(self.s, "the weather is nice today", 100.0 + 9.0))
+
+
 if __name__ == "__main__":
     unittest.main()

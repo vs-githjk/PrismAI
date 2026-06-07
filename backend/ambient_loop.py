@@ -85,6 +85,38 @@ def _enter(state: dict, mode: str, reason: str, now: float, renew: bool) -> str:
     return mode
 
 
+# ── Stage 1: free recall gate ─────────────────────────────────────────────────
+_REQUEST_RE = re.compile(
+    r"\b(can|could|would|should|let'?s|we need|i need|do we|please|"
+    r"how do|how should|what'?s the|any idea|anyone know)\b",
+    re.IGNORECASE,
+)
+
+
+def recall_gate(state: dict, utterance_text: str, now: float) -> bool:
+    """High-recall, ~free pre-filter. Fires the decider when an utterance plausibly
+    contains an opening, OR on a debounced pause tick (so the decider gets a
+    periodic shot at implicit openings). Tuned to over-fire; the decider is the
+    precision stage.
+    """
+    text = utterance_text or ""
+    low = text.lower()
+    if "?" in text:
+        return True
+    if set(re.findall(r"\b\w+\b", low)) & meeting_memory._QUESTION_WORDS:
+        return True
+    if _REQUEST_RE.search(low):
+        return True
+    if cross_meeting_service.looks_like_blocker(text):
+        return True
+    if meeting_memory.DECISION_PATTERN.search(text) or meeting_memory.ACTION_ITEM_PATTERN.search(text):
+        return True
+    # Debounced pause tick — periodic shot at implicit openings.
+    if (now - state.get("_ambient_last_gate_ts", 0.0)) >= pause_debounce_s():
+        return True
+    return False
+
+
 def check_lull(state: dict, now: float) -> str | None:
     """Called from the accumulator tick loop (NOT on an utterance). If the
     meeting has been active but silent for > lull_threshold_s and we're in
