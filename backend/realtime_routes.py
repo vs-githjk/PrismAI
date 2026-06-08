@@ -2033,7 +2033,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                 think_loop.clear_artifact(state)
 
         # Ambient decline — the generator decided it had nothing additive. Skip
-        # logging/chat/voice entirely; return None so evaluate() counts it.
+        # logging/chat/voice entirely; return None so the caller counts it.
         if ambient and _is_ambient_silent(reply):
             print(f"[ambient] generator declined (SILENT) bot={bot_id[:8]}")
             return None
