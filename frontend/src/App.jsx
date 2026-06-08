@@ -1796,7 +1796,13 @@ export default function App() {
             setTranscriptForTab(data.transcript || '', 'paste')
             setSessionId(s => s + 1)
             setResult(data.result)
-            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId, activeBotId)
+            // Use the `id` param (the bot being polled), NOT the activeBotId
+            // state — this runs inside a setInterval closure created at join
+            // time, when activeBotId was still null (setActiveBotId hadn't
+            // applied yet). Reading the stale closure value sent recall_bot_id:
+            // null on every bot meeting, so recording_provider never got set and
+            // the recording player never rendered. (diagnose 2026-06-08)
+            const entry = saveToHistory(data.transcript || '', data.result, dedupRecorderUserId, id)
             const meetingTitle = entry?.title || data.result.summary?.slice(0, 65) || 'Meeting Analysis'
             void deliverMeetingRecap(meetingTitle, data.result, entry?.id)
             setBotTranscriptReady(false)

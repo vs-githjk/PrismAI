@@ -144,8 +144,33 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
         call_kwargs["tools"] = tools
         call_kwargs["tool_choice"] = "auto"
 
+    def _graceful():
+        return {
+            "reply": "Sorry, I had trouble processing that.",
+            "tools_used": tools_used,
+            "pending_confirmations": pending_confirmations,
+        }
+
     for _ in range(max_iterations):
-        response = await groq_client.chat.completions.create(**call_kwargs)
+        try:
+            response = await groq_client.chat.completions.create(**call_kwargs)
+        except Exception as groq_exc:
+            # Llama 3.3 sometimes emits malformed tool calls → Groq rejects with a
+            # 400 tool_use_failed; transient 429/5xx land here too. Strip tools and
+            # retry once for a plain-text answer instead of 500-ing the whole chat
+            # turn. Mirrors realtime_routes' proven recovery. (diagnose 2026-06-08)
+            if "tools" in call_kwargs:
+                print(f"[chat] groq tool-call error, retrying without tools: {groq_exc}")
+                call_kwargs.pop("tools", None)
+                call_kwargs.pop("tool_choice", None)
+                try:
+                    response = await groq_client.chat.completions.create(**call_kwargs)
+                except Exception as retry_exc:
+                    print(f"[chat] retry-without-tools also failed: {retry_exc}")
+                    return _graceful()
+            else:
+                print(f"[chat] groq call failed: {groq_exc}")
+                return _graceful()
         choice = response.choices[0]
 
         if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
@@ -277,12 +302,17 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 "pending_confirmations": result.get("pending_confirmations", []),
             }
         else:
-            response = await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                temperature=0.7,
-                messages=messages,
-            )
-            return {"response": response.choices[0].message.content}
+            try:
+                response = await groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.7,
+                    messages=messages,
+                )
+                return {"response": response.choices[0].message.content}
+            except Exception as exc:
+                # Don't 500 the chat panel on a transient Groq error. (diagnose 2026-06-08)
+                print(f"[chat] groq call failed: {exc}")
+                return {"response": "Sorry, I had trouble processing that."}
 
     @local_router.post("/chat/global")
     async def chat_global(req: GlobalChatRequest, user_id: str = Depends(require_user_id)):
@@ -380,12 +410,17 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 "pending_confirmations": result.get("pending_confirmations", []),
             }
         else:
-            response = await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                temperature=0.7,
-                messages=messages,
-            )
-            return {"response": response.choices[0].message.content}
+            try:
+                response = await groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.7,
+                    messages=messages,
+                )
+                return {"response": response.choices[0].message.content}
+            except Exception as exc:
+                # Don't 500 the chat panel on a transient Groq error. (diagnose 2026-06-08)
+                print(f"[chat] groq call failed: {exc}")
+                return {"response": "Sorry, I had trouble processing that."}
 
     @local_router.post("/chat/confirm-tool")
     async def confirm_tool(req: ConfirmToolRequest, user_id: str = Depends(require_user_id)):

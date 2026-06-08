@@ -274,17 +274,27 @@ export default function ChatPanel({
 
   return (
     <div className="dashboard-body-font flex h-full min-h-0 flex-col text-white">
-      {/* Header */}
-      <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/[0.08] px-4 py-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/[0.10]">
-          <MessagesSquare className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90">Chat</p>
-          <p className="truncate text-sm font-semibold text-white">Ask about this meeting</p>
+      {/* Header — two rows so the title and the chip cluster never collide in a
+          narrow side panel (previously the "Chat" eyebrow butted into the
+          agent-aware pill, rendering as "CHAT…ENT-AWARE"). */}
+      <div className="flex flex-shrink-0 flex-col gap-2 border-b border-white/[0.08] px-4 py-3">
+        {/* Row 1 — identity + live model status */}
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/[0.10]">
+            <MessagesSquare className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90">Chat</p>
+            <p className="truncate text-sm font-semibold text-white">Ask about this meeting</p>
+          </div>
+          <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+            llama-3.3-70b
+          </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        {/* Row 2 — context + controls. Wraps gracefully instead of overlapping. */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {result && (
             <span className="rounded-full border border-cyan-400/25 bg-cyan-400/[0.10] px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-cyan-200/90">
               agent-aware
@@ -358,11 +368,6 @@ export default function ChatPanel({
               )}
             </div>
           )}
-
-          <span className="hidden items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50 sm:inline-flex">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-            llama-3.3-70b
-          </span>
         </div>
       </div>
 
@@ -386,10 +391,12 @@ export default function ChatPanel({
       {/* Messages */}
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {showEmptyState && (
-          <div className="flex flex-col gap-3">
+          // Center vertically so a blank chat fills the panel instead of leaving
+          // a large void between the prompts and the composer.
+          <div className="flex h-full flex-col justify-center gap-3">
             <div className="px-1">
               <p className={"text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90"}>Suggested</p>
-              <p className="mt-0.5 text-sm text-white/68">Quick prompts to get going — or type your own below.</p>
+              <p className="mt-0.5 text-sm text-white/68">Tap a prompt to start — or ask your own below.</p>
             </div>
             <div className="flex flex-col gap-2">
               {suggestions.map((prompt, idx) => {
