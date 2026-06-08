@@ -3,7 +3,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -41,6 +41,7 @@ sys.modules.setdefault("groq", fake_groq_module)
 
 fake_analysis_service = types.ModuleType("analysis_service")
 fake_analysis_service.AGENT_MAP = {}
+fake_analysis_service._persona_text_for_agent = lambda *_a, **_k: ""
 sys.modules.setdefault("analysis_service", fake_analysis_service)
 
 
@@ -246,6 +247,72 @@ class ChatAndExportRoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json()["detail"], "Notion API error")
+
+
+class ChatGroqResilienceTestCase(unittest.TestCase):
+    """Regression: /chat must not 500 when the Groq call raises.
+
+    Lead hypothesis from the prod 500 (diagnose 2026-06-08): an expired Google
+    token left Gmail/calendar tools 'available', the model emitted a malformed
+    tool call, and Groq rejected it with a 400 tool_use_failed — which
+    _tool_calling_loop let propagate to an uncaught 500. realtime_routes already
+    recovers from this; /chat did not."""
+
+    def _build(self, groq):
+        import chat_routes
+        app = FastAPI()
+        app.include_router(chat_routes.create_chat_router(groq))
+        # raise_server_exceptions=False so an uncaught error surfaces as a 500
+        # response we can assert on, instead of re-raising inside the test.
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_chat_with_tools_recovers_when_groq_400s_on_tool_call(self):
+        import chat_routes
+
+        calls = {"n": 0}
+
+        class _Flaky:
+            async def create(self, *args, **kwargs):
+                calls["n"] += 1
+                if "tools" in kwargs:
+                    err = Exception("Error code: 400 - tool_use_failed: malformed tool call")
+                    raise err
+                return types.SimpleNamespace(choices=[types.SimpleNamespace(
+                    finish_reason="stop",
+                    message=types.SimpleNamespace(content="plain answer", tool_calls=None),
+                )])
+
+        groq = types.SimpleNamespace(chat=types.SimpleNamespace(completions=_Flaky()))
+        client = self._build(groq)
+
+        with patch.object(chat_routes, "require_user_id", new=AsyncMock(return_value="user-123")), \
+             patch.object(chat_routes, "_get_user_settings",
+                          new=AsyncMock(return_value={"slack_bot_token": "x", "user_id": "user-123"})), \
+             patch.object(chat_routes, "resolve_persona",
+                          new=AsyncMock(return_value=types.SimpleNamespace(text=""))):
+            resp = client.post("/chat", json={"message": "send a slack to the team", "transcript": ""})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["response"], "plain answer")
+        self.assertGreaterEqual(calls["n"], 2)  # first (with tools) failed, retry (no tools) succeeded
+
+    def test_chat_no_tools_degrades_gracefully_when_groq_raises(self):
+        import chat_routes
+
+        class _Down:
+            async def create(self, *args, **kwargs):
+                raise Exception("Error code: 503 - service unavailable")
+
+        groq = types.SimpleNamespace(chat=types.SimpleNamespace(completions=_Down()))
+        client = self._build(groq)
+
+        # Unauthenticated path → no tools → direct create. Must not 500.
+        with patch.object(chat_routes, "require_user_id",
+                          new=AsyncMock(side_effect=__import__("fastapi").HTTPException(status_code=401))):
+            resp = client.post("/chat", json={"message": "hello", "transcript": ""})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("response", resp.json())
 
 
 if __name__ == "__main__":

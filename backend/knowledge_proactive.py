@@ -106,7 +106,7 @@ async def maybe_proactive_knowledge_check(bot_id: str, state: dict) -> None:
             _quota_warning_logged_at = now
         return
     except Exception as exc:
-        print(f"[proactive-knowledge] search failed for {bot_id}: {exc}")
+        print(f"[proactive-knowledge] search failed for {bot_id}: {type(exc).__name__}: {exc}")
         return
 
     for m in matches:
