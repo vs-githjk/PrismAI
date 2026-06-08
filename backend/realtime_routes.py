@@ -101,6 +101,18 @@ def _barge_in_on() -> bool:
     return os.getenv("PRISM_BARGE_IN") == "1"
 
 
+def _streamed_tts_on() -> bool:
+    """Streamed (sentence-by-sentence) TTS. ON by default; set
+    PRISM_STREAMED_TTS=0 to fall back to buffered single-shot TTS."""
+    return os.getenv("PRISM_STREAMED_TTS", "1") != "0"
+
+
+def _streamed_llm_on() -> bool:
+    """Streamed LLM→TTS (audio starts as tokens generate). ON by default;
+    set PRISM_STREAMED_LLM=0 to disable. Requires streamed TTS."""
+    return os.getenv("PRISM_STREAMED_LLM", "1") != "0"
+
+
 def _owner_id_lock_on() -> bool:
     return os.getenv("PRISM_OWNER_ID_LOCK") == "1"
 
@@ -651,7 +663,7 @@ async def _ambient_speak_offer(bot_id: str, text: str) -> bool:
     delivered (best-effort; False on failure → treated as talked-over)."""
     asyncio.create_task(_send_chat_response(bot_id, text))
     try:
-        if os.getenv("PRISM_STREAMED_TTS") == "1":
+        if _streamed_tts_on():
             await _send_voice_response_streamed(bot_id, text, cmd_detected_ts=time.time())
         else:
             await _send_voice_response(bot_id, text)
@@ -1865,10 +1877,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         # (when `tools` is no longer in call_kwargs — either because the user has
         # no tools available, or PR-1 taint enforcement stripped them, or the
         # tools-format retry stripped them).
-        streamed_voice_active = (
-            os.getenv("PRISM_STREAMED_TTS") == "1"
-            and os.getenv("PRISM_STREAMED_LLM") == "1"
-        )
+        streamed_voice_active = _streamed_tts_on() and _streamed_llm_on()
         voice_already_streamed = False
 
         # Tool loop (max 3 iterations)
@@ -2041,7 +2050,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
             pass
-        elif os.getenv("PRISM_STREAMED_TTS") == "1":
+        elif _streamed_tts_on():
             await _send_voice_response_streamed(bot_id, reply, cmd_detected_ts=state["last_command_ts"] or now)
         else:
             await _send_voice_response(bot_id, reply)

@@ -14,6 +14,18 @@ if str(BACKEND_DIR) not in sys.path:
 import realtime_routes  # noqa: E402
 
 
+class StreamingDefaultTests(unittest.TestCase):
+    def test_streaming_on_by_default(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(realtime_routes._streamed_tts_on())
+            self.assertTrue(realtime_routes._streamed_llm_on())
+
+    def test_streaming_off_when_zero(self):
+        with mock.patch.dict(os.environ, {"PRISM_STREAMED_TTS": "0", "PRISM_STREAMED_LLM": "0"}):
+            self.assertFalse(realtime_routes._streamed_tts_on())
+            self.assertFalse(realtime_routes._streamed_llm_on())
+
+
 class AmbientSilentHelperTests(unittest.TestCase):
     def test_silent_detection(self):
         self.assertTrue(realtime_routes._is_ambient_silent("SILENT"))
