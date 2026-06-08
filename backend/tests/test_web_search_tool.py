@@ -49,6 +49,20 @@ class WebSearchToolTests(unittest.TestCase):
         self.assertIn("https://c.com", block)
         self.assertIn("untrusted external data", result["instruction"])
 
+    def test_timeout_degrades_gracefully(self):
+        import importlib
+        ws = importlib.import_module("tools.web_search")
+        importlib.reload(ws)
+
+        async def slow_post(self, url, *a, **k):
+            raise TimeoutError("tavily slow")
+
+        with patch.dict(os.environ, {"TAVILY_API_KEY": "fake", "PRISM_WEB_SEARCH_TIMEOUT_S": "4"}):
+            with patch("httpx.AsyncClient.post", new=slow_post):
+                result = asyncio.run(ws.web_search({"query": "q", "user_id": "u"}, user_settings={}))
+        self.assertTrue(result.get("no_results"))
+        self.assertNotIn("error", result)
+
     def test_returns_error_when_tavily_missing(self):
         import importlib
         ws = importlib.import_module("tools.web_search")

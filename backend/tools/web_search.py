@@ -97,8 +97,14 @@ async def web_search(args: dict, user_settings: Optional[dict] = None) -> dict:
         "max_results": 3,
         "include_answer": "advanced",
     }
-    async with get_http() as client:
-        resp = await client.post(TAVILY_SEARCH_URL, json=payload, timeout=15.0)
+    # Cap the request so a slow Tavily call can't stall the live tool loop.
+    timeout_s = float(os.getenv("PRISM_WEB_SEARCH_TIMEOUT_S", "4"))
+    try:
+        async with get_http() as client:
+            resp = await client.post(TAVILY_SEARCH_URL, json=payload, timeout=timeout_s)
+    except Exception as exc:
+        print(f"[web_search] request failed/timed out after {timeout_s}s: {exc}")
+        return {"no_results": True, "next_step": "Web search was unavailable; answer from what you know or ask the participants."}
 
     if resp.status_code != 200:
         return {"error": f"Web search failed ({resp.status_code})"}
