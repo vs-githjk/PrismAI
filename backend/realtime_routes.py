@@ -262,6 +262,19 @@ _STATIC_CALENDAR_OFF = (
 )
 _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses under 3 sentences."
 
+# Tool-conservatism: most live questions don't need a tool. Calling web_search /
+# knowledge_lookup unnecessarily adds seconds of latency (and a malformed-tool-call
+# recovery risk on Groq+Llama). Steer the model to answer directly unless it truly
+# needs external/document info. Kept short + free of <thinking>-style directives
+# (which previously destabilised tool-call syntax — see _build_static_prefix note).
+_STATIC_TOOL_POLICY = (
+    " Answer directly from the conversation and your own knowledge whenever you can. "
+    "Use web_search ONLY for current external facts you genuinely do not know, and "
+    "knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
+    "for questions about yourself or your own settings/state, or for simple "
+    "conversational replies."
+)
+
 
 def _build_static_prefix(has_gmail: bool, has_calendar: bool, persona_text: str = "") -> str:
     """Static system prompt — byte-identical across commands within a meeting
@@ -290,6 +303,7 @@ def _build_static_prefix(has_gmail: bool, has_calendar: bool, persona_text: str 
         + (_STATIC_GMAIL_ON if has_gmail else _STATIC_GMAIL_OFF)
         + (_STATIC_CALENDAR_ON if has_calendar else _STATIC_CALENDAR_OFF)
         + _STATIC_STYLE
+        + _STATIC_TOOL_POLICY
     )
     # Think+Loop's prompt-side directive was removed 2026-05-23 after a Groq+Llama
     # 3.3 interaction caused web_search calls to emit malformed <function=...>
