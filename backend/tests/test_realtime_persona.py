@@ -215,6 +215,29 @@ class BotIdentityWiringTests(unittest.TestCase):
         rr.cleanup_bot_state("botZ")
         self.assertNotIn("botZ", rr._BOT_WAKE_ALIAS)
 
+    def test_init_bot_realtime_prefetches_wake_alias(self):
+        # REGRESSION (live-bot bug 2026-06-09): a fresh bot would not recognize
+        # voice commands using its persona name (e.g. "Flash, do you have…")
+        # until SOME other command — typically a chat message with the always-on
+        # "Prism, …" wake — first ran _process_command, which populated
+        # _BOT_WAKE_ALIAS as a side effect. init_bot_realtime now schedules a
+        # background prefetch so the alias is ready before the first transcript
+        # event. We verify the task is scheduled by running it to completion
+        # inside an event loop.
+        import asyncio
+        rr.supabase = _fake_sb(user_row={"persona_preset": "concise"})
+        rr.bot_store["botPrefetch"] = {"user_id": "u-prefetch"}
+
+        async def _drive():
+            rr.init_bot_realtime("botPrefetch")
+            # Yield so the create_task'd coroutine gets a chance to run.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        asyncio.run(_drive())
+        # After init + a tick, the alias should be populated (concise → Flash).
+        self.assertEqual(rr._BOT_WAKE_ALIAS.get("botPrefetch"), "Flash")
+
 
 if __name__ == "__main__":
     unittest.main()

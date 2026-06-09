@@ -2747,8 +2747,25 @@ async def set_bot_mute(bot_id: str, body: dict):
 
 
 def init_bot_realtime(bot_id: str):
-    """Initialize real-time state for a bot. Called when a bot is created."""
+    """Initialize real-time state for a bot. Called when a bot is created.
+
+    Also schedules a background prefetch of the owner's settings so
+    ``_BOT_WAKE_ALIAS[bot_id]`` is populated before the first transcript
+    event arrives. Without this prefetch the voice path can't recognize
+    the persona name (e.g. "Flash, …") on a fresh bot — the alias is
+    only learned on a successful command, but a command can't be
+    detected until the alias is known. Chicken-and-egg fixed by warming
+    the cache up front. Callers that aren't inside a running event loop
+    (some test paths) silently skip the prefetch; the existing lazy
+    population on first ``_process_command`` still works as a backstop.
+    """
     _get_bot_state(bot_id)
+    try:
+        asyncio.create_task(_get_settings_for_bot(bot_id))
+    except RuntimeError:
+        # No running event loop (e.g. some sync test paths). Lazy
+        # population on the first command remains as a backstop.
+        pass
 
 
 def cleanup_bot_state(bot_id: str) -> None:
