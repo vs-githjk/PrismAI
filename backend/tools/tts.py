@@ -22,6 +22,13 @@ _eleven_fail_count: int = 0
 _eleven_blocked_until: float = 0.0
 
 
+def _force_edge() -> bool:
+    """Skip ElevenLabs entirely and use edge-tts. Set PRISM_FORCE_EDGE_TTS=1 on
+    free ElevenLabs plans (library voices return 402 via the API), so we don't pay
+    a wasted 402 round-trip on first use and every time the breaker re-opens."""
+    return os.getenv("PRISM_FORCE_EDGE_TTS") == "1"
+
+
 def _is_eleven_disabled() -> bool:
     return time.time() < _eleven_blocked_until
 
@@ -86,7 +93,7 @@ async def text_to_speech(text: str) -> bytes | None:
     back to edge-tts on any failure (quota, auth, network, empty response) so Prism
     never goes silent when a free fallback is available.
     """
-    if ELEVENLABS_API_KEY and not _is_eleven_disabled():
+    if ELEVENLABS_API_KEY and not _force_edge() and not _is_eleven_disabled():
         audio = await _tts_elevenlabs(text)
         if audio:
             return audio

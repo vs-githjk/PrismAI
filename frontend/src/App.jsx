@@ -1103,11 +1103,27 @@ export default function App() {
   // Join Meeting state
   const [inputTab, setInputTab] = useState('join') // 'paste' | 'join'
   const [meetingUrl, setMeetingUrl] = useState('')
+  const [joinMode, setJoinMode] = useState('utterance')  // pre-join response mode: 'utterance' | 'autonomous'
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   const [botError, setBotError] = useState(null)
   const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
   const [dedupBotInfo, setDedupBotInfo] = useState(null) // { botId, ownerUserId, ownerUserEmail }
   const [activeLiveToken, setActiveLiveToken] = useState(() => sessionStorage.getItem('prism_active_live_token') || null)
+  const [botMuted, setBotMuted] = useState(false)
+  const toggleBotMute = async () => {
+    if (!activeBotId) return
+    const next = !botMuted
+    setBotMuted(next)  // optimistic
+    try {
+      await apiFetch(`/bot/${activeBotId}/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ muted: next }),
+      })
+    } catch {
+      setBotMuted(!next)  // revert on failure
+    }
+  }
   const [liveShareCopied, setLiveShareCopied] = useState(false)
   const [liveCommands, setLiveCommands] = useState([]) // commands executed during live meeting
   const pollRef = useRef(null)
@@ -1715,6 +1731,7 @@ export default function App() {
           meeting_url: meetingUrl,
           owner_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || null,
           workspace_id: activeWorkspaceId || null,
+          mode: joinMode,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
@@ -2673,7 +2690,11 @@ export default function App() {
           initialMessages={initialMessages}
           meetingUrl={meetingUrl}
           setMeetingUrl={setMeetingUrl}
+          joinMode={joinMode}
+          setJoinMode={setJoinMode}
           joinMeeting={joinMeeting}
+          botMuted={botMuted}
+          toggleBotMute={toggleBotMute}
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}
           botStatus={botStatus}

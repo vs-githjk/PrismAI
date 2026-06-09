@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 
+import ambient_loop
 import meeting_memory
 import perception_state
 import think_loop
@@ -132,6 +133,18 @@ def _looks_command_complete(cmd: str) -> bool:
 
 def _barge_in_on() -> bool:
     return os.getenv("PRISM_BARGE_IN") == "1"
+
+
+def _streamed_tts_on() -> bool:
+    """Streamed (sentence-by-sentence) TTS. ON by default; set
+    PRISM_STREAMED_TTS=0 to fall back to buffered single-shot TTS."""
+    return os.getenv("PRISM_STREAMED_TTS", "1") != "0"
+
+
+def _streamed_llm_on() -> bool:
+    """Streamed LLM→TTS (audio starts as tokens generate). ON by default;
+    set PRISM_STREAMED_LLM=0 to disable. Requires streamed TTS."""
+    return os.getenv("PRISM_STREAMED_LLM", "1") != "0"
 
 
 def _owner_id_lock_on() -> bool:
@@ -283,6 +296,19 @@ _STATIC_CALENDAR_OFF = (
 )
 _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses under 3 sentences."
 
+# Tool-conservatism: most live questions don't need a tool. Calling web_search /
+# knowledge_lookup unnecessarily adds seconds of latency (and a malformed-tool-call
+# recovery risk on Groq+Llama). Steer the model to answer directly unless it truly
+# needs external/document info. Kept short + free of <thinking>-style directives
+# (which previously destabilised tool-call syntax — see _build_static_prefix note).
+_STATIC_TOOL_POLICY = (
+    " Answer directly from the conversation and your own knowledge whenever you can. "
+    "Use web_search ONLY for current external facts you genuinely do not know, and "
+    "knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
+    "for questions about yourself or your own settings/state, or for simple "
+    "conversational replies."
+)
+
 
 def _build_static_prefix(
     has_gmail: bool,
@@ -316,6 +342,7 @@ def _build_static_prefix(
         + (_STATIC_GMAIL_ON if has_gmail else _STATIC_GMAIL_OFF)
         + (_STATIC_CALENDAR_ON if has_calendar else _STATIC_CALENDAR_OFF)
         + _STATIC_STYLE
+        + _STATIC_TOOL_POLICY
     )
     # Think+Loop's prompt-side directive was removed 2026-05-23 after a Groq+Llama
     # 3.3 interaction caused web_search calls to emit malformed <function=...>
@@ -630,6 +657,8 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
     # re-acquire the memory lock internally.
     asyncio.create_task(_compress_and_persist(bot_id, state))
     asyncio.create_task(_dispatch_slow_path_command(state, bot_id, u))
+    if ambient_loop.autonomous_enabled():
+        asyncio.create_task(_ambient_on_utterance(bot_id, state, u))
 
 
 async def _dispatch_slow_path_command(
@@ -639,6 +668,8 @@ async def _dispatch_slow_path_command(
     With the accumulator, the utterance is already complete — no need
     for the 8-second pending-fragment window from the legacy path.
     """
+    if ambient_loop.autonomous_enabled() and ambient_loop.detect_mute_command(u.text):
+        return  # mute/unmute is handled by the ambient interjection layer, not as a command
     command = _detect_command(u.text, bot_id)
     if not command:
         return
@@ -647,6 +678,75 @@ async def _dispatch_slow_path_command(
         f"utt={u.utterance_id}"
     )
     _dispatch_command(state, bot_id, command, u.speaker_name)
+
+
+# ── Ambient response loop wiring (PRISM_AUTONOMOUS) ───────────────────────────
+_AMBIENT_PREAMBLE = (
+    "You are listening silently to a live meeting. No one addressed you by name. "
+    "You have determined you may have a brief, useful contribution. Speak ONLY if "
+    "it is genuinely additive — answer an open question, surface a relevant fact, "
+    "or flag a real risk. If on reflection you have nothing additive to add, reply "
+    "with exactly: SILENT. Keep it to one or two sentences."
+)
+
+
+def _is_ambient_silent(reply: str) -> bool:
+    """True if an ambient-mode generation declined to contribute."""
+    return (reply or "").strip().upper().rstrip(".!") == "SILENT"
+
+
+async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
+    """Ambient (no-wake-word) branch → consent-based interjection (v2).
+    Mute/unmute directives are routed to the interjection layer even though they
+    contain the wake word; otherwise only autonomous mode (and no explicit
+    command) runs the funnel. Explicit commands go to _dispatch_slow_path_command."""
+    now = time.time()
+    if ambient_loop.detect_mute_command(u.text):
+        await _run_interject(bot_id, state, u, now)
+        return
+    mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
+    if _detect_command(u.text, bot_id):
+        return  # explicit command path owns this utterance
+    if mode != "autonomous":
+        return
+    await _run_interject(bot_id, state, u, now)
+
+
+async def _run_interject(bot_id: str, state: dict, u, now: float) -> None:
+    try:
+        await ambient_loop.interject(
+            bot_id, state, u.text, u.speaker_name,
+            speak_offer=_ambient_speak_offer,
+            run_delivery=_ambient_run_delivery,
+            now=now,
+        )
+    except Exception as e:
+        print(f"[ambient] interject error bot={bot_id[:8]}: {e}")
+
+
+async def _ambient_speak_offer(bot_id: str, text: str) -> bool:
+    """Speak the brief consent-seeking offer (chat + voice). Returns True if
+    delivered (best-effort; False on failure → treated as talked-over)."""
+    asyncio.create_task(_send_chat_response(bot_id, text))
+    try:
+        if _streamed_tts_on():
+            await _send_voice_response_streamed(bot_id, text, cmd_detected_ts=time.time())
+        else:
+            await _send_voice_response(bot_id, text)
+        return True
+    except Exception as e:
+        print(f"[ambient] speak_offer error bot={bot_id[:8]}: {e}")
+        return False
+
+
+async def _ambient_run_delivery(bot_id: str, subject: str, speaker: str):
+    """Deliver the offered info after consent — full generator + tools. Strong
+    delivery frame so it doesn't decline something the humans just agreed to."""
+    cmd = (
+        f"You offered to share information about '{subject}' and the team said yes. "
+        f"Share what you have now, concisely and directly. Do not decline."
+    )
+    return await _process_command(bot_id, cmd, speaker, ambient=True)
 
 
 def _ensure_accumulator_tick_task(bot_id: str, state: dict) -> None:
@@ -679,6 +779,9 @@ async def _accumulator_tick_loop(bot_id: str, state: dict) -> None:
                     acc = state.get("accumulator")
                     if acc is not None:
                         acc.tick()
+                    if ambient_loop.autonomous_enabled():
+                        if ambient_loop.check_lull(state, time.time()) == "autonomous":
+                            print(f"[ambient] lull -> autonomous bot={bot_id[:8]}")
             except asyncio.CancelledError:
                 return
             except Exception as e:
@@ -750,6 +853,14 @@ def _get_bot_state(bot_id: str) -> dict:
             # Memory system fields (Layers 1-3) — managed by meeting_memory.py
             **meeting_memory.get_initial_memory_state(),
         }
+        # Seed the pre-join response mode (from /join-meeting) as a manual
+        # override so it's a stable choice for the whole meeting (not subject
+        # to the autonomy cap / lull-revert in ambient_loop.update_mode).
+        _initial_mode = (bot_store.get(bot_id) or {}).get("initial_mode")
+        if _initial_mode in ("utterance", "autonomous"):
+            _bot_state[bot_id]["manual_mode"] = _initial_mode
+            _bot_state[bot_id]["mode"] = _initial_mode
+            _bot_state[bot_id]["mode_since_ts"] = time.time()
         # Build accumulator AFTER the state dict exists, so the on_flush
         # closure can capture the same state object.
         if _accumulator_on():
@@ -1574,8 +1685,12 @@ async def _run_proactive_checker(bot_id: str):
             state["recurring_blocker_checked"] = True
 
 
-async def _process_command(bot_id: str, command: str, speaker: str = ""):
-    """Process a detected command: use LLM to pick tools, execute, respond."""
+async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False):
+    """Process a detected command: use LLM to pick tools, execute, respond.
+
+    ambient=True is the no-wake-word path: a one-line preamble is injected so the
+    model speaks only if genuinely additive (else replies SILENT → suppressed),
+    and the finalized reply text is returned (None on decline)."""
     state = _get_bot_state(bot_id)
 
     # Debounce — don't process commands within 15 seconds of each other
@@ -1700,6 +1815,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 _hint = {"role": "system", "content": think_loop.artifact_system_hint(_prior_art)}
                 messages.insert(-1, _hint)
                 print(f"[realtime] think_loop artifact_injected bot={bot_id[:8]} age_s={int(time.time()-_prior_art['ts'])}")
+
+        # Ambient framing — inject the preamble as a system message right before
+        # the user turn (cache-safe, mirrors the think_loop artifact insert).
+        if ambient:
+            messages.insert(-1, {"role": "system", "content": _AMBIENT_PREAMBLE})
 
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
@@ -1845,10 +1965,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
         # (when `tools` is no longer in call_kwargs — either because the user has
         # no tools available, or PR-1 taint enforcement stripped them, or the
         # tools-format retry stripped them).
-        streamed_voice_active = (
-            os.getenv("PRISM_STREAMED_TTS") == "1"
-            and os.getenv("PRISM_STREAMED_LLM") == "1"
-        )
+        streamed_voice_active = _streamed_tts_on() and _streamed_llm_on()
         voice_already_streamed = False
 
         # Tool loop (max 3 iterations)
@@ -1989,6 +2106,12 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
                 # leak into a future unrelated send.
                 think_loop.clear_artifact(state)
 
+        # Ambient decline — the generator decided it had nothing additive. Skip
+        # logging/chat/voice entirely; return None so the caller counts it.
+        if ambient and _is_ambient_silent(reply):
+            print(f"[ambient] generator declined (SILENT) bot={bot_id[:8]}")
+            return None
+
         # Log command to bot_store and Supabase
         cmd_entry = {
             "command": command,
@@ -2015,7 +2138,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
             pass
-        elif os.getenv("PRISM_STREAMED_TTS") == "1":
+        elif _streamed_tts_on():
             await _send_voice_response_streamed(bot_id, reply, cmd_detected_ts=state["last_command_ts"] or now)
         else:
             await _send_voice_response(bot_id, reply)
@@ -2024,6 +2147,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = ""):
             await chat_task
         except Exception as chat_exc:
             print(f"[realtime] chat post failed: {chat_exc}")
+
+        if ambient:
+            return reply
 
     except Exception as exc:
         err_str = str(exc)
@@ -2552,6 +2678,38 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                 asyncio.create_task(_process_command(bot_id, command, sender))
 
     return {"ok": True}
+
+
+@router.post("/bot/{bot_id}/mode")
+async def set_bot_mode(bot_id: str, body: dict):
+    """Owner manual override of the live bot's mode. body={"mode": "utterance"
+    |"autonomous"|null}. null clears the override (auto state machine resumes).
+    Unauthenticated like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    mode = body.get("mode")
+    if mode not in (None, "utterance", "autonomous"):
+        return {"error": "mode must be 'utterance', 'autonomous', or null"}
+    state = _get_bot_state(bot_id)
+    state["manual_mode"] = mode
+    if mode in ("utterance", "autonomous"):
+        ambient_loop.update_mode(state, "", "", time.time())
+    print(f"[ambient] manual mode override bot={bot_id[:8]} -> {mode!r}")
+    return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
+
+
+@router.post("/bot/{bot_id}/mute")
+async def set_bot_mute(bot_id: str, body: dict):
+    """Mute / unmute the bot's proactive offers (consent-interjection v2).
+    body={"muted": bool}. Muting also drops any pending offer. Unauthenticated
+    like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    muted = bool(body.get("muted"))
+    state = _get_bot_state(bot_id)
+    state["muted"] = muted
+    if muted:
+        state["interjection_state"] = "idle"
+        state["pending_offer"] = None
+        perception_state.bump(state, "mutes")
+    print(f"[ambient] mute via API bot={bot_id[:8]} muted={muted}")
+    return {"muted": state.get("muted")}
 
 
 def init_bot_realtime(bot_id: str):

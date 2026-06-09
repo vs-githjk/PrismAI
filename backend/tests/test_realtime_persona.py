@@ -27,6 +27,12 @@ if "fastapi" not in sys.modules:
         def post(self, *_a, **_k):
             def _decorator(fn): return fn
             return _decorator
+        def delete(self, *_a, **_k):
+            def _decorator(fn): return fn
+            return _decorator
+        def put(self, *_a, **_k):
+            def _decorator(fn): return fn
+            return _decorator
     _fake_fastapi.APIRouter = _FakeRouter
     _fake_fastapi.Request = object
     _fake_fastapi.Depends = lambda *_a, **_k: None
