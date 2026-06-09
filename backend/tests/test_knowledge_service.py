@@ -138,6 +138,55 @@ class KnowledgeServiceTests(unittest.TestCase):
         self.assertEqual(matches[-1]["source_type"], "pdf")
 
 
+class ExecuteRetryTests(unittest.TestCase):
+    """Regression: a stale Supabase keep-alive socket surfaces as
+    httpx.RemoteProtocolError ('Server disconnected') with no status_code.
+    _execute must retry these transients instead of letting them bubble up and
+    kill the whole knowledge_lookup / proactive search. See diagnose 2026-06-08."""
+
+    def _module(self):
+        import importlib, knowledge_service
+        importlib.reload(knowledge_service)
+        return knowledge_service
+
+    def test_execute_retries_connection_drop_then_succeeds(self):
+        ks = self._module()
+
+        class RemoteProtocolError(Exception):
+            pass
+
+        attempts = {"n": 0}
+
+        class _FlakyQuery:
+            def execute(self_inner):
+                attempts["n"] += 1
+                if attempts["n"] < 3:
+                    raise RemoteProtocolError("Server disconnected without sending a response.")
+                return MagicMock(data=[{"ok": True}])
+
+        with patch.object(ks.asyncio, "sleep", new=AsyncMock()):
+            res = asyncio.run(ks._execute(_FlakyQuery()))
+
+        self.assertEqual(attempts["n"], 3)
+        self.assertEqual(res.data, [{"ok": True}])
+
+    def test_execute_does_not_retry_non_connection_errors(self):
+        ks = self._module()
+
+        attempts = {"n": 0}
+
+        class _BadQuery:
+            def execute(self_inner):
+                attempts["n"] += 1
+                raise ValueError("genuine bug, not a connection blip")
+
+        with patch.object(ks.asyncio, "sleep", new=AsyncMock()):
+            with self.assertRaises(ValueError):
+                asyncio.run(ks._execute(_BadQuery()))
+
+        self.assertEqual(attempts["n"], 1)  # no retry on non-transient errors
+
+
 class _IngestQuery:
     """Records every (op, table) pair on a fake Supabase so tests can assert
     the full sequence ingest_doc executes (status update → select → quota

@@ -80,6 +80,38 @@ class EmbeddingsTests(unittest.TestCase):
         self.assertEqual(attempts, 3)
         self.assertEqual(len(vec), 1536)
 
+    def test_embed_text_retries_on_connection_drop(self):
+        """Regression: a stale keep-alive socket surfaces as a connection-level
+        error (httpx.RemoteProtocolError / openai.APIConnectionError) with NO
+        status_code. These were never retried — one drop killed the whole
+        knowledge_lookup. See diagnose 2026-06-08 (KB 'Server disconnected')."""
+        _stub_openai()
+        import importlib
+        embeddings = importlib.import_module("embeddings")
+        importlib.reload(embeddings)
+
+        # Mimic httpx's exception by class name — _is_transient_connection_error
+        # matches on the name so it survives the test's openai stub.
+        class RemoteProtocolError(Exception):
+            pass
+
+        attempts = 0
+
+        async def flaky(**kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise RemoteProtocolError("Server disconnected without sending a response.")
+            return MagicMock(data=[MagicMock(embedding=[0.1] * 1536)])
+
+        with patch.object(embeddings, "_get_client") as mock_client:
+            mock_client.return_value.embeddings.create = flaky
+            with patch.object(embeddings.asyncio, "sleep", AsyncMock()):
+                vec = asyncio.run(embeddings.embed_text("retry me"))
+
+        self.assertEqual(attempts, 3)
+        self.assertEqual(len(vec), 1536)
+
 
 if __name__ == "__main__":
     unittest.main()
