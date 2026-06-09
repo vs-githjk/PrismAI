@@ -50,6 +50,18 @@ def _bot_record(bot_id: str) -> dict:
         return {}
 
 
+def _bot_display_name(bot_id: str) -> str:
+    """Lookup the active persona display name for this bot ('Prism' fallback).
+    Reads the in-process wake-alias registry populated by _get_settings_for_bot —
+    no extra DB call. Empty entry / unknown bot → 'Prism'."""
+    try:
+        from realtime_routes import _BOT_WAKE_ALIAS
+        from personas import DEFAULT_BOT_NAME
+        return _BOT_WAKE_ALIAS.get(bot_id, "") or DEFAULT_BOT_NAME
+    except Exception:
+        return "Prism"
+
+
 def cleanup_bot(bot_id: str) -> None:
     """Called by realtime_routes when a bot is removed — drop its caches."""
     _dedupe_cache.pop(bot_id, None)
@@ -114,6 +126,7 @@ async def maybe_proactive_knowledge_check(bot_id: str, state: dict) -> None:
         snippet = (m.get("content") or "").strip().replace("\n", " ")
         if len(snippet) > 200:
             snippet = snippet[:200].rsplit(" ", 1)[0] + "..."
-        message = f"From {m.get('doc_name')}: {snippet}\n(Say \"Prism, more\" for details.)"
+        name = _bot_display_name(bot_id)
+        message = f"From {m.get('doc_name')}: {snippet}\n(Say \"{name}, more\" for details.)"
         await _post_chat(bot_id, message)
         return  # one proactive surfacing per check window

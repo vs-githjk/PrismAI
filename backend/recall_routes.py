@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from analysis_service import build_analysis_transcript, run_full_analysis
 from auth import supabase, require_user_id
 from cross_meeting_service import looks_like_blocker, build_blocker_snippet
+from personas import persona_identity_resolved, persona_greeting_from_preset
 
 
 router = APIRouter(tags=["recall"])
@@ -298,9 +299,26 @@ async def _send_bot_intro(bot_id: str):
     bot_state = bot_store.get(bot_id) or {}
     live_token = bot_state.get("live_token")
     owner_name = bot_state.get("owner_name") or "the meeting owner"
+    user_id = bot_state.get("user_id")
+    workspace_id = bot_state.get("workspace_id")
     frontend_url = os.getenv("FRONTEND_URL", "https://agentic-meeting-copilot.vercel.app")
     live_link = f"{frontend_url}/#live/{live_token}" if live_token else None
-    message = "Hi, I'm PrismAI 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done."
+
+    # Persona-flavored greeting line. Pulls the owner's resolved persona preset
+    # (personal override → workspace default → 'default') and picks the matching
+    # hardcoded greeting from PERSONA_GREETINGS. The live-link + consent lines
+    # below are appended verbatim regardless of preset — compliance-relevant
+    # copy stays fixed; only the opening line carries the persona's voice.
+    preset = "default"
+    if user_id and supabase:
+        try:
+            resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
+            row = (resp.data if resp is not None else None) or {}
+            _name, _text, preset = await persona_identity_resolved(supabase, row, workspace_id)
+        except Exception as exc:
+            print(f"[recall] _send_bot_intro persona resolve failed bot={bot_id[:8]}: {exc!r}")
+
+    message = persona_greeting_from_preset(preset)
     if live_link:
         message += f"\n\nAnyone can follow along live: {live_link}"
     message += f"\n\n⚠️ If you don't consent to being recorded, please let {owner_name} know or leave the meeting."

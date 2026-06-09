@@ -59,6 +59,94 @@ PRESETS: dict[str, str] = {
 CUSTOM_PROMPT_MAX_CHARS = 500
 
 
+# ── Identity: per-persona bot name + greeting line ──────────────────────────
+#
+# Names are Prism-themed. Greetings are hardcoded (not LLM-generated) so:
+#   - the consent + live-link lines stay verbatim (compliance-relevant),
+#   - no extra LLM call on the bot-join path (which already sleeps 20s),
+#   - tone of each greeting matches the preset exactly.
+#
+# Custom personas fall back to "Prism" + the default greeting — the custom
+# prompt is tone-only, not naming.
+
+DEFAULT_BOT_NAME = "Prism"
+
+PERSONA_NAMES: dict[str, str] = {
+    "default":    "Prism",
+    "concise":    "Flash",
+    "formal":     "Crystal",
+    "cheeky":     "Glint",
+    "socratic":   "Echo",
+    "warm":       "Glow",
+    "analytical": "Spectrum",
+}
+
+# Greeting line per preset — the FIRST sentence the bot sends in the meeting
+# chat. The live-link line + consent line are appended verbatim downstream
+# (see recall_routes._send_bot_intro). Phrasing matches the preset's tone.
+PERSONA_GREETINGS: dict[str, str] = {
+    "default":    "Hi, I'm Prism 👋 I'm here to observe and help you get the most out of this meeting. I'll send you a full analysis when we're done.",
+    "concise":    "Flash here. I'll listen, capture the key points, and stay out of the way.",
+    "formal":     "Good day — I'm Crystal, here to assist with notes, decisions, and follow-ups for this meeting.",
+    "cheeky":     "Hey hey, Glint here ✨ I'll be eavesdropping for the greater good and shipping you a debrief after.",
+    "socratic":   "I'm Echo. I'll be listening — and maybe asking a question or two if it helps the group think more clearly.",
+    "warm":       "Hi, I'm Glow 🌱 — I'm here to support the conversation and help everyone leave with what they need.",
+    "analytical": "I'm Spectrum. I'll be analyzing the meeting in real time and producing a structured summary on completion.",
+}
+
+
+def persona_name_from_preset(preset: Optional[str]) -> str:
+    """Resolve a bot-display name from a preset key. Unknown/custom/None → 'Prism'."""
+    return PERSONA_NAMES.get(preset or "default", DEFAULT_BOT_NAME)
+
+
+def persona_greeting_from_preset(preset: Optional[str]) -> str:
+    """First-line greeting for the bot intro. Unknown/custom/None → default greeting."""
+    return PERSONA_GREETINGS.get(preset or "default", PERSONA_GREETINGS["default"])
+
+
+async def persona_identity_resolved(
+    sb,
+    user_row: dict,
+    workspace_id: Optional[str],
+) -> tuple[str, str, str]:
+    """Full-precedence resolution for the LIVE BOT identity, reusing an
+    already-fetched user_settings row. Returns ``(bot_name, persona_text, preset)``:
+
+    * ``bot_name`` — the persona display name (e.g. "Flash"), used in the join
+      greeting, in the cached system prefix ("Your name in this meeting is X"),
+      in nudges, and as an extra wake-word alias.
+    * ``persona_text`` — the tone instruction (same string returned by
+      ``persona_text_resolved``); '' for the default preset.
+    * ``preset`` — the resolved preset key, used to pick the matching
+      hardcoded greeting from ``PERSONA_GREETINGS``.
+
+    Precedence: personal override → workspace default → 'default'. No second
+    ``user_settings`` fetch (we reuse ``user_row``); workspaces row is only
+    hit when both (a) the personal preset is 'default' AND (b) a
+    ``workspace_id`` is supplied. Failures degrade to ('Prism', '', 'default').
+    """
+    hit = _resolve_user_persona(user_row)
+    if hit is not None:
+        return persona_name_from_preset(hit.preset), hit.text, hit.preset
+    if not workspace_id:
+        return DEFAULT_BOT_NAME, "", "default"
+    try:
+        ws_res = await _execute(
+            sb.table("workspaces")
+            .select("default_persona")
+            .eq("id", workspace_id)
+            .maybe_single()
+        )
+        ws = (ws_res.data or {}) if ws_res else {}
+        ws_preset = ws.get("default_persona") or "default"
+        if ws_preset != "default" and ws_preset in PRESETS:
+            return persona_name_from_preset(ws_preset), PRESETS[ws_preset], ws_preset
+    except Exception as exc:
+        print(f"[personas] persona_identity_resolved ws fetch failed ws={workspace_id}: {exc!r}")
+    return DEFAULT_BOT_NAME, "", "default"
+
+
 # ── Configuration ───────────────────────────────────────────────────────────
 
 def _cache_on() -> bool:

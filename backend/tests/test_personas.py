@@ -298,5 +298,98 @@ class PersonaTextResolvedTests(unittest.TestCase):
         self.assertEqual(out, "")
 
 
+class PersonaIdentityTests(unittest.TestCase):
+    """Bot-display name + greeting wiring."""
+
+    def test_name_per_preset(self):
+        import personas
+        self.assertEqual(personas.persona_name_from_preset("default"), "Prism")
+        self.assertEqual(personas.persona_name_from_preset("concise"), "Flash")
+        self.assertEqual(personas.persona_name_from_preset("formal"), "Crystal")
+        self.assertEqual(personas.persona_name_from_preset("cheeky"), "Glint")
+        self.assertEqual(personas.persona_name_from_preset("socratic"), "Echo")
+        self.assertEqual(personas.persona_name_from_preset("warm"), "Glow")
+        self.assertEqual(personas.persona_name_from_preset("analytical"), "Spectrum")
+
+    def test_name_for_custom_falls_back_to_prism(self):
+        import personas
+        # Custom personas are tone-only; the bot still calls itself Prism.
+        self.assertEqual(personas.persona_name_from_preset("custom"), "Prism")
+        self.assertEqual(personas.persona_name_from_preset(None), "Prism")
+        self.assertEqual(personas.persona_name_from_preset("nonexistent"), "Prism")
+
+    def test_greeting_per_preset_mentions_the_name(self):
+        import personas
+        # Each persona's greeting must self-identify with the matching name so
+        # the bot's first chat message in the meeting is unambiguous.
+        for preset in ("concise", "formal", "cheeky", "socratic", "warm", "analytical"):
+            name = personas.PERSONA_NAMES[preset]
+            greeting = personas.persona_greeting_from_preset(preset)
+            self.assertIn(name, greeting, f"{preset!r} greeting missing name {name!r}")
+
+    def test_greeting_for_default_says_prism(self):
+        import personas
+        self.assertIn("Prism", personas.persona_greeting_from_preset("default"))
+
+    def test_greeting_for_custom_falls_back_to_default(self):
+        import personas
+        self.assertEqual(
+            personas.persona_greeting_from_preset("custom"),
+            personas.PERSONA_GREETINGS["default"],
+        )
+
+
+class PersonaIdentityResolvedTests(unittest.TestCase):
+    """Full-precedence (name, text, preset) resolution for the live bot."""
+
+    def setUp(self):
+        import personas
+        personas._reset_for_tests()
+        async def _exec(q):
+            return q.execute()
+        self._exec_patch = patch.object(personas, "_execute", _exec)
+        self._exec_patch.start()
+
+    def tearDown(self):
+        self._exec_patch.stop()
+
+    def test_personal_override_returns_name_text_preset(self):
+        import personas
+        sb = _fake_sb()
+        name, text, preset = asyncio.run(personas.persona_identity_resolved(
+            sb, {"persona_preset": "cheeky"}, None))
+        self.assertEqual(name, "Glint")
+        self.assertEqual(text, personas.PRESETS["cheeky"])
+        self.assertEqual(preset, "cheeky")
+
+    def test_workspace_fallback_returns_workspace_name(self):
+        import personas
+        sb = _fake_sb(ws_row={"default_persona": "analytical"})
+        name, text, preset = asyncio.run(personas.persona_identity_resolved(
+            sb, {"persona_preset": "default"}, "ws1"))
+        self.assertEqual(name, "Spectrum")
+        self.assertEqual(text, personas.PRESETS["analytical"])
+        self.assertEqual(preset, "analytical")
+
+    def test_no_personal_no_workspace_returns_prism_default(self):
+        import personas
+        sb = _fake_sb()
+        name, text, preset = asyncio.run(personas.persona_identity_resolved(
+            sb, {"persona_preset": "default"}, None))
+        self.assertEqual(name, "Prism")
+        self.assertEqual(text, "")
+        self.assertEqual(preset, "default")
+
+    def test_custom_persona_keeps_prism_name_with_text(self):
+        import personas
+        # Custom tone but no Prism-family name (custom is tone-only).
+        sb = _fake_sb()
+        name, text, preset = asyncio.run(personas.persona_identity_resolved(
+            sb, {"persona_preset": "custom", "persona_custom_prompt": "Be a pirate."}, None))
+        self.assertEqual(name, "Prism")
+        self.assertEqual(text, "Be a pirate.")
+        self.assertEqual(preset, "custom")
+
+
 if __name__ == "__main__":
     unittest.main()
