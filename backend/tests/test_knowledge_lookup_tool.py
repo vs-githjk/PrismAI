@@ -21,7 +21,10 @@ class KnowledgeLookupToolTests(unittest.TestCase):
         kl = importlib.import_module("tools.knowledge_lookup")
         importlib.reload(kl)
 
-        async def fake_search(query, user_id, meeting_id=None, k=5, min_score=0.75):
+        async def fake_search(query, user_id, meeting_id=None, k=5, min_score=0.75, **_kwargs):
+            # **_kwargs accepts rerank/rewrite_query/conversation_history kwargs
+            # added in smart-RAG Phase 4/5. Test doesn't care what the tool
+            # passes; only that the search result shape returns to the caller.
             return [{
                 "doc_name": "Budget.pdf", "content": "Q2 budget is $50,000",
                 "score": 0.92, "metadata": {"page": 3}, "doc_id": "d1",

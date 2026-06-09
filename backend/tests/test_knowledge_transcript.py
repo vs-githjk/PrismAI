@@ -99,7 +99,13 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
         self.assertEqual(fake_sb.ops, [])
 
 
-    def test_marks_doc_error_when_quota_exceeded(self):
+    def test_bails_cleanly_when_quota_exceeded(self):
+        # New behavior (2026-06): the quota check runs BEFORE the doc row is
+        # inserted, so a quota-exceeded user produces zero writes — no orphan
+        # doc row, no chunks, and the function returns gracefully without
+        # raising. Storing an "error" row would be misleading because the user
+        # never explicitly asked to index this transcript — they hit the
+        # global quota, not a per-doc failure.
         import importlib, knowledge_transcript, knowledge_service
         importlib.reload(knowledge_transcript)
 
@@ -113,6 +119,7 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
                           new=AsyncMock(side_effect=raise_quota)), \
              patch.object(knowledge_transcript, "embed_batch",
                           new=AsyncMock(return_value=[])):
+            # Must not raise — the function swallows QuotaExceeded.
             asyncio.run(knowledge_transcript.index_meeting_transcript(
                 meeting_id=99,
                 user_id=str(uuid.uuid4()),
@@ -122,21 +129,19 @@ class IndexMeetingTranscriptTests(unittest.TestCase):
                 transcript="word " * 5000,
             ))
 
-        # We should have inserted the doc row, then UPDATED it to status="error".
-        # No knowledge_chunks insert should have happened.
-        ops = fake_sb.ops
-        self.assertIn("knowledge_docs", [t for t, _ in ops])
-        self.assertNotIn("knowledge_chunks", [t for t, _ in ops])
-        # Find the error update
-        error_updates = [
-            payload for table, payload in ops
+        # Zero writes to knowledge_chunks (no embedding attempted).
+        tables_written = [t for t, _ in fake_sb.ops]
+        self.assertNotIn("knowledge_chunks", tables_written)
+        # And zero INSERTs / UPDATEs to knowledge_docs — the doc row is never
+        # created when the quota check fails first. (SELECT idempotency probes
+        # are allowed but writes are not.)
+        knowledge_doc_writes = [
+            payload for table, payload in fake_sb.ops
             if table == "knowledge_docs"
             and payload is not None
-            and payload[0] == "update"
-            and payload[1].get("status") == "error"
+            and payload[0] in ("insert", "update", "upsert")
         ]
-        self.assertEqual(len(error_updates), 1)
-        self.assertIn("over limit", error_updates[0][1].get("error_message", ""))
+        self.assertEqual(len(knowledge_doc_writes), 0)
 
 
     def test_embeds_content_with_inline_preamble(self):

@@ -92,17 +92,42 @@ _WAKE_PATTERN_CACHE: dict[str, tuple[re.Pattern, re.Pattern]] = {}
 
 def _wake_patterns_for_alias(alias: str) -> tuple[re.Pattern, re.Pattern]:
     """Return (command_pattern, word_pattern) honoring an additional wake alias.
-    Falls back to the default Prism-only patterns when alias is empty / already
-    inside the base alternation."""
+
+    Per-persona aliases like ``Flash`` / ``Echo`` / ``Crystal`` / ``Glow`` are
+    common English words, so triggering on bare occurrences ("the flash drive
+    is on the desk") would barge into normal conversation. To address the bot
+    by its persona name, the speaker must follow the name with ``,`` or ``:``
+    — that's the explicit-address signal. ``Prism`` / ``PrismAI`` / ``Prism
+    AI`` stay lenient (no required punctuation) since they aren't common
+    English words.
+
+    Falls back to the default Prism-only patterns when alias is empty or is
+    already one of the base aliases."""
     key = (alias or "").strip().lower()
     if not key or key in ("prism", "prismai", "prism ai"):
         return (TRIGGER_PATTERN, TRIGGER_WORD_PATTERN)
     hit = _WAKE_PATTERN_CACHE.get(key)
     if hit is not None:
         return hit
-    names = f"prism|prismai|prism ai|{re.escape(key)}"
-    cmd_pat = re.compile(rf"\b(?:{names})\b[,:]?\s*(.+)", re.IGNORECASE)
-    word_pat = re.compile(rf"\b(?:{names})\b", re.IGNORECASE)
+    escaped = re.escape(key)
+    # Two-branch alternation, each with its own capture group:
+    # (1) Prism family — lenient (optional [,:] thanks to ``?``).
+    # (2) Persona alias — strict (REQUIRES [,:] — no ``?``).
+    # _detect_command reads ``match.group(1) or match.group(2)``.
+    cmd_pat = re.compile(
+        rf"(?:\b(?:prism|prismai|prism ai)\b[,:]?\s*(.+)|\b{escaped}\b[,:]\s*(.+))",
+        re.IGNORECASE,
+    )
+    # Bare-trigger word detection (opens the 8s pending-command window).
+    # ``Prism`` matches lenient (any context). The persona alias matches only
+    # when followed by ``[,:]`` — same "explicit address signal" as the
+    # command pattern. This means "Echo, …" opens the window even without a
+    # same-fragment command, but bare "echo" (e.g. "the echo of the room")
+    # never does.
+    word_pat = re.compile(
+        rf"(?:\b(?:prism|prismai|prism ai)\b|\b{escaped}\b[,:])",
+        re.IGNORECASE,
+    )
     _WAKE_PATTERN_CACHE[key] = (cmd_pat, word_pat)
     return (cmd_pat, word_pat)
 
@@ -910,7 +935,16 @@ def _detect_command(text: str, bot_id: str | None = None) -> str | None:
     cmd_pattern, _ = _wake_patterns_for_bot(bot_id) if bot_id else (TRIGGER_PATTERN, TRIGGER_WORD_PATTERN)
     match = cmd_pattern.search(text)
     if match:
-        cmd = _LEADING_PUNCT_RE.sub("", match.group(1)).strip()
+        # Per-persona aliases use a two-branch alternation with two capture
+        # groups (Prism branch = group 1, persona-alias branch = group 2);
+        # only one is populated per match. The default Prism-only pattern has
+        # a single group, so group(2) raises — use lastindex as a fallback.
+        captured = match.group(1)
+        if captured is None and match.lastindex and match.lastindex >= 2:
+            captured = match.group(2)
+        if captured is None:
+            return None
+        cmd = _LEADING_PUNCT_RE.sub("", captured).strip()
         if cmd:
             return cmd
     return None
