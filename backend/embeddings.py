@@ -5,6 +5,7 @@ import os
 import time
 from typing import Optional
 
+import httpx
 import tiktoken
 from openai import AsyncOpenAI
 
@@ -38,10 +39,43 @@ def _is_quota_exhausted(exc: Exception) -> bool:
     return "insufficient_quota" in msg or "exceeded your current quota" in msg
 
 
+# Connection-level failures carry no HTTP status_code (the request never got a
+# response), so the status-based retry predicate below skips them. On Render a
+# long-idle keep-alive socket gets reaped upstream; the next reuse surfaces as
+# httpx.RemoteProtocolError ("Server disconnected without sending a response")
+# or, wrapped by the OpenAI SDK, openai.APIConnectionError. These are transient
+# — httpx evicts the dead connection so the retry opens a fresh one. Matched by
+# class name (incl. the MRO) so we don't hard-depend on a specific httpx/openai
+# exception hierarchy, and so it survives the test suite's openai stub.
+_TRANSIENT_CONNECTION_ERROR_NAMES = frozenset({
+    "APIConnectionError", "APITimeoutError",
+    "RemoteProtocolError", "ConnectError", "ConnectTimeout",
+    "ReadError", "ReadTimeout", "WriteError", "PoolTimeout",
+})
+
+
+def is_transient_connection_error(exc: BaseException) -> bool:
+    """True for connection-level transients worth retrying (no HTTP status)."""
+    return bool(
+        {base.__name__ for base in type(exc).__mro__}
+        & _TRANSIENT_CONNECTION_ERROR_NAMES
+    )
+
+
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # keepalive_expiry caps how long an idle pooled connection is reused.
+        # Render's upstream silently reaps idle sockets; expiring ours first
+        # avoids handing a dead connection to the next request. Retry in
+        # _call_with_retry still covers the race within the window.
+        _client = AsyncOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            http_client=httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0, connect=10.0),
+                limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=20.0),
+            ),
+        )
     return _client
 
 
@@ -87,10 +121,16 @@ async def _call_with_retry(inputs: list[str], max_retries: int = 3) -> list[list
                 print(f"[embeddings] OpenAI quota exhausted; pausing embedding calls for {QUOTA_COOLDOWN_SECONDS}s")
                 raise QuotaExhausted(str(exc)) from exc
             status = getattr(exc, "status_code", None)
-            if status in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+            transient = status in (429, 500, 502, 503, 504) or is_transient_connection_error(exc)
+            if transient and attempt < max_retries - 1:
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
+            if is_transient_connection_error(exc):
+                # Pin the host on the way out (helps tell OpenAI vs Supabase apart
+                # when this same exception type shows up in other call sites).
+                print(f"[embeddings] connection error after {attempt + 1} attempt(s): "
+                      f"{type(exc).__name__}: {exc}")
             raise
     raise last_err  # pragma: no cover
 

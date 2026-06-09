@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import os
+import secrets
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -353,6 +355,51 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         ))
 
     return {"ok": True}
+
+
+class BotRecoverRequest(BaseModel):
+    workspace_id: str | None = None
+
+
+@router.post("/meetings/recover-from-bot/{bot_id}")
+async def recover_meeting_from_bot(
+    bot_id: str,
+    req: BotRecoverRequest,
+    user_id: str = Depends(require_user_id),
+):
+    """Re-hydrate a completed bot analysis from bot_sessions into the meetings
+    table. Used when the browser wasn't polling at the moment the bot finished,
+    so the client-side POST /meetings never fired even though analysis succeeded."""
+    client = _require_storage()
+    res = client.table("bot_sessions").select("*").eq("bot_id", bot_id).maybe_single().execute()
+    data = res.data if res is not None else None
+    if not data:
+        raise HTTPException(status_code=404, detail="Bot session not found")
+    if data.get("user_id") and data["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not the bot owner")
+    if data.get("status") != "done" or not data.get("result"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bot has no completed analysis (status={data.get('status')})",
+        )
+
+    result = data["result"]
+    transcript = data.get("transcript") or ""
+    summary = (result.get("summary") or "") if isinstance(result, dict) else ""
+    health = (result.get("health_score") or {}) if isinstance(result, dict) else {}
+    entry = MeetingEntry(
+        id=(int(time.time() * 1000) * 1000) + secrets.randbelow(1000),
+        date=datetime.now(timezone.utc).isoformat(),
+        title=(result.get("title") if isinstance(result, dict) else None) or summary[:65] or "Meeting",
+        score=health.get("score"),
+        transcript=transcript,
+        result=result,
+        share_token=secrets.token_hex(8),
+        workspace_id=req.workspace_id,
+        recorded_by_user_id=None,
+    )
+    await save_meeting(entry, user_id)
+    return {"ok": True, "id": entry.id, "workspace_id": entry.workspace_id}
 
 
 @router.get("/share/{token}")

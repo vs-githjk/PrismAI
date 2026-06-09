@@ -8,7 +8,7 @@ from typing import Optional
 from supabase import Client, create_client
 
 from caches import get_user_workspace_ids
-from embeddings import embed_text, embed_batch
+from embeddings import embed_text, embed_batch, is_transient_connection_error
 from knowledge_ingest.chunker import chunk_text
 from knowledge_ingest.context_preprocessor import add_context
 from knowledge_ingest.loaders_base import LoaderError
@@ -17,6 +17,7 @@ MIN_SCORE_DEFAULT = 0.75
 CONFLICT_THRESHOLD = 0.05
 MAX_CHUNKS_PER_USER = 50_000
 INSERT_BATCH_SIZE = 50  # 50 chunks × 1536 floats ≈ ~3 MB per request, well under PostgREST limits
+_EXECUTE_MAX_RETRIES = 2  # connection-level transients only; see _execute
 
 _sb_client: Optional[Client] = None
 
@@ -46,8 +47,26 @@ async def _execute(query):
 
     For storage I/O (.upload, .download) call `asyncio.to_thread` directly —
     that API isn't query-shaped.
+
+    Connection-level transients (a stale keep-alive socket reaped by Render's
+    upstream → httpx.RemoteProtocolError "Server disconnected") are retried with
+    backoff. The Supabase SDK's httpx pool evicts the dead connection on failure,
+    so the next attempt opens a fresh one. Was the root cause of the proactive-
+    knowledge "Server disconnected" failures (diagnose 2026-06-08).
     """
-    return await asyncio.to_thread(query.execute)
+    delay = 0.5
+    for attempt in range(_EXECUTE_MAX_RETRIES + 1):
+        try:
+            return await asyncio.to_thread(query.execute)
+        except Exception as exc:
+            if attempt < _EXECUTE_MAX_RETRIES and is_transient_connection_error(exc):
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            if is_transient_connection_error(exc):
+                print(f"[knowledge] Supabase connection error after "
+                      f"{attempt + 1} attempt(s): {type(exc).__name__}: {exc}")
+            raise
 
 
 class QuotaExceeded(Exception):
@@ -201,6 +220,9 @@ async def search_knowledge(
         )
         if isinstance(vec_resp, Exception):
             # Vector failure is fatal — without it we have no semantic signal.
+            # Log the type so the proactive/on-demand "search failed" surfaces
+            # the real culprit (APIConnectionError=OpenAI, RemoteProtocolError=Supabase).
+            print(f"[knowledge] vector search failed: {type(vec_resp).__name__}: {vec_resp}")
             raise vec_resp
         bm25_rows = [] if isinstance(bm25_resp, Exception) else (bm25_resp.data or [])
         rows = _rrf_merge(vec_resp.data or [], bm25_rows)[: k * 3]
