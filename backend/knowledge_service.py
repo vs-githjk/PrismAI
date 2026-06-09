@@ -73,6 +73,18 @@ class QuotaExceeded(Exception):
     pass
 
 
+class DocNotFound(Exception):
+    """Raised by soft_delete_doc when no doc with the given id exists."""
+    pass
+
+
+class DeletePermissionDenied(Exception):
+    """Raised by soft_delete_doc when the caller is neither the uploader nor
+    the workspace owner of a shared doc. The endpoint translates this to a
+    403 with the friendly 'ask uploader or workspace owner' message."""
+    pass
+
+
 async def check_user_quota(user_id: str, new_chunks: int) -> None:
     sb = _supabase()
     res = await _execute(
@@ -386,13 +398,58 @@ async def ingest_doc(doc_id: str, content: bytes | str, source_type: str, user_s
 
 async def soft_delete_doc(doc_id: str, user_id: str) -> None:
     """Mark the doc deleted AND hard-delete its chunks so the user's quota recovers.
-    The doc row stays (with deleted_at set) for the 30-day audit/undelete window."""
+    The doc row stays (with deleted_at set) for the 30-day audit/undelete window.
+
+    Permission model (2026-06-09): the caller must be EITHER the original
+    uploader OR an owner of the workspace the doc lives in (for shared docs).
+    A regular workspace member who didn't upload the doc cannot delete it.
+
+    Raises:
+        DocNotFound: no row with that id exists (already deleted or never existed).
+        DeletePermissionDenied: caller is neither uploader nor workspace owner.
+    """
     sb = _supabase()
+
+    # Look up the doc by id ONLY (no user_id filter) so we can check who
+    # owns/uploaded it and authorize properly.
+    doc_res = await _execute(
+        sb.table("knowledge_docs")
+        .select("user_id, workspace_id")
+        .eq("id", doc_id)
+        .maybe_single()
+    )
+    doc = (doc_res.data if doc_res is not None else None) or None
+    if not doc:
+        raise DocNotFound(doc_id)
+
+    uploader_id = str(doc.get("user_id") or "")
+    workspace_id = doc.get("workspace_id")
+
+    is_uploader = uploader_id == str(user_id)
+    is_workspace_owner = False
+    if not is_uploader and workspace_id:
+        # Check workspace_members for an 'owner' role for this caller.
+        member_res = await _execute(
+            sb.table("workspace_members")
+            .select("role")
+            .eq("workspace_id", workspace_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+        )
+        member = (member_res.data if member_res is not None else None) or {}
+        is_workspace_owner = member.get("role") == "owner"
+
+    if not (is_uploader or is_workspace_owner):
+        raise DeletePermissionDenied(doc_id)
+
+    # Authorized — now do the actual delete. Note: chunks are filtered by
+    # the UPLOADER's user_id (not the caller's) so a workspace owner deleting
+    # a teammate's doc still hits the right chunk rows.
     await _execute(
-        sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).eq("user_id", user_id)
+        sb.table("knowledge_chunks").delete().eq("doc_id", doc_id).eq("user_id", uploader_id)
     )
     await _execute(
         sb.table("knowledge_docs")
         .update({"deleted_at": "now()", "chunk_count": 0})
-        .eq("id", doc_id).eq("user_id", user_id)
+        .eq("id", doc_id)
     )

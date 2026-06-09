@@ -14,6 +14,8 @@ from knowledge_service import (
     soft_delete_doc,
     search_knowledge,
     _execute,
+    DocNotFound,
+    DeletePermissionDenied,
 )
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -258,7 +260,15 @@ async def update_doc(doc_id: str, req: UpdateDocRequest, user_id: str = Depends(
 
 @router.delete("/docs/{doc_id}")
 async def delete_doc(doc_id: str, user_id: str = Depends(require_user_id)):
-    await soft_delete_doc(doc_id, user_id)
+    try:
+        await soft_delete_doc(doc_id, user_id)
+    except DocNotFound:
+        raise HTTPException(status_code=404, detail="Document not found")
+    except DeletePermissionDenied:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied. Only the uploader or workspace owner can delete this document.",
+        )
     return {"ok": True}
 
 

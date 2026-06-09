@@ -356,5 +356,159 @@ class IngestDocTests(unittest.TestCase):
                 self.fail(f"ingest_doc must swallow all errors but raised: {exc}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# soft_delete_doc — permission model (uploader OR workspace owner)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _DeleteFakeQuery:
+    """Tiny query fake that tracks the operation chain (table, action, eq's)
+    so tests can verify the deletes/updates actually fired. Supports
+    .maybe_single() for the lookup queries soft_delete_doc uses."""
+    def __init__(self, store):
+        self._store = store
+        self._eq = {}
+        self._action = None   # 'select' | 'update' | 'delete'
+        self._table_name = None
+        self._select_cols = None
+        self._update_payload = None
+        self._maybe_single = False
+
+    def _bind_table(self, name):
+        self._table_name = name
+        return self
+
+    def select(self, *cols, **_k):
+        self._action = "select"
+        self._select_cols = cols
+        return self
+    def update(self, payload, **_k):
+        self._action = "update"
+        self._update_payload = payload
+        return self
+    def delete(self, **_k):
+        self._action = "delete"
+        return self
+    def eq(self, k, v):
+        self._eq[k] = v
+        return self
+    def is_(self, *_a, **_k):
+        return self
+    def maybe_single(self):
+        self._maybe_single = True
+        return self
+    def single(self):
+        return self
+
+    def execute(self):
+        # Record the operation so tests can introspect.
+        self._store["ops"].append({
+            "table": self._table_name, "action": self._action, "eq": dict(self._eq),
+            "payload": self._update_payload, "single": self._maybe_single,
+        })
+        if self._action == "select":
+            return self._lookup_select()
+        # update / delete don't return interesting data here.
+        return MagicMock(data=[], count=0)
+
+    def _lookup_select(self):
+        rows = self._store["tables"].get(self._table_name, [])
+        for row in rows:
+            if all(row.get(k) == v for k, v in self._eq.items()):
+                return MagicMock(data=row if self._maybe_single else [row])
+        return MagicMock(data=None if self._maybe_single else [])
+
+
+class _DeleteFakeSupabase:
+    def __init__(self, tables):
+        self.store = {"tables": tables, "ops": []}
+    def table(self, name):
+        return _DeleteFakeQuery(self.store)._bind_table(name)
+
+
+class SoftDeleteDocPermissionTests(unittest.TestCase):
+    """Option A: uploader OR workspace owner can delete; otherwise 403."""
+
+    def _make_fake(self, *, doc=None, members=None):
+        tables = {}
+        if doc is not None:
+            tables["knowledge_docs"] = [doc]
+        if members is not None:
+            tables["workspace_members"] = members
+        return _DeleteFakeSupabase(tables)
+
+    def test_uploader_deletes_personal_doc(self):
+        import knowledge_service
+        fake = self._make_fake(doc={
+            "id": "d1", "user_id": "alice", "workspace_id": None,
+        })
+        with patch.object(knowledge_service, "_supabase", return_value=fake):
+            asyncio.run(knowledge_service.soft_delete_doc("d1", "alice"))
+        # Verify both writes fired: chunks DELETE + docs UPDATE
+        write_actions = [(op["table"], op["action"]) for op in fake.store["ops"]
+                         if op["action"] in ("delete", "update")]
+        self.assertIn(("knowledge_chunks", "delete"), write_actions)
+        self.assertIn(("knowledge_docs", "update"), write_actions)
+
+    def test_uploader_deletes_own_workspace_doc(self):
+        import knowledge_service
+        fake = self._make_fake(doc={
+            "id": "d2", "user_id": "alice", "workspace_id": "ws1",
+        })
+        with patch.object(knowledge_service, "_supabase", return_value=fake):
+            asyncio.run(knowledge_service.soft_delete_doc("d2", "alice"))
+        write_actions = [(op["table"], op["action"]) for op in fake.store["ops"]
+                         if op["action"] in ("delete", "update")]
+        self.assertIn(("knowledge_docs", "update"), write_actions)
+
+    def test_workspace_owner_can_delete_teammates_doc(self):
+        # Alice uploaded; Bob is the workspace owner. Bob should be allowed.
+        import knowledge_service
+        fake = self._make_fake(
+            doc={"id": "d3", "user_id": "alice", "workspace_id": "ws1"},
+            members=[{"workspace_id": "ws1", "user_id": "bob", "role": "owner"}],
+        )
+        with patch.object(knowledge_service, "_supabase", return_value=fake):
+            asyncio.run(knowledge_service.soft_delete_doc("d3", "bob"))
+        write_actions = [(op["table"], op["action"]) for op in fake.store["ops"]
+                         if op["action"] in ("delete", "update")]
+        self.assertIn(("knowledge_docs", "update"), write_actions)
+        # Chunks filter must use the UPLOADER's id (alice), not the caller (bob).
+        chunk_delete_op = next(op for op in fake.store["ops"]
+                               if op["table"] == "knowledge_chunks" and op["action"] == "delete")
+        self.assertEqual(chunk_delete_op["eq"].get("user_id"), "alice")
+
+    def test_non_owner_member_cannot_delete_teammates_doc(self):
+        # Alice uploaded; Carol is just a member (not owner) → 403.
+        import knowledge_service
+        fake = self._make_fake(
+            doc={"id": "d4", "user_id": "alice", "workspace_id": "ws1"},
+            members=[{"workspace_id": "ws1", "user_id": "carol", "role": "member"}],
+        )
+        with patch.object(knowledge_service, "_supabase", return_value=fake):
+            with self.assertRaises(knowledge_service.DeletePermissionDenied):
+                asyncio.run(knowledge_service.soft_delete_doc("d4", "carol"))
+        # And no writes happened.
+        write_actions = [op["action"] for op in fake.store["ops"]
+                         if op["action"] in ("delete", "update")]
+        self.assertEqual(write_actions, [])
+
+    def test_random_user_cannot_delete_someone_elses_personal_doc(self):
+        # Doc has no workspace; only Alice (uploader) should be able to delete.
+        import knowledge_service
+        fake = self._make_fake(doc={
+            "id": "d5", "user_id": "alice", "workspace_id": None,
+        })
+        with patch.object(knowledge_service, "_supabase", return_value=fake):
+            with self.assertRaises(knowledge_service.DeletePermissionDenied):
+                asyncio.run(knowledge_service.soft_delete_doc("d5", "mallory"))
+
+    def test_nonexistent_doc_raises_DocNotFound(self):
+        import knowledge_service
+        fake = self._make_fake(doc=None)  # knowledge_docs table empty
+        with patch.object(knowledge_service, "_supabase", return_value=fake):
+            with self.assertRaises(knowledge_service.DocNotFound):
+                asyncio.run(knowledge_service.soft_delete_doc("does-not-exist", "alice"))
+
+
 if __name__ == "__main__":
     unittest.main()
