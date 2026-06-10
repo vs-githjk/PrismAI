@@ -3,6 +3,7 @@ import { CalendarPlus, Check, ExternalLink } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
 import DatePopover from './DatePopover'
+import TimePopover from './TimePopover'
 
 function formatResolvedDate(value) {
   if (!value) return ''
@@ -156,8 +157,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
                 <div className="min-w-0 flex-1">
                   <DatePopover value={date} onChange={setDate} />
                 </div>
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
-                  className="w-32 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/90 outline-none focus:border-cyan-400/40 [color-scheme:dark]" />
+                <TimePopover value={time} onChange={setTime} />
               </div>
               <input
                 value={invitees} onChange={(e) => setInvitees(e.target.value)}
