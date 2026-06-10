@@ -7,7 +7,7 @@ import RecordingPlayer from './RecordingPlayer'
 import SentimentCard from './SentimentCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
-import { useCountUp } from '../../lib/healthScore'
+import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 const GAUGE_RADIUS = 46
@@ -26,6 +26,25 @@ function healthColor(score) {
 
 // Padding baked into the viewBox so the progress arc's glow isn't clipped.
 const GAUGE_PAD = 12
+
+// Per-dimension health bar (Clarity / Action-Oriented / Engagement).
+function BreakdownBar({ label, value, color }) {
+  const displayed = useCountUp(value, 1000)
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[11px] font-medium text-white/80">{label}</span>
+        <span className="text-[11px] font-semibold text-white">{displayed}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${displayed}%`, background: color, transition: 'width 16ms linear' }}
+        />
+      </div>
+    </div>
+  )
+}
 
 function SemicircularGauge({ score }) {
   const displayed = useCountUp(score, 1000)
@@ -111,6 +130,12 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   const healthScore = result.health_score
   const sentiment = result.sentiment
+  const breakdown = healthScore?.breakdown || {}
+  const hasBreakdown =
+    breakdown.clarity !== undefined ||
+    breakdown.action_orientation !== undefined ||
+    breakdown.engagement !== undefined
+  const badges = healthScore?.badges || []
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
@@ -158,6 +183,38 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             <>
               <SemicircularGauge score={healthScore.score} />
               <p className="mt-1.5 text-sm font-medium text-white/55">Health score</p>
+              {hasBreakdown && (
+                <div className="mt-4 w-[200px] space-y-2.5">
+                  {breakdown.clarity !== undefined && (
+                    <BreakdownBar label="Clarity" value={breakdown.clarity} color={healthColor(healthScore.score)} />
+                  )}
+                  {breakdown.action_orientation !== undefined && (
+                    <BreakdownBar label="Action-Oriented" value={breakdown.action_orientation} color={healthColor(healthScore.score)} />
+                  )}
+                  {breakdown.engagement !== undefined && (
+                    <BreakdownBar label="Engagement" value={breakdown.engagement} color={healthColor(healthScore.score)} />
+                  )}
+                </div>
+              )}
+              {badges.length > 0 && (
+                <div className="mt-3.5 flex w-[200px] flex-wrap justify-center gap-1.5">
+                  {badges.map((badge) => {
+                    const isPositive = BADGE_POSITIVE.has(badge)
+                    return (
+                      <span
+                        key={badge}
+                        className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${
+                          isPositive
+                            ? 'border-emerald-400/30 bg-emerald-400/[0.10] text-emerald-300'
+                            : 'border-red-400/30 bg-red-400/[0.10] text-red-300'
+                        }`}
+                      >
+                        {isPositive ? '✓' : '!'} {badge}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
             </>
           ) : (
             <p className={subtleText}>No health score recorded.</p>
