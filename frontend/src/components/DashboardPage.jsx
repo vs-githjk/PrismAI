@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
+  Check,
   Copy,
   Download,
   FileText,
@@ -32,10 +33,7 @@ import {
 import SkeletonCard from './SkeletonCard'
 import DashboardSidebar from './dashboard/DashboardSidebar'
 import DashboardTopbar from './dashboard/DashboardTopbar'
-
-const SIDEBAR_MIN = 200
-const SIDEBAR_MAX = 420
-const SIDEBAR_DEFAULT = 248
+import WorkspaceIsland from './dashboard/WorkspaceIsland'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
@@ -43,7 +41,7 @@ const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
-const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
+const secondaryButtonClass = 'inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/85 transition hover:border-cyan-400/45 hover:bg-white/[0.06] hover:text-white'
 
 function MeetingActionsBar({
   shareToken,
@@ -77,24 +75,23 @@ function MeetingActionsBar({
   const notionConnected = !!(integrations?.notion_token && integrations?.notion_page_id)
 
   return (
-    <div className="mb-3 flex items-center justify-end gap-2">
+    <div className="flex items-center gap-2">
       {shareToken && (
         <button
           type="button"
           onClick={handleShare}
           className={secondaryButtonClass}
           style={shareCopied ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
-          aria-label="Copy share link"
+          aria-label={shareCopied ? 'Share link copied' : 'Copy share link'}
+          title={shareCopied ? 'Copied!' : 'Share'}
         >
-          <Share2 className="h-4 w-4" aria-hidden="true" />
-          {shareCopied ? 'Copied!' : 'Share'}
+          {shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Share2 className="h-4 w-4" aria-hidden="true" />}
         </button>
       )}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <button type="button" className={secondaryButtonClass} aria-label="Export meeting">
+          <button type="button" className={secondaryButtonClass} aria-label="Export meeting" title="Export">
             <Download className="h-4 w-4" aria-hidden="true" />
-            Export
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -483,7 +480,6 @@ function AnalyzingBanner({ result }) {
 }
 
 export default function DashboardPage(props) {
-  const [historySearchOpen, setHistorySearchOpen] = useState(false)
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
   const [activeView, setActiveView] = useState(
     () => sessionStorage.getItem('prism_active_view') ||
@@ -509,58 +505,6 @@ export default function DashboardPage(props) {
   )
   const [shareWorkspaceId, setShareWorkspaceId] = useState(null)
   const [shareErrorId, setShareErrorId] = useState(null)
-
-  // --- Sidebar resize / collapse (persisted) ---
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem('prismai:sidebar-collapsed') === '1' } catch { return false }
-  })
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    try {
-      const v = parseInt(localStorage.getItem('prismai:sidebar-width'), 10)
-      return Number.isFinite(v) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, v)) : SIDEBAR_DEFAULT
-    } catch { return SIDEBAR_DEFAULT }
-  })
-  const [isResizing, setIsResizing] = useState(false)
-  const sidebarWidthRef = useRef(sidebarWidth)
-
-  useEffect(() => {
-    try { localStorage.setItem('prismai:sidebar-collapsed', sidebarCollapsed ? '1' : '0') } catch { /* ignore */ }
-  }, [sidebarCollapsed])
-  useEffect(() => {
-    sidebarWidthRef.current = sidebarWidth
-    try { localStorage.setItem('prismai:sidebar-width', String(sidebarWidth)) } catch { /* ignore */ }
-  }, [sidebarWidth])
-
-  const toggleSidebar = useCallback(() => setSidebarCollapsed((v) => !v), [])
-
-  useEffect(() => {
-    const handler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
-        e.preventDefault()
-        toggleSidebar()
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [toggleSidebar])
-
-  const onResizeHandlePointerDown = useCallback((e) => {
-    e.preventDefault()
-    setIsResizing(true)
-    const startX = e.clientX
-    const startW = sidebarWidthRef.current
-    const onMove = (ev) => {
-      const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + (ev.clientX - startX)))
-      setSidebarWidth(next)
-    }
-    const onUp = () => {
-      setIsResizing(false)
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }, [])
 
   // Persist active view so hard refresh restores the same view
   const persistView = (view) => {
@@ -886,15 +830,8 @@ export default function DashboardPage(props) {
     })
   }, [props.history, props.historySearch])
 
-  function handleHistorySearchChange(event) {
-    props.setHistorySearch?.(event.target.value)
-  }
-
-  function toggleHistorySearch() {
-    setHistorySearchOpen((open) => {
-      if (open) props.setHistorySearch?.('')
-      return !open
-    })
+  function handleHistorySearchChange(value) {
+    props.setHistorySearch?.(value)
   }
 
   function handleDeleteHistoryEntry(entry) {
@@ -949,26 +886,26 @@ export default function DashboardPage(props) {
     return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
   }, [currentMeeting, props.user?.id, workspaceMemberMap])
 
-  // A meeting is "in focus" when the focused surface is a real meeting.
-  // Cross-meeting intelligence is always reached via a focused meeting (ADR 0001),
-  // so the switch stays enabled there too. A stale 'meeting' view with no
-  // meeting/result/loading keeps the switch grayed.
-  const meetingInFocus =
-    activeView === 'intelligence' ||
-    (activeView === 'meeting' && (!!props.meetingId || !!props.result || props.loading))
-  const switchView = activeView === 'intelligence' ? 'cross' : 'current'
-
-  function handleSelectSwitchView(v) {
-    if (v === 'cross') {
-      if (historyCount < 2) {
-        setShowGateDialog(true)
-        return
-      }
-      persistView('intelligence')
-    } else {
-      persistView('meeting')
+  // Trend (cross-meeting intelligence) is its own top-level view, gated on
+  // having at least two meetings to compare.
+  function handleOpenTrend() {
+    if (historyCount < 2) {
+      setShowGateDialog(true)
+      return
     }
+    persistView('intelligence')
   }
+
+  // Page title shown in the topbar island: the focused meeting's name, or the
+  // current view's label.
+  const pageTitle =
+    activeView === 'intelligence'
+      ? 'Trend'
+      : activeView === 'knowledge'
+        ? 'Knowledge'
+        : activeView === 'meeting' && (currentMeeting || props.result)
+          ? deriveDisplayTitle(currentMeeting || { result: props.result })
+          : 'Home'
 
   const showHomeNudge =
     props.user &&
@@ -979,28 +916,10 @@ export default function DashboardPage(props) {
 
   return (
     <div
-      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)] ${isResizing ? 'is-resizing' : ''}`}
-      style={{ '--dashboard-sidebar-w': sidebarCollapsed ? '56px' : `${sidebarWidth}px` }}
+      className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]"
     >
-      <DashboardTopbar
-        newMeetingOpen={newMeetingOpen}
-        setNewMeetingOpen={setNewMeetingOpen}
-        onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
-        newMeetingPanel={
-          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
-        }
-        meetingInFocus={meetingInFocus}
-        view={switchView}
-        onSelectView={handleSelectSwitchView}
-      />
-
-      <DashboardSidebar
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={toggleSidebar}
-        onResizeHandlePointerDown={onResizeHandlePointerDown}
+      <WorkspaceIsland
         user={props.user}
-        isTestAccount={props.isTestAccount}
-        isDemoMode={props.isDemoMode}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         switchWorkspace={switchWorkspace}
@@ -1025,18 +944,45 @@ export default function DashboardPage(props) {
         copyInviteLink={copyInviteLink}
         inviteCopied={inviteCopied}
         closeWsSettings={closeWsSettings}
+        onSaveWorkspacePersona={saveWorkspacePersona}
+      />
+
+      <DashboardTopbar
+        title={pageTitle}
+        searchValue={props.historySearch}
+        onSearchChange={handleHistorySearchChange}
+        actions={
+          activeView === 'meeting' && props.result && !props.loading ? (
+            <MeetingActionsBar
+              shareToken={props.shareToken}
+              shareCopied={props.shareCopied}
+              setShareCopied={props.setShareCopied}
+              mdCopied={props.mdCopied}
+              copyMarkdown={props.copyMarkdown}
+              exportMarkdown={props.exportMarkdown}
+              exportPDF={props.exportPDF}
+              exportToSlack={props.exportToSlack}
+              exportToNotion={props.exportToNotion}
+              exportingSlack={props.exportingSlack}
+              exportingNotion={props.exportingNotion}
+              integrations={props.integrations}
+            />
+          ) : null
+        }
+      />
+
+      <DashboardSidebar
+        user={props.user}
+        isTestAccount={props.isTestAccount}
+        isDemoMode={props.isDemoMode}
         personaPreset={props.personaPreset}
         personaCustomPrompt={props.personaCustomPrompt}
         onSavePersonalPersona={props.onSavePersonalPersona}
-        onSaveWorkspacePersona={saveWorkspacePersona}
         history={props.history || []}
         filteredHistory={filteredHistory}
-        historySearch={props.historySearch}
-        historySearchOpen={historySearchOpen}
-        toggleHistorySearch={toggleHistorySearch}
-        onHistorySearchChange={handleHistorySearchChange}
         activeView={activeView}
         onGoHome={() => persistView('home')}
+        onOpenTrend={handleOpenTrend}
         onOpenKnowledge={() => persistView('knowledge')}
         onSelectMeeting={handleSelectMeeting}
         onDeleteMeeting={handleDeleteHistoryEntry}
@@ -1044,9 +990,15 @@ export default function DashboardPage(props) {
         botActive={props.botStatus && !['done', 'error'].includes(props.botStatus)}
         setShowIntegrations={props.setShowIntegrations}
         signOut={props.signOut}
+        newMeetingOpen={newMeetingOpen}
+        setNewMeetingOpen={setNewMeetingOpen}
+        onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
+        newMeetingPanel={
+          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
+        }
       />
 
-      <div className="dashboard-content">
+      <div className={`dashboard-content ${activeView === 'home' ? 'is-home' : ''}`}>
         {showHomeNudge && (
           <div className="px-5 pt-4 sm:px-8">
             <div className="mx-auto flex max-w-[92rem] items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
@@ -1077,8 +1029,14 @@ export default function DashboardPage(props) {
           </div>
         )}
 
-        <main className="relative z-10 mx-auto mt-2 max-w-[92rem] px-5 pb-28 sm:px-8">
-          <div key={activeView} className="animate-fade-in-up">
+        <main
+          className={`relative z-10 mx-auto mt-2 w-full max-w-[92rem] px-5 sm:px-8 ${
+            activeView === 'home'
+              ? 'flex min-h-0 flex-1 flex-col pb-[var(--dashboard-edge)]'
+              : 'pb-28'
+          }`}
+        >
+          <div key={activeView} className={`animate-fade-in-up ${activeView === 'home' ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
@@ -1097,22 +1055,6 @@ export default function DashboardPage(props) {
                 <MeetingViewSkeleton />
               ) : (
                 <>
-                  {props.result && !props.loading && (
-                    <MeetingActionsBar
-                      shareToken={props.shareToken}
-                      shareCopied={props.shareCopied}
-                      setShareCopied={props.setShareCopied}
-                      mdCopied={props.mdCopied}
-                      copyMarkdown={props.copyMarkdown}
-                      exportMarkdown={props.exportMarkdown}
-                      exportPDF={props.exportPDF}
-                      exportToSlack={props.exportToSlack}
-                      exportToNotion={props.exportToNotion}
-                      exportingSlack={props.exportingSlack}
-                      exportingNotion={props.exportingNotion}
-                      integrations={props.integrations}
-                    />
-                  )}
                   <Suspense fallback={<SkeletonCard lines={4} tall />}>
                     <MeetingView
                       result={props.result}

@@ -1,149 +1,184 @@
-import { lazy, Suspense, useId } from 'react'
-import { motion } from 'motion/react'
-import SkeletonCard from '../SkeletonCard'
-import { deriveDisplayTitle } from '../../lib/insights'
-import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
+import { Clock, UserRound } from 'lucide-react'
+import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 
-const MeetingsRail = lazy(() => import('./MeetingsRail'))
+const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
 
-function GradientTracing({
-  width,
-  height,
-  gradientColors = ['#22D3EE', '#22D3EE', '#22D3EE'],
-  animationDuration = 2,
-  strokeWidth = 2,
-  path = `M${width / 2},0 L${width / 2},${height}`,
-}) {
-  const id = useId().replace(/:/g, '')
-  const gradientId = `pulse-${id}`
-  const fadeId = `pulse-fade-${id}`
-  const maskId = `pulse-mask-${id}`
+const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
+const cardHeading = 'text-[22px] font-semibold tracking-[-0.015em] text-white'
+const emptyCopy = 'text-sm leading-6 text-white/55'
+
+/** Top-left quadrant: static greeting, or a get-started prompt when history is empty. */
+function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
+  if (isEmpty) {
+    return (
+      <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
+        <h1 className="text-[clamp(2.4rem,4.6vw,4rem)] font-semibold leading-[0.98] text-white">
+          Let&rsquo;s get
+          <br />
+          started.
+        </h1>
+        <p className="mt-4 max-w-md text-base leading-7 text-white/58">
+          Start a new meeting or upload a transcript with the&nbsp;+ in the sidebar.
+        </p>
+        {canLoadSample && (
+          <button
+            type="button"
+            onClick={onLoadSample}
+            className="mt-6 inline-flex h-11 w-fit items-center justify-center gap-2 rounded-full border border-[#2f2f2f] bg-[#18181b] px-6 text-sm font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a]"
+          >
+            Load sample dashboard
+          </button>
+        )}
+      </section>
+    )
+  }
 
   return (
-    <div className="relative" style={{ width, height }}>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} fill="none">
-        <path
-          d={path}
-          stroke={`url(#${gradientId})`}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={strokeWidth}
-          mask={`url(#${maskId})`}
-        />
-        <defs>
-          <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={width} height={height}>
-            <rect width={width} height={height} fill={`url(#${fadeId})`} />
-          </mask>
-          <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2={height} gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="white" stopOpacity="0" />
-            <stop offset="0.12" stopColor="white" stopOpacity="1" />
-            <stop offset="0.88" stopColor="white" stopOpacity="1" />
-            <stop offset="1" stopColor="white" stopOpacity="0" />
-          </linearGradient>
-          <motion.linearGradient
-            animate={{ y1: [-height, height], y2: [0, height * 2] }}
-            transition={{ duration: animationDuration, repeat: Infinity, ease: 'linear' }}
-            id={gradientId}
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0" stopColor={gradientColors[0]} stopOpacity="0" />
-            <stop offset="0.18" stopColor={gradientColors[0]} stopOpacity="0" />
-            <stop offset="0.5" stopColor={gradientColors[1]} stopOpacity="1" />
-            <stop offset="0.82" stopColor={gradientColors[2]} stopOpacity="0" />
-            <stop offset="1" stopColor={gradientColors[2]} stopOpacity="0" />
-          </motion.linearGradient>
-        </defs>
-      </svg>
-    </div>
+    <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
+      <h1 className="text-[clamp(3.5rem,6.6vw,6.25rem)] font-bold leading-[0.9] tracking-[-0.02em] text-white">
+        Welcome
+        <br />
+        Back.
+      </h1>
+      <p className="mt-5 max-w-md text-base leading-7 text-white/58">
+        Pick up where you left off. Your open items and recent meetings are below.
+      </p>
+    </section>
   )
 }
 
-function FirstMeetingPlaceholder({ onLoadSample, canLoadSample }) {
-  const guideHeight = 300
-  const guidePath = `M12 0 L12 ${guideHeight}`
-
+/** Bottom-left quadrant: open action items from the last 2 weeks, click-through to source meeting. */
+function ActionItemsCard({ actions, onOpen }) {
   return (
-    <section className="flex min-h-[420px] flex-col items-center justify-center px-6 py-12 text-center">
-      <h1 className="w-full max-w-6xl text-[clamp(2.35rem,5.6vw,4.75rem)] font-semibold leading-[1.02] text-white">
-        Turn your next meeting
-        <br />
-        into momentum.
-      </h1>
-      <p className="mt-5 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl">Start a new meeting or upload a transcript.</p>
-      {canLoadSample && (
-        <button
-          type="button"
-          onClick={onLoadSample}
-          className="mt-12 inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#2f2f2f] bg-[#18181b] px-7 py-3 text-base font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
-        >
-          Load sample dashboard
-        </button>
-      )}
-      <div className="mt-5 flex flex-col items-center gap-2 text-sm font-medium text-cyan-50/78">
-        <span>Or start fresh with the + below</span>
-        <div className="flex justify-center">
-          <GradientTracing width={24} height={guideHeight} strokeWidth={1.25} path={guidePath} />
+    <section className={`dashboard-home-actions ${island}`}>
+      <div className="shrink-0 border-b border-white/[0.08] px-4 py-3.5">
+        <h2 className={cardHeading}>Open action items</h2>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {actions.length ? (
+          <div className="space-y-2">
+            {actions.map(({ item, entry }, index) => (
+              <button
+                type="button"
+                key={`${entry.id}-${item.task}-${index}`}
+                onClick={() => onOpen?.(entry)}
+                className="group flex w-full items-stretch gap-3.5 rounded-xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-3.5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/16"
+              >
+                <span
+                  aria-hidden="true"
+                  className="w-1 shrink-0 self-stretch rounded-full bg-cyan-300/80 shadow-[0_0_12px_rgba(103,232,249,0.45)] transition-all duration-200 group-hover:w-1.5"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-[15px] font-medium leading-snug text-white">{item.task}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
+                      <UserRound className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
+                      <span className="truncate">{item.owner || 'Unowned'}</span>
+                    </span>
+                    {item.due && (
+                      <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
+                        <Clock className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
+                        <span className="truncate">{item.due}</span>
+                      </span>
+                    )}
+                    <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-cyan-200/15 bg-cyan-300/[0.06] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200/70">
+                      <span className="max-w-[140px] truncate">{deriveDisplayTitle(entry)}</span>
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className={`px-1 py-2 ${emptyCopy}`}>No open action items in the last two weeks.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/** Right column (full height): all past meetings, top-aligned list. */
+function MeetingsCard({ history, onOpen, selectedMeetingId }) {
+  return (
+    <section className={`dashboard-home-meetings ${island}`}>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="flex flex-col">
+          <h2 className={`mb-4 ${cardHeading}`}>Recent meetings</h2>
+          {history.length ? (
+            <div className="space-y-2.5">
+              {history.map((entry) => {
+                const score = entry.result?.health_score?.score
+                const band = scoreBand(score)
+                const hasScore = Number.isFinite(Number(score))
+                const isSelected = entry.id === selectedMeetingId
+                const summary =
+                  entry.result?.summary || entry.result?.health_score?.verdict || 'No summary recorded.'
+                return (
+                  <button
+                    type="button"
+                    key={entry.id}
+                    onClick={() => onOpen?.(entry)}
+                    className={`group flex w-full items-stretch gap-4 rounded-2xl border bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/16 ${isSelected ? 'border-cyan-200/45' : 'border-white/[0.08]'}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="w-1 shrink-0 self-stretch rounded-full transition-all duration-200 group-hover:w-1.5"
+                      style={{ background: band.color, boxShadow: `0 0 14px ${band.color}55` }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-1 text-[19px] font-semibold leading-tight tracking-[-0.01em] text-white">
+                        {deriveDisplayTitle(entry)}
+                      </p>
+                      <p className="mt-1.5 line-clamp-2 text-[13.5px] leading-6 text-white/55">{summary}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end justify-center pl-1">
+                      <span className="font-bold leading-none tracking-tight" style={{ color: band.color }}>
+                        <span className="text-[28px]">{hasScore ? score : '—'}</span>
+                        {hasScore && <span className="text-[15px]">%</span>}
+                      </span>
+                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/35">Health</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <p className={`px-1 py-2 ${emptyCopy}`}>Saved meetings will appear here.</p>
+          )}
         </div>
       </div>
     </section>
   )
 }
 
-function SingleMeetingState({ history, onSelect }) {
-  const entry = history[0]
-  return (
-    <div className="space-y-6">
-      <section className="flex flex-col items-center justify-center px-6 py-10 text-center">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/76">Dashboard</p>
-        <h1 className="mt-3 w-full max-w-4xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.05] text-white">
-          Good start.
-        </h1>
-        <p className="mt-4 max-w-md text-lg leading-7 text-white/58">
-          One meeting saved. Trends, owner load, and patterns unlock after your second.
-        </p>
-      </section>
-      {entry && (
-        <div className="mx-auto w-full max-w-xl px-2">
-          <button
-            type="button"
-            onClick={() => onSelect?.(entry)}
-            className={`${glassCard} w-full p-4 text-left transition hover:border-cyan-200/30`}
-            style={cardGlowStyle}
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">Latest meeting</p>
-            <p className="mt-1.5 text-base font-semibold text-white">{deriveDisplayTitle(entry)}</p>
-            <p className="mt-2 text-sm leading-5 text-white/52">
-              {entry.result?.health_score?.verdict || entry.result?.summary || 'Meeting saved.'}
-            </p>
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function MultiMeetingHome({ history, onSelect, selectedMeetingId, memberEmailMap, currentUserId }) {
-  return (
-    <div className="space-y-6">
-      <section className="flex flex-col items-center justify-center px-6 py-10 text-center">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/76">Dashboard</p>
-        <h1 className="mt-3 w-full max-w-4xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.05] text-white">
-          Welcome back.
-        </h1>
-        <p className="mt-4 max-w-md text-lg leading-7 text-white/58">
-          Pick up where you left off, or tap the brain icon to explore patterns across all {history.length} meetings.
-        </p>
-      </section>
-      <Suspense fallback={<SkeletonCard lines={2} />}>
-        <MeetingsRail history={history} onSelect={onSelect} selectedMeetingId={selectedMeetingId} memberEmailMap={memberEmailMap} currentUserId={currentUserId} />
-      </Suspense>
-    </div>
-  )
-}
-
-export default function StatsCanvas({ history, loadFromHistory, loadSample, canLoadSample = false, selectedMeetingId = null, memberEmailMap = {}, currentUserId = null }) {
+export default function StatsCanvas({
+  history,
+  loadFromHistory,
+  loadSample,
+  canLoadSample = false,
+  selectedMeetingId = null,
+}) {
   const safeHistory = history || []
-  if (safeHistory.length === 0) return <FirstMeetingPlaceholder onLoadSample={loadSample} canLoadSample={canLoadSample} />
-  if (safeHistory.length === 1) return <SingleMeetingState history={safeHistory} onSelect={loadFromHistory} />
-  return <MultiMeetingHome history={safeHistory} onSelect={loadFromHistory} selectedMeetingId={selectedMeetingId} memberEmailMap={memberEmailMap} currentUserId={currentUserId} />
+  const now = Date.now()
+
+  // Open action items from the last 2 weeks, aggregated client-side, newest-first.
+  const actions = safeHistory
+    .filter((entry) => {
+      const t = new Date(entry.date).getTime()
+      return Number.isFinite(t) && now - t <= ACTION_WINDOW_MS
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .flatMap((entry) =>
+      (entry.result?.action_items || [])
+        .filter((item) => !item.completed)
+        .map((item) => ({ item, entry })),
+    )
+
+  return (
+    <div className="dashboard-home-grid">
+      <Greeting isEmpty={safeHistory.length === 0} onLoadSample={loadSample} canLoadSample={canLoadSample} />
+      <ActionItemsCard actions={actions} onOpen={loadFromHistory} />
+      <MeetingsCard history={safeHistory} onOpen={loadFromHistory} selectedMeetingId={selectedMeetingId} />
+    </div>
+  )
 }

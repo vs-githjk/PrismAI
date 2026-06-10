@@ -1,34 +1,51 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, CheckCircle2, ChevronDown, FileText, Paperclip, Plus } from 'lucide-react'
+import { ChevronDown, FileText, Paperclip, Plus } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
-import SentimentCard from './SentimentCard'
-import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
 import RecordingPlayer from './RecordingPlayer'
+import SentimentCard from './SentimentCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
-import { deriveDisplayTitle, formatMeetingDate, scoreBand } from '../../lib/insights'
-import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
-import { cardGlowStyle, cardTitle, eyebrow, glassCard, subtleText } from './dashboardStyles'
+import { useCountUp } from '../../lib/healthScore'
+import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 const GAUGE_RADIUS = 46
-const GAUGE_STROKE = 8
+const GAUGE_STROKE = 9
 // Half-circumference for a 180° arc (we draw only the top half)
 const GAUGE_ARC_LEN = Math.PI * GAUGE_RADIUS
 
-function SemicircularGauge({ score, color }) {
+// Semantic health color: low = danger (red), mid = warning (amber), high = success (green).
+function healthColor(score) {
+  const value = Number(score)
+  if (!Number.isFinite(value)) return '#94a3b8'
+  if (value < 30) return '#ef4444'
+  if (value < 60) return '#f59e0b'
+  return '#22c55e'
+}
+
+// Padding baked into the viewBox so the progress arc's glow isn't clipped.
+const GAUGE_PAD = 12
+
+function SemicircularGauge({ score }) {
   const displayed = useCountUp(score, 1000)
+  const color = healthColor(displayed)
   const offset = GAUGE_ARC_LEN - (displayed / 100) * GAUGE_ARC_LEN
-  // Box: width = diameter + stroke padding, height = radius + stroke padding (semicircle only).
-  const width = GAUGE_RADIUS * 2 + GAUGE_STROKE * 2
-  const height = GAUGE_RADIUS + GAUGE_STROKE * 2
+  // Geometry box: diameter wide, radius tall (top semicircle only) + padding for the glow.
+  const width = GAUGE_RADIUS * 2 + GAUGE_PAD * 2
+  // Top padding for the glow; minimal bottom padding so the number sits close to the arc.
+  const height = GAUGE_RADIUS + GAUGE_PAD + 3
   const cx = width / 2
-  const cy = GAUGE_RADIUS + GAUGE_STROKE
+  const cy = GAUGE_RADIUS + GAUGE_PAD
 
   return (
-    <div className="relative shrink-0" style={{ width, height: height + 8 }}>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+    <div className="relative w-[200px]">
+      <svg
+        width="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        className="block overflow-visible"
+        aria-hidden="true"
+      >
         {/* Track — top semicircle only (sweep from left to right across the top) */}
         <path
           d={`M ${cx - GAUGE_RADIUS} ${cy} A ${GAUGE_RADIUS} ${GAUGE_RADIUS} 0 0 1 ${cx + GAUGE_RADIUS} ${cy}`}
@@ -46,42 +63,21 @@ function SemicircularGauge({ score, color }) {
           strokeLinecap="round"
           strokeDasharray={GAUGE_ARC_LEN}
           strokeDashoffset={offset}
-          style={{ filter: `drop-shadow(0 0 6px ${color}80)` }}
+          style={{ filter: `drop-shadow(0 0 7px ${color}99)` }}
         />
       </svg>
-      {/* Number sits just under the arc's apex */}
-      <div
-        className="absolute inset-x-0 flex flex-col items-center"
-        style={{ top: GAUGE_RADIUS * 0.55 + GAUGE_STROKE }}
+      {/* Number nests inside the arc's hollow, just under its apex. */}
+      <span
+        className="absolute inset-x-0 bottom-1 text-center font-semibold leading-none"
+        style={{ color, fontSize: '2.75rem' }}
       >
-        <span className="text-3xl font-semibold leading-none" style={{ color }}>
-          {displayed}
-        </span>
-        <span className="mt-0.5 text-[10px] font-medium text-white/40">/100</span>
-      </div>
+        {displayed}
+      </span>
     </div>
   )
 }
 
-function BreakdownBar({ label, value, color }) {
-  const displayed = useCountUp(value, 1000)
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11.5px] font-medium text-white/90">{label}</span>
-        <span className="text-[11.5px] font-semibold text-white">{displayed}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${displayed}%`, background: color, transition: 'width 16ms linear' }}
-        />
-      </div>
-    </div>
-  )
-}
-
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', onBack, recordedByEmail = null, workspaceId = null }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null }) {
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -114,43 +110,185 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   }
 
   const healthScore = result.health_score
-  const band = scoreBand(healthScore?.score)
-  const breakdown = healthScore?.breakdown || {}
-  const hasBreakdown =
-    breakdown.clarity !== undefined ||
-    breakdown.action_orientation !== undefined ||
-    breakdown.engagement !== undefined
+  const sentiment = result.sentiment
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
   const decisions = result.decisions || []
-  const sentiment = result.sentiment
-  const displayTitle = deriveDisplayTitle({ title: meeting?.title, result })
+  const showPinned = !readOnly && !!meetingId
+
+  const pinnedSection = showPinned ? (
+    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Paperclip className="h-4 w-4 text-cyan-300" />
+          <h3 className="text-sm font-semibold text-white">Pinned Documents</h3>
+        </div>
+        <button onClick={() => setUploadOpen(true)}
+                className="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 hover:bg-white/10">
+          <Plus className="h-3 w-3" /> Add
+        </button>
+      </div>
+      {pinnedDocs.length === 0 ? (
+        <p className="text-[11px] text-white/40">No documents pinned to this meeting.</p>
+      ) : (
+        <div className="space-y-2">
+          {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
+        </div>
+      )}
+      <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
+                            meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
+    </section>
+  ) : null
 
   return (
     <div className="space-y-3">
-      {(onBack || meeting) && (
-        <div className="px-0.5">
-          <div className="flex items-center gap-2">
-            {onBack && (
-              <button
-                type="button"
-                onClick={onBack}
-                aria-label="Back to dashboard"
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-cyan-200/70 transition-colors hover:text-cyan-200"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            )}
-            <p className={eyebrow}>Current meeting</p>
-          </div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{displayTitle}</h1>
-          {meeting?.date && <p className={`mt-0.5 ${subtleText}`}>{formatMeetingDate(meeting.date)}</p>}
-          {recordedByEmail && (
-            <p className="mt-1 text-[11px] text-white/38">Recorded by {recordedByEmail}</p>
-          )}
-        </div>
+      {recordedByEmail && (
+        <p className="px-1 text-[11px] text-white/38">Recorded by {recordedByEmail}</p>
       )}
+      <div
+        className={`grid gap-3 ${
+          showPinned
+            ? 'lg:grid-cols-[max-content_minmax(0,1.5fr)_minmax(0,1fr)]'
+            : 'lg:grid-cols-[max-content_minmax(0,1fr)]'
+        }`}
+      >
+        <section className="flex flex-col items-center justify-center px-2 py-4">
+          {healthScore?.score !== undefined ? (
+            <>
+              <SemicircularGauge score={healthScore.score} />
+              <p className="mt-1.5 text-sm font-medium text-white/55">Health score</p>
+            </>
+          ) : (
+            <p className={subtleText}>No health score recorded.</p>
+          )}
+        </section>
+
+        <section className="flex flex-col justify-center p-4">
+          <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-white">Summary</p>
+          {result.summary ? (
+            <p className="text-[15px] leading-7 text-white/90">{result.summary}</p>
+          ) : (
+            <p className={subtleText}>No summary generated.</p>
+          )}
+          {healthScore?.verdict && (
+            <figure
+              className="mt-3.5 border-l-2 pl-3.5"
+              style={{ borderColor: healthColor(healthScore.score) }}
+            >
+              <figcaption
+                className="text-[9.5px] font-semibold uppercase tracking-[0.18em]"
+                style={{ color: healthColor(healthScore.score) }}
+              >
+                Verdict
+              </figcaption>
+              <blockquote className="mt-1 text-[13px] italic leading-6 text-white/75">
+                {healthScore.verdict}
+              </blockquote>
+            </figure>
+          )}
+        </section>
+
+        {pinnedSection}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <section className={`${glassCard} p-5`} style={cardGlowStyle}>
+          <div className="mb-4 flex items-baseline justify-between gap-3">
+            <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Action items</h2>
+            {actionItems.length > 0 && (
+              <span
+                className="text-sm font-semibold"
+                style={{ color: openCount > 0 ? '#f59e0b' : '#22c55e' }}
+              >
+                {openCount > 0 ? `${openCount} open` : 'All done'}
+              </span>
+            )}
+          </div>
+          {actionItems.length ? (
+            <div>
+              {actionItems.map((item, i) => {
+                const check = (
+                  <span
+                    aria-hidden="true"
+                    className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+                      item.completed
+                        ? 'border-emerald-400 bg-emerald-400'
+                        : `border-white/30${readOnly ? '' : ' group-hover:border-emerald-300'}`
+                    }`}
+                  >
+                    {item.completed && (
+                      <svg className="h-3 w-3 text-[#07040f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </span>
+                )
+                return (
+                  <div
+                    key={`${item.task}-${i}`}
+                    className="flex items-start gap-3 border-t border-white/[0.06] py-3 first:border-t-0 first:pt-0"
+                  >
+                    {readOnly ? (
+                      check
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onToggleActionItem?.(i)}
+                        aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
+                        aria-pressed={!!item.completed}
+                        className="group shrink-0"
+                      >
+                        {check}
+                      </button>
+                    )}
+                    <div className={`min-w-0 flex-1 ${item.completed ? 'opacity-45' : ''}`}>
+                      <p className={`text-[15px] font-medium leading-snug text-white ${item.completed ? 'line-through' : ''}`}>
+                        {item.task}
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-white/45">
+                        {item.owner || 'Unowned'}
+                        {item.due ? ` · ${item.due}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className={subtleText}>No action items in this meeting.</p>
+          )}
+        </section>
+
+        <section className={`${glassCard} p-5`} style={cardGlowStyle}>
+          <div className="mb-4 flex items-baseline justify-between gap-3">
+            <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Decisions</h2>
+            {decisions.length > 0 && (
+              <span className="text-sm font-semibold text-violet-300">{decisions.length}</span>
+            )}
+          </div>
+          {decisions.length ? (
+            <div className="space-y-3">
+              {decisions.map((d, i) => (
+                <div key={i} className="border-l-2 border-l-violet-400/60 pl-3.5">
+                  <p className="text-[15px] font-medium leading-snug text-white">{d.decision}</p>
+                  {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={subtleText}>No decisions recorded in this meeting.</p>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-3 border-t border-white/[0.07] pt-6" />
+
+      {!readOnly && <SentimentCard sentiment={sentiment} />}
+
+      {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
+
+      <CalendarCard suggestion={result.calendar_suggestion} />
 
       {meeting?.id && meeting?.recording_provider === 'recall' && (
         <RecordingPlayer
@@ -184,198 +322,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
               </pre>
             </div>
           )}
-        </section>
-      )}
-
-      <div className="grid gap-3 lg:grid-cols-[minmax(340px,1fr)_minmax(0,1.3fr)]">
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <p className={`${eyebrow} mb-3`}>Health score</p>
-          {healthScore?.score !== undefined ? (
-            <>
-              <div className="flex items-center gap-4">
-                <div className="flex flex-col items-center">
-                  <SemicircularGauge score={healthScore.score} color={band.color} />
-                  <span
-                    className="mt-2 inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
-                    style={{ borderColor: `${band.color}44`, color: band.color, background: `${band.color}18` }}
-                  >
-                    {band.label}
-                  </span>
-                </div>
-                {hasBreakdown && (
-                  <div className="min-w-0 flex-1 space-y-2">
-                    {breakdown.clarity !== undefined && (
-                      <BreakdownBar label="Clarity" value={breakdown.clarity} color={band.color} />
-                    )}
-                    {breakdown.action_orientation !== undefined && (
-                      <BreakdownBar label="Action-Oriented" value={breakdown.action_orientation} color={band.color} />
-                    )}
-                    {breakdown.engagement !== undefined && (
-                      <BreakdownBar label="Engagement" value={breakdown.engagement} color={band.color} />
-                    )}
-                  </div>
-                )}
-              </div>
-              {healthScore.badges?.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {healthScore.badges.map((badge) => {
-                    const isPositive = BADGE_POSITIVE.has(badge)
-                    return (
-                      <span
-                        key={badge}
-                        className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${
-                          isPositive
-                            ? 'border-emerald-400/30 bg-emerald-400/[0.10] text-emerald-300'
-                            : 'border-red-400/30 bg-red-400/[0.10] text-red-300'
-                        }`}
-                      >
-                        {isPositive ? '✓' : '!'} {badge}
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          ) : (
-            <p className={subtleText}>No health score recorded.</p>
-          )}
-        </section>
-
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <p className={`${eyebrow} mb-2`}>Summary</p>
-          {result.summary ? (
-            <p className="text-sm leading-6 text-white">{result.summary}</p>
-          ) : (
-            <p className={subtleText}>No summary generated.</p>
-          )}
-          {healthScore?.verdict && (
-            <blockquote
-              className="mt-3 border-l-2 pl-3 text-sm leading-5 text-white/85"
-              style={{ borderColor: `${band.color}88` }}
-            >
-              {healthScore.verdict}
-            </blockquote>
-          )}
-        </section>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className={eyebrow}>Action items</p>
-              <h2 className={cardTitle}>
-                {openCount} open · {actionItems.length} total
-              </h2>
-            </div>
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-cyan-200/70" aria-hidden="true" />
-          </div>
-          {actionItems.length ? (
-            <div className="overflow-hidden rounded-lg border border-white/[0.08]">
-              {actionItems.map((item, i) => (
-                <div
-                  key={`${item.task}-${i}`}
-                  className="flex items-start gap-2.5 border-b border-white/[0.07] px-3 py-2.5 last:border-b-0"
-                >
-                  {readOnly ? (
-                    <span
-                      aria-hidden="true"
-                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${
-                        item.completed ? 'border-cyan-400 bg-cyan-400' : 'border-white/30'
-                      }`}
-                    >
-                      {item.completed && (
-                        <svg className="h-2.5 w-2.5 text-[#07040f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onToggleActionItem?.(i)}
-                      aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
-                      aria-pressed={!!item.completed}
-                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                        item.completed
-                          ? 'border-cyan-400 bg-cyan-400'
-                          : 'border-white/30 hover:border-cyan-300'
-                      }`}
-                    >
-                      {item.completed && (
-                        <svg className="h-2.5 w-2.5 text-[#07040f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </button>
-                  )}
-                  <div className={`min-w-0 flex-1 ${item.completed ? 'opacity-50' : ''}`}>
-                    <p className={`text-sm font-medium text-white ${item.completed ? 'line-through' : ''}`}>
-                      {item.task}
-                    </p>
-                    <p className={subtleText}>
-                      {item.owner || 'Unowned'}
-                      {item.due ? ` · ${item.due}` : ''}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className={subtleText}>No action items in this meeting.</p>
-          )}
-        </section>
-
-        <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className={eyebrow}>Decisions</p>
-              <h2 className={cardTitle}>{decisions.length} decision{decisions.length !== 1 ? 's' : ''} recorded</h2>
-            </div>
-            <FileText className="h-5 w-5 shrink-0 text-cyan-200/70" aria-hidden="true" />
-          </div>
-          {decisions.length ? (
-            <div className="overflow-hidden rounded-lg border border-white/[0.08]">
-              {decisions.map((d, i) => (
-                <div key={i} className="border-b border-l-2 border-white/[0.07] border-l-violet-300/70 bg-black/18 px-3 py-2.5 last:border-b-0">
-                  <p className="text-sm font-medium text-white">{d.decision}</p>
-                  {d.owner && <p className={subtleText}>{d.owner}</p>}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className={subtleText}>No decisions recorded in this meeting.</p>
-          )}
-        </section>
-      </div>
-
-      {!readOnly && <SentimentCard sentiment={sentiment} />}
-
-      {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
-      <CalendarCard suggestion={result.calendar_suggestion} />
-      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
-
-      {!readOnly && meetingId && (
-        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Paperclip className="h-4 w-4 text-cyan-300" />
-              <h3 className="text-sm font-semibold text-white">Pinned Documents</h3>
-            </div>
-            <button onClick={() => setUploadOpen(true)}
-                    className="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 hover:bg-white/10">
-              <Plus className="h-3 w-3" /> Add
-            </button>
-          </div>
-          {pinnedDocs.length === 0 ? (
-            <p className="text-[11px] text-white/40">No documents pinned to this meeting.</p>
-          ) : (
-            <div className="space-y-2">
-              {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
-            </div>
-          )}
-          <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
-                                meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
         </section>
       )}
 
