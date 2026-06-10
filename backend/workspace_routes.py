@@ -85,7 +85,7 @@ async def list_workspaces(user_id: str = Depends(require_user_id)):
 
     workspaces = (
         client.table("workspaces")
-        .select("id, name, invite_token, created_at")
+        .select("id, name, invite_token, created_at, default_persona")
         .in_("id", workspace_ids)
         .order("created_at")
         .execute()
@@ -135,7 +135,7 @@ async def get_workspace(workspace_id: str, user_id: str = Depends(require_user_i
 
     ws = (
         client.table("workspaces")
-        .select("id, name, invite_token, created_at")
+        .select("id, name, invite_token, created_at, default_persona")
         .eq("id", workspace_id)
         .maybe_single()
         .execute()
