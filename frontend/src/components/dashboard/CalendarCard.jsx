@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CalendarPlus, Check, ExternalLink, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
 import DatePopover from './DatePopover'
 import TimePopover from './TimePopover'
+import { resolveDatePhrase } from '../../lib/resolveDate'
 
 function formatResolvedDate(value) {
   if (!value) return ''
@@ -34,18 +35,37 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
   const [created, setCreated] = useState(null) // { link }
   const [error, setError] = useState('')
 
+  // Resolve a concrete date/time for display + prefill. Prefer the backend's
+  // resolved fields; fall back to client-side parsing of the timeframe phrase
+  // (covers seed/older meetings the backend resolver never populated).
+  const fallback = useMemo(
+    () => resolveDatePhrase(suggestion?.suggested_timeframe || suggestion?.reason || ''),
+    [suggestion?.suggested_timeframe, suggestion?.reason],
+  )
+
   if (!suggestion || (!suggestion.recommended && !suggestion.reason)) return null
 
-  const resolvedLabel = [suggestion.resolved_day, formatResolvedDate(suggestion.resolved_date)].filter(Boolean).join(' · ')
+  const effDate = suggestion.resolved_date || fallback.date
+  const effDay = suggestion.resolved_day || fallback.day
+  const effTime = suggestion.resolved_time || fallback.time
+
+  const formatTime12 = (hhmm) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '')
+    if (!m) return ''
+    const h = +m[1]
+    return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`
+  }
+
+  const resolvedLabel = [effDay, formatResolvedDate(effDate)].filter(Boolean).join(' · ')
   const agenda = suggestion.agenda || []
   const attendees = suggestion.attendees || []
 
   function openEditor() {
     const today = new Date().toISOString().slice(0, 10)
     setTitle(`Follow-up: ${meetingTitle || 'meeting'}`)
-    setDate(suggestion.resolved_date || today)
+    setDate(effDate || today)
     // Time priority: what the meeting named → same time as this meeting → 10:00.
-    setTime(suggestion.resolved_time || timeFromMeetingDate(meetingDate) || '10:00')
+    setTime(effTime || timeFromMeetingDate(meetingDate) || '10:00')
     setInvitees((defaultEmails || []).join(', '))
     setError('')
     setCreated(null)
@@ -115,7 +135,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
         <p className="text-[15px] font-semibold leading-snug text-white">
           {suggestion.suggested_timeframe}
           {resolvedLabel && <span className="ml-2 text-xs font-medium text-white/45">{resolvedLabel}</span>}
-          {suggestion.resolved_time && <span className="ml-1.5 text-xs font-medium text-cyan-300/80">{suggestion.resolved_time}</span>}
+          {effTime && <span className="ml-1.5 text-xs font-medium text-cyan-300/80">{formatTime12(effTime)}</span>}
         </p>
       )}
       <p className="mt-2 text-sm leading-7 text-white/75">{suggestion.reason}</p>
