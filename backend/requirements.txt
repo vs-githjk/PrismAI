@@ -29,3 +29,4 @@ google-auth>=2.30.0
 # have to fork or migrate.
 pysbd==0.3.4
 langgraph==1.2.0
+dateparser

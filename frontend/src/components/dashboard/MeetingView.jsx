@@ -5,6 +5,7 @@ import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
 import RecordingPlayer from './RecordingPlayer'
 import SentimentCard from './SentimentCard'
+import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
 import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
@@ -307,6 +308,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                         {item.owner || 'Unowned'}
                         {item.due ? ` · ${item.due}` : ''}
                       </p>
+                      {item.external_ref && (
+                        <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-400/[0.08] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200">
+                          {item.external_ref.tool === 'linear_create_issue' ? '⬡' : '📅'} {item.external_ref.external_id}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )
@@ -343,9 +349,16 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
 
+      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
+
       {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
 
-      <CalendarCard suggestion={result.calendar_suggestion} />
+      <CalendarCard
+        suggestion={result.calendar_suggestion}
+        meetingDate={meeting?.date}
+        meetingTitle={meeting?.title || result?.title || ''}
+        readOnly={readOnly}
+      />
 
       {meeting?.id && meeting?.recording_provider === 'recall' && (
         <RecordingPlayer

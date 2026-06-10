@@ -98,7 +98,7 @@ DEFAULT_RESULT = {
     "decisions": [],
     "sentiment": {"overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": []},
     "follow_up_email": {"subject": "", "body": ""},
-    "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "resolved_date": "", "resolved_day": ""},
+    "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "suggested_time": "", "agenda": [], "attendees": [], "resolved_date": "", "resolved_day": "", "resolved_time": ""},
     "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
     "speaker_coach": {"speakers": [], "balance_score": 100},
     "agents_run": [],

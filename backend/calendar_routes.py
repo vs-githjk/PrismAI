@@ -355,3 +355,45 @@ async def calendar_events(
         })
 
     return {"events": events}
+
+
+class CreateEventRequest(BaseModel):
+    title: str
+    start: str  # ISO 8601 datetime (e.g. "2026-04-14T15:00:00")
+    end: str | None = None  # defaults to start + 30 min
+    description: str | None = None
+    attendees: list[str] = []  # emails; names without "@" are dropped
+    timezone: str = "UTC"
+
+
+@router.post("/calendar/create-event")
+async def calendar_create_event_route(
+    req: CreateEventRequest,
+    user_id: str = Depends(require_user_id),
+):
+    """Create a Google Calendar event from a follow-up suggestion. Reuses the
+    same insert logic the live bot uses (adds a Meet link when attendees exist)."""
+    from tools.calendar import calendar_create_event
+
+    access_token = await get_valid_token(user_id)  # raises 404 if not connected
+
+    end = req.end
+    if not end:
+        try:
+            start_dt = datetime.fromisoformat(req.start.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start datetime")
+        end = (start_dt + timedelta(minutes=30)).isoformat()
+
+    args = {
+        "title": req.title,
+        "start": req.start,
+        "end": end,
+        "timezone": req.timezone,
+        "description": req.description,
+        "attendees": [e for e in req.attendees if e and "@" in e],
+    }
+    result = await calendar_create_event(args, {"google_access_token": access_token})
+    if result.get("error"):
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result

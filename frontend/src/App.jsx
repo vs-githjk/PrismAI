@@ -760,7 +760,7 @@ function LiveMeetingView({ token }) {
             <DecisionsCard decisions={result.decisions} />
             {result.sentiment && <SentimentCard sentiment={result.sentiment} />}
             <EmailCard email={result.follow_up_email} readOnly />
-            <CalendarCard calendar={result.calendar_suggestion} />
+            <CalendarCard suggestion={result.calendar_suggestion} readOnly />
             <SpeakerCoachCard speakerCoach={result.speaker_coach} />
             {session && (
               <button

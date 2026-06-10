@@ -33,6 +33,33 @@ class CalendarResolutionTestCase(unittest.TestCase):
         self.assertEqual(result["resolved_date"], "")
         self.assertEqual(result["resolved_day"], "")
 
+    # ── New behavior: time-of-day + more phrasings (all hand-rolled, no dateparser) ──
+    def test_parses_clock_time_with_weekday(self):
+        result = resolve_relative_date("next Tuesday at 3pm", reference_date=date(2026, 4, 6))
+        self.assertEqual(result["resolved_date"], "2026-04-14")
+        self.assertEqual(result["resolved_time"], "15:00")
+
+    def test_parses_named_time_of_day(self):
+        result = resolve_relative_date("this Friday morning", reference_date=date(2026, 4, 6))
+        self.assertEqual(result["resolved_date"], "2026-04-10")
+        self.assertEqual(result["resolved_time"], "09:00")
+
+    def test_end_of_week(self):
+        result = resolve_relative_date("end of the week", reference_date=date(2026, 4, 6))
+        self.assertEqual(result["resolved_date"], "2026-04-10")  # upcoming Friday
+
+    def test_end_of_month(self):
+        result = resolve_relative_date("by end of the month", reference_date=date(2026, 4, 6))
+        self.assertEqual(result["resolved_date"], "2026-04-30")
+
+    def test_numeric_date(self):
+        result = resolve_relative_date("let's meet 6/15", reference_date=date(2026, 4, 6))
+        self.assertEqual(result["resolved_date"], "2026-06-15")
+
+    def test_no_time_returns_empty_time(self):
+        result = resolve_relative_date("next week", reference_date=date(2026, 4, 6))
+        self.assertEqual(result["resolved_time"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
