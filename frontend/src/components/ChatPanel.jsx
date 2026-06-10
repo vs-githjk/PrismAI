@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertTriangle,
+  ChevronDown,
   ClipboardList,
+  Clock,
+  FileText,
   History,
   ListChecks,
   MessagesSquare,
@@ -10,6 +14,43 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 import PersonaChip from './PersonaChip'
+
+// One grounding source behind a RAG answer — rendered from structured
+// rag_context (backend), never from the model's prose. Citations stay reliable.
+function SourceCard({ source }) {
+  const [open, setOpen] = useState(false)
+  const meta = source.metadata || {}
+  const pct = source.score != null ? `${Math.round(source.score * 100)}% match` : null
+  const anchor = meta.page != null ? `Page ${meta.page}` : (meta.timestamp || null)
+  return (
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2">
+      <div className="flex items-center gap-1.5">
+        <FileText className="h-3 w-3 shrink-0 text-cyan-300/80" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-white/85">{source.doc_name || 'Source'}</span>
+      </div>
+      <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-white/40">
+        <span className="capitalize">{(source.source_type || 'doc').replace('_', ' ')}</span>
+        {pct && <><span>·</span><span>{pct}</span></>}
+        {anchor && <><span>·</span><span className="inline-flex items-center gap-0.5">
+          {meta.timestamp && <Clock className="h-2.5 w-2.5" />}{anchor}
+        </span></>}
+      </div>
+      {source.snippet && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="mt-1 flex items-center gap-1 pl-[18px] text-[10px] font-medium text-cyan-300/80 hover:text-cyan-200"
+        >
+          <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+          {open ? 'Hide snippet' : 'View snippet'}
+        </button>
+      )}
+      {open && source.snippet && (
+        <p className="mt-1 pl-[18px] text-[10.5px] leading-5 text-white/55">{source.snippet}</p>
+      )}
+    </div>
+  )
+}
 
 // Pool of generic, meeting-agnostic prompts. 3 are picked at random on every new blank chat.
 const SUGGESTED_QUESTIONS = [
@@ -229,6 +270,7 @@ export default function ChatPanel({
           globalSearch: true,
           toolsUsed: data.tools_used || [],
           pendingConfirmations: data.pending_confirmations || [],
+          ragContext: data.rag_context || null,
         }])
       } else {
         const res = await apiFetch('/chat', {
@@ -249,6 +291,7 @@ export default function ChatPanel({
           content: data.response ?? 'No response from server.',
           toolsUsed: data.tools_used || [],
           pendingConfirmations: data.pending_confirmations || [],
+          ragContext: data.rag_context || null,
         }])
       }
     } catch {
@@ -444,6 +487,24 @@ export default function ChatPanel({
                       {t.summary || t.tool}
                     </span>
                   ))}
+                </div>
+              )}
+              {msg.ragContext?.has_conflict && (
+                <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-400/25 bg-amber-400/[0.08] px-2.5 py-1.5 text-[11px] text-amber-200">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span>Sources disagree — review the cited documents below.</span>
+                </div>
+              )}
+              {msg.ragContext?.sources?.length > 0 && (
+                <div className="mt-2">
+                  <p className="mb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                    Sources ({msg.ragContext.sources.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {msg.ragContext.sources.map((s, si) => (
+                      <SourceCard key={s.chunk_id || s.doc_name || si} source={s} />
+                    ))}
+                  </div>
                 </div>
               )}
               {!viewingSession && msg.pendingConfirmations?.length > 0 && (

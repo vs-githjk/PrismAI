@@ -126,13 +126,41 @@ async def _optional_user_id(request: Request) -> str | None:
         return None
 
 
+def build_rag_context(tool_result: dict) -> dict:
+    """Normalize a knowledge_lookup result into a frontend-safe grounding payload.
+
+    Whitelists fields only — never leaks raw internal metadata. Powers the
+    Sources cards + conflict banner in ChatPanel so citations come from
+    structured data, not from whatever prose the model happened to write.
+    """
+    matches = tool_result.get("matches", []) or []
+    sources = []
+    for m in matches[:5]:
+        meta = m.get("metadata") or {}
+        sources.append({
+            "doc_id": m.get("doc_id"),
+            "chunk_id": m.get("chunk_id"),
+            "doc_name": m.get("doc_name"),
+            "source_type": m.get("source_type"),
+            "score": m.get("score"),
+            "snippet": (m.get("content") or "")[:500],
+            "metadata": {
+                "page": meta.get("page"),
+                "timestamp": meta.get("timestamp"),
+                "meeting_title": meta.get("meeting_title"),
+            },
+        })
+    return {"sources": sources, "has_conflict": bool(tool_result.get("has_conflict"))}
+
+
 async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list, user_id: str, user_settings: dict) -> dict:
     """
     LLM tool-calling loop: call LLM, if it wants tools execute them, feed results back.
-    Returns { reply: str, tools_used: list[dict] }
+    Returns { reply: str, tools_used: list[dict], rag_context: dict | None }
     """
     tools_used = []
     pending_confirmations = []
+    rag_context = None  # structured grounding from knowledge_lookup, if it runs
     max_iterations = 3
 
     call_kwargs = {
@@ -149,6 +177,7 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
             "reply": "Sorry, I had trouble processing that.",
             "tools_used": tools_used,
             "pending_confirmations": pending_confirmations,
+            "rag_context": rag_context,
         }
 
     for _ in range(max_iterations):
@@ -179,6 +208,7 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
                 "reply": choice.message.content or "",
                 "tools_used": tools_used,
                 "pending_confirmations": pending_confirmations,
+                "rag_context": rag_context,
             }
 
         # Process tool calls
@@ -212,6 +242,10 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
                     "tool": tool_call.function.name,
                     "summary": result.get("summary", f"Executed {tool_call.function.name}"),
                 })
+                # Capture structured grounding so the UI can render Sources +
+                # conflict warnings — independent of the model's prose.
+                if tool_call.function.name == "knowledge_lookup" and result.get("matches"):
+                    rag_context = build_rag_context(result)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -226,6 +260,7 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
         "reply": "I completed the requested actions.",
         "tools_used": tools_used,
         "pending_confirmations": pending_confirmations,
+        "rag_context": rag_context,
     }
 
 
@@ -300,6 +335,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
                 "pending_confirmations": result.get("pending_confirmations", []),
+                "rag_context": result.get("rag_context"),
             }
         else:
             try:
@@ -408,6 +444,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
                 "pending_confirmations": result.get("pending_confirmations", []),
+                "rag_context": result.get("rag_context"),
             }
         else:
             try:

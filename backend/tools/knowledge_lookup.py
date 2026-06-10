@@ -84,15 +84,20 @@ async def knowledge_lookup(args: dict, user_settings: Optional[dict] = None) -> 
 
     formatted = [
         {
+            "doc_id": m.get("doc_id"),
+            "chunk_id": m.get("id"),
             "doc_name": m.get("doc_name"),
             "content": m.get("content"),
             "source_type": m.get("source_type"),
             "score": round(float(m.get("score") or 0), 3),
+            "possible_conflict": bool(m.get("possible_conflict")),
             "metadata": m.get("metadata") or {},
         }
         for m in matches
     ]
-    return {"matches": formatted, "instruction": instruction}
+    # Surface the conflict flag in the return (not just the instruction string)
+    # so the chat layer can pass structured grounding straight to the UI.
+    return {"matches": formatted, "instruction": instruction, "has_conflict": has_conflict}
 
 
 register_tool(
