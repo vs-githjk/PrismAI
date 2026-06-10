@@ -886,6 +886,13 @@ export default function DashboardPage(props) {
     return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
   }, [currentMeeting, props.user?.id, workspaceMemberMap])
 
+  // Workspace teammates (minus the organizer) — offered as one-click invite
+  // suggestions when scheduling a follow-up from a workspace meeting.
+  const suggestedAttendeeEmails = useMemo(() => {
+    const own = props.user?.email
+    return Object.values(workspaceMemberMap).filter((e) => e && e !== own)
+  }, [workspaceMemberMap, props.user?.email])
+
   // Trend (cross-meeting intelligence) is its own top-level view, gated on
   // having at least two meetings to compare.
   function handleOpenTrend() {
@@ -1066,6 +1073,7 @@ export default function DashboardPage(props) {
                       onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
                       recordedByEmail={recordedByEmail}
                       workspaceId={activeWorkspaceId}
+                      suggestedEmails={suggestedAttendeeEmails}
                     />
                   </Suspense>
                 </>

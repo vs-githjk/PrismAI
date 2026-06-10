@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarPlus, Check, ExternalLink } from 'lucide-react'
+import { CalendarPlus, Check, ExternalLink, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
 import DatePopover from './DatePopover'
@@ -24,7 +24,7 @@ function timeFromMeetingDate(value) {
   return `${hh}:${mm}`
 }
 
-export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [] }) {
+export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [], suggestedEmails = [] }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')
@@ -85,6 +85,16 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       setBusy(false)
     }
   }
+
+  function addInvitee(email) {
+    const current = invitees.split(/[\s,;]+/).map(e => e.trim()).filter(Boolean)
+    if (current.includes(email)) return
+    setInvitees([...current, email].join(', '))
+  }
+
+  // Teammates not already added — offered as one-click chips under the field.
+  const currentEmails = invitees.split(/[\s,;]+/).map(e => e.trim()).filter(Boolean)
+  const availableSuggestions = (suggestedEmails || []).filter(e => e && !currentEmails.includes(e))
 
   return (
     <section className={`${glassCard} p-5`} style={cardGlowStyle}>
@@ -164,6 +174,21 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
                 placeholder="Invite (emails, comma-separated) — optional"
                 className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40"
               />
+              {availableSuggestions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10.5px] text-white/35">Teammates:</span>
+                  {availableSuggestions.map((email) => (
+                    <button
+                      key={email}
+                      type="button"
+                      onClick={() => addInvitee(email)}
+                      className="inline-flex items-center gap-1 rounded-full border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+                    >
+                      <Plus className="h-3 w-3" /> {email}
+                    </button>
+                  ))}
+                </div>
+              )}
               {error && <p className="text-[11px] text-red-400">{error}</p>}
               <div className="flex items-center gap-2">
                 <button type="button" onClick={createEvent} disabled={busy}
