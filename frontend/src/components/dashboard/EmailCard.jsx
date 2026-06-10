@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Copy, Mail, Send } from 'lucide-react'
+import { Copy, Send } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
-import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
+import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 export default function EmailCard({ email, gmailConnected = false }) {
   const [copied, setCopied] = useState(false)
@@ -48,21 +48,21 @@ export default function EmailCard({ email, gmailConnected = false }) {
   }
 
   return (
-    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Mail className="h-4 w-4 text-cyan-200/70" aria-hidden="true" />
-          <p className={eyebrow}>Follow-up Email</p>
+    <section className={`${glassCard} p-5`} style={cardGlowStyle}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Follow-up email</h2>
+          <p className="mt-1 text-xs font-medium text-white/45">Ready-to-edit draft · {wordCount} words</p>
         </div>
         <div className="flex items-center gap-2">
           {gmailConnected && (
             sent ? (
-              <span className="text-[11px] text-cyan-300">Sent!</span>
+              <span className="text-[11px] font-semibold text-emerald-300">Sent!</span>
             ) : (
               <button
                 type="button"
                 onClick={() => { setShowSendForm(s => !s); setSendError(null) }}
-                className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-white/60 transition hover:border-white/[0.18] hover:text-white/90"
+                className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-medium text-white/60 transition hover:border-white/[0.18] hover:text-white/90"
               >
                 <Send className="h-3 w-3" aria-hidden="true" />
                 Send
@@ -72,17 +72,12 @@ export default function EmailCard({ email, gmailConnected = false }) {
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-white/60 transition hover:border-white/[0.18] hover:text-white/90"
+            className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-medium text-white/60 transition hover:border-white/[0.18] hover:text-white/90"
           >
             <Copy className="h-3 w-3" aria-hidden="true" />
             {copied ? 'Copied!' : 'Copy'}
           </button>
         </div>
-      </div>
-
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/50">Ready-to-edit draft</span>
-        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/50">{wordCount} words</span>
       </div>
 
       {showSendForm && (
@@ -120,23 +115,10 @@ export default function EmailCard({ email, gmailConnected = false }) {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-white/[0.08]">
-        {email.subject && (
-          <div className="border-b border-white/[0.07] px-3 py-2.5">
-            <span className={subtleText}>Subject: </span>
-            <span className="text-sm font-medium text-white">{email.subject}</span>
-          </div>
-        )}
-        <div className="px-3 py-2.5">
-          <p className="text-sm leading-6 text-white/78 whitespace-pre-wrap">{email.body}</p>
-        </div>
-      </div>
-
-      <p className={`mt-3 ${subtleText}`}>
-        {gmailConnected
-          ? 'Review before sending. Use the Send button to deliver via your connected Gmail.'
-          : 'Use this as a polished starting point. Review tone, promises, and dates before sending.'}
-      </p>
+      {email.subject && (
+        <p className="text-[15px] font-semibold leading-snug text-white">{email.subject}</p>
+      )}
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-white/75">{email.body}</p>
     </section>
   )
 }

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
+  Check,
   Copy,
   Download,
   FileText,
@@ -40,7 +41,7 @@ const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
-const secondaryButtonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.16] bg-[#151515] px-4 text-sm font-semibold text-white/86 transition hover:border-white/[0.24] hover:bg-[#1d1d1d] hover:text-white'
+const secondaryButtonClass = 'inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/85 transition hover:border-cyan-400/45 hover:bg-white/[0.06] hover:text-white'
 
 function MeetingActionsBar({
   shareToken,
@@ -74,24 +75,23 @@ function MeetingActionsBar({
   const notionConnected = !!(integrations?.notion_token && integrations?.notion_page_id)
 
   return (
-    <div className="mb-3 flex items-center justify-end gap-2">
+    <div className="flex items-center gap-2">
       {shareToken && (
         <button
           type="button"
           onClick={handleShare}
           className={secondaryButtonClass}
           style={shareCopied ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
-          aria-label="Copy share link"
+          aria-label={shareCopied ? 'Share link copied' : 'Copy share link'}
+          title={shareCopied ? 'Copied!' : 'Share'}
         >
-          <Share2 className="h-4 w-4" aria-hidden="true" />
-          {shareCopied ? 'Copied!' : 'Share'}
+          {shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Share2 className="h-4 w-4" aria-hidden="true" />}
         </button>
       )}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <button type="button" className={secondaryButtonClass} aria-label="Export meeting">
+          <button type="button" className={secondaryButtonClass} aria-label="Export meeting" title="Export">
             <Download className="h-4 w-4" aria-hidden="true" />
-            Export
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -890,6 +890,24 @@ export default function DashboardPage(props) {
         title={pageTitle}
         searchValue={props.historySearch}
         onSearchChange={handleHistorySearchChange}
+        actions={
+          activeView === 'meeting' && props.result && !props.loading ? (
+            <MeetingActionsBar
+              shareToken={props.shareToken}
+              shareCopied={props.shareCopied}
+              setShareCopied={props.setShareCopied}
+              mdCopied={props.mdCopied}
+              copyMarkdown={props.copyMarkdown}
+              exportMarkdown={props.exportMarkdown}
+              exportPDF={props.exportPDF}
+              exportToSlack={props.exportToSlack}
+              exportToNotion={props.exportToNotion}
+              exportingSlack={props.exportingSlack}
+              exportingNotion={props.exportingNotion}
+              integrations={props.integrations}
+            />
+          ) : null
+        }
       />
 
       <DashboardSidebar
@@ -973,22 +991,6 @@ export default function DashboardPage(props) {
                 <MeetingViewSkeleton />
               ) : (
                 <>
-                  {props.result && !props.loading && (
-                    <MeetingActionsBar
-                      shareToken={props.shareToken}
-                      shareCopied={props.shareCopied}
-                      setShareCopied={props.setShareCopied}
-                      mdCopied={props.mdCopied}
-                      copyMarkdown={props.copyMarkdown}
-                      exportMarkdown={props.exportMarkdown}
-                      exportPDF={props.exportPDF}
-                      exportToSlack={props.exportToSlack}
-                      exportToNotion={props.exportToNotion}
-                      exportingSlack={props.exportingSlack}
-                      exportingNotion={props.exportingNotion}
-                      integrations={props.integrations}
-                    />
-                  )}
                   <Suspense fallback={<SkeletonCard lines={4} tall />}>
                     <MeetingView
                       result={props.result}

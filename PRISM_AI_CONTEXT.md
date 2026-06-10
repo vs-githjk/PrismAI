@@ -36,15 +36,32 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 
 ## Current Design Direction
 
-PrismAI should read as a shadcn-style product UI with the existing cyan/sky accent, not as a glassmorphism website.
+PrismAI has two distinct surface languages — keep them separate.
 
-**Core direction:**
+### Landing / marketing site
+Reads as a shadcn-style product UI with the existing cyan/sky accent, **not** a glassmorphism website.
 - Use shadcn/radix patterns first: solid dark surfaces, crisp borders, clear focus rings, consistent radius, restrained shadow, and predictable controls.
-- Keep the current cyan/sky accent family as the brand accent: `#22d3ee`, `#67e8f9`, Tailwind `cyan-*` / `sky-*`, and existing `rgba(14,165,233,...)` states.
+- Keep the cyan/sky accent family as the brand accent: `#22d3ee`, `#67e8f9`, Tailwind `cyan-*` / `sky-*`, and existing `rgba(14,165,233,...)` states.
 - Use the accent for primary CTAs, active navigation, selected states, focus rings, badges, and key data highlights.
-- Avoid frosted blur/glass as a default surface treatment for dashboard cards, modals, page sections, nav bars, or result cards.
-- Glass-like treatment is still allowed as an accent when it adds emphasis: primary CTA treatment, focused callouts, one-off highlights, or promotional moments.
-- The design should feel premium through clarity, spacing, alignment, typography, and specificity rather than heavy glow, blur, or ambient effects.
+- Avoid frosted blur/glass as a default surface treatment here. Glass is an accent only: primary CTA treatment, focused callouts, one-off highlights, promotional moments.
+
+### Dashboard
+**Glass is the default surface on the dashboard.** The chrome (workspace island, topbar, sidebar) floats as frosted-glass islands over the near-black page (`.dashboard-island` in `index.css`), and content cards share that language via the `glassCard` + `cardGlowStyle` tokens in `dashboard/dashboardStyles.js` (faint white translucent film, `blur(26px) saturate(115%)`, hairline `white/[0.09]` border, bright top-edge inset highlight). Keep these tokens in sync with `.dashboard-island` if either changes.
+
+**Card pattern (established in `MeetingView`):** every section reads as a clean, low-chrome card.
+- **Big bold heading** — `text-xl font-bold tracking-[-0.01em] text-white`. No eyebrow label, no decorative leading icon.
+- **Optional semantic count** on the heading's right (e.g. action items `"3 open"`, decisions `2`) — single short token, color carries meaning.
+- **No nested bordered list-boxes.** Rows sit on hairline `border-white/[0.06]` separators (`first:border-t-0`) or a colored left accent bar; no inner panel wrappers.
+- **Body copy** at `text-[15px]` for primary lines, `text-xs text-white/45` for the owner/meta caption. Drop trailing helper/footnote text — let the content stand.
+- **Health** is presented bare (no card) — semicircle gauge + number + `"Health score"` label. **Summary** is bare too, sitting beside it.
+
+**Semantic color scale** (health/status, distinct from the cyan brand accent):
+- Health gauge & verdict accent: `<30` red `#ef4444`, `<60` amber `#f59e0b`, `60+` green `#22c55e`.
+- Action items: open count amber `#f59e0b`, `"All done"` / completed checkboxes green/emerald `#22c55e`.
+- Decisions: violet `#8b5cf6` / `violet-400` left accent + count.
+- Follow-up meeting "Recommended" badge: emerald (semantic), not cyan.
+
+The design should feel premium through clarity, spacing, alignment, typography, and specificity rather than heavy glow or ambient effects — the glass is a calm, consistent surface, not a decorative one.
 
 ---
 

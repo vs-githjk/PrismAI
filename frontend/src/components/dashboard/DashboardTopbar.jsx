@@ -8,7 +8,7 @@ import { Search } from 'lucide-react'
  * slowly cycles horizontally; short titles stay static, and
  * prefers-reduced-motion falls back to a plain ellipsis.
  */
-export default function DashboardTopbar({ title, searchValue, onSearchChange }) {
+export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null }) {
   const trackRef = useRef(null)
   const textRef = useRef(null)
   const [shift, setShift] = useState(0) // px the title must travel to reveal its tail; 0 = no marquee
@@ -33,20 +33,23 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange }) 
 
   return (
     <header className="dashboard-topbar dashboard-island z-30 flex items-center gap-4 px-6">
-      {/* Left: page title (marquee on overflow) */}
-      <div ref={trackRef} className="dashboard-title-track min-w-0 flex-1">
-        <span
-          ref={textRef}
-          className={`dashboard-title-text${overflowing ? ' is-marquee' : ''}`}
-          style={overflowing ? { '--marquee-shift': `${shift}px` } : undefined}
-          title={title}
-        >
-          {title}
-        </span>
+      {/* Left: page title (marquee on overflow) + inline actions right after it */}
+      <div className="flex min-w-0 items-center gap-3">
+        <div ref={trackRef} className="dashboard-title-track min-w-0">
+          <span
+            ref={textRef}
+            className={`dashboard-title-text${overflowing ? ' is-marquee' : ''}`}
+            style={overflowing ? { '--marquee-shift': `${shift}px` } : undefined}
+            title={title}
+          >
+            {title}
+          </span>
+        </div>
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
 
       {/* Right: global search pill */}
-      <div className="flex h-11 w-[clamp(200px,30vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-4 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.06]">
+      <div className="ml-auto flex h-11 w-[clamp(200px,30vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-4 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.06]">
         <input
           value={searchValue || ''}
           onChange={(e) => onSearchChange?.(e.target.value)}
