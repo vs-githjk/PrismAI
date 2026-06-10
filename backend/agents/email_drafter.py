@@ -7,7 +7,14 @@ SYSTEM_PROMPT = (
     "If the transcript begins with '[Meeting owner: NAME]', write the email FROM that person's perspective — "
     "they are the sender, and the email should be addressed TO the other participant(s). "
     "If no meeting owner is specified, infer the sender as the attendee (not the advisor or facilitator). "
-    'Return ONLY valid JSON: { "follow_up_email": { "subject": "", "body": "" } }. '
+    "FORMAT the body as a real email, not one run-on paragraph. Use actual newline characters (\\n) to separate parts:\n"
+    "  - Greeting on its own line (e.g. 'Hi Nirmal,'), followed by a blank line.\n"
+    "  - One or two short body paragraphs, separated by a blank line.\n"
+    "  - When listing action items or next steps, put each on its own line, prefixed with '- '.\n"
+    "  - A blank line, then a sign-off on its own line (e.g. 'Best,'), then the sender's name on the next line.\n"
+    "Keep it concise and scannable. Do NOT cram the greeting, body, and sign-off onto one line. "
+    'Return ONLY valid JSON: { "follow_up_email": { "subject": "", "body": "" } } — '
+    "the body string must contain the \\n line breaks described above. "
     "If the transcript contains a [User instruction: ...] line, follow it exactly — "
     "including any requested tone, style, length, or content changes."
 )
