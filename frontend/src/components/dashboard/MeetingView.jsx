@@ -224,10 +224,22 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
         <section className="flex flex-col justify-center p-4">
           <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-white">Summary</p>
+          {result.tldr && (
+            <p className="mb-3 text-[15px] font-semibold leading-6 text-white">{result.tldr}</p>
+          )}
           {result.summary ? (
-            <p className="text-[15px] leading-7 text-white/90">{result.summary}</p>
+            <p className={`${result.tldr ? 'text-[13.5px] text-white/65' : 'text-[15px] text-white/90'} leading-7`}>{result.summary}</p>
           ) : (
             <p className={subtleText}>No summary generated.</p>
+          )}
+          {result.topics?.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {result.topics.map((topic, i) => (
+                <span key={i} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-white/70">
+                  {topic}
+                </span>
+              ))}
+            </div>
           )}
           {healthScore?.verdict && (
             <figure

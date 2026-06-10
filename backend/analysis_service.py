@@ -93,7 +93,9 @@ def _skip_orchestrator_words() -> int:
 
 DEFAULT_RESULT = {
     "title": "",
+    "tldr": "",
     "summary": "",
+    "topics": [],
     "action_items": [],
     "decisions": [],
     "sentiment": {"overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": []},
@@ -255,7 +257,9 @@ def _state_to_result(state: AnalysisState) -> dict:
     sr = raw.get("summarizer", {})
     if sr.get("title") or sr.get("summary"):
         result["title"] = sr.get("title", "")
+        result["tldr"] = sr.get("tldr", "")
         result["summary"] = sr.get("summary", "")
+        result["topics"] = sr.get("topics", []) or []
         succeeded.append("summarizer")
 
     ar = raw.get("action_items", {})
