@@ -2419,7 +2419,7 @@ export default function App() {
     const appUrl = window.location.origin + window.location.pathname
     return (
       <div className="dashboard-page min-h-screen">
-        <header className="dashboard-topbar sticky top-0 z-30 flex items-center gap-2 border-b border-white/[0.06] px-3 sm:gap-4">
+        <header className="sticky top-0 z-30 flex h-[56px] items-center gap-2 border-b border-white/[0.06] bg-[#0a0a0c] px-3 sm:gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <a href={appUrl} className="logo-btn flex shrink-0 items-center gap-2" aria-label="Open PrismAI">
               <LogoIcon className="h-8 w-8" />

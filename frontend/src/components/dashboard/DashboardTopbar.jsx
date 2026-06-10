@@ -1,126 +1,61 @@
-import { Plus } from 'lucide-react'
-import LogoIcon from '../LogoIcon'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu'
-import { UI_SCREEN_KEY } from '../../lib/sessionKeys'
+import { useEffect, useRef, useState } from 'react'
+import { Search } from 'lucide-react'
 
 /**
- * Topbar: prism logo (→ landing) · New meeting · centered Current/Cross
- * intelligence switch. The switch is disabled (grayed) whenever no meeting
- * is in focus — see docs/adr/0001.
+ * Topbar island: page title (left) + global search pill (right).
+ * The title shows the focused meeting's name, or the view label
+ * (Home / Trend / Knowledge). When the title overflows its track it
+ * slowly cycles horizontally; short titles stay static, and
+ * prefers-reduced-motion falls back to a plain ellipsis.
  */
-export default function DashboardTopbar({
-  newMeetingOpen,
-  setNewMeetingOpen,
-  onOpenNewMeeting,
-  newMeetingPanel,
-  meetingInFocus,
-  view, // 'current' | 'cross'
-  onSelectView,
-}) {
-  const goLanding = () => {
-    sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
-    window.location.href = '/'
-  }
+export default function DashboardTopbar({ title, searchValue, onSearchChange }) {
+  const trackRef = useRef(null)
+  const textRef = useRef(null)
+  const [shift, setShift] = useState(0) // px the title must travel to reveal its tail; 0 = no marquee
 
-  const segBase =
-    'min-w-0 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors sm:min-w-[88px] sm:px-3.5 sm:text-[12.5px]'
-  const segActive = 'bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_0_1px_rgba(34,211,238,0.28)]'
-  const segIdle = 'text-white/55 hover:text-white/80'
+  // Measure overflow against the track; re-measure on title change and resize.
+  // The exact shift drives the marquee end position (CSS .is-marquee).
+  useEffect(() => {
+    const measure = () => {
+      const track = trackRef.current
+      const text = textRef.current
+      if (!track || !text) return
+      const overflow = text.scrollWidth - track.clientWidth
+      setShift(overflow > 1 ? overflow : 0)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (trackRef.current) ro.observe(trackRef.current)
+    return () => ro.disconnect()
+  }, [title])
+
+  const overflowing = shift > 0
 
   return (
-    <header className="dashboard-topbar sticky top-0 z-30 flex items-center gap-2 px-3 sm:gap-4">
-      {/* Left: logo + New meeting */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-        <button
-          type="button"
-          onClick={goLanding}
-          className="logo-btn flex shrink-0 items-center gap-2"
-          aria-label="Back to landing page"
+    <header className="dashboard-topbar dashboard-island z-30 flex items-center gap-4 px-6">
+      {/* Left: page title (marquee on overflow) */}
+      <div ref={trackRef} className="dashboard-title-track min-w-0 flex-1">
+        <span
+          ref={textRef}
+          className={`dashboard-title-text${overflowing ? ' is-marquee' : ''}`}
+          style={overflowing ? { '--marquee-shift': `${shift}px` } : undefined}
+          title={title}
         >
-          <LogoIcon className="h-8 w-8" />
-          <span
-            className="prism-logo-text hidden text-[1.3rem] font-light tracking-wider sm:inline"
-            data-text="prism"
-          >
-            prism
-          </span>
-        </button>
-
-        <DropdownMenu
-          open={newMeetingOpen}
-          onOpenChange={(open) => {
-            setNewMeetingOpen(open)
-            if (open) onOpenNewMeeting?.()
-          }}
-        >
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-2.5 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/25 sm:px-3.5"
-              aria-label="New meeting"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">New meeting</span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="bottom"
-            align="start"
-            sideOffset={10}
-            modal={false}
-            className="dashboard-body-font w-[340px] rounded-2xl border border-white/[0.10] bg-[#0f0f11] p-0 shadow-2xl"
-            onCloseAutoFocus={(e) => e.preventDefault()}
-          >
-            {newMeetingPanel}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          {title}
+        </span>
       </div>
 
-      {/* Center: Current / Cross intelligence switch */}
-      <div
-        className="flex shrink-0 items-center rounded-full border border-white/[0.08] bg-white/[0.03] p-0.5"
-        role="group"
-        aria-label="Meeting intelligence view"
-        title={meetingInFocus ? undefined : 'Open a meeting to view its intelligence'}
-      >
-        <button
-          type="button"
-          aria-pressed={meetingInFocus && view === 'current'}
-          disabled={!meetingInFocus}
-          onClick={() => onSelectView?.('current')}
-          className={`${segBase} ${
-            !meetingInFocus
-              ? 'cursor-not-allowed text-white/22'
-              : view === 'current'
-                ? segActive
-                : segIdle
-          }`}
-        >
-          Current meeting
-        </button>
-        <button
-          type="button"
-          aria-pressed={meetingInFocus && view === 'cross'}
-          disabled={!meetingInFocus}
-          onClick={() => onSelectView?.('cross')}
-          className={`${segBase} ${
-            !meetingInFocus
-              ? 'cursor-not-allowed text-white/22'
-              : view === 'cross'
-                ? segActive
-                : segIdle
-          }`}
-        >
-          Cross-meeting
-        </button>
+      {/* Right: global search pill */}
+      <div className="flex h-11 w-[clamp(200px,30vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-4 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.06]">
+        <input
+          value={searchValue || ''}
+          onChange={(e) => onSearchChange?.(e.target.value)}
+          placeholder="Search anything..."
+          aria-label="Search meetings"
+          className="h-full min-w-0 flex-1 bg-transparent text-[14px] font-medium text-white/85 outline-none placeholder:font-normal placeholder:text-white/35"
+        />
+        <Search className="h-[18px] w-[18px] shrink-0 text-white/45" aria-hidden="true" />
       </div>
-
-      {/* Right: balance spacer (profile lives in the sidebar footer) */}
-      <div className="min-w-0 flex-1" aria-hidden="true" />
     </header>
   )
 }

@@ -10,7 +10,6 @@ import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyl
 const OwnerLoad = lazy(() => import('./OwnerLoad'))
 const DecisionMemory = lazy(() => import('./DecisionMemory'))
 const ThemeChips = lazy(() => import('./ThemeChips'))
-const MeetingsRail = lazy(() => import('./MeetingsRail'))
 
 function OwnershipDriftCard({ insights }) {
   const drift = insights.ownershipDrift || []
@@ -203,10 +202,6 @@ export default function IntelligenceView({ history, crossMeetingInsights, onSele
           </section>
         </div>
       )}
-
-      <Suspense fallback={<SkeletonCard lines={2} />}>
-        <MeetingsRail history={safeHistory} onSelect={onSelectMeeting} />
-      </Suspense>
 
       <div>
         <p className="mb-3 px-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/34">Deep patterns</p>
