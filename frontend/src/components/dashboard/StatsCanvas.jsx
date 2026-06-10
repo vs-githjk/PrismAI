@@ -1,4 +1,4 @@
-import { Clock, UserRound } from 'lucide-react'
+import { Check, Clock, UserRound } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 
 const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
@@ -48,7 +48,7 @@ function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
 }
 
 /** Bottom-left quadrant: open action items from the last 2 weeks, click-through to source meeting. */
-function ActionItemsCard({ actions, onOpen }) {
+function ActionItemsCard({ actions, onOpen, onToggle }) {
   return (
     <section className={`dashboard-home-actions ${island}`}>
       <div className="shrink-0 border-b border-white/[0.08] px-4 py-3.5">
@@ -57,18 +57,25 @@ function ActionItemsCard({ actions, onOpen }) {
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {actions.length ? (
           <div className="space-y-2">
-            {actions.map(({ item, entry }, index) => (
-              <button
-                type="button"
+            {actions.map(({ item, entry, index }) => (
+              <div
                 key={`${entry.id}-${item.task}-${index}`}
-                onClick={() => onOpen?.(entry)}
-                className="group flex w-full items-stretch gap-3.5 rounded-xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-3.5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/16"
+                className="group flex w-full items-start gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03]"
               >
-                <span
-                  aria-hidden="true"
-                  className="w-1 shrink-0 self-stretch rounded-full bg-cyan-300/80 shadow-[0_0_12px_rgba(103,232,249,0.45)] transition-all duration-200 group-hover:w-1.5"
-                />
-                <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => onToggle?.(entry, index)}
+                  aria-pressed={!!item.completed}
+                  aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/30 text-transparent transition-all duration-200 hover:border-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/40"
+                >
+                  <Check className="h-3 w-3" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpen?.(entry)}
+                  className="min-w-0 flex-1 text-left focus-visible:outline-none"
+                >
                   <p className="line-clamp-2 text-[15px] font-medium leading-snug text-white">{item.task}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
@@ -85,8 +92,8 @@ function ActionItemsCard({ actions, onOpen }) {
                       <span className="max-w-[140px] truncate">{deriveDisplayTitle(entry)}</span>
                     </span>
                   </div>
-                </div>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -120,11 +127,6 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                     onClick={() => onOpen?.(entry)}
                     className={`group flex w-full items-stretch gap-4 rounded-2xl border bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/16 ${isSelected ? 'border-cyan-200/45' : 'border-white/[0.08]'}`}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="w-1 shrink-0 self-stretch rounded-full transition-all duration-200 group-hover:w-1.5"
-                      style={{ background: band.color, boxShadow: `0 0 14px ${band.color}55` }}
-                    />
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-1 text-[19px] font-semibold leading-tight tracking-[-0.01em] text-white">
                         {deriveDisplayTitle(entry)}
@@ -157,6 +159,7 @@ export default function StatsCanvas({
   loadSample,
   canLoadSample = false,
   selectedMeetingId = null,
+  onToggleAction,
 }) {
   const safeHistory = history || []
   const now = Date.now()
@@ -170,14 +173,14 @@ export default function StatsCanvas({
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .flatMap((entry) =>
       (entry.result?.action_items || [])
-        .filter((item) => !item.completed)
-        .map((item) => ({ item, entry })),
+        .map((item, index) => ({ item, entry, index }))
+        .filter(({ item }) => !item.completed),
     )
 
   return (
     <div className="dashboard-home-grid">
       <Greeting isEmpty={safeHistory.length === 0} onLoadSample={loadSample} canLoadSample={canLoadSample} />
-      <ActionItemsCard actions={actions} onOpen={loadFromHistory} />
+      <ActionItemsCard actions={actions} onOpen={loadFromHistory} onToggle={onToggleAction} />
       <MeetingsCard history={safeHistory} onOpen={loadFromHistory} selectedMeetingId={selectedMeetingId} />
     </div>
   )

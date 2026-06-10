@@ -2355,6 +2355,28 @@ export default function App() {
     }
   }
 
+  // Toggle an action item's completed state on any history entry (used by the
+  // Home "Open action items" card). Optimistic; persists to the source meeting.
+  const toggleHistoryActionItem = (entry, index) => {
+    if (!entry?.result?.action_items) return
+    const updatedItems = entry.result.action_items.map((it, i) =>
+      i === index ? { ...it, completed: !it.completed } : it
+    )
+    const updatedResult = { ...entry.result, action_items: updatedItems }
+    setHistory((prev) => prev.map((e) => (e.id === entry.id ? { ...e, result: updatedResult } : e)))
+    if (String(entry.id) === String(meetingId)) setResult(updatedResult)
+    apiFetch(`/meetings/${entry.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result: updatedResult }),
+    }).catch(() => {
+      // Keep the optimistic state for sample meetings (no backend); revert for real ones.
+      if (String(entry.share_token || '').startsWith('sample')) return
+      setHistory((prev) => prev.map((e) => (e.id === entry.id ? entry : e)))
+      if (String(entry.id) === String(meetingId)) setResult(entry.result)
+    })
+  }
+
   const exportMarkdown = () => {
     if (!result) return
     const md = buildMarkdown(result)
@@ -2599,6 +2621,7 @@ export default function App() {
           resetTranscriptWorkspaces={resetTranscriptWorkspaces}
           prepareNewMeeting={prepareNewMeeting}
           toggleActionItem={toggleActionItem}
+          toggleHistoryActionItem={toggleHistoryActionItem}
           history={history}
           historySearch={historySearch}
           setHistorySearch={setHistorySearch}

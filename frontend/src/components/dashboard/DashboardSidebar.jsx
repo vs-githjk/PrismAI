@@ -158,7 +158,7 @@ export default function DashboardSidebar(props) {
             align="start"
             sideOffset={10}
             modal={false}
-            className="dashboard-body-font w-[340px] rounded-2xl border border-white/[0.10] bg-[#0f0f11] p-0 shadow-2xl"
+            className="dashboard-island dashboard-body-font w-[340px] p-0"
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             {newMeetingPanel}
