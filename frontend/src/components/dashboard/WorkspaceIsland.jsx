@@ -83,7 +83,7 @@ export default function WorkspaceIsland(props) {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="dashboard-body-font w-[260px] rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+          className="dashboard-island dashboard-body-font w-[260px] p-1.5"
         >
           <DropdownMenuGroup>
             <DropdownMenuItem

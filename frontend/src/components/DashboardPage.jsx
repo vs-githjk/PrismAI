@@ -1054,6 +1054,7 @@ export default function DashboardPage(props) {
               selectedMeetingId={props.selectedMeetingId}
               memberEmailMap={workspaceMemberMap}
               currentUserId={props.user?.id}
+              onToggleAction={props.toggleHistoryActionItem}
             />
           )}
           {activeView === 'meeting' && (
