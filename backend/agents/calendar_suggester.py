@@ -48,6 +48,16 @@ def _build_user_content(transcript: str, context: dict, reference_date) -> str:
                 for a in open_items
             )
             parts.append(f"Open action items:\n{items_text}")
+    # Tensions left unresolved are a strong reason to meet again — surface them
+    # so the agenda can name what still needs to be worked out.
+    sentiment = context.get("sentiment") or {}
+    carried = [
+        t for t in (sentiment.get("tension_moments") or [])
+        if isinstance(t, dict) and t.get("status") == "carried_over" and t.get("moment")
+    ]
+    if carried:
+        tensions_text = "\n".join(f"- {t['moment']}" for t in carried)
+        parts.append(f"Unresolved tensions to address in a follow-up:\n{tensions_text}")
     if transcript:
         parts.append(f"Transcript:\n{transcript}")
     return "\n\n---\n\n".join(parts)
