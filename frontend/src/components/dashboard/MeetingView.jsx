@@ -416,8 +416,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
 
-      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
-
       {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} suggestedEmails={suggestedEmails} />}
 
       <CalendarCard
@@ -427,6 +425,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         readOnly={readOnly}
         suggestedEmails={suggestedEmails}
       />
+
+      {/* Secondary insight — kept low, just above the recording/transcript. */}
+      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
 
       {meeting?.id && meeting?.recording_provider === 'recall' && (
         <RecordingPlayer
