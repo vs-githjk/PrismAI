@@ -1119,6 +1119,28 @@ async def _ambient_deliver_voice(bot_id: str, state: dict, out: dict) -> bool:
     return True
 
 
+async def _ambient_kb_route(bot_id: str, match: dict) -> bool:
+    """Trigger K: a proactive-KB hit becomes a generated, cited, value-priced
+    contribution instead of a raw snippet — Automatic mode only. Returns True
+    when the lane owns the hit (suppresses the snippet post). In shadow the
+    lane logs its would-be contribution but the snippet still posts (live
+    behavior unchanged while validating)."""
+    if not ambient_loop.autonomous_enabled():
+        return False
+    state = _bot_state.get(bot_id)
+    if not state or state.get("mode") != "autonomous" or state.get("muted"):
+        return False
+    if not ambient_loop.past_warmup(state):
+        return False
+    perception_state.bump(state, "ambient_kb_triggers")
+    evidence = (
+        f"[KNOWLEDGE BASE MATCH]\n"
+        f"- [{match.get('doc_name')}] {(match.get('content') or '')[:600]}"
+    )
+    await _ambient_fire(bot_id, state, "knowledge_match", evidence, max_tier="voice")
+    return not ambient_loop.shadow_mode()
+
+
 def _ambient_tick_check(bot_id: str, state: dict, now: float):
     """Called from the accumulator tick loop. If the pending question's window
     expired: candidate ready → return the delivery coroutine for the caller to

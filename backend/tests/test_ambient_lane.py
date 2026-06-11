@@ -537,5 +537,47 @@ class TickExpiryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(state["pending_question"], pq)
 
 
+class KbRouteTests(unittest.IsolatedAsyncioTestCase):
+    def _match(self):
+        return {"doc_id": "d1", "doc_name": "Vendor contract",
+                "content": "SLA is 99.9%", "score": 0.9,
+                "sensitivity": "public", "meeting_id": None}
+
+    async def test_automatic_mode_owns_the_hit(self):
+        state = _auto_state()
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS": "1"}), \
+             mock.patch.dict(rt._bot_state, {"b1": state}, clear=False), \
+             mock.patch.object(rt, "_ambient_fire", new=mock.AsyncMock()) as fire:
+            owned = await rt._ambient_kb_route("b1", self._match())
+        self.assertTrue(owned)
+        fire.assert_awaited_once()
+        self.assertEqual(fire.await_args.kwargs.get("max_tier"), "voice")
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_kb_triggers"], 1)
+
+    async def test_utterance_mode_declines(self):
+        state = _auto_state(mode="utterance")
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS": "1"}), \
+             mock.patch.dict(rt._bot_state, {"b1": state}, clear=False):
+            owned = await rt._ambient_kb_route("b1", self._match())
+        self.assertFalse(owned)
+
+    async def test_flag_off_declines(self):
+        state = _auto_state()
+        env = {k: v for k, v in os.environ.items() if k != "PRISM_AUTONOMOUS"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch.dict(rt._bot_state, {"b1": state}, clear=False):
+            owned = await rt._ambient_kb_route("b1", self._match())
+        self.assertFalse(owned)
+
+    async def test_shadow_logs_but_does_not_own(self):
+        state = _auto_state()
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS": "1", "PRISM_AUTONOMOUS_SHADOW": "1"}), \
+             mock.patch.dict(rt._bot_state, {"b1": state}, clear=False), \
+             mock.patch.object(rt, "_ambient_fire", new=mock.AsyncMock()) as fire:
+            owned = await rt._ambient_kb_route("b1", self._match())
+        self.assertFalse(owned)   # snippet path still posts during shadow
+        fire.assert_awaited_once()  # lane still logs its would-be contribution
+
+
 if __name__ == "__main__":
     unittest.main()
