@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from groq import AsyncGroq
 
 from auth import require_user_id, supabase
-from analysis_service import AGENT_MAP, _persona_text_for_agent
+from analysis_service import AGENT_MAP, TIER2_AGENTS, _persona_text_for_agent
 from agents.utils import _PERSONA_TEXT, get_persona_suffix
 from personas import resolve_persona
 
@@ -68,6 +68,10 @@ class AgentRequest(BaseModel):
     transcript: str
     instruction: str = ""
     existing_items: list | None = None
+    # The current meeting result — lets a Tier-2 agent re-run with the same
+    # context (summary, decisions, action_items, sentiment) the full pipeline
+    # gives it, so chat re-runs match a fresh analysis instead of running blind.
+    result: dict | None = None
     # Persona — resolved client-side. /agent is unauthenticated so the
     # frontend ships the active preset (and custom prompt if any) in the
     # payload.
@@ -287,8 +291,29 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
                 pass
         if req.instruction:
             augmented += f"\n\n[User instruction: {req.instruction}]"
-        result = await AGENT_MAP[req.agent](augmented)
-        return result
+
+        # Tier-2 agents (email_drafter, health_score, calendar_suggester) take a
+        # context dict in the pipeline. Rebuild it from the current result so a
+        # chat re-run isn't context-blind (otherwise e.g. health_score would
+        # re-judge tension without seeing sentiment's resolution).
+        if req.agent in TIER2_AGENTS:
+            r = req.result or {}
+            decisions = r.get("decisions", []) or []
+            links = r.get("decision_links", []) or []
+            unactioned = [
+                decisions[l["decision"]].get("decision", "")
+                for l in links
+                if not l.get("actions") and isinstance(l.get("decision"), int) and 0 <= l["decision"] < len(decisions)
+            ]
+            context = {
+                "summary": r.get("summary", ""),
+                "decisions": decisions,
+                "action_items": r.get("action_items", []) or [],
+                "sentiment": r.get("sentiment", {}) or {},
+                "unactioned_decisions": [d for d in unactioned if d],
+            }
+            return await AGENT_MAP[req.agent](augmented, context)
+        return await AGENT_MAP[req.agent](augmented)
 
     @local_router.post("/chat")
     async def chat(req: ChatRequest, request: Request):

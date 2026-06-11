@@ -220,6 +220,9 @@ export default function ChatPanel({
             transcript,
             instruction: msg,
             existing_items: existingItems,
+            // Ship the current result so a Tier-2 agent (health, calendar, email)
+            // re-runs with the same context the full pipeline gives it.
+            result,
             // /agent is unauthenticated — ship the viewer's persona so the
             // re-run matches the tone of the rest of the meeting card.
             persona_preset: personaPreset || 'default',
