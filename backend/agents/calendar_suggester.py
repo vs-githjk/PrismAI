@@ -58,6 +58,12 @@ def _build_user_content(transcript: str, context: dict, reference_date) -> str:
     if carried:
         tensions_text = "\n".join(f"- {t['moment']}" for t in carried)
         parts.append(f"Unresolved tensions to address in a follow-up:\n{tensions_text}")
+    # Decisions made but with no action item to carry them out — prime follow-up
+    # material (someone needs to own the next step).
+    unactioned = [d for d in (context.get("unactioned_decisions") or []) if d]
+    if unactioned:
+        dtxt = "\n".join(f"- {d}" for d in unactioned)
+        parts.append(f"Decisions made with no action item yet (need follow-through):\n{dtxt}")
     if transcript:
         parts.append(f"Transcript:\n{transcript}")
     return "\n\n---\n\n".join(parts)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, FileText, Lightbulb, Paperclip, Plus } from 'lucide-react'
+import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
@@ -163,9 +163,21 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
     later: 'border-white/[0.12] bg-white/[0.04] text-white/55',
   }
   // Surface the importance the agent assigns: sort critical-first and badge each.
-  const decisions = [...(result.decisions || [])].sort(
-    (a, b) => (a.importance || 3) - (b.importance || 3),
-  )
+  // Keep each decision's original index so it can be matched to linked actions.
+  const decisions = (result.decisions || [])
+    .map((d, _i) => ({ ...d, _i }))
+    .sort((a, b) => (a.importance || 3) - (b.importance || 3))
+
+  // Decision ↔ action links (indices reference the original arrays).
+  const decisionLinks = result.decision_links || []
+  const actionsByDecision = {} // decision index -> [action indices]
+  const decisionByAction = {}  // action index -> decision index
+  const linkedDecisions = new Set() // decisions the linker returned an entry for
+  for (const link of decisionLinks) {
+    linkedDecisions.add(link.decision)
+    actionsByDecision[link.decision] = link.actions || []
+    for (const a of (link.actions || [])) decisionByAction[a] = link.decision
+  }
   const showPinned = !readOnly && !!meetingId
 
   const pinnedSection = showPinned ? (
@@ -366,6 +378,12 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                           {item.external_ref.tool === 'linear_create_issue' ? '⬡' : '📅'} {item.external_ref.external_id}
                         </span>
                       )}
+                      {decisionByAction[i] !== undefined && result.decisions?.[decisionByAction[i]] && (
+                        <p className="mt-1 flex items-start gap-1 text-[10.5px] text-violet-300/70">
+                          <CornerDownRight className="mt-0.5 h-3 w-3 shrink-0 rotate-180" aria-hidden="true" />
+                          <span className="line-clamp-1">From decision: {result.decisions[decisionByAction[i]].decision}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
                 )
@@ -402,6 +420,21 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                       <p className="mt-1 text-[12.5px] leading-5 text-white/55">{d.rationale}</p>
                     )}
                     {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
+                    {actionsByDecision[d._i]?.length > 0 && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {actionsByDecision[d._i].map((ai) => (
+                          <p key={ai} className="flex items-start gap-1 text-[11px] text-cyan-300/70">
+                            <CornerDownRight className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                            <span className="line-clamp-1">{result.action_items?.[ai]?.task}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {linkedDecisions.has(d._i) && !(actionsByDecision[d._i]?.length) && (
+                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/[0.10] px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-amber-300">
+                        ⚠ No action item
+                      </span>
+                    )}
                   </div>
                 )
               })}

@@ -69,7 +69,12 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
                         elif key:
                             print(f"[analyze] agent {agent_name} returned no '{key}' key")
                             yield f"data: {json.dumps({'agent_error': f'{agent_name}: missing result key'})}\n\n"
-                    # tier1_barrier updates are silently skipped
+                    elif node_name == "tier1_barrier":
+                        # Barrier runs the decision↔action linker; surface its
+                        # links to the UI (other barrier state is internal).
+                        dl = update.get("results", {}).get("decision_linker", {})
+                        if dl:
+                            yield f"data: {json.dumps({'agent': 'decision_linker', 'decision_links': dl.get('decision_links', [])})}\n\n"
 
             yield f"data: {json.dumps({'agents_run': succeeded_agents})}\n\n"
             yield "data: [DONE]\n\n"
