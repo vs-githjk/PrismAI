@@ -225,5 +225,52 @@ class LaneStateFieldTests(unittest.TestCase):
             self.assertIn(key, counters, key)
 
 
+import realtime_routes as rt  # noqa: E402
+
+
+class StreamedSenderAbortTests(unittest.IsolatedAsyncioTestCase):
+    async def test_abort_check_stops_uploads(self):
+        uploads = []
+
+        async def fake_tts(text):
+            return b"audio"
+
+        async def fake_upload(bot_id, audio):
+            uploads.append(audio)
+            return True
+
+        def abort_check():
+            return len(uploads) >= 1  # talk-over detected after the first chunk
+
+        with mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+             mock.patch.object(rt, "text_to_speech", new=fake_tts), \
+             mock.patch.object(rt, "_upload_audio_to_recall", new=fake_upload), \
+             mock.patch.object(rt, "_chunk_reply", return_value=["One.", "Two.", "Three."]), \
+             mock.patch.object(rt, "_get_bot_state", return_value=meeting_memory.get_initial_memory_state()):
+            await rt._send_voice_response_streamed("bot-1", "One. Two. Three.",
+                                                   cmd_detected_ts=time.time(),
+                                                   abort_check=abort_check)
+        self.assertEqual(len(uploads), 1)  # second/third chunk never uploaded
+
+    async def test_no_abort_check_uploads_all(self):
+        uploads = []
+
+        async def fake_tts(text):
+            return b"audio"
+
+        async def fake_upload(bot_id, audio):
+            uploads.append(audio)
+            return True
+
+        with mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+             mock.patch.object(rt, "text_to_speech", new=fake_tts), \
+             mock.patch.object(rt, "_upload_audio_to_recall", new=fake_upload), \
+             mock.patch.object(rt, "_chunk_reply", return_value=["One.", "Two."]), \
+             mock.patch.object(rt, "_get_bot_state", return_value=meeting_memory.get_initial_memory_state()):
+            await rt._send_voice_response_streamed("bot-1", "One. Two.",
+                                                   cmd_detected_ts=time.time())
+        self.assertEqual(len(uploads), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

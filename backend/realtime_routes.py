@@ -1718,13 +1718,17 @@ async def _stream_llm_to_voice(
     return full_text
 
 
-async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts: float):
+async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts: float,
+                                        abort_check=None):
     """Streamed TTS variant (Layer 3 A) gated by PRISM_STREAMED_TTS=1.
 
     LLM call has already returned the full reply. We segment it, dispatch each
     chunk to TTS in parallel, and upload sequentially so playback ordering is
     preserved. On a Recall upload failure we salvage once (consolidate remaining
     sentences into one TTS + one upload). Two failures => hard abort.
+
+    abort_check: optional zero-arg callable checked before each chunk upload —
+    the ambient lane's yield rule (a human spoke; stop sending audio).
     """
     if not RECALL_API_KEY:
         return
@@ -1770,6 +1774,14 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
 
         # Phase B cancel-check — last gate before audio enters the meeting.
         if _barge_in_on() and _session_cancelled(state, "upload"):
+            for t in tts_tasks[i:]:
+                t.cancel()
+            break
+
+        # Ambient yield rule (spec R4): a human spoke after this ambient
+        # response started — stop sending audio, never re-take the floor.
+        if abort_check is not None and abort_check():
+            print(f"[realtime] ambient_yield bot={bot_id[:8]} at chunk {i}")
             for t in tts_tasks[i:]:
                 t.cancel()
             break
@@ -3133,6 +3145,12 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
 
         if text.strip():
             print(f"[realtime] extracted speaker={speaker!r} text={text[:120]!r}")
+
+            # Ambient lane: stamp human speech arrival for the speak-time
+            # timing gate + yield rule. The bot's own TTS feedback (when
+            # identified) must not look like human audio.
+            if not (speaker_id and state.get("bot_self_speaker_id") == speaker_id):
+                state["last_audio_ts"] = time.time()
 
             # Owner participant-ID lock attempt. Only runs when the flag is on.
             # No-op until the grace window elapses; then locks on the first
