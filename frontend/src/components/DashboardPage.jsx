@@ -1149,7 +1149,20 @@ export default function DashboardPage(props) {
                 onCommitOnExit={handleChatCommitOnExit}
                 transcript={props.transcript}
                 result={props.result}
-                onResultUpdate={(patch) => props.setResult((prev) => prev ? { ...prev, ...patch } : patch)}
+                onResultUpdate={(patch) => {
+                  // Merge the agent re-run into the live result AND persist it,
+                  // so chat-driven regenerations (email, calendar, etc.) survive
+                  // a page refresh instead of reverting to the saved version.
+                  const merged = { ...(props.result || {}), ...patch }
+                  props.setResult(merged)
+                  if (props.meetingId) {
+                    apiFetch(`/meetings/${props.meetingId}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ result: merged }),
+                    }).catch(() => {})
+                  }
+                }}
                 isSignedIn={!!props.user}
                 personaPreset={props.personaPreset}
                 personaCustomPrompt={props.personaCustomPrompt}
