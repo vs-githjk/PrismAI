@@ -162,8 +162,9 @@ export default function DashboardSidebar(props) {
             side="bottom"
             align="start"
             sideOffset={10}
+            collisionPadding={12}
             modal={false}
-            className="dashboard-island dashboard-body-font w-[340px] p-0"
+            className="dashboard-island dashboard-body-font max-h-[var(--radix-dropdown-menu-content-available-height)] w-[340px] overflow-y-auto p-0"
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             {newMeetingPanel}
