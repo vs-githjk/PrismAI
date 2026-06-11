@@ -17,6 +17,42 @@ import meeting_memory  # noqa: E402
 import perception_state  # noqa: E402
 
 
+class KeptHelperTests(unittest.TestCase):
+    """Coverage carried over from the superseded test_ambient_loop.py /
+    test_consent_interjection.py for the helpers the lane kept."""
+
+    def test_flags_default_off(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(ambient_loop.autonomous_enabled())
+            self.assertFalse(ambient_loop.shadow_mode())
+
+    def test_flags_on(self):
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS": "1", "PRISM_AUTONOMOUS_SHADOW": "1"}):
+            self.assertTrue(ambient_loop.autonomous_enabled())
+            self.assertTrue(ambient_loop.shadow_mode())
+
+    def test_mute_command_detection(self):
+        self.assertEqual(ambient_loop.detect_mute_command("Prism, stay quiet"), "mute")
+        self.assertEqual(ambient_loop.detect_mute_command("prism stop talking please"), "mute")
+        self.assertEqual(ambient_loop.detect_mute_command("Prism, chime in again"), "unmute")
+        self.assertIsNone(ambient_loop.detect_mute_command("we should stay quiet about this"))
+        self.assertIsNone(ambient_loop.detect_mute_command(""))
+
+    def test_past_warmup_requires_meeting_start(self):
+        self.assertFalse(ambient_loop.past_warmup({"meeting_start_ts": None}))
+
+    def test_past_warmup_on_decision(self):
+        state = {"meeting_start_ts": 1.0, "live_decisions": [{"text": "d"}]}
+        self.assertTrue(ambient_loop.past_warmup(state))
+
+    def test_past_warmup_on_entity_richness(self):
+        state = {"meeting_start_ts": 1.0,
+                 "live_entities": {f"e{i}": 1 for i in range(5)}}
+        self.assertTrue(ambient_loop.past_warmup(state))
+        self.assertFalse(ambient_loop.past_warmup(
+            {"meeting_start_ts": 1.0, "live_entities": {"a": 1}}))
+
+
 class IsQuestionTests(unittest.TestCase):
     def test_question_mark_fires(self):
         self.assertTrue(ambient_loop.is_question("What was Q3 revenue?"))

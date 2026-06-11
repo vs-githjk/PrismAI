@@ -26,17 +26,6 @@ class StreamingDefaultTests(unittest.TestCase):
             self.assertFalse(realtime_routes._streamed_llm_on())
 
 
-class AmbientSilentHelperTests(unittest.TestCase):
-    def test_silent_detection(self):
-        self.assertTrue(realtime_routes._is_ambient_silent("SILENT"))
-        self.assertTrue(realtime_routes._is_ambient_silent("  silent.  "))
-        self.assertFalse(realtime_routes._is_ambient_silent("Our Q3 number was 4.2M."))
-        self.assertFalse(realtime_routes._is_ambient_silent(""))
-
-    def test_preamble_nonempty(self):
-        self.assertIn("SILENT", realtime_routes._AMBIENT_PREAMBLE)
-
-
 class FakeUtterance:
     def __init__(self, text, speaker_name="Abhinav"):
         self.text = text
@@ -94,26 +83,28 @@ class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state["muted"])
 
 
-class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):
-    async def test_set_manual_mode(self):
-        bot_id = "bot-override-test"
+class ModeEndpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_mode(self):
+        bot_id = "bot-mode-test"
         state = realtime_routes._get_bot_state(bot_id)
         try:
             res = await realtime_routes.set_bot_mode(bot_id, {"mode": "autonomous"})
-            self.assertEqual(res["mode"], "autonomous")
-            self.assertEqual(state["manual_mode"], "autonomous")
+            self.assertEqual(res, {"mode": "autonomous"})
+            self.assertEqual(state["mode"], "autonomous")
 
-            res = await realtime_routes.set_bot_mode(bot_id, {"mode": None})
-            self.assertIsNone(state["manual_mode"])
+            state["pending_question"] = {"text": "q?"}
+            res = await realtime_routes.set_bot_mode(bot_id, {"mode": "utterance"})
+            self.assertEqual(state["mode"], "utterance")
+            self.assertIsNone(state["pending_question"])  # slot cleared on switch away
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
 
-    async def test_invalid_mode_rejected(self):
-        bot_id = "bot-override-test-2"
+    async def test_invalid_or_null_mode_rejected(self):
+        bot_id = "bot-mode-test-2"
         realtime_routes._get_bot_state(bot_id)
         try:
-            res = await realtime_routes.set_bot_mode(bot_id, {"mode": "bogus"})
-            self.assertIn("error", res)
+            self.assertIn("error", await realtime_routes.set_bot_mode(bot_id, {"mode": "bogus"}))
+            self.assertIn("error", await realtime_routes.set_bot_mode(bot_id, {"mode": None}))
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
 
@@ -123,10 +114,11 @@ class MuteEndpointTests(unittest.IsolatedAsyncioTestCase):
         bot_id = "bot-mute-test"
         state = realtime_routes._get_bot_state(bot_id)
         try:
+            state["pending_question"] = {"text": "q?"}
             res = await realtime_routes.set_bot_mute(bot_id, {"muted": True})
             self.assertTrue(res["muted"])
             self.assertTrue(state["muted"])
-            self.assertIsNone(state["pending_offer"])
+            self.assertIsNone(state["pending_question"])
 
             res = await realtime_routes.set_bot_mute(bot_id, {"muted": False})
             self.assertFalse(state["muted"])
@@ -135,13 +127,13 @@ class MuteEndpointTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PreJoinModeSeedTests(unittest.TestCase):
-    def test_initial_mode_seeds_manual_override(self):
+    def test_initial_mode_seeds_mode(self):
         bot_id = "bot-prejoin-test"
         realtime_routes.bot_store[bot_id] = {"initial_mode": "autonomous"}
         try:
             state = realtime_routes._get_bot_state(bot_id)
-            self.assertEqual(state["manual_mode"], "autonomous")
             self.assertEqual(state["mode"], "autonomous")
+            self.assertNotIn("manual_mode", state)
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
             realtime_routes.bot_store.pop(bot_id, None)
@@ -151,7 +143,6 @@ class PreJoinModeSeedTests(unittest.TestCase):
         realtime_routes.bot_store[bot_id] = {}
         try:
             state = realtime_routes._get_bot_state(bot_id)
-            self.assertIsNone(state["manual_mode"])
             self.assertEqual(state["mode"], "utterance")
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
