@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, FileText, Paperclip, Plus } from 'lucide-react'
+import { ChevronDown, FileText, Lightbulb, Paperclip, Plus } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
@@ -281,6 +281,15 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 {healthScore.verdict}
               </blockquote>
             </figure>
+          )}
+          {healthScore?.improvement_tip && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
+              <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
+              <div>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
+                <p className="mt-0.5 text-[13px] leading-5 text-white/80">{healthScore.improvement_tip}</p>
+              </div>
+            </div>
           )}
         </section>
 

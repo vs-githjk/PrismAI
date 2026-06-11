@@ -8,6 +8,7 @@ SYSTEM_PROMPT = (
     '  "health_score": {\n'
     '    "score": <integer 0-100>,\n'
     '    "verdict": "<one concise sentence about meeting quality and outcome>",\n'
+    '    "improvement_tip": "<one concrete, specific thing that would make the NEXT meeting better>",\n'
     '    "badges": ["<badge1>", "<badge2>"],\n'
     '    "breakdown": { "clarity": <0-100>, "action_orientation": <0-100>, "engagement": <0-100> }\n'
     "  }\n"
@@ -15,13 +16,18 @@ SYSTEM_PROMPT = (
     "Score guide: 80-100=excellent, 60-79=good, 40-59=fair, 0-39=poor. "
     "Pick 2-3 badges that best describe the meeting from: "
     "Clear Decisions, Action-Oriented, Well-Facilitated, Concise, Engaged Team, "
-    "Inclusive, Ran Overtime, Unresolved Tension, No Clear Owners, Off-Track, Vague Outcomes."
+    "Inclusive, Ran Overtime, Unresolved Tension, No Clear Owners, Off-Track, Vague Outcomes.\n"
+    "improvement_tip: ONE actionable suggestion grounded in the weakest dimension or a negative badge "
+    "(e.g. 'Assign owners to the 3 unowned action items before closing' or 'Timebox the budget topic'). "
+    "Reference specifics from the meeting, not generic advice. Use an empty string only if the meeting "
+    "was excellent with nothing meaningful to improve."
 )
 
 _DEFAULT = {
     "health_score": {
         "score": 50,
         "verdict": "Unable to analyze meeting quality.",
+        "improvement_tip": "",
         "badges": [],
         "breakdown": {"clarity": 50, "action_orientation": 50, "engagement": 50},
     }
