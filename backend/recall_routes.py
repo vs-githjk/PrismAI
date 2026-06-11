@@ -766,16 +766,17 @@ async def bot_status(bot_id: str):
     our_status = STATUS_MAP.get(recall_status, bot_store.get(bot_id, {}).get("status", "joining"))
 
     if recall_status in ("call_ended", "done"):
-        if bot_id not in bot_store:
-            bot_store[bot_id] = {"status": "processing", "result": None, "error": None, "commands": []}
-            _db_save(bot_id, {"status": "processing"})
-            asyncio.create_task(_process_bot_transcript(bot_id))
-        elif bot_store[bot_id].get("status") == "processing" and not bot_store[bot_id].get("result"):
-            # Zombie state: server restarted mid-processing — task died but DB still says "processing".
-            # Re-trigger so the transcript gets fetched and saved.
-            asyncio.create_task(_process_bot_transcript(bot_id))
-        elif bot_store[bot_id].get("status") not in ("processing", "done", "error"):
-            bot_store[bot_id]["status"] = "processing"
+        # The call has ended → make sure analysis runs, exactly once. Skip if it's
+        # already finished (done/error) or currently in flight. _process_bot_transcript
+        # is itself idempotent (its _processing_bots guard); the in-flight check here
+        # just avoids spawning throwaway tasks on every poll. On a server restart the
+        # in-memory guard is empty while the DB still says "processing", so a genuinely
+        # dead task is correctly re-triggered.
+        entry = bot_store.setdefault(
+            bot_id, {"status": "joining", "result": None, "error": None, "commands": []}
+        )
+        if entry.get("status") not in ("done", "error") and bot_id not in _processing_bots:
+            entry["status"] = "processing"
             _db_save(bot_id, {"status": "processing"})
             asyncio.create_task(_process_bot_transcript(bot_id))
 
