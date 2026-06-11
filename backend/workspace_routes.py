@@ -364,13 +364,12 @@ async def get_workspace_brief(workspace_id: str, user_id: str = Depends(require_
                 "task": task,
                 "owner": (item.get("owner") or "").strip(),
                 "due": (item.get("due") or "").strip(),
+                "due_date": (item.get("due_date") or "").strip(),
                 "meeting_id": meeting.get("id"),
                 "meeting_title": meeting.get("title") or "Untitled meeting",
                 "meeting_date": meeting.get("date") or "",
             })
-            if len(open_items) >= 10:
-                break
-        if len(open_items) >= 10:
-            break
 
-    return {"open_items": open_items}
+    # Deadline-aware: dated items first (overdue/soonest), undated last; then cap.
+    open_items.sort(key=lambda x: (not x["due_date"], x["due_date"]))
+    return {"open_items": open_items[:10]}

@@ -9,6 +9,7 @@ import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
 import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
+import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 const GAUGE_RADIUS = 46
@@ -147,6 +148,20 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
+  // Sort open-first, then by deadline (overdue/soonest first, undated last) —
+  // while preserving each item's original index for the completion PATCH.
+  const sortedActionItems = actionItems
+    .map((item, originalIndex) => ({ item, originalIndex, due: dueInfo(item) }))
+    .sort((a, b) => {
+      if (!!a.item.completed !== !!b.item.completed) return a.item.completed ? 1 : -1
+      return compareDue(a.due, b.due)
+    })
+
+  const DUE_STYLE = {
+    overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
+    soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
+    later: 'border-white/[0.12] bg-white/[0.04] text-white/55',
+  }
   // Surface the importance the agent assigns: sort critical-first and badge each.
   const decisions = [...(result.decisions || [])].sort(
     (a, b) => (a.importance || 3) - (b.importance || 3),
@@ -287,7 +302,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           </div>
           {actionItems.length ? (
             <div>
-              {actionItems.map((item, i) => {
+              {sortedActionItems.map(({ item, originalIndex: i, due }) => {
                 const check = (
                   <span
                     aria-hidden="true"
@@ -326,10 +341,17 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                       <p className={`text-[15px] font-medium leading-snug text-white ${item.completed ? 'line-through' : ''}`}>
                         {item.task}
                       </p>
-                      <p className="mt-1 text-xs font-medium text-white/45">
-                        {item.owner || 'Unowned'}
-                        {item.due ? ` · ${item.due}` : ''}
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <p className="text-xs font-medium text-white/45">
+                          {item.owner || 'Unowned'}
+                          {item.due && item.due !== 'TBD' ? ` · ${item.due}` : ''}
+                        </p>
+                        {!item.completed && (due.status === 'overdue' || due.status === 'soon') && (
+                          <span className={`rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${DUE_STYLE[due.status]}`}>
+                            {dueLabel(due)}
+                          </span>
+                        )}
+                      </div>
                       {item.external_ref && (
                         <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-400/[0.08] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200">
                           {item.external_ref.tool === 'linear_create_issue' ? '⬡' : '📅'} {item.external_ref.external_id}

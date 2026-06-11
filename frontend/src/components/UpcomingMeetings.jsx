@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '../lib/api'
+import { dueInfo, dueLabel, compareDue } from '../lib/dueStatus'
+
+const BRIEF_DUE_STYLE = {
+  overdue: { color: '#fca5a5', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.30)' },
+  soon: { color: '#fcd34d', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' },
+}
 
 function useMarkedEvents() {
   const [marked, setMarked] = useState(
@@ -90,7 +96,11 @@ function BriefPanel({ state, workspaceName, onItemClick }) {
       </div>
     )
   }
-  const items = state.items || []
+  // Attach deadline status (client fallback covers items analyzed before
+  // due-date resolution shipped) and re-sort overdue/soonest first.
+  const items = (state.items || [])
+    .map((item) => ({ ...item, _due: dueInfo(item) }))
+    .sort((a, b) => compareDue(a._due, b._due))
   if (items.length === 0) {
     return (
       <div className="px-3 pb-3 pt-1">
@@ -121,7 +131,21 @@ function BriefPanel({ state, workspaceName, onItemClick }) {
                 className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-cyan-400/[0.04] transition-colors disabled:cursor-default disabled:hover:bg-transparent">
                 <span className="text-orange-400 text-[10px] mt-0.5 flex-shrink-0">○</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-gray-200 leading-snug">{item.task}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[11px] text-gray-200 leading-snug">{item.task}</p>
+                    {(item._due?.status === 'overdue' || item._due?.status === 'soon') && (
+                      <span
+                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[8.5px] font-semibold uppercase tracking-wide"
+                        style={{
+                          color: BRIEF_DUE_STYLE[item._due.status].color,
+                          background: BRIEF_DUE_STYLE[item._due.status].bg,
+                          border: `1px solid ${BRIEF_DUE_STYLE[item._due.status].border}`,
+                        }}
+                      >
+                        {dueLabel(item._due)}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-gray-600 mt-0.5 truncate">
                     {[item.owner, item.due, item.meeting_title]
                       .filter(Boolean)
