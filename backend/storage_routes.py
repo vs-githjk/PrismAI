@@ -78,6 +78,9 @@ class MeetingPatch(BaseModel):
 
 class ChatEntry(BaseModel):
     messages: list
+    # When set, update this existing session in place (continuous-thread saving)
+    # instead of inserting a new row. None → create a new session.
+    session_id: str | None = None
 
 
 @router.get("/user-settings")
@@ -554,6 +557,22 @@ async def save_chat_session(meeting_id: int, entry: ChatEntry, user_id: str = De
     ):
         raise HTTPException(status_code=400, detail="Chat must contain at least one user message")
     client = _require_storage()
+
+    # Continuous-thread save: update the existing session in place. Scoped to the
+    # caller + meeting so a stale/foreign id can't overwrite someone else's row.
+    if entry.session_id:
+        upd = (
+            client.table("chat_sessions")
+            .update({"messages": entry.messages})
+            .eq("id", entry.session_id)
+            .eq("user_id", user_id)
+            .eq("meeting_id", meeting_id)
+            .execute()
+        )
+        if upd.data:
+            return {"session": upd.data[0]}
+        # id didn't match (e.g. pruned away) → fall through and insert a fresh one.
+
     insert_res = (
         client.table("chat_sessions")
         .insert({"meeting_id": meeting_id, "user_id": user_id, "messages": entry.messages})

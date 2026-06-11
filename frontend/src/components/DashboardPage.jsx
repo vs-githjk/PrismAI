@@ -529,7 +529,6 @@ export default function DashboardPage(props) {
     return window.matchMedia('(max-width: 1023px)').matches
   })
   const [pastSessions, setPastSessions] = useState([])
-  const pendingFlushesRef = useRef(new Map()) // meetingId → in-flight POST promise
 
   useEffect(() => {
     try { localStorage.setItem('prismai:dashboard-chat-open', chatOpen ? '1' : '0') } catch { /* ignore */ }
@@ -552,44 +551,21 @@ export default function DashboardPage(props) {
 
   // Fetch up to 3 past chat sessions for this meeting on entry. If there's a pending
   // exit-save POST for the same meeting, wait for it first so the fetch sees the new row.
-  useEffect(() => {
-    if (!props.meetingId || !props.user) { setPastSessions([]); return undefined }
-    let cancelled = false
-    const meetingId = props.meetingId
-    const pending = pendingFlushesRef.current.get(meetingId)
-    Promise.resolve(pending).then(() => (
-      apiFetch(`/chat-sessions/${meetingId}`)
-        .then((res) => (res.ok ? res.json() : { sessions: [] }))
-        .then((data) => { if (!cancelled) setPastSessions(data.sessions || []) })
-        .catch(() => { if (!cancelled) setPastSessions([]) })
-    ))
-    return () => { cancelled = true }
+  // Per-meeting chat history. ChatPanel saves the live thread continuously
+  // (one growing session per meeting); this just (re)loads the session list —
+  // called on meeting change and whenever ChatPanel reports a brand-new session.
+  const refreshPastSessions = useCallback(() => {
+    if (!props.meetingId || !props.user) { setPastSessions([]); return }
+    apiFetch(`/chat-sessions/${props.meetingId}`)
+      .then((res) => (res.ok ? res.json() : { sessions: [] }))
+      .then((data) => setPastSessions(data.sessions || []))
+      .catch(() => setPastSessions([]))
   }, [props.meetingId, props.user])
 
-  // Called from ChatPanel's unmount cleanup. Captures the unmounting panel's own meetingId,
-  // so it works correctly when meetingId changes (the new ChatPanel has already mounted).
-  const handleChatCommitOnExit = useCallback((mid, finalMessages) => {
-    if (!props.user || !mid) return
-    if (!finalMessages.some((m) => m.role === 'user')) return
-    const flush = apiFetch(`/chat-sessions/${mid}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: finalMessages }),
-    }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
-    pendingFlushesRef.current.set(mid, flush)
-    flush.finally(() => {
-      if (pendingFlushesRef.current.get(mid) === flush) {
-        pendingFlushesRef.current.delete(mid)
-      }
-      // If user is still viewing the same meeting, refresh the per-meeting history
-      if (props.meetingId === mid) {
-        apiFetch(`/chat-sessions/${mid}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => { if (data) setPastSessions(data.sessions || []) })
-          .catch(() => {})
-      }
-    })
-  }, [props.user, props.meetingId])
+  // Clear stale sessions immediately on meeting switch (ChatPanel is keyed by
+  // meetingId and remounts before the new fetch lands — must not see the old
+  // meeting's thread), then load the new meeting's.
+  useEffect(() => { setPastSessions([]); refreshPastSessions() }, [refreshPastSessions])
 
   // Switch to meeting view immediately when analysis starts
   useEffect(() => {
@@ -1144,9 +1120,10 @@ export default function DashboardPage(props) {
                 key={props.meetingId || 'no-meeting'}
                 meetingId={props.meetingId}
                 initialMessages={[]}
+                activeSession={pastSessions[0] || null}
                 pastSessions={pastSessions}
                 onPastSessionsChange={setPastSessions}
-                onCommitOnExit={handleChatCommitOnExit}
+                onThreadSaved={refreshPastSessions}
                 transcript={props.transcript}
                 result={props.result}
                 onResultUpdate={(patch) => {

@@ -123,9 +123,10 @@ function formatSessionDate(value) {
 export default function ChatPanel({
   meetingId,
   initialMessages = [],
+  activeSession = null,
   pastSessions = [],
   onPastSessionsChange,
-  onCommitOnExit,
+  onThreadSaved,
   transcript,
   result,
   onResultUpdate,
@@ -136,7 +137,12 @@ export default function ChatPanel({
   onSavePersona,
   activeWorkspaceId = null,
 }) {
-  const [messages, setMessages] = useState(initialMessages)
+  // The live thread for this meeting is restored from its most recent saved
+  // session (continuous per-meeting chat) — ChatPanel is keyed by meetingId so
+  // this runs fresh per meeting.
+  const [messages, setMessages] = useState(
+    activeSession?.messages?.length ? activeSession.messages : initialMessages,
+  )
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingGlobal, setLoadingGlobal] = useState(false)
@@ -146,22 +152,67 @@ export default function ChatPanel({
   const historyRef = useRef(null)
   const bottomRef = useRef(null)
   const messagesRef = useRef(messages)
-  const onCommitOnExitRef = useRef(onCommitOnExit)
+  // Id of the session this thread saves into. null until the first save creates one.
+  const sessionIdRef = useRef(activeSession?.id || null)
+  const saveTimerRef = useRef(null)
+  const saveChainRef = useRef(Promise.resolve()) // serialize saves (no duplicate inserts)
+  const skipNextSaveRef = useRef(true) // skip the initial restore; only save real changes
 
   useEffect(() => { messagesRef.current = messages }, [messages])
-  useEffect(() => { onCommitOnExitRef.current = onCommitOnExit }, [onCommitOnExit])
 
-  // On unmount (meeting switch via key change, or view switch away from Meeting), fire the
-  // commit callback with this instance's own meetingId + final messages. The parent uses this
-  // to POST /chat-sessions — relying on a parent ref would race with the new ChatPanel's mount.
+  // Restore the saved thread when it arrives (pastSessions load async, so
+  // activeSession is usually null at mount). Only if the user hasn't started
+  // typing into a fresh thread yet.
+  const restoredRef = useRef(false)
   useEffect(() => {
-    const myMeetingId = meetingId
+    if (restoredRef.current) return
+    if (activeSession?.id && activeSession.messages?.length && messagesRef.current.length === 0) {
+      restoredRef.current = true
+      sessionIdRef.current = activeSession.id
+      skipNextSaveRef.current = true // don't re-save the restored thread
+      setMessages(activeSession.messages)
+    }
+  }, [activeSession])
+
+  // Persist the current thread (continuous save). Upserts into the same session
+  // via session_id so refreshes/switches keep ONE growing thread per meeting.
+  // Saves are chained so the first insert resolves its id before the next save
+  // runs — otherwise two fast saves would each insert a new session.
+  const persistThread = (msgs) => {
+    if (!meetingId || !isSignedIn || !msgs.some((m) => m.role === 'user')) return saveChainRef.current
+    saveChainRef.current = saveChainRef.current.then(async () => {
+      try {
+        const res = await apiFetch(`/chat-sessions/${meetingId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: msgs, session_id: sessionIdRef.current }),
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const created = !sessionIdRef.current && data?.session?.id
+        if (data?.session?.id) sessionIdRef.current = data.session.id
+        if (created) onThreadSaved?.() // brand-new session → refresh the history list
+      } catch { /* best-effort */ }
+    })
+    return saveChainRef.current
+  }
+  const persistThreadRef = useRef(persistThread)
+  useEffect(() => { persistThreadRef.current = persistThread })
+
+  // Debounced continuous save after each turn.
+  useEffect(() => {
+    if (skipNextSaveRef.current) { skipNextSaveRef.current = false; return }
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => persistThreadRef.current(messagesRef.current), 700)
+    return () => clearTimeout(saveTimerRef.current)
+  }, [messages])
+
+  // Flush the latest thread on unmount (meeting switch / view change) so the
+  // last turn isn't lost if the debounce hadn't fired yet.
+  useEffect(() => {
     return () => {
-      const cb = onCommitOnExitRef.current
-      const finalMessages = messagesRef.current
-      if (cb && myMeetingId && finalMessages.some((m) => m.role === 'user')) {
-        cb(myMeetingId, finalMessages)
-      }
+      clearTimeout(saveTimerRef.current)
+      persistThreadRef.current(messagesRef.current)
     }
   }, [meetingId])
 
@@ -354,6 +405,25 @@ export default function ChatPanel({
             onSave={({ preset, customPrompt }) => onSavePersona?.(preset, customPrompt)}
             variant="chip"
           />
+
+          {isSignedIn && messages.some((m) => m.role === 'user') && (
+            <button
+              type="button"
+              onClick={() => {
+                // Current thread is already saved continuously — start a fresh one.
+                setMessages([])
+                sessionIdRef.current = null
+                skipNextSaveRef.current = true
+                setViewingSession(null)
+                setShowHistory(false)
+              }}
+              className="flex items-center gap-1 rounded-md border border-white/[0.10] bg-white/[0.04] px-2 py-1 text-[10.5px] font-medium text-white/68 transition hover:border-cyan-400/40 hover:text-cyan-200"
+              aria-label="Start a new chat for this meeting"
+            >
+              <MessagesSquare className="h-3 w-3" aria-hidden="true" />
+              <span>New chat</span>
+            </button>
+          )}
 
           {isSignedIn && pastSessions.length > 0 && (
             <div className="relative" ref={historyRef}>
