@@ -267,16 +267,20 @@ function NewMeetingPanel(props) {
           <TabsContent value="join">
             <div className="space-y-3">
               {props.calendarConnected && props.user && !props.isTestAccount && (
-                <Suspense fallback={null}>
-                  <UpcomingMeetings
-                    workspaces={props.workspaces || []}
-                    onJoin={(url, wsId) => {
-                      props.setMeetingUrl(url)
-                      if (wsId) props.onJoinWithWorkspace?.(wsId)
-                    }}
-                    onOpenMeeting={props.onOpenMeeting}
-                  />
-                </Suspense>
+                // Bound the upcoming-meetings region (its Briefs expand tall) so
+                // it scrolls internally — keeps the URL input + Join button in view.
+                <div className="max-h-[40vh] overflow-y-auto">
+                  <Suspense fallback={null}>
+                    <UpcomingMeetings
+                      workspaces={props.workspaces || []}
+                      onJoin={(url, wsId) => {
+                        props.setMeetingUrl(url)
+                        if (wsId) props.onJoinWithWorkspace?.(wsId)
+                      }}
+                      onOpenMeeting={props.onOpenMeeting}
+                    />
+                  </Suspense>
+                </div>
               )}
               <input
                 type="url"
