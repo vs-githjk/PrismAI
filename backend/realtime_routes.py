@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime
@@ -1033,8 +1034,108 @@ async def _ambient_fire(bot_id: str, state: dict, trigger_kind: str, evidence: s
 
 
 async def _ambient_deliver(bot_id: str, state: dict, out: dict, *, max_tier: str) -> None:
-    """Implemented in the delivery task; stub keeps Task 4 self-contained."""
-    print(f"[ambient] (stub) deliver tier-candidate value={out.get('value')} bot={bot_id[:8]}")
+    """Tiered delivery: drop / chat / voice-with-chat-fallback. Never raises."""
+    try:
+        if state.get("muted") or state.get("mode") != "autonomous":
+            return
+        tier = ambient_loop.delivery_tier(out["value"], max_tier=max_tier)
+        if tier == "drop" or out["kind"] == "none":
+            perception_state.bump(state, "ambient_low_value")
+            print(f"[ambient] drop value={out['value']:.1f} subject={out['subject']!r} bot={bot_id[:8]}")
+            return
+        if ambient_loop.subject_already_contributed(state, out["subject"]):
+            print(f"[ambient] dup subject={out['subject']!r} bot={bot_id[:8]}")
+            return
+        if ambient_loop.shadow_mode():
+            print(
+                f"[ambient] SHADOW would {tier}: value={out['value']:.1f} "
+                f"subject={out['subject']!r} text={out['contribution'][:160]!r} bot={bot_id[:8]}"
+            )
+            return
+        if tier == "voice" and ambient_loop.voice_cooldown_clear(state, time.time()):
+            if await _ambient_deliver_voice(bot_id, state, out):
+                return
+            # no gap appeared — fall through to the chat tier (demotion)
+        if not ambient_loop.chat_cooldown_clear(state, time.time()):
+            return
+        await _send_chat_response(bot_id, f"ℹ️ {out['contribution']}")
+        state["ambient_chat_last_ts"] = time.time()
+        ambient_loop.record_contributed_subject(state, out["subject"])
+        state.setdefault("previous_idea_summaries", []).append(f"(ambient) {out['subject']}")
+        state["previous_idea_summaries"] = state["previous_idea_summaries"][-5:]
+        perception_state.bump(state, "ambient_chat_posted")
+        print(f"[ambient] chat value={out['value']:.1f} subject={out['subject']!r} bot={bot_id[:8]}")
+    except Exception as e:
+        print(f"[ambient] deliver error bot={bot_id[:8]}: {e}")
+
+
+async def _ambient_deliver_voice(bot_id: str, state: dict, out: dict) -> bool:
+    """Voice tier: wait for a real gap (spec R2 gate), speak preface +
+    contribution with the yield hook (R4), always mirror to chat. Returns False
+    if no gap appeared within gap_wait_s (caller demotes to chat)."""
+    gate_ok = False
+    deadline = time.time() + ambient_loop.gap_wait_s()
+    while time.time() < deadline:
+        if ambient_loop.gate_clear(state, time.time()):
+            gate_ok = True
+            break
+        await asyncio.sleep(0.2)
+    if not gate_ok:
+        perception_state.bump(state, "ambient_demoted_no_gap")
+        print(f"[ambient] no_gap subject={out['subject']!r} bot={bot_id[:8]}")
+        return False
+
+    started = time.time()
+    state["ambient_speaking_since"] = started
+    speak_text = random.choice(ambient_loop.AMBIENT_PREFACES) + out["contribution"]
+
+    def _talked_over() -> bool:
+        return state.get("last_audio_ts", 0.0) > started
+
+    try:
+        if _streamed_tts_on():
+            await _send_voice_response_streamed(
+                bot_id, speak_text, cmd_detected_ts=started, abort_check=_talked_over
+            )
+        else:
+            await _send_voice_response(bot_id, speak_text)
+    except Exception as e:
+        print(f"[ambient] voice delivery error bot={bot_id[:8]}: {e}")
+    finally:
+        state["ambient_speaking_since"] = 0.0
+
+    if _talked_over():
+        perception_state.bump(state, "ambient_yielded")
+
+    # Mirror the bare contribution to chat so the content survives any yield.
+    await _send_chat_response(bot_id, f"ℹ️ {out['contribution']}")
+    state["ambient_voice_last_ts"] = time.time()
+    state["ambient_chat_last_ts"] = time.time()
+    ambient_loop.record_contributed_subject(state, out["subject"])
+    state.setdefault("previous_idea_summaries", []).append(f"(ambient) {out['subject']}")
+    state["previous_idea_summaries"] = state["previous_idea_summaries"][-5:]
+    perception_state.bump(state, "ambient_spoken")
+    print(f"[ambient] spoke value={out['value']:.1f} subject={out['subject']!r} bot={bot_id[:8]}")
+    return True
+
+
+def _ambient_tick_check(bot_id: str, state: dict, now: float):
+    """Called from the accumulator tick loop. If the pending question's window
+    expired: candidate ready → return the delivery coroutine for the caller to
+    schedule; generation failed → drop the slot. Returns None when nothing to do.
+    (Returning the coroutine instead of create_task makes this unit-testable.)"""
+    pq = state.get("pending_question")
+    if not pq or pq.get("delivered"):
+        return None
+    if (now - pq["ts"]) < pq.get("window_s", ambient_loop.answer_wait_s()):
+        return None
+    if not pq.get("candidate_done"):
+        return None  # generation still in flight; check again next tick
+    pq["delivered"] = True
+    state["pending_question"] = None
+    if pq.get("candidate") is None:
+        return None
+    return _ambient_deliver(bot_id, state, pq["candidate"], max_tier="voice")
 
 
 async def _run_interject(bot_id: str, state: dict, u, now: float) -> None:
@@ -1105,8 +1206,9 @@ async def _accumulator_tick_loop(bot_id: str, state: dict) -> None:
                     if acc is not None:
                         acc.tick()
                     if ambient_loop.autonomous_enabled():
-                        if ambient_loop.check_lull(state, time.time()) == "autonomous":
-                            print(f"[ambient] lull -> autonomous bot={bot_id[:8]}")
+                        _coro = _ambient_tick_check(bot_id, state, time.time())
+                        if _coro is not None:
+                            asyncio.create_task(_coro)
             except asyncio.CancelledError:
                 return
             except Exception as e:

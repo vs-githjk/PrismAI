@@ -406,5 +406,136 @@ class SpeculateTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(pq["candidate"])
 
 
+def _candidate(value=8.5, kind="answer", subject="q3 revenue",
+               contribution="Per the Q3 doc, revenue was 1.2M."):
+    return {"value": value, "kind": kind, "subject": subject, "contribution": contribution}
+
+
+class DeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_low_value_drops(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat:
+            await rt._ambient_deliver("b1", state, _candidate(value=3.0), max_tier="voice")
+        chat.assert_not_awaited()
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_low_value"], 1)
+
+    async def test_mid_value_posts_chat_and_records(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat:
+            await rt._ambient_deliver("b1", state, _candidate(value=6.0), max_tier="voice")
+        chat.assert_awaited_once()
+        self.assertIn("ℹ️", chat.await_args.args[1])
+        self.assertTrue(ambient_loop.subject_already_contributed(state, "q3 revenue"))
+        self.assertGreater(state["ambient_chat_last_ts"], 0)
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_chat_posted"], 1)
+
+    async def test_high_value_speaks(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_ambient_deliver_voice",
+                               new=mock.AsyncMock(return_value=True)) as voice:
+            await rt._ambient_deliver("b1", state, _candidate(value=9.0), max_tier="voice")
+        voice.assert_awaited_once()
+
+    async def test_voice_gate_failure_demotes_to_chat(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_ambient_deliver_voice",
+                               new=mock.AsyncMock(return_value=False)), \
+             mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat:
+            await rt._ambient_deliver("b1", state, _candidate(value=9.0), max_tier="voice")
+        chat.assert_awaited_once()
+
+    async def test_duplicate_subject_skipped(self):
+        state = _auto_state()
+        ambient_loop.record_contributed_subject(state, "q3 revenue")
+        with mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat:
+            await rt._ambient_deliver("b1", state, _candidate(value=6.0), max_tier="voice")
+        chat.assert_not_awaited()
+
+    async def test_shadow_mode_emits_nothing(self):
+        state = _auto_state()
+        with mock.patch.dict(os.environ, {"PRISM_AUTONOMOUS_SHADOW": "1"}), \
+             mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat, \
+             mock.patch.object(rt, "_ambient_deliver_voice", new=mock.AsyncMock()) as voice:
+            await rt._ambient_deliver("b1", state, _candidate(value=9.0), max_tier="voice")
+        chat.assert_not_awaited()
+        voice.assert_not_awaited()
+
+    async def test_chat_cooldown_blocks(self):
+        state = _auto_state()
+        state["ambient_chat_last_ts"] = time.time()
+        with mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat:
+            await rt._ambient_deliver("b1", state, _candidate(value=6.0), max_tier="voice")
+        chat.assert_not_awaited()
+
+
+class VoiceDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gate_timeout_returns_false(self):
+        state = _auto_state()
+        state["last_audio_ts"] = time.time()  # room is loud, stays loud
+        with mock.patch.dict(os.environ, {"PRISM_GAP_WAIT_S": "0.4", "PRISM_QUIET_GAP_S": "60"}), \
+             mock.patch.object(rt, "_send_voice_response_streamed", new=mock.AsyncMock()) as tts:
+            ok = await rt._ambient_deliver_voice("b1", state, _candidate())
+        self.assertFalse(ok)
+        tts.assert_not_awaited()
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_demoted_no_gap"], 1)
+
+    async def test_quiet_room_speaks_with_preface_and_mirrors(self):
+        state = _auto_state()
+        state["last_audio_ts"] = time.time() - 10
+        state["transcript_buffer"] = ["A: done."]
+        with mock.patch.dict(os.environ, {"PRISM_STREAMED_TTS": "1"}), \
+             mock.patch.object(rt, "_send_voice_response_streamed", new=mock.AsyncMock()) as tts, \
+             mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()) as chat:
+            ok = await rt._ambient_deliver_voice("b1", state, _candidate())
+        self.assertTrue(ok)
+        spoken = tts.await_args.args[1]
+        self.assertTrue(any(spoken.startswith(p) for p in ambient_loop.AMBIENT_PREFACES))
+        self.assertIn("Per the Q3 doc", spoken)
+        chat.assert_awaited_once()                      # mirror
+        self.assertNotIn(spoken, chat.await_args.args)  # mirror is the bare contribution
+        self.assertGreater(state["ambient_voice_last_ts"], 0)
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_spoken"], 1)
+
+
+class TickExpiryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_slot_with_candidate_delivers(self):
+        state = _auto_state()
+        state["pending_question"] = {
+            "text": "q?", "speaker_id": "a", "speaker_name": "A",
+            "ts": time.time() - 10, "window_s": 6.0,
+            "candidate": _candidate(), "candidate_done": True, "delivered": False,
+        }
+        with mock.patch.object(rt, "_ambient_deliver", new=mock.AsyncMock()) as deliver:
+            fired = rt._ambient_tick_check("b1", state, time.time())
+            if fired:
+                await fired
+        deliver.assert_awaited_once()
+        self.assertIsNone(state["pending_question"])
+
+    async def test_expired_slot_with_failed_candidate_drops(self):
+        state = _auto_state()
+        state["pending_question"] = {
+            "text": "q?", "speaker_id": "a", "speaker_name": "A",
+            "ts": time.time() - 10, "window_s": 6.0,
+            "candidate": None, "candidate_done": True, "delivered": False,
+        }
+        with mock.patch.object(rt, "_ambient_deliver", new=mock.AsyncMock()) as deliver:
+            fired = rt._ambient_tick_check("b1", state, time.time())
+            if fired:
+                await fired
+        deliver.assert_not_awaited()
+        self.assertIsNone(state["pending_question"])
+
+    async def test_unexpired_slot_untouched(self):
+        state = _auto_state()
+        pq = {"text": "q?", "speaker_id": "a", "speaker_name": "A",
+              "ts": time.time(), "window_s": 6.0,
+              "candidate": _candidate(), "candidate_done": True, "delivered": False}
+        state["pending_question"] = pq
+        fired = rt._ambient_tick_check("b1", state, time.time())
+        self.assertIsNone(fired)
+        self.assertIs(state["pending_question"], pq)
+
+
 if __name__ == "__main__":
     unittest.main()
