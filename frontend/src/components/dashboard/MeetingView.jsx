@@ -28,6 +28,13 @@ function healthColor(score) {
 // Padding baked into the viewBox so the progress arc's glow isn't clipped.
 const GAUGE_PAD = 12
 
+// Decision importance → label + accent. 1=critical, 2=significant, 3=minor.
+const DECISION_PRIORITY = {
+  1: { label: 'Critical', color: '#f87171', border: 'rgba(248,113,113,0.30)', tint: 'rgba(248,113,113,0.10)' },
+  2: { label: 'Significant', color: '#fbbf24', border: 'rgba(251,191,36,0.30)', tint: 'rgba(251,191,36,0.10)' },
+  3: { label: 'Minor', color: '#94a3b8', border: 'rgba(148,163,184,0.28)', tint: 'rgba(148,163,184,0.10)' },
+}
+
 // Per-dimension health bar (Clarity / Action-Oriented / Engagement).
 function BreakdownBar({ label, value, color }) {
   const displayed = useCountUp(value, 1000)
@@ -140,7 +147,10 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
-  const decisions = result.decisions || []
+  // Surface the importance the agent assigns: sort critical-first and badge each.
+  const decisions = [...(result.decisions || [])].sort(
+    (a, b) => (a.importance || 3) - (b.importance || 3),
+  )
   const showPinned = !readOnly && !!meetingId
 
   const pinnedSection = showPinned ? (
@@ -344,12 +354,26 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           </div>
           {decisions.length ? (
             <div className="space-y-3">
-              {decisions.map((d, i) => (
-                <div key={i} className="border-l-2 border-l-violet-400/60 pl-3.5">
-                  <p className="text-[15px] font-medium leading-snug text-white">{d.decision}</p>
-                  {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
-                </div>
-              ))}
+              {decisions.map((d, i) => {
+                const prio = DECISION_PRIORITY[d.importance] || DECISION_PRIORITY[3]
+                return (
+                  <div key={i} className="border-l-2 pl-3.5" style={{ borderColor: prio.border }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[15px] font-medium leading-snug text-white">{d.decision}</p>
+                      <span
+                        className="mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                        style={{ borderColor: prio.border, color: prio.color, background: prio.tint }}
+                      >
+                        {prio.label}
+                      </span>
+                    </div>
+                    {d.rationale && (
+                      <p className="mt-1 text-[12.5px] leading-5 text-white/55">{d.rationale}</p>
+                    )}
+                    {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
+                  </div>
+                )
+              })}
             </div>
           ) : (
             <p className={subtleText}>No decisions recorded in this meeting.</p>
