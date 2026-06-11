@@ -82,16 +82,6 @@ def _email_from_context_on() -> bool:
     return os.getenv("PRISM_EMAIL_FROM_CONTEXT", "1") == "1"
 
 
-def _skip_orchestrator_words() -> int:
-    """Word-count threshold above which we bypass the orchestrator's LLM call
-    and just run every agent. Read at call time so tests can patch it cheaply.
-    Long meetings effectively always run all agents anyway — the orchestrator's
-    decision-cost (one full LLM call, ~500-800ms) doesn't pay for itself."""
-    try:
-        return int(os.getenv("PRISM_SKIP_ORCH_WORDS", "1500"))
-    except ValueError:
-        return 1500
-
 DEFAULT_RESULT = {
     "title": "",
     "tldr": "",
@@ -150,13 +140,8 @@ def build_analysis_transcript(transcript: str, speakers: list | None = None, own
 # ── Graph nodes ────────────────────────────────────────────────────
 
 async def _orchestrator_node(state: AnalysisState) -> dict:
-    transcript = state["transcript"] or ""
-    # Fast-path: long meetings basically always run every agent anyway, so
-    # paying for the orchestrator's LLM round-trip is wasted latency + tokens.
-    # Compare on word count (cheap to compute) — ~1500 words ≈ 2000 tokens.
-    if len(transcript.split()) >= _skip_orchestrator_words():
-        return {"agents_to_run": list(AGENT_MAP.keys())}
-    agents = await orchestrator.run_orchestrator(transcript)
+    # Routing is now deterministic (no LLM call) — see agents/orchestrator.py.
+    agents = orchestrator.run_orchestrator(state["transcript"] or "")
     return {"agents_to_run": [a for a in agents if a in AGENT_MAP]}
 
 

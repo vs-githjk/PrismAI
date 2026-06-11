@@ -43,7 +43,10 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
     [suggestion?.suggested_timeframe, suggestion?.reason],
   )
 
-  if (!suggestion || (!suggestion.recommended && !suggestion.reason)) return null
+  // calendar_suggester now always runs (routing is deterministic), so only
+  // surface the card when it actually recommends a follow-up — not for the
+  // "no follow-up needed" case.
+  if (!suggestion?.recommended) return null
 
   const effDate = suggestion.resolved_date || fallback.date
   const effDay = suggestion.resolved_day || fallback.day
