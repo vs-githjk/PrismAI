@@ -158,20 +158,21 @@ The design should feel premium through clarity, spacing, alignment, typography, 
 
 ---
 
-## The 8 Agents
+## The 9 Agents
+
+Routing is **deterministic (no LLM orchestrator)** as of Jun 2026 — every agent runs; only `sentiment` is gated (2+ speakers). `calendar_suggester` always runs and self-decides `recommended`.
 
 | Color | Agent | Runs | Output Key | Shape |
 |---|---|---|---|---|
-| 🔴 Red | `summarizer` | Always | `summary` | `string` |
-| 🟠 Orange | `action_items` | Always | `action_items` | `[{ task, owner, due, completed }]` |
-| 🟡 Yellow | `decisions` | Always | `decisions` | `[{ decision, owner, importance: 1-3 }]` |
-| 🟢 Green | `sentiment` | Only if tension/conflict | `sentiment` | `{ overall, score, arc, notes, speakers:[{name,tone,score}], tension_moments:[] }` — `overall` vocab: `collaborative \| aligned \| decision-making \| exploratory \| frictional \| divergent \| rushed \| draining \| neutral`. Per-speaker word counts are pre-computed in Python before the LLM call so the prompt has hard evidence to anchor labels. |
-| 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` |
-| 🟣 Indigo | `calendar_suggester` | Only if follow-up discussed | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe, resolved_date, resolved_day }` |
-| 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, badges:[], breakdown:{clarity,action_orientation,engagement} }` |
-| 🩷 Pink | `speaker_coach` | Always | `speaker_coach` | `{ speakers:[{name,talk_pct,decisions_owned,actions_owned,coaching_note}] }` |
-
-`calendar_suggestion` now includes `resolved_date` and `resolved_day` — resolved by `calendar_resolution.py` from the agent's natural language timeframe before returning to the frontend.
+| 🔴 Red | `summarizer` | Always | `summary` (+ `tldr`, `topics`) | `{ title, tldr, summary, topics:[] }` — TL;DR headline + scannable topic chips |
+| 🟠 Orange | `action_items` | Always | `action_items` | `[{ task, owner, due, due_date, completed, external_ref? }]` — `due_date` resolved from `due` text → overdue/due-soon badges + deadline sort |
+| 🟡 Yellow | `decisions` | Always | `decisions` | `[{ decision, owner, importance: 1-3, rationale }]` — importance surfaced/sorted in UI; rationale only when stated |
+| 🟢 Green | `sentiment` | If 2+ speakers (deterministic) | `sentiment` | `{ overall, score, arc, notes, speakers:[{name,tone,score}], tension_moments:[{moment,status: resolved\|carried_over}] }`. `overall` vocab: `collaborative \| aligned \| decision-making \| exploratory \| frictional \| divergent \| rushed \| draining \| neutral`. Per-speaker word counts pre-computed in Python. |
+| 🔵 Blue | `email_drafter` | Always | `follow_up_email` | `{ subject, body }` — body formatted with real line breaks; send form has teammate-recipient chips |
+| 🟣 Indigo | `calendar_suggester` | Always (self-decides) | `calendar_suggestion` | `{ recommended, reason, suggested_timeframe, suggested_time, agenda:[], attendees:[], resolved_date, resolved_day, resolved_time }` — drives the "Add to Calendar" action; folds in unactioned decisions + carried-over tensions |
+| 💜 Violet | `health_score` | Always | `health_score` | `{ score, verdict, improvement_tip, badges:[], breakdown:{clarity,action_orientation,engagement} }` — `improvement_tip` = one concrete thing to do better next time |
+| 🩷 Pink | `speaker_coach` | Always | `speaker_coach` | `{ speakers:[{name,talk_percent,decisions_owned,action_items_owned,coaching_note}], balance_score }` — collapsed dropdown in the UI (secondary) |
+| 🔗 Cyan | `decision_linker` | If decisions + actions exist | `decision_links` | `[{ decision: idx, actions: [idx] }]` — runs in `_tier1_barrier` (Tier 1.5); maps decisions↔action items by original index, flags "no action item", feeds the follow-up agenda |
 
 ---
 
@@ -610,7 +611,7 @@ Merged ~15K lines from Devaj on `fixed-changes`. Production-grade work covering 
 - **All 7 Supabase migrations run** (Jun 1) — `knowledge_meeting_source` → `knowledge_contextual` → `knowledge_bm25` (with `SET maintenance_work_mem='128MB'` fix for GIN build OOM on Supabase's default 32MB) → `knowledge_transcript_unique` → `personas` → `recording` → `personas_warm_analytical`. All idempotent; all verified via column/RPC/index probe queries.
 - **Devaj's landing redesign merged into `vids_branch`** (Jun 2) — HowItWorks fully rewritten (~3700 lines of JSX + CSS), new `PrismCapture.jsx` + `scripts/capture-prism.mjs` pre-render a video loop (`prism-loop.mp4`) of the WebGL prism for GPU-cheap landing playback. `LandingNav` returner-aware (shows "Go to dashboard" instead of signup for known users). `ProofSection.jsx` retired — its role absorbed into the new HowItWorks. Conflict during merge was confined to `CLAUDE.md` (resolved by combining Devaj's more-complete migration list with our smart-RAG additions) and `App.jsx` (auto-merged cleanly). Frontend build + backend imports clean post-merge.
 
-### Status: Phases 1–4 complete & deployed. Phase 5 (RAG) — full smart-RAG pipeline (cross-source + contextual + hybrid + rerank + rewrite) and Phase 8 (Personas, 7 presets + custom) complete on `vids_branch`. Recording Playback shipped (bonus). All migrations run. **Pending: production deploy (push `vids_branch` → `main`).** Phases 6 (Voice ID) and 7 (Context-aware chat) pending.
+### Status (Jun 11 2026): Phases 1–5 + 8 complete & **deployed to `main`** (smart-RAG pipeline, Personas, Recording Playback). The frontend redesign, the full 9-agent review/improvement sweep, the `decision_linker` 8th agent, the deterministic router, and the RAG trust layer (V1) are all **on `main`** (latest `083d109`). All migrations run. Phases 6 (Voice ID) and 7 (Context-aware chat) pending; AWS migration (Phases 0–4 of the infra plan) done, custom-domain cutover pending.
 
 ### Added Jun 2 2026 — Live-bot persona wiring (Devaj's PR #5)
 
@@ -623,6 +624,20 @@ Closes open item D1 of the May 28 personas spec. The live meeting bot now reads 
 **Frontend (`b6bb61e` to vids):** `PersonaChip.jsx` updated so the picker shows each preset's bot name alongside the preset label, with a matching lucide icon (Triangle / Zap / Gem / Sparkles / Radio / Sun / BarChart3) and a subtle per-persona accent color. Affects the chip in the chat header (`⚡ Concise · Flash ▾`), the menuItem variant in the account dropdown, the picker dialog rows (icon + label + name), and the "Use workspace default" affordance (now shows `Cheeky · Glint`). Closes the rename loop — users now SEE the name they need to say in the meeting without having to discover it.
 
 **Notifications plan (`b6bb61e`):** drafted full plan at `docs/specs/2026-06-03-notifications-system-plan.md` for a notifications system (Supabase `notifications` table + thin `notify()` backend helper + Realtime delivery + bell/dropdown/toast UI). Scheduled to ship as a bonus phase AFTER AWS migration — sequencing decision by user. The plan reserves type slots for Phase 6 (`voice_id_new_speaker`) and Phase 7 (`pattern_detected`) so they have a generator-ready surface when they ship. Migration #20 in the order.
+
+### Added Jun 10–11 2026 — Frontend redesign merge + full agent sweep + RAG trust layer (all on `main`)
+
+**Redesign merge (test-frontend → main):** "floating islands" dashboard chrome (`WorkspaceIsland` switcher, topbar, sidebar as separate islands) + "glass-island" meeting view. Built on a 120-commit-old base, so its rewrites had silently dropped several post-branch features — re-ported on the way in: `SpeakerCoachCard`, `SentimentCard`, health subscore bars + flag pills, "Recorded by" attribution, action-item external-ref badge, personal/workspace persona pickers. Also: a back arrow in the topbar (meeting view), and a fix where the live-share view passed `calendar=` instead of `suggestion=` (its follow-up never rendered).
+
+**Agent-by-agent review (all 9 improved):** `summarizer` → `tldr` + `topics`; `sentiment` → deterministic 2+-speaker gating (the old "only if tension" trigger wrongly skipped healthy meetings) + tension `status` (resolved/carried_over); `decisions` → surfaced importance (sort + badges) + `rationale`; `action_items` → time-aware (`due_date` resolution → overdue/due-soon badges + sort + deadline-aware workspace brief); `calendar_suggester` → smarter agenda + attendees + hardened resolver (time-of-day, `dateparser`) + **Add-to-Calendar** action (`POST /calendar/create-event`); `email_drafter` → real line-break formatting + teammate recipient chips; `speaker_coach` → collapsed into a dropdown (secondary insight, moved to bottom); `health_score` → `improvement_tip`.
+
+**8th agent — `decision_linker` (Tier 1.5):** maps decisions↔action items by original index, flags decisions with no follow-through ("No action item"), and feeds unactioned decisions into the follow-up agenda. Runs inside `_tier1_barrier` (needs Tier 1 outputs AND must enrich Tier 2 context). Spec: `docs/specs/2026-06-11-decision-action-linker.md`.
+
+**Deterministic router:** retired the LLM orchestrator entirely — it had become a serial full-transcript call deciding ~nothing (6 agents forced, sentiment deterministic, only calendar left). Now `run_orchestrator()` is pure logic. Saves a ~500-800ms round-trip per short meeting, removes the JSON-parse failure mode, and makes short/long meetings consistent.
+
+**RAG trust layer (V1):** `knowledge_lookup` now returns structured sources + `has_conflict`; `chat_routes.build_rag_context()` passes a whitelisted `rag_context` to the UI; `ChatPanel` renders a conflict banner + Sources cards. Citations come from structured data, not the model's prose.
+
+**Workspace persona fix:** `get_workspace`/`list_workspaces` were selecting columns without `default_persona`, so the settings radio always reset to Default on reopen (pre-existing bug). Added the column to both selects.
 
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token
