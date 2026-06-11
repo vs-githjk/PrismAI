@@ -124,6 +124,15 @@ def get_initial_memory_state() -> dict:
         "offered_subjects": [],         # lowercased subjects already offered (dedup)
         "offer_last_ts": 0.0,           # last offer made (offer cooldown)
         "muted": False,                 # humans muted proactive offers
+
+        # ── Ambient contribution lane (spec 2026-06-11) ───────────────────────
+        "pending_question": None,       # {text, speaker_id, speaker_name, ts, window_s, candidate, candidate_done, delivered}
+        "last_audio_ts": 0.0,           # last human transcript-chunk arrival (timing gate + yield rule)
+        "ambient_voice_last_ts": 0.0,   # voice-tier cooldown anchor
+        "ambient_chat_last_ts": 0.0,    # chat-tier cooldown anchor
+        "contributed_subjects": [],     # normalized subjects already contributed (shared dedup ledger)
+        "_ambient_busy": False,         # one in-flight generation per bot
+        "ambient_speaking_since": 0.0,  # nonzero while ambient voice is playing (yield rule)
     }
 
 

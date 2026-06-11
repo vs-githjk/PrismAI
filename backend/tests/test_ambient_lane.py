@@ -204,5 +204,26 @@ class GenerateContributionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Flash", captured["system"])
 
 
+class LaneStateFieldTests(unittest.TestCase):
+    def test_initial_state_has_lane_fields(self):
+        s = meeting_memory.get_initial_memory_state()
+        self.assertIsNone(s["pending_question"])
+        self.assertEqual(s["last_audio_ts"], 0.0)
+        self.assertEqual(s["ambient_voice_last_ts"], 0.0)
+        self.assertEqual(s["ambient_chat_last_ts"], 0.0)
+        self.assertEqual(s["contributed_subjects"], [])
+        self.assertFalse(s["_ambient_busy"])
+        self.assertEqual(s["ambient_speaking_since"], 0.0)
+
+    def test_lane_counters_exist(self):
+        s = meeting_memory.get_initial_memory_state()
+        counters = perception_state.ensure_counters(s)
+        for key in ("ambient_q_triggers", "ambient_kb_triggers", "ambient_b_triggers",
+                    "ambient_generations", "ambient_discarded_answered",
+                    "ambient_low_value", "ambient_chat_posted", "ambient_spoken",
+                    "ambient_demoted_no_gap", "ambient_yielded", "ambient_parse_fail"):
+            self.assertIn(key, counters, key)
+
+
 if __name__ == "__main__":
     unittest.main()

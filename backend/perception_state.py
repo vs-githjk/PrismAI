@@ -256,6 +256,18 @@ _DEFAULT_COUNTERS = {
     "offers_expired": 0,
     "offers_talked_over": 0,
     "mutes": 0,
+    # Ambient contribution lane (spec 2026-06-11)
+    "ambient_q_triggers": 0,
+    "ambient_kb_triggers": 0,
+    "ambient_b_triggers": 0,
+    "ambient_generations": 0,
+    "ambient_discarded_answered": 0,
+    "ambient_low_value": 0,
+    "ambient_chat_posted": 0,
+    "ambient_spoken": 0,
+    "ambient_demoted_no_gap": 0,
+    "ambient_yielded": 0,
+    "ambient_parse_fail": 0,
 }
 
 
@@ -297,6 +309,17 @@ _OPERATIONAL_KEYS = (
     "offers_expired",
     "offers_talked_over",
     "mutes",
+    "ambient_q_triggers",
+    "ambient_kb_triggers",
+    "ambient_b_triggers",
+    "ambient_generations",
+    "ambient_discarded_answered",
+    "ambient_low_value",
+    "ambient_chat_posted",
+    "ambient_spoken",
+    "ambient_demoted_no_gap",
+    "ambient_yielded",
+    "ambient_parse_fail",
 )
 
 _SECURITY_KEYS = (
