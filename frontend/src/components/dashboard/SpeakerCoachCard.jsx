@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Mic } from 'lucide-react'
+import { Mic, ChevronDown } from 'lucide-react'
 import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 function useCountUp(target, duration = 1000) {
@@ -89,30 +89,44 @@ function BalanceBar({ score }) {
 }
 
 export default function SpeakerCoachCard({ speakerCoach }) {
+  // Secondary insight — collapsed by default so it doesn't compete with the
+  // primary cards (summary / decisions / actions). Expand to dig in.
+  const [open, setOpen] = useState(false)
   if (!speakerCoach || !speakerCoach.speakers?.length) return null
 
   const { speakers, balance_score } = speakerCoach
 
   return (
-    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-      <div className="mb-3 flex items-center gap-2">
-        <Mic className="h-4 w-4 text-cyan-200/70" aria-hidden="true" />
+    <section className={glassCard} style={cardGlowStyle}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 p-4"
+      >
+        <Mic className="h-4 w-4 shrink-0 text-cyan-200/70" aria-hidden="true" />
         <p className={eyebrow}>Speaker Coaching</p>
         <span className="ml-auto rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/50">
           {speakers.length} speaker{speakers.length !== 1 ? 's' : ''}
         </span>
-      </div>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-white/70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
 
-      <div className="overflow-hidden rounded-lg border border-white/[0.08]">
-        <BalanceBar score={balance_score} />
-        {speakers.map((speaker, i) => (
-          <SpeakerRow key={speaker.name || i} speaker={speaker} isLast={i === speakers.length - 1} />
-        ))}
-      </div>
-
-      <p className={`mt-3 ${subtleText}`}>
-        Talk-time estimates are based on transcript word counts. Coaching notes are suggestions, not evaluations.
-      </p>
+      {open && (
+        <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
+          <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+            <BalanceBar score={balance_score} />
+            {speakers.map((speaker, i) => (
+              <SpeakerRow key={speaker.name || i} speaker={speaker} isLast={i === speakers.length - 1} />
+            ))}
+          </div>
+          <p className={`mt-3 ${subtleText}`}>
+            Talk-time estimates are based on transcript word counts. Coaching notes are suggestions, not evaluations.
+          </p>
+        </div>
+      )}
     </section>
   )
 }
