@@ -50,61 +50,48 @@ class FakeUtterance:
 
 
 class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.state = realtime_routes.meeting_memory.get_initial_memory_state()
-        self.state["transcript_buffer"] = []
-        self.state["meeting_start_ts"] = 1000.0
+    def _auto_state(self):
+        s = realtime_routes.meeting_memory.get_initial_memory_state()
+        s["mode"] = "autonomous"
+        s["meeting_start_ts"] = time.time() - 600
+        s["live_decisions"] = [{"text": "d", "speaker": "A", "ts": 1.0}]  # past_warmup
+        s["transcript_buffer"] = ["A: hello."]
+        return s
 
     async def test_explicit_command_skips_ambient(self):
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "offered"}
-        self.state["mode"] = "autonomous"
-        self.state["mode_since_ts"] = time.time()
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+        state = self._auto_state()
+        with mock.patch.object(realtime_routes, "_detect_command", return_value="summarize"), \
+             mock.patch.object(realtime_routes, "_ambient_speculate",
+                               new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("Prism, send the email")
-            )
-        self.assertEqual(called, [])
+                "bot1", state, FakeUtterance("Prism, summarize?"))
+        spec.assert_not_awaited()
 
     async def test_utterance_mode_skips_ambient(self):
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "offered"}
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+        state = self._auto_state()
+        state["mode"] = "utterance"
+        with mock.patch.object(realtime_routes, "_detect_command", return_value=None), \
+             mock.patch.object(realtime_routes, "_ambient_speculate",
+                               new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("the numbers look fine to me")
-            )
-        self.assertEqual(called, [])
+                "bot1", state, FakeUtterance("What is the SLA, again?"))
+        spec.assert_not_awaited()
 
-    async def test_autonomous_mode_runs_ambient(self):
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "offered"}
-        self.state["mode"] = "autonomous"
-        self.state["mode_entry_reason"] = "handoff"
-        self.state["mode_since_ts"] = time.time()
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+    async def test_autonomous_mode_arms_question(self):
+        state = self._auto_state()
+        with mock.patch.object(realtime_routes, "_detect_command", return_value=None), \
+             mock.patch.object(realtime_routes, "_ambient_speculate",
+                               new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("what was our Q3 number")
-            )
-        self.assertEqual(called, ["what was our Q3 number"])
+                "bot1", state, FakeUtterance("What is the SLA, again?"))
+        spec.assert_awaited()
+        self.assertIsNotNone(state["pending_question"])
 
-    async def test_mute_command_routes_to_interject(self):
-        # "Prism, stay quiet" contains the wake word but must reach the
-        # interjection layer (to set muted), not the generic command path.
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "muted"}
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
-            await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("Prism, stay quiet")
-            )
-        self.assertEqual(called, ["Prism, stay quiet"])
+    async def test_mute_command_routes_to_lane(self):
+        state = self._auto_state()
+        await realtime_routes._ambient_on_utterance(
+            "bot1", state, FakeUtterance("Prism, stay quiet"))
+        self.assertTrue(state["muted"])
 
 
 class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):

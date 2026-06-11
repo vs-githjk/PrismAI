@@ -888,22 +888,153 @@ def _is_ambient_silent(reply: str) -> bool:
 
 
 async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
-    """Ambient (no-wake-word) branch → consent-based interjection (v2).
-    Mute/unmute directives are routed to the interjection layer even though they
-    contain the wake word; otherwise only autonomous mode (and no explicit
-    command) runs the funnel. Explicit commands go to _dispatch_slow_path_command."""
+    """Ambient contribution lane (spec 2026-06-11): per completed utterance,
+    handle mute, then arm/clear the pending-question slot (trigger Q) or fire
+    a blocker/decision trigger (B, chat-capped). Delivery happens from the
+    tick loop (Q, on window expiry) or _ambient_fire (B/K)."""
     now = time.time()
-    if ambient_loop.detect_mute_command(u.text):
-        await _run_interject(bot_id, state, u, now)
+    cmd = ambient_loop.detect_mute_command(u.text)
+    if cmd == "mute":
+        state["muted"] = True
+        state["pending_question"] = None
+        perception_state.bump(state, "mutes")
+        print(f"[ambient] muted bot={bot_id[:8]}")
+        return
+    if cmd == "unmute":
+        state["muted"] = False
+        print(f"[ambient] unmuted bot={bot_id[:8]}")
+        return
+    if state.get("mode") != "autonomous" or state.get("muted"):
         return
     if _solo_mode_active(state):
         return  # solo free-flow owns every utterance; skip the ambient funnel
-    mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
     if _detect_command(u.text, bot_id):
-        return  # explicit command path owns this utterance
-    if mode != "autonomous":
+        return  # the explicit wake-word path owns this utterance
+    if not ambient_loop.past_warmup(state):
         return
-    await _run_interject(bot_id, state, u, now)
+
+    # Clear rule: a *different* speaker replying substantively (>=4 words, not
+    # itself a question) means the humans handled it. The asker continuing
+    # does not clear — the value scorer prices rhetorical openings low.
+    pq = state.get("pending_question")
+    if pq:
+        same_speaker = (
+            (u.speaker_id and pq.get("speaker_id") == u.speaker_id)
+            or (not u.speaker_id and pq.get("speaker_name") == u.speaker_name)
+        )
+        if (not same_speaker and len((u.text or "").split()) >= 4
+                and not ambient_loop.is_question(u.text)):
+            state["pending_question"] = None
+            perception_state.bump(state, "ambient_discarded_answered")
+
+    # Trigger Q: arm (a newer question replaces an older one — the room moved on).
+    if ambient_loop.is_question(u.text):
+        slot = {
+            "text": u.text,
+            "speaker_id": u.speaker_id or "",
+            "speaker_name": u.speaker_name,
+            "ts": now,
+            "window_s": ambient_loop.answer_wait_s(),  # refined by _ambient_speculate
+            "candidate": None,
+            "candidate_done": False,
+            "delivered": False,
+        }
+        state["pending_question"] = slot
+        perception_state.bump(state, "ambient_q_triggers")
+        await _ambient_speculate(bot_id, state, slot)
+        return
+
+    # Trigger B: blocker / decision moment — chat-tier capped in v1.
+    if looks_like_blocker(u.text) or meeting_memory.DECISION_PATTERN.search(u.text or ""):
+        perception_state.bump(state, "ambient_b_triggers")
+        await _ambient_fire(bot_id, state, "blocker_or_decision",
+                            f"{u.speaker_name}: {u.text}", max_tier="chat")
+
+
+def _speaker_names(state: dict) -> list:
+    """Participant names seen recently — 'Name: text' prefixes in the buffer."""
+    names = set()
+    for line in (state.get("transcript_buffer") or [])[-50:]:
+        if ":" in line:
+            head = line.split(":", 1)[0].strip()
+            if head and len(head) <= 40:
+                names.add(head)
+    return list(names)
+
+
+async def _ambient_kb_search(bot_id: str, query: str) -> list:
+    """KB search for the lane, with the proactive-surfacing sensitivity rule
+    applied (never speak confidential docs into a meeting). Empty list on any
+    failure or for unauthenticated bots."""
+    record = bot_store.get(bot_id) or {}
+    user_id = record.get("user_id")
+    if not user_id:
+        return []
+    try:
+        from knowledge_service import search_knowledge
+        from knowledge_proactive import _allowed_by_sensitivity
+        matches = await search_knowledge(query, user_id,
+                                         meeting_id=record.get("meeting_id"),
+                                         k=3, min_score=0.6)
+        return [m for m in matches if _allowed_by_sensitivity(m, record.get("meeting_id"))]
+    except Exception as e:
+        print(f"[ambient] KB search failed bot={bot_id[:8]}: {e}")
+        return []
+
+
+async def _ambient_speculate(bot_id: str, state: dict, pq: dict) -> None:
+    """Speculative generation for a pending question (spec R1): one KB search
+    (evidence + addressee window scaling), then the contribution generator.
+    The candidate lands on the slot; the tick loop delivers it if the window
+    expires unanswered. candidate_done=True with candidate=None means the
+    generation failed — the tick loop just drops the slot."""
+    try:
+        evidence = f"Open question from {pq['speaker_name']}: {pq['text']}"
+        kb_top = None
+        matches = await _ambient_kb_search(bot_id, pq["text"])
+        if matches:
+            kb_top = max(float(m.get("score") or 0.0) for m in matches)
+            chunks = "\n".join(
+                f"- [{m.get('doc_name')}] {(m.get('content') or '')[:400]}" for m in matches
+            )
+            evidence += f"\n\n[KNOWLEDGE BASE EVIDENCE]\n{chunks}"
+        pq["window_s"] = ambient_loop.question_window_s(
+            pq["text"], _speaker_names(state), kb_top
+        )
+        if state.get("_ambient_busy"):
+            return  # collision: leave candidate_done False; slot expires unused
+        state["_ambient_busy"] = True
+        try:
+            bot_name = _BOT_WAKE_ALIAS.get(bot_id, "") or DEFAULT_BOT_NAME
+            pq["candidate"] = await ambient_loop.generate_contribution(
+                state, "unanswered_question", evidence, bot_name
+            )
+        finally:
+            state["_ambient_busy"] = False
+    except Exception as e:
+        print(f"[ambient] speculate error bot={bot_id[:8]}: {e}")
+    finally:
+        pq["candidate_done"] = True
+
+
+async def _ambient_fire(bot_id: str, state: dict, trigger_kind: str, evidence: str,
+                        *, max_tier: str) -> None:
+    """Generate-then-deliver for K and B triggers."""
+    if state.get("_ambient_busy"):
+        return
+    state["_ambient_busy"] = True
+    try:
+        bot_name = _BOT_WAKE_ALIAS.get(bot_id, "") or DEFAULT_BOT_NAME
+        out = await ambient_loop.generate_contribution(state, trigger_kind, evidence, bot_name)
+    finally:
+        state["_ambient_busy"] = False
+    if out:
+        await _ambient_deliver(bot_id, state, out, max_tier=max_tier)
+
+
+async def _ambient_deliver(bot_id: str, state: dict, out: dict, *, max_tier: str) -> None:
+    """Implemented in the delivery task; stub keeps Task 4 self-contained."""
+    print(f"[ambient] (stub) deliver tier-candidate value={out.get('value')} bot={bot_id[:8]}")
 
 
 async def _run_interject(bot_id: str, state: dict, u, now: float) -> None:

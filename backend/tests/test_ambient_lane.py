@@ -272,5 +272,139 @@ class StreamedSenderAbortTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(uploads), 2)
 
 
+class FakeUtt:
+    def __init__(self, text, speaker_name="Abhinav", speaker_id="sid-a"):
+        self.text = text
+        self.speaker_name = speaker_name
+        self.speaker_id = speaker_id
+        self.utterance_id = "u1"
+
+
+def _auto_state(**over):
+    s = meeting_memory.get_initial_memory_state()
+    s["mode"] = "autonomous"
+    s["meeting_start_ts"] = time.time() - 600
+    s["live_decisions"] = [{"text": "ship it", "speaker": "A", "ts": 1.0}]  # past_warmup
+    s["transcript_buffer"] = ["Abhinav: hello."]
+    s.update(over)
+    return s
+
+
+class TriggerArmingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_question_arms_pending_slot_and_speculates(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_detect_command", return_value=None), \
+             mock.patch.object(rt, "_ambient_speculate", new=mock.AsyncMock()) as spec:
+            await rt._ambient_on_utterance("bot-1", state, FakeUtt("What was Q3 revenue?"))
+        self.assertIsNotNone(state["pending_question"])
+        self.assertEqual(state["pending_question"]["text"], "What was Q3 revenue?")
+        spec.assert_awaited()
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_q_triggers"], 1)
+
+    async def test_different_speaker_substantive_reply_clears(self):
+        state = _auto_state()
+        state["pending_question"] = {"text": "q?", "speaker_id": "sid-a",
+                                     "speaker_name": "Abhinav", "ts": time.time(),
+                                     "window_s": 6.0, "candidate": None,
+                                     "candidate_done": False, "delivered": False}
+        with mock.patch.object(rt, "_detect_command", return_value=None):
+            await rt._ambient_on_utterance(
+                "bot-1", state, FakeUtt("it was one point two million", "Vidyut", "sid-v"))
+        self.assertIsNone(state["pending_question"])
+        self.assertEqual(perception_state.ensure_counters(state)["ambient_discarded_answered"], 1)
+
+    async def test_asker_continuation_does_not_clear(self):
+        state = _auto_state()
+        pq = {"text": "q?", "speaker_id": "sid-a", "speaker_name": "Abhinav",
+              "ts": time.time(), "window_s": 6.0, "candidate": None,
+              "candidate_done": False, "delivered": False}
+        state["pending_question"] = pq
+        with mock.patch.object(rt, "_detect_command", return_value=None):
+            await rt._ambient_on_utterance(
+                "bot-1", state, FakeUtt("I really cannot find it anywhere", "Abhinav", "sid-a"))
+        self.assertIs(state["pending_question"], pq)
+
+    async def test_short_reply_does_not_clear(self):
+        state = _auto_state()
+        pq = {"text": "q?", "speaker_id": "sid-a", "speaker_name": "Abhinav",
+              "ts": time.time(), "window_s": 6.0, "candidate": None,
+              "candidate_done": False, "delivered": False}
+        state["pending_question"] = pq
+        with mock.patch.object(rt, "_detect_command", return_value=None):
+            await rt._ambient_on_utterance("bot-1", state, FakeUtt("yeah", "Vidyut", "sid-v"))
+        self.assertIs(state["pending_question"], pq)
+
+    async def test_blocker_fires_chat_capped(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_detect_command", return_value=None), \
+             mock.patch.object(rt, "_ambient_fire", new=mock.AsyncMock()) as fire:
+            await rt._ambient_on_utterance(
+                "bot-1", state, FakeUtt("we are blocked on the vendor SLA"))
+        fire.assert_awaited()
+        self.assertEqual(fire.await_args.kwargs.get("max_tier"), "chat")
+
+    async def test_mute_command_sets_muted_and_clears_slot(self):
+        state = _auto_state()
+        state["pending_question"] = {"text": "q?", "speaker_id": "x", "speaker_name": "X",
+                                     "ts": 0, "window_s": 6.0, "candidate": None,
+                                     "candidate_done": False, "delivered": False}
+        await rt._ambient_on_utterance("bot-1", state, FakeUtt("Prism, stay quiet"))
+        self.assertTrue(state["muted"])
+        self.assertIsNone(state["pending_question"])
+
+    async def test_muted_state_blocks_triggers(self):
+        state = _auto_state(muted=True)
+        with mock.patch.object(rt, "_detect_command", return_value=None), \
+             mock.patch.object(rt, "_ambient_speculate", new=mock.AsyncMock()) as spec:
+            await rt._ambient_on_utterance("bot-1", state, FakeUtt("What was Q3 revenue?"))
+        self.assertIsNone(state["pending_question"])
+        spec.assert_not_awaited()
+
+    async def test_utterance_mode_blocks_triggers(self):
+        state = _auto_state(mode="utterance")
+        with mock.patch.object(rt, "_detect_command", return_value=None), \
+             mock.patch.object(rt, "_ambient_speculate", new=mock.AsyncMock()) as spec:
+            await rt._ambient_on_utterance("bot-1", state, FakeUtt("What was Q3 revenue?"))
+        spec.assert_not_awaited()
+
+    async def test_explicit_command_skips_lane(self):
+        state = _auto_state()
+        with mock.patch.object(rt, "_detect_command", return_value="summarize"), \
+             mock.patch.object(rt, "_ambient_speculate", new=mock.AsyncMock()) as spec:
+            await rt._ambient_on_utterance("bot-1", state, FakeUtt("Prism, summarize?"))
+        spec.assert_not_awaited()
+
+
+class SpeculateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_speculate_attaches_candidate_and_window(self):
+        state = _auto_state()
+        pq = {"text": "What is the vendor SLA?", "speaker_id": "sid-a",
+              "speaker_name": "Abhinav", "ts": time.time(), "window_s": 6.0,
+              "candidate": None, "candidate_done": False, "delivered": False}
+        matches = [{"doc_name": "Vendor contract", "content": "SLA is 99.9%",
+                    "score": 0.91, "sensitivity": "public", "doc_id": "d1", "meeting_id": None}]
+        good = {"value": 8.0, "kind": "answer",
+                "contribution": "Per the Vendor contract, SLA is 99.9%.", "subject": "vendor SLA"}
+        with mock.patch.dict(rt.bot_store, {"bot-1": {"user_id": "u-1", "meeting_id": None}}, clear=False), \
+             mock.patch.object(rt, "_ambient_kb_search", new=mock.AsyncMock(return_value=matches)), \
+             mock.patch.object(rt.ambient_loop, "generate_contribution",
+                               new=mock.AsyncMock(return_value=good)):
+            await rt._ambient_speculate("bot-1", state, pq)
+        self.assertTrue(pq["candidate_done"])
+        self.assertEqual(pq["candidate"]["subject"], "vendor SLA")
+        self.assertAlmostEqual(pq["window_s"], 4.2, places=1)  # strong KB hit shortened
+
+    async def test_speculate_marks_done_on_failure(self):
+        state = _auto_state()
+        pq = {"text": "q?", "speaker_id": "a", "speaker_name": "A", "ts": time.time(),
+              "window_s": 6.0, "candidate": None, "candidate_done": False, "delivered": False}
+        with mock.patch.dict(rt.bot_store, {"bot-1": {"user_id": None}}, clear=False), \
+             mock.patch.object(rt.ambient_loop, "generate_contribution",
+                               new=mock.AsyncMock(return_value=None)):
+            await rt._ambient_speculate("bot-1", state, pq)
+        self.assertTrue(pq["candidate_done"])
+        self.assertIsNone(pq["candidate"])
+
+
 if __name__ == "__main__":
     unittest.main()
