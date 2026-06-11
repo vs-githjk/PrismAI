@@ -114,7 +114,9 @@ def _resolve_date_handrolled(lowered: str, reference_date: date) -> date | None:
         if f"this {weekday_name}" in lowered:
             return _next_weekday(reference_date, weekday_index, include_current_week=True)
         if f"next {weekday_name}" in lowered:
-            return _next_weekday(reference_date + timedelta(days=7), weekday_index, include_current_week=True)
+            # "next Monday" = the COMING Monday (not the Monday of next week).
+            # Only roll forward a week if today already IS that weekday.
+            return _next_weekday(reference_date, weekday_index, include_current_week=False)
         if re.search(rf"\b{weekday_name}\b", lowered):
             return _next_weekday(reference_date, weekday_index, include_current_week=True)
 
