@@ -639,6 +639,8 @@ Closes open item D1 of the May 28 personas spec. The live meeting bot now reads 
 
 **Workspace persona fix:** `get_workspace`/`list_workspaces` were selecting columns without `default_persona`, so the settings radio always reset to Default on reopen (pre-existing bug). Added the column to both selects.
 
+**Post-test-meeting bug fixes (Jun 11):** (1) **Runaway re-analysis** — `/bot-status` re-spawned a full analysis on every poll while `status=="processing"`, piling up dozens of concurrent runs and exhausting Groq's 100k/day token limit (everything fell back to Claude; Tier-2 agents failed → empty email/calendar/health-default). Fixed with an in-memory `_processing_bots` idempotency guard + collapsed the tangled call-ended branch. (2) **Chat re-runs** now persist to Supabase (PATCH /meetings) AND pass full Tier-2 `context` (so health/calendar aren't context-blind); health "Unresolved Tension" badge grounded in sentiment's resolution. (3) `"next <weekday>"` now = the COMING weekday (was +1 week) in both resolvers. (4) New-Meeting popover viewport overflow capped. (5) **Continuous per-meeting chat** — auto-saves each turn (upsert by `session_id`), restores on refresh, "New chat" clears + archives to history.
+
 ### Key design decisions (locked)
 - Invite links: multi-use, revocable by owner regenerating the token
 - Any member can share the link; only owner can remove members
