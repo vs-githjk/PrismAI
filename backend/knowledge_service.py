@@ -200,18 +200,17 @@ async def search_knowledge(
         )
         rows = resp.data or []
     else:
-        # Hybrid path — vector + BM25, RRF-fused.
+        # Hybrid path — BM25 runs concurrently with (embed → vector), since
+        # BM25 only needs the query text. Total = max(embed+vector, bm25)
+        # instead of embed + max(vector, bm25): the embedding round-trip
+        # (~250ms warm, seconds cold) overlaps the BM25 RPC for free.
         # Wider top-N (30) per branch so RRF has enough candidates to work with.
-        # Run SEQUENTIALLY, not via asyncio.gather: the Supabase client (`sb`) is a
-        # single shared, synchronous instance. Dispatching two .execute() calls
-        # concurrently (each via to_thread) races on the client's shared session
-        # state across threads, emitting a malformed request that Supabase's edge
-        # rejects with a Cloudflare 400 ("JSON could not be generated") — and the
-        # related "Server disconnected" failures (diagnose 2026-06-08). The ~one
-        # extra round-trip is well within the on-demand (~800ms) + proactive budgets.
-        query_vec = await embed_text(effective_query)
-        try:
-            vec_resp = await _execute(sb.rpc(
+        # `return_exceptions=True` so a missing BM25 RPC (e.g., migration not
+        # yet applied) or a transient Supabase outage degrades to vector-only
+        # instead of crashing the whole tool call.
+        async def _vector_branch():
+            query_vec = await embed_text(effective_query)
+            return await _execute(sb.rpc(
                 "knowledge_search",
                 {
                     "query_embedding": query_vec,
@@ -222,16 +221,10 @@ async def search_knowledge(
                     "min_score": min_score,
                 },
             ))
-        except Exception as exc:
-            # Vector failure is fatal — without it we have no semantic signal.
-            # Log the type so the proactive/on-demand "search failed" surfaces
-            # the real culprit (APIConnectionError=OpenAI, RemoteProtocolError=Supabase).
-            print(f"[knowledge] vector search failed: {type(exc).__name__}: {exc}")
-            raise
-        # BM25 is best-effort — a missing RPC (migration not applied) or transient
-        # outage degrades to vector-only instead of crashing the search.
-        try:
-            bm25_resp = await _execute(sb.rpc(
+
+        vec_resp, bm25_resp = await asyncio.gather(
+            _vector_branch(),
+            _execute(sb.rpc(
                 "knowledge_search_bm25",
                 {
                     "query_text": effective_query,
@@ -240,11 +233,16 @@ async def search_knowledge(
                     "meeting_filter": meeting_filter,
                     "match_limit": 30,
                 },
-            ))
-            bm25_rows = bm25_resp.data or []
-        except Exception as exc:
-            print(f"[knowledge] bm25 search degraded (vector-only): {type(exc).__name__}: {exc}")
-            bm25_rows = []
+            )),
+            return_exceptions=True,
+        )
+        if isinstance(vec_resp, Exception):
+            # Vector failure is fatal — without it we have no semantic signal.
+            # Log the type so the proactive/on-demand "search failed" surfaces
+            # the real culprit (APIConnectionError=OpenAI, RemoteProtocolError=Supabase).
+            print(f"[knowledge] vector search failed: {type(vec_resp).__name__}: {vec_resp}")
+            raise vec_resp
+        bm25_rows = [] if isinstance(bm25_resp, Exception) else (bm25_resp.data or [])
         rows = _rrf_merge(vec_resp.data or [], bm25_rows)[: k * 3]
 
     # Phase 4: reranking. Skipped on proactive (rerank=False default).

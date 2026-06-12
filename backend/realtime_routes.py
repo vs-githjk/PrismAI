@@ -26,6 +26,7 @@ from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 from tools.tts import text_to_speech
+from warmup import warm_external_connections
 from recall_routes import bot_store, _db_append_command, _db_save_memory, _db_save
 from auth import supabase
 from cross_meeting_service import looks_like_blocker, extract_significant_terms
@@ -3689,6 +3690,11 @@ def init_bot_realtime(bot_id: str):
     _get_bot_state(bot_id)
     try:
         asyncio.create_task(_get_settings_for_bot(bot_id))
+        # Re-warm the slow external connections (OpenAI embeddings, Supabase,
+        # TTS) — keep-alive sockets from startup have long expired by the time
+        # a bot joins, and the first KB lookup / voice reply can't afford the
+        # cold-connection cost (measured ~9s + ~4s + ~2.7s on 2026-06-12).
+        asyncio.create_task(warm_external_connections("bot-join"))
     except RuntimeError:
         # No running event loop (e.g. some sync test paths). Lazy
         # population on the first command remains as a backstop.
