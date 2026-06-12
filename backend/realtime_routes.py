@@ -416,7 +416,9 @@ _STATIC_TOOL_POLICY = (
     "clarifying question — do not refuse. "
     "Use knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
     "for questions about yourself or your own settings/state, or for simple "
-    "conversational replies."
+    "conversational replies. When you do call a tool, use the native tool-calling "
+    "mechanism only — never write function-call tags such as <function=...> as text "
+    "in a reply."
 )
 
 
@@ -437,6 +439,26 @@ def _owner_email_for_bot(bot_id: str) -> str:
     if bot_id in bot_store:
         bot_store[bot_id]["owner_email"] = email
     return email
+
+
+# ── Internal fallback sentinels ───────────────────────────────────────────────
+# knowledge_lookup / web_search instruct the model to reply with exactly
+# NO_GROUNDED_ANSWER / NO_WEB_ANSWER when their evidence doesn't contain the
+# answer. Those are pipeline signals — they must never reach meeting chat or
+# TTS verbatim (live test 2026-06-11: the bot spoke "NO_WEB_ANSWER" aloud).
+_SENTINEL_REPLIES = frozenset({"NO_WEB_ANSWER", "NO_GROUNDED_ANSWER", "NO_MATCH"})
+_SENTINEL_FALLBACK_TEXT = "I couldn't find a solid answer to that one."
+
+
+def _degrade_sentinel_reply(reply):
+    """Swap a whole-reply sentinel for graceful spoken text. Embedded
+    occurrences inside a real sentence are left alone."""
+    if not reply:
+        return reply
+    norm = re.sub(r"[\s.!`'\"]+", "", reply).upper()
+    if norm in _SENTINEL_REPLIES:
+        return _SENTINEL_FALLBACK_TEXT
+    return reply
 
 
 def _build_static_prefix(
@@ -1769,6 +1791,8 @@ async def _stream_llm_to_voice(
         for c in new_chunks:
             if _FUNCTION_TAG_MARKER in c:
                 return False
+            # A bare fallback sentinel must be spoken as graceful text.
+            c = _degrade_sentinel_reply(c)
             chunks_dispatched.append(c)
             tts_tasks.append(asyncio.create_task(text_to_speech(c)))
             if sess is not None:
@@ -2686,6 +2710,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         # Pass bot_id through so tools like knowledge_lookup can scope audit logs.
         tool_settings = dict(user_settings)
         tool_settings["bot_id"] = bot_id
+        # Live voice path: knowledge_lookup skips rerank (70B, up to 4s) and
+        # query rewrite (up to 3s) — spoken replies can't wait for them. The
+        # dashboard chat path keeps both for quality.
+        tool_settings["fast_mode"] = True
 
         async def _run_tool_calls(tc_specs):
             """Execute a list of (id, name, arguments_json_str) and append tool messages.
@@ -2940,6 +2968,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                 reply = summary_resp.choices[0].message.content or "Done."
             except Exception:
                 reply = "Done."
+
+        # Internal fallback sentinels must never reach chat or voice verbatim.
+        # (The streamed path already swapped the spoken audio at dispatch time;
+        # this covers the buffered path + the chat post + the command log.)
+        reply = _degrade_sentinel_reply(reply)
 
         # ── Think+Loop post-processing ──────────────────────────────────────
         # Strip any <thinking>...</thinking> block before the reply hits TTS.

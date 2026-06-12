@@ -60,6 +60,70 @@ class KnowledgeLookupToolTests(unittest.TestCase):
         self.assertTrue(result.get("no_match"))
         self.assertIn("web_search", result.get("next_step", ""))
 
+    def test_fast_mode_disables_rerank_and_rewrite(self):
+        # The live-meeting voice path sets fast_mode — rerank (70B, up to 4s)
+        # and query rewrite (up to 3s) are dashboard-chat luxuries, not
+        # something a spoken reply can wait for.
+        import importlib
+        kl = importlib.import_module("tools.knowledge_lookup")
+        importlib.reload(kl)
+
+        captured = {}
+
+        async def fake_search(query, user_id, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        with patch.object(kl, "search_knowledge", new=fake_search):
+            with patch.object(kl, "_log_query", new=AsyncMock()):
+                asyncio.run(kl.knowledge_lookup(
+                    {"query": "q", "user_id": "u1"},
+                    user_settings={"fast_mode": True},
+                ))
+        self.assertFalse(captured["rerank"])
+        self.assertFalse(captured["rewrite_query"])
+
+    def test_default_path_keeps_rerank_and_rewrite(self):
+        import importlib
+        kl = importlib.import_module("tools.knowledge_lookup")
+        importlib.reload(kl)
+
+        captured = {}
+
+        async def fake_search(query, user_id, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        with patch.object(kl, "search_knowledge", new=fake_search):
+            with patch.object(kl, "_log_query", new=AsyncMock()):
+                asyncio.run(kl.knowledge_lookup(
+                    {"query": "q", "user_id": "u1"},
+                    user_settings={},
+                ))
+        self.assertTrue(captured["rerank"])
+        self.assertTrue(captured["rewrite_query"])
+
+    def test_no_match_next_step_guards_private_questions(self):
+        # The old next_step unconditionally commanded "Call web_search" — for
+        # private/internal questions (agendas, plans, docs) that guarantees a
+        # pointless Tavily round + 4-7s of latency before an inevitable miss.
+        import importlib
+        kl = importlib.import_module("tools.knowledge_lookup")
+        importlib.reload(kl)
+
+        async def fake_search(*a, **k): return []
+
+        with patch.object(kl, "search_knowledge", new=fake_search):
+            with patch.object(kl, "_log_query", new=AsyncMock()):
+                result = asyncio.run(kl.knowledge_lookup(
+                    {"query": "unknown", "user_id": "u1"},
+                    user_settings={},
+                ))
+        next_step = result.get("next_step", "")
+        self.assertIn("web_search", next_step)
+        self.assertIn("private", next_step.lower())
+        self.assertIn("do NOT call web_search", next_step)
+
     def test_conflict_instruction_present_when_flagged(self):
         import importlib
         kl = importlib.import_module("tools.knowledge_lookup")
