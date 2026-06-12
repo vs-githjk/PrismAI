@@ -1041,7 +1041,7 @@ export default function DashboardPage(props) {
           className={`relative z-10 mx-auto mt-2 w-full max-w-[92rem] px-5 sm:px-8 ${
             activeView === 'home'
               ? 'flex min-h-0 flex-1 flex-col pb-[var(--dashboard-edge)]'
-              : 'pb-28'
+              : 'pb-28 pt-6'
           }`}
         >
           <div key={activeView} className={`animate-fade-in-up ${activeView === 'home' ? 'flex min-h-0 flex-1 flex-col' : ''}`}>

@@ -201,7 +201,7 @@ export default function WorkspaceIsland(props) {
 
       {/* Workspace settings modal */}
       <Dialog open={!!wsSettingsId} onOpenChange={(o) => { if (!o) closeWsSettings() }}>
-        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-md">
+        <DialogContent className="dashboard-popup dashboard-body-font text-white sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold text-white">
               Workspace settings

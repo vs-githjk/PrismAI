@@ -297,7 +297,7 @@ export default function DashboardSidebar(props) {
             side="top"
             align="start"
             sideOffset={8}
-            className="dashboard-body-font w-[220px] rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+            className="dashboard-popup dashboard-body-font w-[220px] rounded-xl p-1.5"
           >
             <DropdownMenuGroup>
               <DropdownMenuItem
