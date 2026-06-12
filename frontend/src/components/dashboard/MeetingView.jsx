@@ -8,7 +8,7 @@ import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
-import { BADGE_POSITIVE, useCountUp } from '../../lib/healthScore'
+import { useCountUp } from '../../lib/healthScore'
 import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
@@ -34,25 +34,6 @@ const DECISION_PRIORITY = {
   1: { label: 'Critical', color: '#f87171', border: 'rgba(248,113,113,0.30)', tint: 'rgba(248,113,113,0.10)' },
   2: { label: 'Significant', color: '#fbbf24', border: 'rgba(251,191,36,0.30)', tint: 'rgba(251,191,36,0.10)' },
   3: { label: 'Minor', color: '#94a3b8', border: 'rgba(148,163,184,0.28)', tint: 'rgba(148,163,184,0.10)' },
-}
-
-// Per-dimension health bar (Clarity / Action-Oriented / Engagement).
-function BreakdownBar({ label, value, color }) {
-  const displayed = useCountUp(value, 1000)
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] font-medium text-white/80">{label}</span>
-        <span className="text-[11px] font-semibold text-white">{displayed}</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${displayed}%`, background: color, transition: 'width 16ms linear' }}
-        />
-      </div>
-    </div>
-  )
 }
 
 function SemicircularGauge({ score }) {
@@ -139,12 +120,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   const healthScore = result.health_score
   const sentiment = result.sentiment
-  const breakdown = healthScore?.breakdown || {}
-  const hasBreakdown =
-    breakdown.clarity !== undefined ||
-    breakdown.action_orientation !== undefined ||
-    breakdown.engagement !== undefined
-  const badges = healthScore?.badges || []
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
@@ -181,7 +156,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const showPinned = !readOnly && !!meetingId
 
   const pinnedSection = showPinned ? (
-    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
+    <section className={`${glassCard} flex max-h-[25vh] flex-col p-4`} style={cardGlowStyle}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Paperclip className="h-4 w-4 text-cyan-300" />
@@ -192,124 +167,93 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           <Plus className="h-3 w-3" /> Add
         </button>
       </div>
-      {pinnedDocs.length === 0 ? (
-        <p className="text-[11px] text-white/40">No documents pinned to this meeting.</p>
-      ) : (
-        <div className="space-y-2">
-          {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
-        </div>
-      )}
+      <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+        {pinnedDocs.length === 0 ? (
+          <p className="text-[11px] text-white/40">No documents pinned to this meeting.</p>
+        ) : (
+          <div className="space-y-2">
+            {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
+          </div>
+        )}
+      </div>
       <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
                             meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
     </section>
   ) : null
 
   return (
-    <div className="space-y-3">
-      {recordedByEmail && (
-        <p className="px-1 text-[11px] text-white/38">Recorded by {recordedByEmail}</p>
-      )}
+    <div className="space-y-5">
       <div
-        className={`grid gap-3 ${
+        className={`grid gap-5 ${
           showPinned
             ? 'lg:grid-cols-[max-content_minmax(0,1.5fr)_minmax(0,1fr)]'
             : 'lg:grid-cols-[max-content_minmax(0,1fr)]'
         }`}
       >
-        <section className="flex flex-col items-center justify-center px-2 py-4">
+        <section className="flex max-h-[25vh] flex-col items-center justify-center overflow-y-auto px-2 py-4">
           {healthScore?.score !== undefined ? (
             <>
               <SemicircularGauge score={healthScore.score} />
               <p className="mt-1.5 text-sm font-medium text-white/55">Health score</p>
-              {hasBreakdown && (
-                <div className="mt-4 w-[200px] space-y-2.5">
-                  {breakdown.clarity !== undefined && (
-                    <BreakdownBar label="Clarity" value={breakdown.clarity} color={healthColor(healthScore.score)} />
-                  )}
-                  {breakdown.action_orientation !== undefined && (
-                    <BreakdownBar label="Action-Oriented" value={breakdown.action_orientation} color={healthColor(healthScore.score)} />
-                  )}
-                  {breakdown.engagement !== undefined && (
-                    <BreakdownBar label="Engagement" value={breakdown.engagement} color={healthColor(healthScore.score)} />
-                  )}
-                </div>
-              )}
-              {badges.length > 0 && (
-                <div className="mt-3.5 flex w-[200px] flex-wrap justify-center gap-1.5">
-                  {badges.map((badge) => {
-                    const isPositive = BADGE_POSITIVE.has(badge)
-                    return (
-                      <span
-                        key={badge}
-                        className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${
-                          isPositive
-                            ? 'border-emerald-400/30 bg-emerald-400/[0.10] text-emerald-300'
-                            : 'border-red-400/30 bg-red-400/[0.10] text-red-300'
-                        }`}
-                      >
-                        {isPositive ? '✓' : '!'} {badge}
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
             </>
           ) : (
             <p className={subtleText}>No health score recorded.</p>
           )}
         </section>
 
-        <section className="flex flex-col justify-center p-4">
+        <section className="flex max-h-[25vh] flex-col justify-center p-4">
           <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-white">Summary</p>
-          {result.tldr && (
-            <p className="mb-3 text-[15px] font-semibold leading-6 text-white">{result.tldr}</p>
-          )}
-          {result.summary ? (
-            <p className={`${result.tldr ? 'text-[13.5px] text-white/65' : 'text-[15px] text-white/90'} leading-7`}>{result.summary}</p>
-          ) : (
-            <p className={subtleText}>No summary generated.</p>
-          )}
-          {result.topics?.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {result.topics.map((topic, i) => (
-                <span key={i} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-white/70">
-                  {topic}
-                </span>
-              ))}
-            </div>
-          )}
-          {healthScore?.verdict && (
-            <figure
-              className="mt-3.5 border-l-2 pl-3.5"
-              style={{ borderColor: healthColor(healthScore.score) }}
-            >
-              <figcaption
-                className="text-[9.5px] font-semibold uppercase tracking-[0.18em]"
-                style={{ color: healthColor(healthScore.score) }}
-              >
-                Verdict
-              </figcaption>
-              <blockquote className="mt-1 text-[13px] italic leading-6 text-white/75">
-                {healthScore.verdict}
-              </blockquote>
-            </figure>
-          )}
-          {healthScore?.improvement_tip && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
-              <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
-              <div>
-                <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
-                <p className="mt-0.5 text-[13px] leading-5 text-white/80">{healthScore.improvement_tip}</p>
+          <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+            {result.tldr && (
+              <p className="mb-3 text-[15px] font-semibold leading-6 text-white">{result.tldr}</p>
+            )}
+            {result.summary ? (
+              <p className={`${result.tldr ? 'text-[13.5px] text-white/65' : 'text-[15px] text-white/90'} leading-7`}>{result.summary}</p>
+            ) : (
+              <p className={subtleText}>No summary generated.</p>
+            )}
+            {result.topics?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {result.topics.map((topic, i) => (
+                  <span key={i} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-white/70">
+                    {topic}
+                  </span>
+                ))}
               </div>
-            </div>
-          )}
+            )}
+            {healthScore?.verdict && (
+              <figure
+                className="mt-3.5 border-l-2 pl-3.5"
+                style={{ borderColor: healthColor(healthScore.score) }}
+              >
+                <figcaption
+                  className="text-[9.5px] font-semibold uppercase tracking-[0.18em]"
+                  style={{ color: healthColor(healthScore.score) }}
+                >
+                  Verdict
+                </figcaption>
+                <blockquote className="mt-1 text-[13px] italic leading-6 text-white/75">
+                  {healthScore.verdict}
+                </blockquote>
+              </figure>
+            )}
+            {healthScore?.improvement_tip && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
+                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
+                <div>
+                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
+                  <p className="mt-0.5 text-[13px] leading-5 text-white/80">{healthScore.improvement_tip}</p>
+                </div>
+              </div>
+            )}
+          </div>
         </section>
 
         {pinnedSection}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <section className={`${glassCard} p-5`} style={cardGlowStyle}>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Action items</h2>
             {actionItems.length > 0 && (
@@ -321,6 +265,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
               </span>
             )}
           </div>
+          <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           {actionItems.length ? (
             <div>
               {sortedActionItems.map(({ item, originalIndex: i, due }) => {
@@ -392,15 +337,17 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           ) : (
             <p className={subtleText}>No action items in this meeting.</p>
           )}
+          </div>
         </section>
 
-        <section className={`${glassCard} p-5`} style={cardGlowStyle}>
+        <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Decisions</h2>
             {decisions.length > 0 && (
               <span className="text-sm font-semibold text-violet-300">{decisions.length}</span>
             )}
           </div>
+          <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           {decisions.length ? (
             <div className="space-y-3">
               {decisions.map((d, i) => {
@@ -442,10 +389,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           ) : (
             <p className={subtleText}>No decisions recorded in this meeting.</p>
           )}
+          </div>
         </section>
       </div>
-
-      <div className="mt-3 border-t border-white/[0.07] pt-6" />
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
 

@@ -132,8 +132,7 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
-      <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up"
-        style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)' }}>
+      <div className="dashboard-popup w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up">
 
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between"

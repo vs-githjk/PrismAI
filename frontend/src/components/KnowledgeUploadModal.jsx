@@ -57,7 +57,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0c0a17] p-6">
+      <div className="dashboard-popup w-full max-w-lg rounded-2xl p-6">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold text-white">Add to Knowledge Base</h3>
           <button onClick={close}><X className="h-4 w-4 text-white/60" /></button>
