@@ -35,8 +35,9 @@ class CalendarResolutionTestCase(unittest.TestCase):
 
     # ── New behavior: time-of-day + more phrasings (all hand-rolled, no dateparser) ──
     def test_parses_clock_time_with_weekday(self):
+        # Apr 6 2026 is a Monday → "next Tuesday" is the coming Tuesday (Apr 7).
         result = resolve_relative_date("next Tuesday at 3pm", reference_date=date(2026, 4, 6))
-        self.assertEqual(result["resolved_date"], "2026-04-14")
+        self.assertEqual(result["resolved_date"], "2026-04-07")
         self.assertEqual(result["resolved_time"], "15:00")
 
     def test_parses_named_time_of_day(self):
@@ -59,6 +60,16 @@ class CalendarResolutionTestCase(unittest.TestCase):
     def test_no_time_returns_empty_time(self):
         result = resolve_relative_date("next week", reference_date=date(2026, 4, 6))
         self.assertEqual(result["resolved_time"], "")
+
+    def test_next_weekday_is_the_coming_one(self):
+        # On Thursday Jun 11, "next Monday" is the COMING Monday (Jun 15), not Jun 22.
+        result = resolve_relative_date("next Monday", reference_date=date(2026, 6, 11))
+        self.assertEqual(result["resolved_date"], "2026-06-15")
+
+    def test_next_weekday_rolls_when_today_is_that_day(self):
+        # Saying "next Monday" ON a Monday means next week's Monday.
+        result = resolve_relative_date("next Monday", reference_date=date(2026, 6, 15))
+        self.assertEqual(result["resolved_date"], "2026-06-22")
 
 
 if __name__ == "__main__":

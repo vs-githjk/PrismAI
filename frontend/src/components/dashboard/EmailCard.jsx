@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Copy, Send } from 'lucide-react'
+import { Copy, Plus, Send } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
-export default function EmailCard({ email, gmailConnected = false }) {
+export default function EmailCard({ email, gmailConnected = false, suggestedEmails = [] }) {
   const [copied, setCopied] = useState(false)
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -22,6 +22,16 @@ export default function EmailCard({ email, gmailConnected = false }) {
       setTimeout(() => setCopied(false), 2000)
     })
   }
+
+  function addRecipient(addr) {
+    const current = toInput.split(/[\s,;]+/).map(e => e.trim()).filter(Boolean)
+    if (current.includes(addr)) return
+    setToInput([...current, addr].join(', '))
+    setSendError(null)
+  }
+
+  const currentRecipients = toInput.split(/[\s,;]+/).map(e => e.trim()).filter(Boolean)
+  const availableSuggestions = (suggestedEmails || []).filter(e => e && !currentRecipients.includes(e))
 
   const handleSend = async () => {
     const to = toInput.split(/[\s,;]+/).map(e => e.trim()).filter(e => e.includes('@'))
@@ -93,6 +103,21 @@ export default function EmailCard({ email, gmailConnected = false }) {
               className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40"
               autoFocus
             />
+            {availableSuggestions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10.5px] text-white/35">Teammates:</span>
+                {availableSuggestions.map((addr) => (
+                  <button
+                    key={addr}
+                    type="button"
+                    onClick={() => addRecipient(addr)}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+                  >
+                    <Plus className="h-3 w-3" /> {addr}
+                  </button>
+                ))}
+              </div>
+            )}
             {sendError && <p className="text-[11px] text-red-400">{sendError}</p>}
             <div className="flex justify-end gap-2">
               <button

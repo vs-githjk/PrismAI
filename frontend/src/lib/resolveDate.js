@@ -38,10 +38,8 @@ function parseTime(lowered) {
 function resolveDateOnly(lowered, ref) {
   for (const [name, dow] of Object.entries(WEEKDAYS)) {
     if (lowered.includes(`this ${name}`)) return nextWeekday(ref, dow, true)
-    if (lowered.includes(`next ${name}`)) {
-      const base = new Date(ref); base.setDate(base.getDate() + 7)
-      return nextWeekday(base, dow, true)
-    }
+    // "next Monday" = the COMING Monday; only roll a week if today IS that weekday.
+    if (lowered.includes(`next ${name}`)) return nextWeekday(ref, dow, false)
     if (new RegExp(`\\b${name}\\b`).test(lowered)) return nextWeekday(ref, dow, true)
   }
   if (/\bend of (the )?week\b/.test(lowered)) return nextWeekday(ref, 5, true) // Friday

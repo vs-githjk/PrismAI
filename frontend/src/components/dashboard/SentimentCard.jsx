@@ -152,11 +152,28 @@ export default function SentimentCard({ sentiment }) {
             </span>
           </div>
           <ul className="divide-y divide-amber-400/[0.10]">
-            {tensions.map((moment, i) => (
-              <li key={i} className="px-3 py-2 text-[12.5px] leading-5 text-white/82">
-                {moment}
-              </li>
-            ))}
+            {tensions.map((t, i) => {
+              // Backward-compat: legacy entries are plain strings.
+              const text = typeof t === 'string' ? t : t?.moment
+              const status = typeof t === 'string' ? null : t?.status
+              const carried = status === 'carried_over'
+              return (
+                <li key={i} className="px-3 py-2">
+                  <p className="text-[12.5px] leading-5 text-white/82">{text}</p>
+                  {status && (
+                    <span
+                      className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${
+                        carried
+                          ? 'border-red-400/30 bg-red-400/[0.10] text-red-300'
+                          : 'border-emerald-400/30 bg-emerald-400/[0.10] text-emerald-300'
+                      }`}
+                    >
+                      {carried ? '→ Carried over · needs follow-up' : '✓ Resolved'}
+                    </span>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

@@ -1,9 +1,8 @@
-"""Tests for the LangGraph analysis pipeline efficiency knobs:
-  - orchestrator fast-path: skip LLM call for transcripts ≥ N words
+"""Tests for the LangGraph analysis pipeline:
+  - deterministic router: no LLM call; all agents run, sentiment gated to
+    multi-speaker meetings, calendar_suggester always runs (self-decides)
   - tier-2 context-only: email_drafter receives "" transcript when the flag
     is on, so it works from summary+decisions+action_items (context) alone
-
-Both behaviors are flag-gated so the legacy path stays the rollback target.
 """
 
 import asyncio
@@ -31,62 +30,42 @@ def _state(transcript: str = "", context: dict = None, results: dict = None) -> 
     }
 
 
-# ── Orchestrator fast-path (#5) ─────────────────────────────────────────────
+# ── Deterministic router ────────────────────────────────────────────────────
 
-class OrchestratorSkipTests(unittest.TestCase):
-    def setUp(self):
-        self.prior_threshold = os.environ.get("PRISM_SKIP_ORCH_WORDS")
-        os.environ["PRISM_SKIP_ORCH_WORDS"] = "10"  # tiny threshold for tests
+class OrchestratorRoutingTests(unittest.TestCase):
+    """Routing is deterministic: no LLM call. All agents run; sentiment is gated
+    to multi-speaker meetings; calendar_suggester always runs (self-decides)."""
 
-    def tearDown(self):
-        if self.prior_threshold is None:
-            os.environ.pop("PRISM_SKIP_ORCH_WORDS", None)
-        else:
-            os.environ["PRISM_SKIP_ORCH_WORDS"] = self.prior_threshold
-
-    def test_long_transcript_skips_orchestrator_llm_call(self):
-        long_transcript = "word " * 20  # 20 words, above threshold
-        with patch.object(analysis_service.orchestrator, "run_orchestrator",
-                          new=AsyncMock(return_value=["summarizer"])) as mocked:
-            out = asyncio.run(analysis_service._orchestrator_node(_state(long_transcript)))
-
-        mocked.assert_not_called()
-        # All agents queued — no orchestrator filtering happened.
+    def test_multispeaker_runs_all_agents(self):
+        transcript = "Alice: hi there\nBob: hey, good to see you\nAlice: let's begin"
+        out = asyncio.run(analysis_service._orchestrator_node(_state(transcript)))
         self.assertEqual(set(out["agents_to_run"]), set(analysis_service.AGENT_MAP.keys()))
+        self.assertIn("sentiment", out["agents_to_run"])
 
-    def test_short_transcript_invokes_orchestrator(self):
-        short_transcript = "tiny meeting"  # 2 words, below threshold
-        with patch.object(analysis_service.orchestrator, "run_orchestrator",
-                          new=AsyncMock(return_value=["summarizer", "decisions"])) as mocked:
-            out = asyncio.run(analysis_service._orchestrator_node(_state(short_transcript)))
+    def test_solo_recording_skips_sentiment(self):
+        transcript = "Vidyut: this is a quick voice memo, just me here, no one else."
+        out = asyncio.run(analysis_service._orchestrator_node(_state(transcript)))
+        self.assertNotIn("sentiment", out["agents_to_run"])
+        self.assertEqual(set(out["agents_to_run"]),
+                         set(analysis_service.AGENT_MAP.keys()) - {"sentiment"})
 
-        mocked.assert_called_once()
-        self.assertEqual(out["agents_to_run"], ["summarizer", "decisions"])
+    def test_calendar_always_runs(self):
+        # No follow-up signals — calendar_suggester still runs (it self-decides).
+        transcript = "Alice: numbers look fine\nBob: agreed, nothing else"
+        out = asyncio.run(analysis_service._orchestrator_node(_state(transcript)))
+        self.assertIn("calendar_suggester", out["agents_to_run"])
 
-    def test_empty_transcript_invokes_orchestrator(self):
-        # An empty transcript has 0 words — below any positive threshold,
-        # so the orchestrator runs (or rather, the orchestrator gets a chance
-        # to decide on the empty case).
-        with patch.object(analysis_service.orchestrator, "run_orchestrator",
-                          new=AsyncMock(return_value=["summarizer"])) as mocked:
-            asyncio.run(analysis_service._orchestrator_node(_state("")))
-        mocked.assert_called_once()
+    def test_filters_to_known_agents(self):
+        out = asyncio.run(analysis_service._orchestrator_node(_state("Alice: hi\nBob: hey")))
+        for a in out["agents_to_run"]:
+            self.assertIn(a, analysis_service.AGENT_MAP)
 
-    def test_threshold_zero_always_skips(self):
-        os.environ["PRISM_SKIP_ORCH_WORDS"] = "0"
-        with patch.object(analysis_service.orchestrator, "run_orchestrator",
-                          new=AsyncMock(return_value=[])) as mocked:
-            out = asyncio.run(analysis_service._orchestrator_node(_state("anything")))
-        mocked.assert_not_called()
-        self.assertEqual(set(out["agents_to_run"]), set(analysis_service.AGENT_MAP.keys()))
-
-    def test_orchestrator_filters_to_known_agents(self):
-        # Sanity: orchestrator returning a bogus name doesn't leak into the run list.
-        with patch.object(analysis_service.orchestrator, "run_orchestrator",
-                          new=AsyncMock(return_value=["summarizer", "made_up_agent"])):
-            out = asyncio.run(analysis_service._orchestrator_node(_state("short")))
-        self.assertIn("summarizer", out["agents_to_run"])
-        self.assertNotIn("made_up_agent", out["agents_to_run"])
+    def test_routing_is_not_an_llm_coroutine(self):
+        import inspect
+        self.assertFalse(
+            inspect.iscoroutinefunction(analysis_service.orchestrator.run_orchestrator),
+            "router should be a plain deterministic function, not an LLM coroutine",
+        )
 
 
 # ── Tier-2 context-only (#4) ────────────────────────────────────────────────

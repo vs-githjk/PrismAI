@@ -85,7 +85,7 @@ async def list_workspaces(user_id: str = Depends(require_user_id)):
 
     workspaces = (
         client.table("workspaces")
-        .select("id, name, invite_token, created_at")
+        .select("id, name, invite_token, created_at, default_persona")
         .in_("id", workspace_ids)
         .order("created_at")
         .execute()
@@ -135,7 +135,7 @@ async def get_workspace(workspace_id: str, user_id: str = Depends(require_user_i
 
     ws = (
         client.table("workspaces")
-        .select("id, name, invite_token, created_at")
+        .select("id, name, invite_token, created_at, default_persona")
         .eq("id", workspace_id)
         .maybe_single()
         .execute()
@@ -364,13 +364,12 @@ async def get_workspace_brief(workspace_id: str, user_id: str = Depends(require_
                 "task": task,
                 "owner": (item.get("owner") or "").strip(),
                 "due": (item.get("due") or "").strip(),
+                "due_date": (item.get("due_date") or "").strip(),
                 "meeting_id": meeting.get("id"),
                 "meeting_title": meeting.get("title") or "Untitled meeting",
                 "meeting_date": meeting.get("date") or "",
             })
-            if len(open_items) >= 10:
-                break
-        if len(open_items) >= 10:
-            break
 
-    return {"open_items": open_items}
+    # Deadline-aware: dated items first (overdue/soonest), undated last; then cap.
+    open_items.sort(key=lambda x: (not x["due_date"], x["due_date"]))
+    return {"open_items": open_items[:10]}

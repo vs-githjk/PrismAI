@@ -36,6 +36,12 @@ _live_token_index: dict = {}
 # so repeated /bot-status polls don't keep creating new tasks.
 _proactive_respawned: set[str] = set()
 
+# Bots whose transcript analysis is currently in flight. Without this guard, the
+# /bot-status "zombie re-trigger" fires on every poll while status is still
+# "processing" — spawning a duplicate full analysis each time and exploding token
+# usage (this is what exhausted the Groq daily limit). One analysis per bot.
+_processing_bots: set[str] = set()
+
 
 def _db_save(bot_id: str, fields: dict):
     """Persist bot state to Supabase (best-effort, non-blocking)."""
@@ -479,6 +485,15 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
 
 
 async def _process_bot_transcript(bot_id: str):
+    # Idempotency: never run two analyses for the same bot concurrently. The
+    # /bot-status poll re-triggers this while status=="processing" (to recover
+    # from a server restart that killed the task) — but it can't tell a still-
+    # running task from a dead one, so without this guard every poll spawned
+    # another full analysis. One in-flight analysis per bot.
+    if bot_id in _processing_bots:
+        print(f"[recall] analysis already in flight for bot {bot_id}, skipping duplicate")
+        return
+    _processing_bots.add(bot_id)
     # Guarantee bot_store[bot_id] exists for the full duration of processing.
     # remove_bot() can pop the entry at any time; setdefault re-establishes it so
     # the status writes below never raise KeyError inside the except block.
@@ -540,6 +555,8 @@ async def _process_bot_transcript(bot_id: str):
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
+    finally:
+        _processing_bots.discard(bot_id)
 
 
 async def _optional_user_id(request: Request) -> str | None:
@@ -749,16 +766,17 @@ async def bot_status(bot_id: str):
     our_status = STATUS_MAP.get(recall_status, bot_store.get(bot_id, {}).get("status", "joining"))
 
     if recall_status in ("call_ended", "done"):
-        if bot_id not in bot_store:
-            bot_store[bot_id] = {"status": "processing", "result": None, "error": None, "commands": []}
-            _db_save(bot_id, {"status": "processing"})
-            asyncio.create_task(_process_bot_transcript(bot_id))
-        elif bot_store[bot_id].get("status") == "processing" and not bot_store[bot_id].get("result"):
-            # Zombie state: server restarted mid-processing — task died but DB still says "processing".
-            # Re-trigger so the transcript gets fetched and saved.
-            asyncio.create_task(_process_bot_transcript(bot_id))
-        elif bot_store[bot_id].get("status") not in ("processing", "done", "error"):
-            bot_store[bot_id]["status"] = "processing"
+        # The call has ended → make sure analysis runs, exactly once. Skip if it's
+        # already finished (done/error) or currently in flight. _process_bot_transcript
+        # is itself idempotent (its _processing_bots guard); the in-flight check here
+        # just avoids spawning throwaway tasks on every poll. On a server restart the
+        # in-memory guard is empty while the DB still says "processing", so a genuinely
+        # dead task is correctly re-triggered.
+        entry = bot_store.setdefault(
+            bot_id, {"status": "joining", "result": None, "error": None, "commands": []}
+        )
+        if entry.get("status") not in ("done", "error") and bot_id not in _processing_bots:
+            entry["status"] = "processing"
             _db_save(bot_id, {"status": "processing"})
             asyncio.create_task(_process_bot_transcript(bot_id))
 

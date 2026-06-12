@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, FileText, Paperclip, Plus } from 'lucide-react'
+import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
@@ -9,6 +9,7 @@ import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
 import { useCountUp } from '../../lib/healthScore'
+import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 const GAUGE_RADIUS = 46
@@ -27,6 +28,13 @@ function healthColor(score) {
 
 // Padding baked into the viewBox so the progress arc's glow isn't clipped.
 const GAUGE_PAD = 12
+
+// Decision importance → label + accent. 1=critical, 2=significant, 3=minor.
+const DECISION_PRIORITY = {
+  1: { label: 'Critical', color: '#f87171', border: 'rgba(248,113,113,0.30)', tint: 'rgba(248,113,113,0.10)' },
+  2: { label: 'Significant', color: '#fbbf24', border: 'rgba(251,191,36,0.30)', tint: 'rgba(251,191,36,0.10)' },
+  3: { label: 'Minor', color: '#94a3b8', border: 'rgba(148,163,184,0.28)', tint: 'rgba(148,163,184,0.10)' },
+}
 
 function SemicircularGauge({ score }) {
   const displayed = useCountUp(score, 1000)
@@ -115,7 +123,36 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
-  const decisions = result.decisions || []
+  // Sort open-first, then by deadline (overdue/soonest first, undated last) —
+  // while preserving each item's original index for the completion PATCH.
+  const sortedActionItems = actionItems
+    .map((item, originalIndex) => ({ item, originalIndex, due: dueInfo(item) }))
+    .sort((a, b) => {
+      if (!!a.item.completed !== !!b.item.completed) return a.item.completed ? 1 : -1
+      return compareDue(a.due, b.due)
+    })
+
+  const DUE_STYLE = {
+    overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
+    soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
+    later: 'border-white/[0.12] bg-white/[0.04] text-white/55',
+  }
+  // Surface the importance the agent assigns: sort critical-first and badge each.
+  // Keep each decision's original index so it can be matched to linked actions.
+  const decisions = (result.decisions || [])
+    .map((d, _i) => ({ ...d, _i }))
+    .sort((a, b) => (a.importance || 3) - (b.importance || 3))
+
+  // Decision ↔ action links (indices reference the original arrays).
+  const decisionLinks = result.decision_links || []
+  const actionsByDecision = {} // decision index -> [action indices]
+  const decisionByAction = {}  // action index -> decision index
+  const linkedDecisions = new Set() // decisions the linker returned an entry for
+  for (const link of decisionLinks) {
+    linkedDecisions.add(link.decision)
+    actionsByDecision[link.decision] = link.actions || []
+    for (const a of (link.actions || [])) decisionByAction[a] = link.decision
+  }
   const showPinned = !readOnly && !!meetingId
 
   const pinnedSection = showPinned ? (
@@ -167,10 +204,22 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         <section className="flex max-h-[25vh] flex-col justify-center p-4">
           <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-white">Summary</p>
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+            {result.tldr && (
+              <p className="mb-3 text-[15px] font-semibold leading-6 text-white">{result.tldr}</p>
+            )}
             {result.summary ? (
-              <p className="text-[15px] leading-7 text-white/90">{result.summary}</p>
+              <p className={`${result.tldr ? 'text-[13.5px] text-white/65' : 'text-[15px] text-white/90'} leading-7`}>{result.summary}</p>
             ) : (
               <p className={subtleText}>No summary generated.</p>
+            )}
+            {result.topics?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {result.topics.map((topic, i) => (
+                  <span key={i} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-white/70">
+                    {topic}
+                  </span>
+                ))}
+              </div>
             )}
             {healthScore?.verdict && (
               <figure
@@ -187,6 +236,15 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                   {healthScore.verdict}
                 </blockquote>
               </figure>
+            )}
+            {healthScore?.improvement_tip && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
+                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
+                <div>
+                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
+                  <p className="mt-0.5 text-[13px] leading-5 text-white/80">{healthScore.improvement_tip}</p>
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -210,7 +268,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           {actionItems.length ? (
             <div>
-              {actionItems.map((item, i) => {
+              {sortedActionItems.map(({ item, originalIndex: i, due }) => {
                 const check = (
                   <span
                     aria-hidden="true"
@@ -249,14 +307,27 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                       <p className={`text-[15px] font-medium leading-snug text-white ${item.completed ? 'line-through' : ''}`}>
                         {item.task}
                       </p>
-                      <p className="mt-1 text-xs font-medium text-white/45">
-                        {item.owner || 'Unowned'}
-                        {item.due ? ` · ${item.due}` : ''}
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <p className="text-xs font-medium text-white/45">
+                          {item.owner || 'Unowned'}
+                          {item.due && item.due !== 'TBD' ? ` · ${item.due}` : ''}
+                        </p>
+                        {!item.completed && (due.status === 'overdue' || due.status === 'soon') && (
+                          <span className={`rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${DUE_STYLE[due.status]}`}>
+                            {dueLabel(due)}
+                          </span>
+                        )}
+                      </div>
                       {item.external_ref && (
                         <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-400/[0.08] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200">
                           {item.external_ref.tool === 'linear_create_issue' ? '⬡' : '📅'} {item.external_ref.external_id}
                         </span>
+                      )}
+                      {decisionByAction[i] !== undefined && result.decisions?.[decisionByAction[i]] && (
+                        <p className="mt-1 flex items-start gap-1 text-[10.5px] text-violet-300/70">
+                          <CornerDownRight className="mt-0.5 h-3 w-3 shrink-0 rotate-180" aria-hidden="true" />
+                          <span className="line-clamp-1">From decision: {result.decisions[decisionByAction[i]].decision}</span>
+                        </p>
                       )}
                     </div>
                   </div>
@@ -279,12 +350,41 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           {decisions.length ? (
             <div className="space-y-3">
-              {decisions.map((d, i) => (
-                <div key={i} className="border-l-2 border-l-violet-400/60 pl-3.5">
-                  <p className="text-[15px] font-medium leading-snug text-white">{d.decision}</p>
-                  {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
-                </div>
-              ))}
+              {decisions.map((d, i) => {
+                const prio = DECISION_PRIORITY[d.importance] || DECISION_PRIORITY[3]
+                return (
+                  <div key={i} className="border-l-2 pl-3.5" style={{ borderColor: prio.border }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[15px] font-medium leading-snug text-white">{d.decision}</p>
+                      <span
+                        className="mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                        style={{ borderColor: prio.border, color: prio.color, background: prio.tint }}
+                      >
+                        {prio.label}
+                      </span>
+                    </div>
+                    {d.rationale && (
+                      <p className="mt-1 text-[12.5px] leading-5 text-white/55">{d.rationale}</p>
+                    )}
+                    {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
+                    {actionsByDecision[d._i]?.length > 0 && (
+                      <div className="mt-1.5 space-y-0.5">
+                        {actionsByDecision[d._i].map((ai) => (
+                          <p key={ai} className="flex items-start gap-1 text-[11px] text-cyan-300/70">
+                            <CornerDownRight className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                            <span className="line-clamp-1">{result.action_items?.[ai]?.task}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {linkedDecisions.has(d._i) && !(actionsByDecision[d._i]?.length) && (
+                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/[0.10] px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-amber-300">
+                        ⚠ No action item
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           ) : (
             <p className={subtleText}>No decisions recorded in this meeting.</p>
@@ -295,9 +395,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
 
-      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
-
-      {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} />}
+      {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} suggestedEmails={suggestedEmails} />}
 
       <CalendarCard
         suggestion={result.calendar_suggestion}
@@ -306,6 +404,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         readOnly={readOnly}
         suggestedEmails={suggestedEmails}
       />
+
+      {/* Secondary insight — kept low, just above the recording/transcript. */}
+      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
 
       {meeting?.id && meeting?.recording_provider === 'recall' && (
         <RecordingPlayer

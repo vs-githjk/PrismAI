@@ -123,14 +123,18 @@ export default function SentimentCard({ sentiment }) {
           <div className="mb-4 border-t border-white/5 pt-3">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Tension Moments</p>
             <ul className="space-y-1.5">
-              {tensions.map((t, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-gray-400">
-                  <svg className="mt-0.5 w-3 h-3 text-red-400 shrink-0 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  <span>{t}</span>
-                </li>
-              ))}
+              {tensions.map((t, i) => {
+                const text = typeof t === 'string' ? t : t?.moment
+                const carried = typeof t !== 'string' && t?.status === 'carried_over'
+                return (
+                  <li key={i} className="flex items-start gap-2 text-xs text-gray-400">
+                    <svg className="mt-0.5 w-3 h-3 text-red-400 shrink-0 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>{text}{carried && <span className="ml-1 text-red-400/70">· carried over</span>}</span>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}

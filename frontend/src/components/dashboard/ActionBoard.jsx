@@ -1,5 +1,11 @@
 import { Zap } from 'lucide-react'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
+import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
+
+const OPEN_DUE_STYLE = {
+  overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
+  soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
+}
 
 function Block({ title, children }) {
   return (
@@ -13,7 +19,11 @@ function Block({ title, children }) {
 }
 
 export default function ActionBoard({ result, insights, hideOpen = false }) {
-  const openItems = (result?.action_items || []).filter((item) => !item.completed).slice(0, 5)
+  const openItems = (result?.action_items || [])
+    .filter((item) => !item.completed)
+    .map((item) => ({ ...item, _due: dueInfo(item) }))
+    .sort((a, b) => compareDue(a._due, b._due))
+    .slice(0, 5)
   const blockers = insights.recurringBlockers || []
   const nextSteps = insights.recommendedActions || []
 
@@ -34,8 +44,15 @@ export default function ActionBoard({ result, insights, hideOpen = false }) {
               <div className="space-y-1.5">
                 {openItems.map((item, index) => (
                   <div key={`${item.task}-${index}`} className="rounded-lg border border-white/[0.07] bg-black/20 px-2.5 py-1.5">
-                    <p className="line-clamp-1 text-sm font-medium text-white">{item.task}</p>
-                    <p className={subtleText}>{item.owner || 'Unowned'}{item.due ? ` · ${item.due}` : ''}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="line-clamp-1 text-sm font-medium text-white">{item.task}</p>
+                      {(item._due?.status === 'overdue' || item._due?.status === 'soon') && (
+                        <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8.5px] font-semibold uppercase tracking-wide ${OPEN_DUE_STYLE[item._due.status]}`}>
+                          {dueLabel(item._due)}
+                        </span>
+                      )}
+                    </div>
+                    <p className={subtleText}>{item.owner || 'Unowned'}{item.due && item.due !== 'TBD' ? ` · ${item.due}` : ''}</p>
                   </div>
                 ))}
               </div>

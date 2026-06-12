@@ -8,6 +8,7 @@ from langgraph.types import Send
 from agents import (
     action_items,
     calendar_suggester,
+    decision_linker,
     decisions,
     email_drafter,
     health_score,
@@ -81,26 +82,19 @@ def _email_from_context_on() -> bool:
     return os.getenv("PRISM_EMAIL_FROM_CONTEXT", "1") == "1"
 
 
-def _skip_orchestrator_words() -> int:
-    """Word-count threshold above which we bypass the orchestrator's LLM call
-    and just run every agent. Read at call time so tests can patch it cheaply.
-    Long meetings effectively always run all agents anyway — the orchestrator's
-    decision-cost (one full LLM call, ~500-800ms) doesn't pay for itself."""
-    try:
-        return int(os.getenv("PRISM_SKIP_ORCH_WORDS", "1500"))
-    except ValueError:
-        return 1500
-
 DEFAULT_RESULT = {
     "title": "",
+    "tldr": "",
     "summary": "",
+    "topics": [],
     "action_items": [],
     "decisions": [],
     "sentiment": {"overall": "neutral", "score": 50, "arc": "stable", "notes": "", "speakers": [], "tension_moments": []},
     "follow_up_email": {"subject": "", "body": ""},
     "calendar_suggestion": {"recommended": False, "reason": "", "suggested_timeframe": "", "suggested_time": "", "agenda": [], "attendees": [], "resolved_date": "", "resolved_day": "", "resolved_time": ""},
-    "health_score": {"score": 0, "verdict": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
+    "health_score": {"score": 0, "verdict": "", "improvement_tip": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
     "speaker_coach": {"speakers": [], "balance_score": 100},
+    "decision_links": [],
     "agents_run": [],
 }
 
@@ -113,6 +107,7 @@ AGENT_RESULT_KEY = {
     "calendar_suggester": "calendar_suggestion",
     "health_score": "health_score",
     "speaker_coach": "speaker_coach",
+    "decision_linker": "decision_links",
 }
 
 
@@ -145,13 +140,8 @@ def build_analysis_transcript(transcript: str, speakers: list | None = None, own
 # ── Graph nodes ────────────────────────────────────────────────────
 
 async def _orchestrator_node(state: AnalysisState) -> dict:
-    transcript = state["transcript"] or ""
-    # Fast-path: long meetings basically always run every agent anyway, so
-    # paying for the orchestrator's LLM round-trip is wasted latency + tokens.
-    # Compare on word count (cheap to compute) — ~1500 words ≈ 2000 tokens.
-    if len(transcript.split()) >= _skip_orchestrator_words():
-        return {"agents_to_run": list(AGENT_MAP.keys())}
-    agents = await orchestrator.run_orchestrator(transcript)
+    # Routing is now deterministic (no LLM call) — see agents/orchestrator.py.
+    agents = orchestrator.run_orchestrator(state["transcript"] or "")
     return {"agents_to_run": [a for a in agents if a in AGENT_MAP]}
 
 
@@ -178,13 +168,32 @@ def _make_tier1_node(agent_name: str):
 
 async def _tier1_barrier(state: AnalysisState) -> dict:
     r = state.get("results", {})
+    decisions_list = r.get("decisions", {}).get("decisions", [])
+    action_items_list = r.get("action_items", {}).get("action_items", [])
+
+    # Decision↔action linker runs here (between tiers) so its output can both
+    # enrich the Tier-2 context (calendar uses unactioned decisions) and stream
+    # to the UI. Only fires when there's something to link.
+    if decisions_list and action_items_list:
+        link_out = await decision_linker.run(decisions_list, action_items_list)
+    else:
+        link_out = {"decision_links": [], "unactioned_decisions": []}
+
+    unactioned_texts = [
+        decisions_list[i].get("decision", "")
+        for i in link_out.get("unactioned_decisions", [])
+        if 0 <= i < len(decisions_list)
+    ]
+
     return {
+        "results": {"decision_linker": link_out},
         "context": {
             "summary": r.get("summarizer", {}).get("summary", ""),
-            "decisions": r.get("decisions", {}).get("decisions", []),
-            "action_items": r.get("action_items", {}).get("action_items", []),
+            "decisions": decisions_list,
+            "action_items": action_items_list,
             "sentiment": r.get("sentiment", {}).get("sentiment", {}),
-        }
+            "unactioned_decisions": unactioned_texts,
+        },
     }
 
 
@@ -255,7 +264,9 @@ def _state_to_result(state: AnalysisState) -> dict:
     sr = raw.get("summarizer", {})
     if sr.get("title") or sr.get("summary"):
         result["title"] = sr.get("title", "")
+        result["tldr"] = sr.get("tldr", "")
         result["summary"] = sr.get("summary", "")
+        result["topics"] = sr.get("topics", []) or []
         succeeded.append("summarizer")
 
     ar = raw.get("action_items", {})
@@ -292,6 +303,10 @@ def _state_to_result(state: AnalysisState) -> dict:
     if scr.get("speaker_coach"):
         result["speaker_coach"] = scr["speaker_coach"]
         succeeded.append("speaker_coach")
+
+    dlr = raw.get("decision_linker", {})
+    if dlr.get("decision_links") is not None:
+        result["decision_links"] = dlr["decision_links"]
 
     result["agents_run"] = succeeded
     return result

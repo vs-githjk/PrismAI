@@ -31,12 +31,14 @@ SYSTEM_PROMPT = (
     '"arc": "improving|stable|declining|unresolved", '
     '"notes": "1-2 sentence summary citing specific speakers or moments", '
     '"speakers": [ { "name": "string", "tone": "collaborative|neutral|resistant|frustrated|enthusiastic|reserved", "score": 0-100 } ], '
-    '"tension_moments": ["string", ...] } }\n\n'
+    '"tension_moments": [ { "moment": "what happened, naming the speaker(s)", "status": "resolved|carried_over" } ] } }\n\n'
     "Rules:\n"
     "- score: 100 = highly productive/positive dynamic; 50 = neutral; 0 = highly unproductive/tense\n"
     "- arc: did the meeting's energy improve, stay stable, decline, or end unresolved?\n"
     "- speakers: one entry per identified speaker; tone reflects their individual participation pattern\n"
-    "- tension_moments: 0-3 specific moments where tone shifted or conflict surfaced. Each must name a speaker and what happened. Empty array if truly none.\n"
+    "- tension_moments: 0-3 specific moments where tone shifted or conflict surfaced. Each names the speaker(s) and what happened. "
+    "status = 'resolved' if the tension was worked out before the meeting ended; 'carried_over' if it was left unaddressed or unresolved. "
+    "Empty array if truly none.\n"
     "- notes: anchor in evidence — name specific speakers or specific moments. Do not generalize."
 )
 
