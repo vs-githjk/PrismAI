@@ -253,6 +253,8 @@ _DEFAULT_COUNTERS = {
     "ambient_demoted_no_gap": 0,
     "ambient_yielded": 0,
     "ambient_parse_fail": 0,
+    "ack_played": 0,
+    "ack_cancelled_fast": 0,
 }
 
 
@@ -292,6 +294,8 @@ _OPERATIONAL_KEYS = (
     "ambient_demoted_no_gap",
     "ambient_yielded",
     "ambient_parse_fail",
+    "ack_played",
+    "ack_cancelled_fast",
 )
 
 _SECURITY_KEYS = (

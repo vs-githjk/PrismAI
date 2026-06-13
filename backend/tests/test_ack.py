@@ -129,5 +129,84 @@ class AckAudioTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(ack_audio.get_ack_audio("On it — one moment."))
 
 
+import meeting_memory  # noqa: E402
+import perception_state  # noqa: E402
+import realtime_routes as rt  # noqa: E402
+
+
+class AckWiringTests(unittest.IsolatedAsyncioTestCase):
+    def _state(self):
+        return meeting_memory.get_initial_memory_state()
+
+    async def test_ack_fires_after_delay_when_no_real_audio(self):
+        state = self._state()
+        uploaded = []
+
+        async def fake_upload(bot_id, audio):
+            uploaded.append(audio)
+            return True
+
+        with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "0.05"}), \
+             mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+             mock.patch.object(rt.ack_audio, "get_ack_audio", return_value=b"ack-bytes"), \
+             mock.patch.object(rt, "_upload_audio_to_recall", new=fake_upload):
+            rt._arm_ack("b1", state, "check my inbox please")
+            await asyncio.sleep(0.15)
+        self.assertEqual(uploaded, [b"ack-bytes"])
+        self.assertEqual(perception_state.ensure_counters(state)["ack_played"], 1)
+
+    async def test_cancel_before_delay_suppresses_ack(self):
+        state = self._state()
+        uploaded = []
+
+        async def fake_upload(bot_id, audio):
+            uploaded.append(audio)
+            return True
+
+        with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "0.2"}), \
+             mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+             mock.patch.object(rt.ack_audio, "get_ack_audio", return_value=b"ack-bytes"), \
+             mock.patch.object(rt, "_upload_audio_to_recall", new=fake_upload):
+            rt._arm_ack("b1", state, "check my inbox please")
+            await asyncio.sleep(0.02)
+            rt._cancel_ack(state)
+            await asyncio.sleep(0.3)
+        self.assertEqual(uploaded, [])
+        self.assertEqual(perception_state.ensure_counters(state)["ack_cancelled_fast"], 1)
+
+    async def test_flag_off_never_arms(self):
+        state = self._state()
+        with mock.patch.dict(__import__("os").environ, {"PRISM_ACK": "0"}):
+            rt._arm_ack("b1", state, "check my inbox")
+        self.assertIsNone(state.get("_ack_task"))
+
+    async def test_missing_audio_is_silent_noop(self):
+        state = self._state()
+        uploaded = []
+
+        async def fake_upload(bot_id, audio):
+            uploaded.append(audio)
+            return True
+
+        with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "0.05"}), \
+             mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+             mock.patch.object(rt.ack_audio, "get_ack_audio", return_value=None), \
+             mock.patch.object(rt, "_upload_audio_to_recall", new=fake_upload):
+            rt._arm_ack("b1", state, "check my inbox")
+            await asyncio.sleep(0.15)
+        self.assertEqual(uploaded, [])
+
+    async def test_new_command_replaces_pending_ack(self):
+        state = self._state()
+        with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "5"}), \
+             mock.patch.object(rt, "RECALL_API_KEY", "k"):
+            rt._arm_ack("b1", state, "first command")
+            first_task = state["_ack_task"]
+            rt._arm_ack("b1", state, "second command")
+            await asyncio.sleep(0.01)
+            self.assertTrue(first_task.cancelled() or first_task.done())
+            state["_ack_task"].cancel()
+
+
 if __name__ == "__main__":
     unittest.main()

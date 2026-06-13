@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 
+import ack_phrases
+import ack_audio
 import ambient_loop
 import meeting_memory
 import perception_state
@@ -1696,6 +1698,37 @@ async def _wait_for_speech_gap(state: dict) -> None:
         await asyncio.sleep(0.2)
 
 
+def _cancel_ack(state: dict) -> None:
+    """Real audio is about to play (or did) — suppress any pending ack."""
+    task = state.pop("_ack_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        perception_state.bump(state, "ack_cancelled_fast")
+
+
+def _arm_ack(bot_id: str, state: dict, command: str) -> None:
+    """Race timer: if no real audio uploads within ack_delay_s, speak the
+    pre-synthesized category acknowledgment. The first real upload cancels it."""
+    if not ack_phrases.ack_on() or not RECALL_API_KEY:
+        return
+    _cancel_ack(state)  # a newer command supersedes any pending ack
+
+    category = ack_phrases.classify_command(command)
+    phrase = ack_phrases.pick_phrase(category, state)
+
+    async def _fire():
+        await asyncio.sleep(ack_phrases.ack_delay_s())
+        audio = ack_audio.get_ack_audio(phrase)
+        if not audio:
+            return  # synthesis failed/unfinished — stay silent, never block
+        if await _upload_audio_to_recall(bot_id, audio):
+            perception_state.bump(state, "ack_played")
+            print(f"[ack] played category={category} phrase={phrase!r} bot={bot_id[:8]}")
+        state.pop("_ack_task", None)
+
+    state["_ack_task"] = asyncio.create_task(_fire())
+
+
 async def _send_voice_response(bot_id: str, text: str):
     """Convert text to speech and play it in the meeting via Recall.ai bot.
     Buffered (default) path: one TTS call, one upload."""
@@ -1705,6 +1738,7 @@ async def _send_voice_response(bot_id: str, text: str):
     if not audio_bytes:
         print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
         return
+    _cancel_ack(_get_bot_state(bot_id))
     await _upload_audio_to_recall(bot_id, audio_bytes)
 
 
@@ -1884,6 +1918,7 @@ async def _stream_llm_to_voice(
                 if _sess is not None:
                     _sess.chunks_uploaded += 1
                 if not first_upload_logged:
+                    _cancel_ack(_get_bot_state(bot_id))
                     ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                     print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                     first_upload_logged = True
@@ -2018,6 +2053,7 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
             if _sess is not None:
                 _sess.chunks_uploaded += 1
             if not first_upload_logged:
+                _cancel_ack(_get_bot_state(bot_id))
                 ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                 print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                 first_upload_logged = True
@@ -2581,6 +2617,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             await _send_chat_response(bot_id, summary)
             return
     state["processing"] = True
+
+    # Instant acknowledgment: arm the race timer now that this command is
+    # committed. If real audio doesn't start within ack_delay_s, a cached
+    # category ack plays; the first real upload cancels it.
+    _arm_ack(bot_id, state, command)
 
     # Phase B: install a fresh speaking session for this command. supersede_session
     # cancels any in-flight session under the session_lock so the cancel-checkers
