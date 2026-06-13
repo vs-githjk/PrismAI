@@ -116,7 +116,7 @@ export default function PersonaChip({
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0b0b0b] text-white sm:max-w-md">
+        <DialogContent className="dashboard-popup dashboard-body-font text-white sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-sm font-semibold text-white">
               Pick persona
