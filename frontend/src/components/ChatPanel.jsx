@@ -103,7 +103,7 @@ function detectGlobalIntent(msg) {
 function detectAgentIntent(msg) {
   const m = msg.toLowerCase()
   if (/undo|revert|restore|back to (the )?(original|old|previous|last|before)|reset (the )?(card|email|summary|action|decision)/.test(m)) return 'undo'
-  if (/email/.test(m) && /redraft|rewrite|redo|revise|make|formal|casual|shorter|longer|concise|tone|style|angry|angrier|polite|friendl|professional/.test(m)) return 'email_drafter'
+  if (/e-?mail/.test(m) && /draft|write|compose|create|generate|prepare|redraft|rewrite|redo|revise|make|formal|casual|short|long|concise|tone|style|angr|polite|friendl|professional|improve|update|follow.?up/.test(m)) return 'email_drafter'
   if (/action item|task|todo/.test(m) && /redo|regenerate|update|add|remove|change|rewrite/.test(m)) return 'action_items'
   if (/summar/.test(m) && /redo|regenerate|rewrite|update|change|shorten|shorter|longer|make|improve|concise/.test(m)) return 'summarizer'
   if (/calendar|follow.up time|reschedule/.test(m) && /redo|regenerate|suggest|change|update|set|move|shift|reschedule/.test(m)) return 'calendar_suggester'
@@ -243,7 +243,12 @@ export default function ChatPanel({
     setInput('')
     setLoading(true)
 
-    const agentIntent = result && transcript ? detectAgentIntent(msg) : null
+    // Gate on `result` only — NOT transcript. Tier-2 agents (email, calendar, health)
+    // re-run from the result context the backend rebuilds, and edit agents ship
+    // existing_items, so the raw transcript is optional. Requiring it meant a recovered
+    // or reopened meeting (which often has no transcript in chat context) could never
+    // run an agent — every "draft an email" fell through to ungrounded generic chat.
+    const agentIntent = result ? detectAgentIntent(msg) : null
     const globalIntent = !agentIntent && detectGlobalIntent(msg)
 
     try {
@@ -268,7 +273,7 @@ export default function ChatPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agent: agentIntent,
-            transcript,
+            transcript: transcript || '',
             instruction: msg,
             existing_items: existingItems,
             // Ship the current result so a Tier-2 agent (health, calendar, email)

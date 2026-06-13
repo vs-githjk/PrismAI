@@ -65,7 +65,7 @@ class GlobalChatRequest(BaseModel):
 
 class AgentRequest(BaseModel):
     agent: str
-    transcript: str
+    transcript: str = ""  # optional — Tier-2 agents (email, calendar, health) run from `result`
     instruction: str = ""
     existing_items: list | None = None
     # The current meeting result — lets a Tier-2 agent re-run with the same
