@@ -325,7 +325,9 @@ function NewMeetingPanel(props) {
                 <div className="flex items-center gap-2 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-3 py-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
                   <p className="text-[11px] text-cyan-300/70">
-                    Prism is already in this meeting via {props.dedupBotInfo.ownerUserEmail || 'a teammate'} — results will appear here when done.
+                    {props.dedupBotInfo.self
+                      ? 'Prism is already in this meeting — reconnecting to your existing session.'
+                      : `Prism is already in this meeting via ${props.dedupBotInfo.ownerUserEmail || 'a teammate'} — results will appear here when done.`}
                   </p>
                 </div>
               )}
@@ -560,7 +562,7 @@ export default function DashboardPage(props) {
       .then((res) => (res.ok ? res.json() : { sessions: [] }))
       .then((data) => setPastSessions(data.sessions || []))
       .catch(() => setPastSessions([]))
-  }, [props.meetingId, props.user])
+  }, [props.meetingId, props.user?.id])
 
   // Clear stale sessions immediately on meeting switch (ChatPanel is keyed by
   // meetingId and remounts before the new fetch lands — must not see the old
@@ -603,7 +605,7 @@ export default function DashboardPage(props) {
       .then((r) => r.ok ? r.json() : [])
       .then((data) => { setWorkspaces(data); setWorkspacesLoaded(true) })
       .catch(() => { setWorkspaces([]); setWorkspacesLoaded(true) })
-  }, [props.user])
+  }, [props.user?.id])
 
   // Build userId→email map for attribution when active workspace changes
   useEffect(() => {

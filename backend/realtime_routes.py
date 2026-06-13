@@ -25,7 +25,7 @@ from clients import get_groq, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 from tools.tts import text_to_speech
-from recall_routes import bot_store, _db_append_command, _db_save_memory
+from recall_routes import bot_store, _db_append_command, _db_save_memory, _db_save
 from auth import supabase
 from cross_meeting_service import looks_like_blocker, extract_significant_terms
 
@@ -660,8 +660,8 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
         state["compression_cursor"] = min(
             state["compression_cursor"], len(state["transcript_buffer"])
         )
-    if bot_id in bot_store:
-        bot_store[bot_id]["realtime_transcript_lines"] = state["transcript_buffer"]
+    # Durable full transcript (append-only; survives buffer trims + restart-resume).
+    _append_realtime_line(bot_id, line)
     if state["meeting_start_ts"] is None:
         state["meeting_start_ts"] = time.time()
 
@@ -1497,6 +1497,46 @@ def _find_drifting_commitment(state: dict, elapsed_min: float) -> dict | None:
     return best
 
 
+# Persist the live transcript to bot_sessions every N new lines. Decoupled from the
+# compression cadence (below) on purpose: a short meeting may end before it ever hits
+# the compression threshold, and Render free-tier restarts wipe the in-memory buffer.
+# Persisting the raw lines to a durable column lets _process_bot_transcript recover a
+# transcript even when Recall produced 0 recordings AND the server restarted mid-meeting.
+_TRANSCRIPT_PERSIST_EVERY = 8
+# Generous cap on the durable full transcript (independent of the capped live-memory
+# buffer). 8000 utterance-lines is a very long meeting; trimming the oldest is safe
+# because the compressed memory_summary already captures earlier content.
+_RT_TRANSCRIPT_CAP = 8000
+
+
+def _append_realtime_line(bot_id: str, line: str) -> None:
+    """Append one finalized line to the durable, uncapped-ish full transcript held on
+    bot_store. Kept separate from state['transcript_buffer'] (which is capped/trimmed for
+    live memory) so the full meeting transcript survives trims AND a restart-then-resume:
+    _db_load seeds this list from the persisted column, and new utterances append to it
+    rather than overwriting it with only post-restart lines."""
+    if bot_id not in bot_store:
+        return
+    rt = bot_store[bot_id].setdefault("realtime_transcript_lines", [])
+    rt.append(line)
+    if len(rt) > _RT_TRANSCRIPT_CAP:
+        del rt[: len(rt) - _RT_TRANSCRIPT_CAP]
+
+
+def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> None:
+    """Best-effort durable persistence of the accumulated realtime transcript.
+    Throttled to one write per _TRANSCRIPT_PERSIST_EVERY new lines so we don't
+    upsert on every utterance. `force` flushes the tail (e.g. at meeting end)."""
+    rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
+    if not rt_lines:
+        return
+    last = state.get("_transcript_persist_len", 0)
+    if not force and len(rt_lines) - last < _TRANSCRIPT_PERSIST_EVERY:
+        return
+    state["_transcript_persist_len"] = len(rt_lines)
+    _db_save(bot_id, {"realtime_transcript": "\n".join(rt_lines)})
+
+
 async def _compress_and_persist(bot_id: str, state: dict) -> None:
     """
     Wrapper around meeting_memory.maybe_compress that also persists the updated summary
@@ -1513,6 +1553,10 @@ async def _compress_and_persist(bot_id: str, state: dict) -> None:
         snapshot = meeting_memory.get_memory_snapshot(state)
         _db_save_memory(bot_id, snapshot["memory_summary"], snapshot["live_state_payload"])
         asyncio.create_task(_maybe_generate_idea(bot_id, state))
+
+    # Durable transcript persistence — runs every line but self-throttles. Independent of
+    # the compression branch above so short, never-compressed meetings stay recoverable.
+    _maybe_persist_transcript(bot_id, state)
 
     # Proactive knowledge check — additive, isolated, never raises
     try:
@@ -2604,9 +2648,8 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     state["compression_cursor"] = min(
                         state["compression_cursor"], len(state["transcript_buffer"])
                     )
-                # Mirror to bot_store so _process_bot_transcript can use it at meeting end
-                if bot_id in bot_store:
-                    bot_store[bot_id]["realtime_transcript_lines"] = state["transcript_buffer"]
+                # Durable full transcript (append-only; survives buffer trims + restart-resume).
+                _append_realtime_line(bot_id, line)
 
                 # Mark meeting start and run all Layer-3 structured extraction + counter updates
                 if state["meeting_start_ts"] is None:

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, Component, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, Component, Suspense, lazy } from 'react'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from './lib/sessionKeys'
 import { deriveDisplayTitle } from './lib/insights'
 import LogoIcon from './components/LogoIcon'
@@ -1136,7 +1136,13 @@ export default function App() {
   const [nextUpcomingMeeting, setNextUpcomingMeeting] = useState(null)
   const historySearchDebounceRef = useRef(null)
   const previousUserRef = useRef(null)
-  const user = authSession?.user || null
+  // Stabilize `user` identity to the user id. Supabase re-emits a fresh session
+  // object on every token refresh / tab-focus / visibility change; without this
+  // memo, `user` got a new reference each time, re-firing every downstream effect
+  // keyed on it (workspace + chat-session fetches) AND remounting the conditional
+  // <UpcomingMeetings> (calendar fetch) — a self-reinforcing request flood while a
+  // bot meeting was live. The memo only changes identity when the id actually does.
+  const user = useMemo(() => authSession?.user || null, [authSession?.user?.id])
   const isTestAccount = user?.id === 'test-account'
 
   useEffect(() => {
@@ -1737,7 +1743,7 @@ export default function App() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to join meeting')
       const data = await res.json()
       if (data.skip) {
-        setDedupBotInfo({ botId: data.existing_bot_id, ownerUserId: data.owner_user_id, ownerUserEmail: data.owner_user_email || '' })
+        setDedupBotInfo({ botId: data.existing_bot_id, ownerUserId: data.owner_user_id, ownerUserEmail: data.owner_user_email || '', self: !!data.self })
         setActiveBotId(data.existing_bot_id)
         sessionStorage.setItem('prism_active_bot_id', data.existing_bot_id)
         startPolling(data.existing_bot_id, data.owner_user_id)
