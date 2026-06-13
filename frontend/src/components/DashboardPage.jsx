@@ -553,6 +553,21 @@ export default function DashboardPage(props) {
 
   // Fetch up to 3 past chat sessions for this meeting on entry. If there's a pending
   // exit-save POST for the same meeting, wait for it first so the fetch sees the new row.
+  // Merge a partial result update into the live result AND persist it, so card edits
+  // and chat-driven regenerations (email edits, calendar, etc.) survive a refresh
+  // instead of reverting to the saved version. Shared by MeetingView + ChatPanel.
+  const persistResultPatch = useCallback((patch) => {
+    const merged = { ...(props.result || {}), ...patch }
+    props.setResult(merged)
+    if (props.meetingId) {
+      apiFetch(`/meetings/${props.meetingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ result: merged }),
+      }).catch(() => {})
+    }
+  }, [props.result, props.meetingId, props.setResult])
+
   // Per-meeting chat history. ChatPanel saves the live thread continuously
   // (one growing session per meeting); this just (re)loads the session list —
   // called on meeting change and whenever ChatPanel reports a brand-new session.
@@ -1057,6 +1072,7 @@ export default function DashboardPage(props) {
                       recordedByEmail={recordedByEmail}
                       workspaceId={activeWorkspaceId}
                       suggestedEmails={suggestedAttendeeEmails}
+                      onResultUpdate={persistResultPatch}
                     />
                   </Suspense>
                 </>
@@ -1128,20 +1144,7 @@ export default function DashboardPage(props) {
                 onThreadSaved={refreshPastSessions}
                 transcript={props.transcript}
                 result={props.result}
-                onResultUpdate={(patch) => {
-                  // Merge the agent re-run into the live result AND persist it,
-                  // so chat-driven regenerations (email, calendar, etc.) survive
-                  // a page refresh instead of reverting to the saved version.
-                  const merged = { ...(props.result || {}), ...patch }
-                  props.setResult(merged)
-                  if (props.meetingId) {
-                    apiFetch(`/meetings/${props.meetingId}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ result: merged }),
-                    }).catch(() => {})
-                  }
-                }}
+                onResultUpdate={persistResultPatch}
                 isSignedIn={!!props.user}
                 personaPreset={props.personaPreset}
                 personaCustomPrompt={props.personaCustomPrompt}
