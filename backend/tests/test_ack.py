@@ -59,6 +59,16 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(self._c("can you help us settle this"), "generic")
         self.assertEqual(self._c(""), "generic")
 
+    def test_present_tense_recall_beats_email(self):
+        # Review fix: "what did we decide about the budget email" must ack as
+        # recall, not "Let me check your inbox—" (a confidently-wrong ack).
+        self.assertEqual(self._c("what did we decide about the budget email"), "meeting_recall")
+        self.assertEqual(self._c("did we agree on the vendor in the email thread"), "meeting_recall")
+
+    def test_set_up_call_is_calendar_write(self):
+        self.assertEqual(self._c("set up a call with the vendor"), "calendar_write")
+        self.assertEqual(self._c("schedule a sync for the review"), "calendar_write")
+
 
 class PhraseTests(unittest.TestCase):
     def test_every_category_has_phrases(self):
@@ -206,6 +216,22 @@ class AckWiringTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.01)
             self.assertTrue(first_task.cancelled() or first_task.done())
             state["_ack_task"].cancel()
+
+    async def test_cleanup_cancels_pending_ack(self):
+        # Review fix #3: a bot torn down within the ack window must not leave a
+        # task that wakes and uploads to a dead bot.
+        bot_id = "bot-ack-cleanup"
+        state = rt._get_bot_state(bot_id)
+        try:
+            with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "5"}), \
+                 mock.patch.object(rt, "RECALL_API_KEY", "k"):
+                rt._arm_ack(bot_id, state, "check my inbox")
+                task = state["_ack_task"]
+                rt.cleanup_bot_state(bot_id)
+                await asyncio.sleep(0)
+                self.assertTrue(task.cancelled() or task.done())
+        finally:
+            rt.cleanup_bot_state(bot_id)
 
 
 if __name__ == "__main__":

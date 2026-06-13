@@ -27,14 +27,16 @@ _CAL_WRITE = r"(?:schedule|create|set\s+up|add|book|move|reschedule)"
 # "check the docs about what we discussed last meeting" acknowledges recall.
 _RULES: list[tuple[str, re.Pattern]] = [
     ("meeting_recall", re.compile(
-        r"\b(?:last|previous|earlier)\s+meeting\b|\bwe\s+(?:talked|discussed|said|decided)\b",
+        r"\b(?:last|previous|earlier)\s+meeting\b"
+        r"|\bwe\s+(?:talk|talked|discuss|discussed|say|said|decide|decided|"
+        r"agree|agreed|cover|covered|mention|mentioned)\b",
         re.IGNORECASE)),
     ("email_write", re.compile(
         rf"\b{_WRITE_VERBS}\b[\w\s,]{{0,20}}\b{_EMAIL_WORDS}\b|\b{_EMAIL_WORDS}\b[\w\s,]{{0,20}}\b{_WRITE_VERBS}\b",
         re.IGNORECASE)),
     ("email_read", re.compile(rf"\b{_EMAIL_WORDS}\b", re.IGNORECASE)),
     ("calendar_write", re.compile(
-        rf"\b{_CAL_WRITE}\b[\w\s,]{{0,30}}\b(?:{_CAL_WORDS}|meeting)\b",
+        rf"\b{_CAL_WRITE}\b[\w\s,]{{0,30}}\b(?:{_CAL_WORDS}|meeting|call|sync)\b",
         re.IGNORECASE)),
     ("calendar_read", re.compile(
         rf"\b{_CAL_WORDS}\b|\bmeetings?\b[\w\s,]{{0,15}}\b(?:tomorrow|today|next|this\s+week)\b"

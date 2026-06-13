@@ -3128,6 +3128,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         await _send_chat_response(bot_id, f"Sorry, I ran into an error: {str(exc)[:100]}")
     finally:
         state["processing"] = False
+        # Catch-all for the instant-ack race: if the ack is still pending at
+        # command exit, the command finished before the ack delay (fast answer,
+        # text-only reply, or an early no-voice return) — suppress it. A slow
+        # path that already fired its ack leaves a done task here → no-op.
+        _cancel_ack(state)
         if _barge_in_on():
             await perception_state.clear_session(state, _new_session)
         # FIFO queue drain: if more commands arrived while we were processing,
@@ -3759,6 +3764,10 @@ def cleanup_bot_state(bot_id: str) -> None:
         task = state.get("_accumulator_tick_task")
         if task is not None and not task.done():
             task.cancel()
+        # Cancel a pending instant-ack so it can't upload to a torn-down bot.
+        ack_task = state.get("_ack_task")
+        if ack_task is not None and not ack_task.done():
+            ack_task.cancel()
         acc = state.get("accumulator")
         if acc is not None:
             try:
