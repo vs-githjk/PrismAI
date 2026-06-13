@@ -85,5 +85,49 @@ class PhraseTests(unittest.TestCase):
             self.assertAlmostEqual(ack_phrases.ack_delay_s(), 2.0)
 
 
+import ack_audio  # noqa: E402
+
+
+class AckAudioTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        ack_audio._CACHE.clear()
+
+    async def test_ensure_synthesizes_all_phrases(self):
+        synthesized = []
+
+        async def fake_tts(text):
+            synthesized.append(text)
+            return b"audio:" + text.encode()
+
+        with mock.patch.object(ack_audio, "text_to_speech", new=fake_tts):
+            await ack_audio.ensure_ack_audio()
+        self.assertEqual(sorted(synthesized), sorted(ack_phrases.all_phrases()))
+        phrase = ack_phrases.PHRASES["generic"][0]
+        self.assertEqual(ack_audio.get_ack_audio(phrase), b"audio:" + phrase.encode())
+
+    async def test_ensure_is_idempotent(self):
+        calls = []
+
+        async def fake_tts(text):
+            calls.append(text)
+            return b"a"
+
+        with mock.patch.object(ack_audio, "text_to_speech", new=fake_tts):
+            await ack_audio.ensure_ack_audio()
+            await ack_audio.ensure_ack_audio()
+        self.assertEqual(len(calls), len(ack_phrases.all_phrases()))  # no re-synthesis
+
+    async def test_failures_skipped_not_raised(self):
+        async def flaky_tts(text):
+            if "inbox" in text:
+                raise RuntimeError("tts down")
+            return b"a"
+
+        with mock.patch.object(ack_audio, "text_to_speech", new=flaky_tts):
+            await ack_audio.ensure_ack_audio()  # must not raise
+        self.assertIsNone(ack_audio.get_ack_audio("Let me check your inbox—"))
+        self.assertIsNotNone(ack_audio.get_ack_audio("On it — one moment."))
+
+
 if __name__ == "__main__":
     unittest.main()

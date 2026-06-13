@@ -26,8 +26,8 @@ async def _warm_supabase() -> None:
 
 
 async def _warm_tts() -> None:
-    from tools.tts import text_to_speech
-    await text_to_speech("ok")
+    from ack_audio import ensure_ack_audio
+    await ensure_ack_audio()
 
 
 async def warm_external_connections(reason: str = "startup") -> None:
