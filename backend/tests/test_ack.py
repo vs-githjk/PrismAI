@@ -217,6 +217,35 @@ class AckWiringTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(first_task.cancelled() or first_task.done())
             state["_ack_task"].cancel()
 
+    async def test_process_command_finally_suppresses_ack_on_no_voice_exit(self):
+        # Review fix #2: a command that exits without producing voice (here the
+        # no-Groq early return) must not leave the ack to fire into silence —
+        # the _process_command finally cancels the still-pending ack.
+        bot_id = "bot-ack-novoice"
+        rt._get_bot_state(bot_id)  # reset debounce/processing
+        uploaded = []
+
+        async def fake_upload(b, audio):
+            uploaded.append(audio)
+            return True
+
+        try:
+            with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "5"}), \
+                 mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+                 mock.patch.object(rt, "GROQ_API_KEY", ""), \
+                 mock.patch.object(rt, "_barge_in_on", return_value=False), \
+                 mock.patch.object(rt, "_get_settings_for_bot",
+                                   new=mock.AsyncMock(return_value={"persona_text": "", "bot_name": "Prism"})), \
+                 mock.patch.object(rt, "_send_chat_response", new=mock.AsyncMock()), \
+                 mock.patch.object(rt.ack_audio, "get_ack_audio", return_value=b"ack-bytes"), \
+                 mock.patch.object(rt, "_upload_audio_to_recall", new=fake_upload):
+                await rt._process_command(bot_id, "check my inbox please")
+                await asyncio.sleep(0.05)  # give a cancelled ack a chance to (not) fire
+            self.assertEqual(uploaded, [])  # ack suppressed, never uploaded
+            self.assertIsNone(rt._get_bot_state(bot_id).get("_ack_task"))
+        finally:
+            rt.cleanup_bot_state(bot_id)
+
     async def test_cleanup_cancels_pending_ack(self):
         # Review fix #3: a bot torn down within the ack window must not leave a
         # task that wakes and uploads to a dead bot.
