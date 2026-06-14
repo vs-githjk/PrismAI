@@ -33,7 +33,7 @@ router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # live-bot command path runs on gpt-4o-mini
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 
@@ -1815,7 +1815,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
         print(f"[realtime] persona for bot {bot_id[:8]}: name={bot_name} active={bool(persona_text)} len={len(persona_text)} preview={persona_text[:40]!r}")
 
-        if not GROQ_API_KEY:
+        if not OPENAI_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
             return
 
