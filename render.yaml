@@ -9,7 +9,9 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: GROQ_API_KEY
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
         sync: false
       - key: RECALL_API_KEY
         sync: false

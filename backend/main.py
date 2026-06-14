@@ -8,7 +8,7 @@ load_dotenv()
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 
 from analysis_routes import create_analysis_router
 from calendar_routes import router as calendar_router
@@ -23,14 +23,14 @@ from storage_routes import router as storage_router
 from workspace_routes import router as workspace_router
 
 
-groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await asyncio.to_thread(run_migrations)
     app.state.http = httpx.AsyncClient(http2=True, timeout=DEFAULT_TIMEOUT)
-    app.state.groq = groq_client
+    app.state.openai = openai_client
     bind_clients(app)
     try:
         yield
@@ -57,8 +57,8 @@ app.include_router(export_router)
 app.include_router(calendar_router)
 app.include_router(realtime_router)
 
-app.include_router(create_analysis_router(groq_client))
-app.include_router(create_chat_router(groq_client))
+app.include_router(create_analysis_router(openai_client))
+app.include_router(create_chat_router(openai_client))
 
 
 @app.get("/health")

@@ -49,8 +49,11 @@ def get_persona_suffix() -> str:
     return persona_suffix(_PERSONA_TEXT.get())
 
 
-_groq_client = None
 _anthropic_client = None
+_openai_client = None
+
+PRIMARY_MODEL = "claude-haiku-4-5-20251001"   # Anthropic — agents + RAG + memory
+FALLBACK_MODEL = "gpt-4o-mini"                # OpenAI — cross-provider fallback
 
 
 def strip_fences(text: str) -> str:
@@ -62,14 +65,6 @@ def strip_fences(text: str) -> str:
     stripped = re.sub(r"^```(?:json|python|javascript|text)?\s*", "", text, flags=re.IGNORECASE)
     stripped = re.sub(r"\s*```$", "", stripped.strip())
     return stripped.strip()
-
-
-def _get_groq():
-    global _groq_client
-    if _groq_client is None:
-        from groq import AsyncGroq
-        _groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-    return _groq_client
 
 
 def _get_anthropic():
@@ -86,7 +81,30 @@ def _get_anthropic():
     return _anthropic_client
 
 
-_FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504}
+def _get_openai():
+    global _openai_client
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    if _openai_client is None:
+        try:
+            from openai import AsyncOpenAI
+            _openai_client = AsyncOpenAI(api_key=api_key)
+        except ImportError:
+            return None
+    return _openai_client
+
+
+_FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504, 529}
+
+
+def _is_transient(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    err_str = str(exc).lower()
+    return (
+        status_code in _FALLBACK_STATUS_CODES
+        or any(kw in err_str for kw in ("rate_limit", "overloaded", "capacity", "timeout"))
+    )
 
 
 async def llm_call(
@@ -95,58 +113,50 @@ async def llm_call(
     temperature: float = 0.3,
     max_tokens: int | None = None,
 ) -> str:
-    """Call Groq LLM. On rate-limit/server errors, retries once if Groq says wait ≤5s, then falls back to claude-haiku-4-5.
+    """Call Claude Haiku 4.5 (primary). On rate-limit/overload/5xx, fall back to
+    OpenAI gpt-4o-mini for cross-provider resilience.
 
     max_tokens: optional cap on response length. Useful for short, structured
     outputs (e.g. context preambles, reranker decisions, query rewrites) so
-    we don't pay for runaway generation."""
-    groq = _get_groq()
+    we don't pay for runaway generation. Anthropic requires a max_tokens — when
+    unset we default generously (4096) since these are bounded structured outputs."""
     system = system + get_persona_suffix()
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
-    groq_exc = None
-    for attempt in range(2):
-        try:
-            groq_kwargs = {
-                "model": "llama-3.3-70b-versatile",
-                "temperature": temperature,
-                "messages": messages,
-            }
-            if max_tokens is not None:
-                groq_kwargs["max_tokens"] = max_tokens
-            resp = await groq.chat.completions.create(**groq_kwargs)
-            return resp.choices[0].message.content
-        except Exception as exc:
-            status_code = getattr(exc, "status_code", None)
-            err_str = str(exc)
-            is_transient = (
-                status_code in _FALLBACK_STATUS_CODES
-                or any(kw in err_str for kw in ("rate_limit", "overloaded", "capacity"))
-            )
-            if not is_transient:
-                raise
-            groq_exc = exc
-            if attempt == 0:
-                m = re.search(r"try again in ([\d.]+)(ms|s)", err_str)
-                if m:
-                    val, unit = float(m.group(1)), m.group(2)
-                    wait = val / 1000 if unit == "ms" else val
-                    if wait <= 5:
-                        await asyncio.sleep(wait)
-                        continue
-            break
+    # Anthropic caps temperature at 1.0; our agents stay ≤1 but clamp defensively.
+    temp = min(temperature, 1.0)
+    out_tokens = max_tokens if max_tokens is not None else 4096
 
     anthropic_client = _get_anthropic()
+    primary_exc = None
     if anthropic_client:
-        print(f"[agent] Groq failed ({groq_exc!r}), falling back to claude-haiku-4-5")
-        resp = await anthropic_client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=max_tokens if max_tokens is not None else 2048,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return resp.content[0].text
-    raise groq_exc
+        try:
+            resp = await anthropic_client.messages.create(
+                model=PRIMARY_MODEL,
+                max_tokens=out_tokens,
+                temperature=temp,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            return resp.content[0].text
+        except Exception as exc:
+            if not _is_transient(exc):
+                raise
+            primary_exc = exc
+            print(f"[agent] Claude failed ({exc!r}), falling back to {FALLBACK_MODEL}")
+
+    openai_client = _get_openai()
+    if openai_client:
+        oai_kwargs = {
+            "model": FALLBACK_MODEL,
+            "temperature": temperature,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        if max_tokens is not None:
+            oai_kwargs["max_tokens"] = max_tokens
+        resp = await openai_client.chat.completions.create(**oai_kwargs)
+        return resp.choices[0].message.content
+    if primary_exc:
+        raise primary_exc
+    raise RuntimeError("No LLM provider configured: set ANTHROPIC_API_KEY or OPENAI_API_KEY")

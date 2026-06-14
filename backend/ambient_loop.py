@@ -19,7 +19,7 @@ import os
 import re
 import time
 
-from clients import get_groq
+from clients import get_openai
 import meeting_memory
 import perception_state
 import cross_meeting_service
@@ -39,7 +39,7 @@ def shadow_mode() -> bool:
     return os.getenv("PRISM_AUTONOMOUS_SHADOW") == "1"
 
 def decider_model() -> str:
-    return os.getenv("PRISM_DECIDER_MODEL", "llama-3.1-8b-instant")
+    return os.getenv("PRISM_DECIDER_MODEL", "gpt-4o-mini")
 
 def pause_debounce_s() -> float:
     return float(os.getenv("PRISM_PAUSE_DEBOUNCE_S", "8"))
@@ -51,7 +51,7 @@ def autonomy_cap_s() -> float:
     return float(os.getenv("PRISM_AUTONOMY_CAP_S", "300"))
 
 def offer_decider_model() -> str:
-    return os.getenv("PRISM_OFFER_DECIDER_MODEL", "llama-3.3-70b-versatile")
+    return os.getenv("PRISM_OFFER_DECIDER_MODEL", "gpt-4o-mini")
 
 def offer_cooldown_s() -> float:
     return float(os.getenv("PRISM_OFFER_COOLDOWN_S", "90"))
@@ -211,10 +211,10 @@ def _signal_summary(state: dict) -> str:
 
 
 async def _call_decider_model(system: str, user: str) -> str:
-    """The only I/O in the decider. Calls Groq directly (llm_call is hardcoded to
+    """The only I/O in the decider. Calls OpenAI directly (llm_call is hardcoded to
     70B) so we can run the cheap 8B model. Isolated for easy test mocking."""
-    groq = get_groq()
-    resp = await groq.chat.completions.create(
+    client = get_openai()
+    resp = await client.chat.completions.create(
         model=decider_model(),
         temperature=0.1,
         max_tokens=120,
@@ -286,9 +286,9 @@ def parse_offer_output(raw: str | None) -> dict:
 
 
 async def _call_offer_model(system: str, user: str) -> str:
-    """70B offer-decision call (direct Groq). Isolated for test mocking."""
-    groq = get_groq()
-    resp = await groq.chat.completions.create(
+    """70B offer-decision call (direct OpenAI). Isolated for test mocking."""
+    client = get_openai()
+    resp = await client.chat.completions.create(
         model=offer_decider_model(),
         temperature=0.2,
         max_tokens=120,
@@ -340,9 +340,9 @@ def parse_consent(raw: str | None) -> str:
 
 
 async def _call_consent_model(system: str, user: str) -> str:
-    """8B consent classification call (direct Groq). Isolated for test mocking."""
-    groq = get_groq()
-    resp = await groq.chat.completions.create(
+    """8B consent classification call (direct OpenAI). Isolated for test mocking."""
+    client = get_openai()
+    resp = await client.chat.completions.create(
         model=decider_model(),  # reuse the cheap 8B decider model
         temperature=0.0,
         max_tokens=8,

@@ -191,7 +191,7 @@ class OfferDeciderTests(unittest.IsolatedAsyncioTestCase):
     def test_offer_decider_model_default(self):
         import ambient_loop
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(ambient_loop.offer_decider_model(), "llama-3.3-70b-versatile")
+            self.assertEqual(ambient_loop.offer_decider_model(), "gpt-4o-mini")
 
 
 class InterjectTests(unittest.IsolatedAsyncioTestCase):

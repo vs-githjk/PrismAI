@@ -21,7 +21,7 @@ import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences, persona_suffix_agentic
 from personas import persona_identity_resolved, DEFAULT_BOT_NAME
-from clients import get_groq, get_http
+from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 from tools.tts import text_to_speech
@@ -1118,7 +1118,7 @@ def _scan_delta_for_leak(tail: str, delta: str, window: int = _LEAK_TAIL_WINDOW)
 
 
 async def _stream_llm_to_voice(
-    groq_client,
+    openai_client,
     call_kwargs: dict,
     bot_id: str,
     cmd_detected_ts: float,
@@ -1140,7 +1140,7 @@ async def _stream_llm_to_voice(
 
     # Without Recall there's no audio path — just drain the stream for the text.
     if not RECALL_API_KEY:
-        stream = await groq_client.chat.completions.create(**stream_kwargs)
+        stream = await openai_client.chat.completions.create(**stream_kwargs)
         parts = []
         async for event in stream:
             if event.choices and event.choices[0].delta.content:
@@ -1182,7 +1182,7 @@ async def _stream_llm_to_voice(
     async def _stream_consumer():
         nonlocal tail, leak_detected
         try:
-            stream = await groq_client.chat.completions.create(**stream_kwargs)
+            stream = await openai_client.chat.completions.create(**stream_kwargs)
             async for event in stream:
                 # Phase B cancel-check site 1/3 — LLM-read loop. Bails before
                 # accumulating more tokens and (transitively) more TTS work.
@@ -1819,7 +1819,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
             return
 
-        groq_client = get_groq()
+        openai_client = get_openai()
 
         # Build full three-layer memory context for this command
         memory_context = meeting_memory.build_memory_context(state, command)
@@ -1902,7 +1902,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
-            "model": "llama-3.3-70b-versatile",
+            "model": "gpt-4o-mini",
             "temperature": 0.3,
             "messages": messages,
         }
@@ -2052,7 +2052,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                 # PR-5: stream the synthesis turn directly into TTS+upload.
                 try:
                     streamed_reply = await _stream_llm_to_voice(
-                        groq_client, call_kwargs, bot_id, state["last_command_ts"] or now,
+                        openai_client, call_kwargs, bot_id, state["last_command_ts"] or now,
                     )
                 except Exception as stream_exc:
                     print(f"[realtime] streamed LLM failed, falling back: {stream_exc}")
@@ -2067,15 +2067,15 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             synth_calls = None
 
             try:
-                response = await groq_client.chat.completions.create(**call_kwargs)
-            except Exception as groq_exc:
+                response = await openai_client.chat.completions.create(**call_kwargs)
+            except Exception as llm_exc:
                 # Llama 3.3 occasionally emits tool calls as raw `<function=NAME {json}>`
                 # text instead of structured tool_calls; Groq rejects with 400
                 # tool_use_failed. Try to recover by parsing the failed generation.
-                err_str = str(groq_exc)
+                err_str = str(llm_exc)
                 is_400 = "400" in err_str or "tool_use_failed" in err_str
                 if is_400 and "tools" in call_kwargs:
-                    failed_gen = _extract_failed_generation(groq_exc)
+                    failed_gen = _extract_failed_generation(llm_exc)
                     recovered = _recover_tool_calls(failed_gen, valid_tool_names)
                     if recovered:
                         print(
@@ -2087,17 +2087,17 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                 if synth_calls is None:
                     # Couldn't recover. Strip tools and retry once for a plain-text answer.
                     if "tools" in call_kwargs:
-                        print(f"[realtime] tool call format error, retrying without tools: {groq_exc}")
+                        print(f"[realtime] tool call format error, retrying without tools: {llm_exc}")
                         call_kwargs.pop("tools", None)
                         call_kwargs.pop("tool_choice", None)
                         try:
-                            response = await groq_client.chat.completions.create(**call_kwargs)
+                            response = await openai_client.chat.completions.create(**call_kwargs)
                         except Exception as retry_exc:
                             print(f"[realtime] retry-without-tools also failed: {retry_exc}")
                             reply = "Sorry, I had trouble processing that."
                             break
                     else:
-                        print(f"[realtime] command failed without tools: {groq_exc}")
+                        print(f"[realtime] command failed without tools: {llm_exc}")
                         reply = "Sorry, I had trouble processing that."
                         break
 
@@ -2156,8 +2156,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         else:
             # Tool loop exhausted without a text summary — ask LLM to summarise what was done
             try:
-                summary_resp = await groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                summary_resp = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
                     temperature=0.3,
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )

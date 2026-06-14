@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from analysis_service import AGENT_RESULT_KEY, _GRAPH, build_analysis_transcript, run_full_analysis
@@ -24,7 +24,7 @@ class AnalyzeRequest(BaseModel):
     persona_custom_prompt: str | None = None
 
 
-def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
+def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
     router = APIRouter(tags=["analysis"])
 
     @router.post("/analyze")
@@ -98,8 +98,8 @@ def create_analysis_router(groq_client: AsyncGroq) -> APIRouter:
         if len(content) > 25 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large. Max 25MB.")
         try:
-            transcription = await groq_client.audio.transcriptions.create(
-                model="whisper-large-v3",
+            transcription = await openai_client.audio.transcriptions.create(
+                model="whisper-1",
                 file=(file.filename, content, file.content_type or "audio/mpeg"),
             )
             return {"transcript": transcription.text}
