@@ -328,8 +328,14 @@ _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses u
 # (which previously destabilised tool-call syntax — see _build_static_prefix note).
 _STATIC_TOOL_POLICY = (
     " Answer directly from the conversation and your own knowledge whenever you can. "
-    "Use web_search ONLY for current external facts you genuinely do not know, and "
-    "knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
+    "For a question about current real-world information you don't already know — "
+    "weather, sports scores, news, prices, live facts — call web_search and answer it. "
+    "NEVER reply that something 'wasn't discussed in the meeting' for a general-knowledge "
+    "or real-world question; that deflection is only appropriate for questions about THIS "
+    "meeting's own content. If such a question is missing a detail you need (e.g. a city "
+    "for weather), infer it from the conversation if possible, otherwise ask one short "
+    "clarifying question — do not refuse. "
+    "Use knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
     "for questions about yourself or your own settings/state, or for simple "
     "conversational replies."
 )
@@ -393,6 +399,23 @@ def _build_static_prefix(
     return base + name_line + persona_suffix_agentic(persona_text)
 
 
+def _recent_turn_messages(recent_turns: list | None) -> list[dict]:
+    """Render prior (command -> reply) turns as alternating user/assistant messages
+    so the model has a clean conversational thread and can complete multi-turn tasks
+    (e.g. it asked 'what's the title?' and the next command is the answer 'test').
+    The bot's reply lands in the transcript buffer too, but buried in a summarized
+    blob the model doesn't reliably treat as an open question — explicit turns do."""
+    out: list[dict] = []
+    for t in (recent_turns or []):
+        cmd = (t.get("command") or "").strip()
+        rep = (t.get("reply") or "").strip()
+        if cmd:
+            out.append({"role": "user", "content": cmd})
+        if rep:
+            out.append({"role": "assistant", "content": rep})
+    return out
+
+
 def _build_command_messages(
     *,
     has_gmail: bool,
@@ -406,22 +429,26 @@ def _build_command_messages(
     is_owner: bool = True,
     persona_text: str = "",
     bot_name: str = "",
+    recent_turns: list | None = None,
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
     When prompt_cache_on:
       [0] static system    (cache-stable across commands)
       [1] dynamic system   (now + memory context)
-      [2] user             (speaker + command, XML-spotlit when guard on)
+      [...] recent turns   (prior user/assistant pairs — conversational continuity)
+      [-1] user            (speaker + command, XML-spotlit when guard on)
     Else (legacy):
       [0] single system    (everything concatenated)
-      [1] user
+      [...] recent turns
+      [-1] user
     """
     if injection_guard_on:
         user_content = _wrap_participant_utterance(speaker, command, is_owner)
     else:
         user_content = f"{speaker}: {command}" if speaker else command
     user_msg = {"role": "user", "content": user_content}
+    history = _recent_turn_messages(recent_turns)
     if prompt_cache_on:
         return [
             {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)},
@@ -429,6 +456,7 @@ def _build_command_messages(
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
             },
+            *history,
             user_msg,
         ]
     # Legacy single-message structure preserved when the flag is off.
@@ -442,6 +470,7 @@ def _build_command_messages(
                 + memory_context
             ),
         },
+        *history,
         user_msg,
     ]
 
@@ -1075,6 +1104,16 @@ async def _upload_audio_to_recall(bot_id: str, audio_bytes: bytes) -> bool:
         return False
 
 
+def _estimate_play_seconds(text: str) -> float:
+    """Rough spoken-duration estimate for one TTS clip. Recall's output_audio plays
+    each uploaded clip IMMEDIATELY (no server-side queue) and mixes overlapping
+    audio — so the multi-sentence streamed paths must pace their uploads by this,
+    or sentence 2's audio plays on top of sentence 1 (multiple voices at once).
+    ~13 chars/sec is a touch slower than typical TTS, biasing to tiny gaps over
+    overlap. Floored so short clips still get spacing; capped to avoid a stuck turn."""
+    return max(0.8, min(15.0, len(text or "") / 13.0))
+
+
 async def _send_voice_response(bot_id: str, text: str):
     """Convert text to speech and play it in the meeting via Recall.ai bot.
     Buffered (default) path: one TTS call, one upload."""
@@ -1264,6 +1303,9 @@ async def _stream_llm_to_voice(
                     ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                     print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                     first_upload_logged = True
+                # Pace by playback duration so the next sentence doesn't overlap
+                # this one — Recall plays each output_audio clip immediately.
+                await asyncio.sleep(_estimate_play_seconds(chunks_dispatched[i]))
                 i += 1
                 continue
             upload_failures += 1
@@ -1383,6 +1425,9 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
                 ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                 print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                 first_upload_logged = True
+            # Pace by playback duration so the next sentence doesn't overlap this
+            # one — Recall plays each output_audio clip immediately (no queue).
+            await asyncio.sleep(_estimate_play_seconds(chunks[i]))
             i += 1
             continue
 
@@ -1875,6 +1920,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             is_owner=is_owner,
             persona_text=persona_text,
             bot_name=bot_name,
+            recent_turns=state.get("recent_turns", []),
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
@@ -2189,6 +2235,15 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         if ambient and _is_ambient_silent(reply):
             print(f"[ambient] generator declined (SILENT) bot={bot_id[:8]}")
             return None
+
+        # Record this turn for conversational continuity so the NEXT command can
+        # complete a multi-turn task (e.g. bot asked "what's the title?" and the
+        # next command is "test"). Skip ambient nudges — they're not part of the
+        # user's command thread. Capped at the last 4 turns.
+        if reply and not ambient:
+            _turns = state.setdefault("recent_turns", [])
+            _turns.append({"command": command, "reply": reply})
+            del _turns[:-4]
 
         # Log command to bot_store and Supabase
         cmd_entry = {
