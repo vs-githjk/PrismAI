@@ -313,6 +313,11 @@ _STATIC_CALENDAR_ON = (
     "You have full Google Calendar access: use calendar_list_events to read/check upcoming events, "
     "calendar_create_event to schedule (only if the user provides title AND date/time), "
     "and calendar_update_event to reschedule. "
+    "Once you have a title and a date/time, CREATE the event immediately — do not describe what "
+    "you're about to do without calling the tool. For the tool's `timezone`, default to the IANA "
+    "timezone shown in 'Current date and time' above (e.g. America/New_York); never ask the user "
+    "which timezone to use unless they explicitly name a different one (then map it to its IANA id, "
+    "e.g. IST = Asia/Kolkata). Default to a 1-hour duration if no end time is given. "
     "If asked whether you can access the calendar, answer YES directly — do not call a tool just to answer that question. "
 )
 _STATIC_CALENDAR_OFF = (
@@ -1871,7 +1876,13 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         now = datetime.now(ZoneInfo("America/New_York"))
         hour_12 = now.hour % 12 or 12
         tz_abbr = now.strftime("%Z")  # "EST" or "EDT"
-        now_str = f"{now.strftime('%A, %B')} {now.day}, {now.year} at {hour_12}:{now.strftime('%M %p')} {tz_abbr}"
+        # Include the IANA identifier so the calendar tool gets a valid timeZone
+        # (Google rejects abbreviations like "EDT"). This is the default tz the
+        # model uses for calendar_create_event unless the user names another.
+        now_str = (
+            f"{now.strftime('%A, %B')} {now.day}, {now.year} at "
+            f"{hour_12}:{now.strftime('%M %p')} {tz_abbr} (IANA timezone: America/New_York)"
+        )
 
         has_gmail = any(t["function"]["name"].startswith("gmail") for t in tools)
         has_calendar = any(t["function"]["name"].startswith("calendar") for t in tools)
