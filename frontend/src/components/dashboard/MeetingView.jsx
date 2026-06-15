@@ -3,6 +3,7 @@ import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus } fr
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
+import MeetingHealthTriangle from './MeetingHealthTriangle'
 import RecordingPlayer from './RecordingPlayer'
 import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
@@ -121,6 +122,17 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const healthScore = result.health_score
   const sentiment = result.sentiment
 
+  // Show the balance triangle only when all three sub-scores are present & finite;
+  // otherwise fall back to the single-arc gauge (seed/old meetings, mid-analysis).
+  const bd = healthScore?.breakdown
+  const breakdown = bd && {
+    clarity: Number(bd.clarity),
+    action: Number(bd.action_orientation),
+    engagement: Number(bd.engagement),
+  }
+  const hasBreakdown = !!breakdown &&
+    [breakdown.clarity, breakdown.action, breakdown.engagement].every(Number.isFinite)
+
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
   // Sort open-first, then by deadline (overdue/soonest first, undated last) —
@@ -156,7 +168,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const showPinned = !readOnly && !!meetingId
 
   const pinnedSection = showPinned ? (
-    <section className={`${glassCard} flex max-h-[25vh] flex-col p-4`} style={cardGlowStyle}>
+    <section className={`${glassCard} flex max-h-[30vh] flex-col p-4`} style={cardGlowStyle}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Paperclip className="h-4 w-4 text-cyan-300" />
@@ -190,8 +202,10 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             : 'lg:grid-cols-[max-content_minmax(0,1fr)]'
         }`}
       >
-        <section className="flex max-h-[25vh] flex-col items-center justify-center overflow-y-auto px-2 py-4">
-          {healthScore?.score !== undefined ? (
+        <section className="flex max-h-[30vh] flex-col items-center justify-center px-2 py-4">
+          {hasBreakdown ? (
+            <MeetingHealthTriangle scores={breakdown} />
+          ) : healthScore?.score !== undefined ? (
             <>
               <SemicircularGauge score={healthScore.score} />
               <p className="mt-1.5 text-sm font-medium text-white/55">Health score</p>
@@ -201,7 +215,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           )}
         </section>
 
-        <section className="flex max-h-[25vh] flex-col justify-center p-4">
+        <section className="flex max-h-[30vh] flex-col justify-center p-4">
           <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-white">Summary</p>
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
             {result.tldr && (
