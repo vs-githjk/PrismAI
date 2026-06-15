@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 
 from auth import require_user_id, supabase
 from analysis_service import AGENT_MAP, TIER2_AGENTS, _persona_text_for_agent
@@ -65,7 +65,7 @@ class GlobalChatRequest(BaseModel):
 
 class AgentRequest(BaseModel):
     agent: str
-    transcript: str
+    transcript: str = ""  # optional — Tier-2 agents (email, calendar, health) run from `result`
     instruction: str = ""
     existing_items: list | None = None
     # The current meeting result — lets a Tier-2 agent re-run with the same
@@ -157,7 +157,7 @@ def build_rag_context(tool_result: dict) -> dict:
     return {"sources": sources, "has_conflict": bool(tool_result.get("has_conflict"))}
 
 
-async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list, user_id: str, user_settings: dict) -> dict:
+async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: list, user_id: str, user_settings: dict) -> dict:
     """
     LLM tool-calling loop: call LLM, if it wants tools execute them, feed results back.
     Returns { reply: str, tools_used: list[dict], rag_context: dict | None }
@@ -168,7 +168,7 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
     max_iterations = 3
 
     call_kwargs = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "gpt-4o-mini",
         "temperature": 0.7,
         "messages": messages,
     }
@@ -186,23 +186,23 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
 
     for _ in range(max_iterations):
         try:
-            response = await groq_client.chat.completions.create(**call_kwargs)
-        except Exception as groq_exc:
-            # Llama 3.3 sometimes emits malformed tool calls → Groq rejects with a
+            response = await openai_client.chat.completions.create(**call_kwargs)
+        except Exception as llm_exc:
+            # Some models emit malformed tool calls → the API rejects with a
             # 400 tool_use_failed; transient 429/5xx land here too. Strip tools and
             # retry once for a plain-text answer instead of 500-ing the whole chat
             # turn. Mirrors realtime_routes' proven recovery. (diagnose 2026-06-08)
             if "tools" in call_kwargs:
-                print(f"[chat] groq tool-call error, retrying without tools: {groq_exc}")
+                print(f"[chat] tool-call error, retrying without tools: {llm_exc}")
                 call_kwargs.pop("tools", None)
                 call_kwargs.pop("tool_choice", None)
                 try:
-                    response = await groq_client.chat.completions.create(**call_kwargs)
+                    response = await openai_client.chat.completions.create(**call_kwargs)
                 except Exception as retry_exc:
                     print(f"[chat] retry-without-tools also failed: {retry_exc}")
                     return _graceful()
             else:
-                print(f"[chat] groq call failed: {groq_exc}")
+                print(f"[chat] llm call failed: {llm_exc}")
                 return _graceful()
         choice = response.choices[0]
 
@@ -268,7 +268,7 @@ async def _tool_calling_loop(groq_client: AsyncGroq, messages: list, tools: list
     }
 
 
-def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
+def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
     local_router = APIRouter(tags=["chat"])
 
     @local_router.post("/agent")
@@ -355,7 +355,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
         ]
 
         if tools:
-            result = await _tool_calling_loop(groq_client, messages, tools, user_id, user_settings)
+            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings)
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
@@ -364,15 +364,15 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
             }
         else:
             try:
-                response = await groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
                     temperature=0.7,
                     messages=messages,
                 )
                 return {"response": response.choices[0].message.content}
             except Exception as exc:
-                # Don't 500 the chat panel on a transient Groq error. (diagnose 2026-06-08)
-                print(f"[chat] groq call failed: {exc}")
+                # Don't 500 the chat panel on a transient LLM error. (diagnose 2026-06-08)
+                print(f"[chat] llm call failed: {exc}")
                 return {"response": "Sorry, I had trouble processing that."}
 
     @local_router.post("/chat/global")
@@ -464,7 +464,7 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
         ]
 
         if tools:
-            result = await _tool_calling_loop(groq_client, messages, tools, user_id, user_settings)
+            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings)
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
@@ -473,15 +473,15 @@ def create_chat_router(groq_client: AsyncGroq) -> APIRouter:
             }
         else:
             try:
-                response = await groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
                     temperature=0.7,
                     messages=messages,
                 )
                 return {"response": response.choices[0].message.content}
             except Exception as exc:
-                # Don't 500 the chat panel on a transient Groq error. (diagnose 2026-06-08)
-                print(f"[chat] groq call failed: {exc}")
+                # Don't 500 the chat panel on a transient LLM error. (diagnose 2026-06-08)
+                print(f"[chat] llm call failed: {exc}")
                 return {"response": "Sorry, I had trouble processing that."}
 
     @local_router.post("/chat/confirm-tool")

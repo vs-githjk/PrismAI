@@ -21,11 +21,11 @@ import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences, persona_suffix_agentic
 from personas import persona_identity_resolved, DEFAULT_BOT_NAME
-from clients import get_groq, get_http
+from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 from tools.tts import text_to_speech
-from recall_routes import bot_store, _db_append_command, _db_save_memory
+from recall_routes import bot_store, _db_append_command, _db_save_memory, _db_save
 from auth import supabase
 from cross_meeting_service import looks_like_blocker, extract_significant_terms
 
@@ -33,7 +33,7 @@ router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # live-bot command path runs on gpt-4o-mini
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 
@@ -157,7 +157,15 @@ def _looks_command_complete(cmd: str) -> bool:
 
 
 def _barge_in_on() -> bool:
-    return os.getenv("PRISM_BARGE_IN") == "1"
+    # Default ON: enables "Prism, stop" verbal interrupt, halting in-flight speech
+    # on mute, and the gap-before-speaking checks. Set PRISM_BARGE_IN=0 to disable.
+    return os.getenv("PRISM_BARGE_IN", "1") != "0"
+
+
+# How long to suppress repeat command-processing. Only there to absorb transcript
+# re-fires of the SAME command (prefix-dedup + event-id dedup do the real work);
+# kept short so a second person asking right after the first isn't dropped.
+_COMMAND_DEBOUNCE_S = float(os.getenv("PRISM_COMMAND_DEBOUNCE_S", "3"))
 
 
 def _streamed_tts_on() -> bool:
@@ -313,6 +321,11 @@ _STATIC_CALENDAR_ON = (
     "You have full Google Calendar access: use calendar_list_events to read/check upcoming events, "
     "calendar_create_event to schedule (only if the user provides title AND date/time), "
     "and calendar_update_event to reschedule. "
+    "Once you have a title and a date/time, CREATE the event immediately — do not describe what "
+    "you're about to do without calling the tool. For the tool's `timezone`, default to the IANA "
+    "timezone shown in 'Current date and time' above (e.g. America/New_York); never ask the user "
+    "which timezone to use unless they explicitly name a different one (then map it to its IANA id, "
+    "e.g. IST = Asia/Kolkata). Default to a 1-hour duration if no end time is given. "
     "If asked whether you can access the calendar, answer YES directly — do not call a tool just to answer that question. "
 )
 _STATIC_CALENDAR_OFF = (
@@ -328,8 +341,14 @@ _STATIC_STYLE = "Be concise — responses will be spoken aloud. Keep responses u
 # (which previously destabilised tool-call syntax — see _build_static_prefix note).
 _STATIC_TOOL_POLICY = (
     " Answer directly from the conversation and your own knowledge whenever you can. "
-    "Use web_search ONLY for current external facts you genuinely do not know, and "
-    "knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
+    "For a question about current real-world information you don't already know — "
+    "weather, sports scores, news, prices, live facts — call web_search and answer it. "
+    "NEVER reply that something 'wasn't discussed in the meeting' for a general-knowledge "
+    "or real-world question; that deflection is only appropriate for questions about THIS "
+    "meeting's own content. If such a question is missing a detail you need (e.g. a city "
+    "for weather), infer it from the conversation if possible, otherwise ask one short "
+    "clarifying question — do not refuse. "
+    "Use knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
     "for questions about yourself or your own settings/state, or for simple "
     "conversational replies."
 )
@@ -393,6 +412,23 @@ def _build_static_prefix(
     return base + name_line + persona_suffix_agentic(persona_text)
 
 
+def _recent_turn_messages(recent_turns: list | None) -> list[dict]:
+    """Render prior (command -> reply) turns as alternating user/assistant messages
+    so the model has a clean conversational thread and can complete multi-turn tasks
+    (e.g. it asked 'what's the title?' and the next command is the answer 'test').
+    The bot's reply lands in the transcript buffer too, but buried in a summarized
+    blob the model doesn't reliably treat as an open question — explicit turns do."""
+    out: list[dict] = []
+    for t in (recent_turns or []):
+        cmd = (t.get("command") or "").strip()
+        rep = (t.get("reply") or "").strip()
+        if cmd:
+            out.append({"role": "user", "content": cmd})
+        if rep:
+            out.append({"role": "assistant", "content": rep})
+    return out
+
+
 def _build_command_messages(
     *,
     has_gmail: bool,
@@ -406,22 +442,26 @@ def _build_command_messages(
     is_owner: bool = True,
     persona_text: str = "",
     bot_name: str = "",
+    recent_turns: list | None = None,
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
     When prompt_cache_on:
       [0] static system    (cache-stable across commands)
       [1] dynamic system   (now + memory context)
-      [2] user             (speaker + command, XML-spotlit when guard on)
+      [...] recent turns   (prior user/assistant pairs — conversational continuity)
+      [-1] user            (speaker + command, XML-spotlit when guard on)
     Else (legacy):
       [0] single system    (everything concatenated)
-      [1] user
+      [...] recent turns
+      [-1] user
     """
     if injection_guard_on:
         user_content = _wrap_participant_utterance(speaker, command, is_owner)
     else:
         user_content = f"{speaker}: {command}" if speaker else command
     user_msg = {"role": "user", "content": user_content}
+    history = _recent_turn_messages(recent_turns)
     if prompt_cache_on:
         return [
             {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)},
@@ -429,6 +469,7 @@ def _build_command_messages(
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
             },
+            *history,
             user_msg,
         ]
     # Legacy single-message structure preserved when the flag is off.
@@ -442,6 +483,7 @@ def _build_command_messages(
                 + memory_context
             ),
         },
+        *history,
         user_msg,
     ]
 
@@ -660,8 +702,8 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
         state["compression_cursor"] = min(
             state["compression_cursor"], len(state["transcript_buffer"])
         )
-    if bot_id in bot_store:
-        bot_store[bot_id]["realtime_transcript_lines"] = state["transcript_buffer"]
+    # Durable full transcript (append-only; survives buffer trims + restart-resume).
+    _append_realtime_line(bot_id, line)
     if state["meeting_start_ts"] is None:
         state["meeting_start_ts"] = time.time()
 
@@ -1075,6 +1117,56 @@ async def _upload_audio_to_recall(bot_id: str, audio_bytes: bytes) -> bool:
         return False
 
 
+def _estimate_play_seconds(text: str) -> float:
+    """Rough spoken-duration estimate for one TTS clip. Recall's output_audio plays
+    each uploaded clip IMMEDIATELY (no server-side queue) and mixes overlapping
+    audio — so the multi-sentence streamed paths must pace their uploads by this,
+    or sentence 2's audio plays on top of sentence 1 (multiple voices at once).
+    ~13 chars/sec is a touch slower than typical TTS, biasing to tiny gaps over
+    overlap. Floored so short clips still get spacing; capped to avoid a stuck turn."""
+    return max(0.8, min(15.0, len(text or "") / 13.0))
+
+
+_URL_RE = re.compile(r"https?://\S+")
+_SOURCE_PAREN_RE = re.compile(r"\s*\((?:source|sources|src)\s*:[^)]*\)", re.IGNORECASE)
+
+
+def _spoken_version(text: str) -> str:
+    """Strip URLs and '(source: ...)' citations so they aren't read aloud — TTS
+    mangles URLs ('h-t-t-p-s colon slash slash...'). The FULL text (with links +
+    sources) still goes to the meeting chat; only the spoken copy is cleaned."""
+    if not text:
+        return text
+    t = _SOURCE_PAREN_RE.sub("", text)
+    t = _URL_RE.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t)            # collapse gaps left by removals
+    t = re.sub(r"\s+([.,;:!?])", r"\1", t)   # tidy space-before-punctuation
+    return t.strip()
+
+
+_GAP_SILENCE_S = float(os.getenv("PRISM_GAP_SILENCE_S", "1.2"))
+_GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
+
+
+async def _wait_for_speech_gap(state: dict) -> None:
+    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't
+    talk over someone mid-sentence. Returns as soon as there's been ~_GAP_SILENCE_S
+    of quiet (tracked via last_segment_ts), or after _GAP_MAX_WAIT_S regardless so it
+    never hangs if the room never goes quiet. Bails early if the speaking session was
+    cancelled (mute / "stop"). Disable with PRISM_GAP_WAIT=0."""
+    if os.getenv("PRISM_GAP_WAIT", "1") == "0":
+        return
+    deadline = time.time() + _GAP_MAX_WAIT_S
+    while time.time() < deadline:
+        sess = perception_state.get_session(state)
+        if sess is not None and sess.is_cancelled:
+            return
+        last = state.get("last_segment_ts", 0.0) or 0.0
+        if time.time() - last >= _GAP_SILENCE_S:
+            return
+        await asyncio.sleep(0.2)
+
+
 async def _send_voice_response(bot_id: str, text: str):
     """Convert text to speech and play it in the meeting via Recall.ai bot.
     Buffered (default) path: one TTS call, one upload."""
@@ -1118,7 +1210,7 @@ def _scan_delta_for_leak(tail: str, delta: str, window: int = _LEAK_TAIL_WINDOW)
 
 
 async def _stream_llm_to_voice(
-    groq_client,
+    openai_client,
     call_kwargs: dict,
     bot_id: str,
     cmd_detected_ts: float,
@@ -1140,7 +1232,7 @@ async def _stream_llm_to_voice(
 
     # Without Recall there's no audio path — just drain the stream for the text.
     if not RECALL_API_KEY:
-        stream = await groq_client.chat.completions.create(**stream_kwargs)
+        stream = await openai_client.chat.completions.create(**stream_kwargs)
         parts = []
         async for event in stream:
             if event.choices and event.choices[0].delta.content:
@@ -1182,7 +1274,7 @@ async def _stream_llm_to_voice(
     async def _stream_consumer():
         nonlocal tail, leak_detected
         try:
-            stream = await groq_client.chat.completions.create(**stream_kwargs)
+            stream = await openai_client.chat.completions.create(**stream_kwargs)
             async for event in stream:
                 # Phase B cancel-check site 1/3 — LLM-read loop. Bails before
                 # accumulating more tokens and (transitively) more TTS work.
@@ -1264,6 +1356,9 @@ async def _stream_llm_to_voice(
                     ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                     print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                     first_upload_logged = True
+                # Pace by playback duration so the next sentence doesn't overlap
+                # this one — Recall plays each output_audio clip immediately.
+                await asyncio.sleep(_estimate_play_seconds(chunks_dispatched[i]))
                 i += 1
                 continue
             upload_failures += 1
@@ -1383,6 +1478,9 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
                 ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                 print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                 first_upload_logged = True
+            # Pace by playback duration so the next sentence doesn't overlap this
+            # one — Recall plays each output_audio clip immediately (no queue).
+            await asyncio.sleep(_estimate_play_seconds(chunks[i]))
             i += 1
             continue
 
@@ -1497,6 +1595,46 @@ def _find_drifting_commitment(state: dict, elapsed_min: float) -> dict | None:
     return best
 
 
+# Persist the live transcript to bot_sessions every N new lines. Decoupled from the
+# compression cadence (below) on purpose: a short meeting may end before it ever hits
+# the compression threshold, and Render free-tier restarts wipe the in-memory buffer.
+# Persisting the raw lines to a durable column lets _process_bot_transcript recover a
+# transcript even when Recall produced 0 recordings AND the server restarted mid-meeting.
+_TRANSCRIPT_PERSIST_EVERY = 8
+# Generous cap on the durable full transcript (independent of the capped live-memory
+# buffer). 8000 utterance-lines is a very long meeting; trimming the oldest is safe
+# because the compressed memory_summary already captures earlier content.
+_RT_TRANSCRIPT_CAP = 8000
+
+
+def _append_realtime_line(bot_id: str, line: str) -> None:
+    """Append one finalized line to the durable, uncapped-ish full transcript held on
+    bot_store. Kept separate from state['transcript_buffer'] (which is capped/trimmed for
+    live memory) so the full meeting transcript survives trims AND a restart-then-resume:
+    _db_load seeds this list from the persisted column, and new utterances append to it
+    rather than overwriting it with only post-restart lines."""
+    if bot_id not in bot_store:
+        return
+    rt = bot_store[bot_id].setdefault("realtime_transcript_lines", [])
+    rt.append(line)
+    if len(rt) > _RT_TRANSCRIPT_CAP:
+        del rt[: len(rt) - _RT_TRANSCRIPT_CAP]
+
+
+def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> None:
+    """Best-effort durable persistence of the accumulated realtime transcript.
+    Throttled to one write per _TRANSCRIPT_PERSIST_EVERY new lines so we don't
+    upsert on every utterance. `force` flushes the tail (e.g. at meeting end)."""
+    rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
+    if not rt_lines:
+        return
+    last = state.get("_transcript_persist_len", 0)
+    if not force and len(rt_lines) - last < _TRANSCRIPT_PERSIST_EVERY:
+        return
+    state["_transcript_persist_len"] = len(rt_lines)
+    _db_save(bot_id, {"realtime_transcript": "\n".join(rt_lines)})
+
+
 async def _compress_and_persist(bot_id: str, state: dict) -> None:
     """
     Wrapper around meeting_memory.maybe_compress that also persists the updated summary
@@ -1513,6 +1651,10 @@ async def _compress_and_persist(bot_id: str, state: dict) -> None:
         snapshot = meeting_memory.get_memory_snapshot(state)
         _db_save_memory(bot_id, snapshot["memory_summary"], snapshot["live_state_payload"])
         asyncio.create_task(_maybe_generate_idea(bot_id, state))
+
+    # Durable transcript persistence — runs every line but self-throttles. Independent of
+    # the compression branch above so short, never-compressed meetings stay recoverable.
+    _maybe_persist_transcript(bot_id, state)
 
     # Proactive knowledge check — additive, isolated, never raises
     try:
@@ -1727,9 +1869,17 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
     and the finalized reply text is returned (None on decline)."""
     state = _get_bot_state(bot_id)
 
-    # Debounce — don't process commands within 15 seconds of each other
+    # Kill switch: a muted bot ignores commands entirely. The app's mute button
+    # (and /bot/{id}/mute) set state["muted"] — this makes it a real "make it stop"
+    # control, not just a proactive-nudge silencer.
+    if state.get("muted"):
+        print(f"[realtime] muted — ignoring command from {speaker!r}")
+        return
+
+    # Debounce — suppress transcript re-fires of the same command. Short (3s) so a
+    # SECOND speaker asking right after the first isn't dropped.
     now = time.time()
-    if now - state["last_command_ts"] < 15:
+    if now - state["last_command_ts"] < _COMMAND_DEBOUNCE_S:
         return
     if state["processing"]:
         return
@@ -1771,18 +1921,24 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
         print(f"[realtime] persona for bot {bot_id[:8]}: name={bot_name} active={bool(persona_text)} len={len(persona_text)} preview={persona_text[:40]!r}")
 
-        if not GROQ_API_KEY:
+        if not OPENAI_API_KEY:
             await _send_chat_response(bot_id, "Sorry, I can't process commands right now.")
             return
 
-        groq_client = get_groq()
+        openai_client = get_openai()
 
         # Build full three-layer memory context for this command
         memory_context = meeting_memory.build_memory_context(state, command)
         now = datetime.now(ZoneInfo("America/New_York"))
         hour_12 = now.hour % 12 or 12
         tz_abbr = now.strftime("%Z")  # "EST" or "EDT"
-        now_str = f"{now.strftime('%A, %B')} {now.day}, {now.year} at {hour_12}:{now.strftime('%M %p')} {tz_abbr}"
+        # Include the IANA identifier so the calendar tool gets a valid timeZone
+        # (Google rejects abbreviations like "EDT"). This is the default tz the
+        # model uses for calendar_create_event unless the user names another.
+        now_str = (
+            f"{now.strftime('%A, %B')} {now.day}, {now.year} at "
+            f"{hour_12}:{now.strftime('%M %p')} {tz_abbr} (IANA timezone: America/New_York)"
+        )
 
         has_gmail = any(t["function"]["name"].startswith("gmail") for t in tools)
         has_calendar = any(t["function"]["name"].startswith("calendar") for t in tools)
@@ -1831,6 +1987,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             is_owner=is_owner,
             persona_text=persona_text,
             bot_name=bot_name,
+            recent_turns=state.get("recent_turns", []),
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
@@ -1858,7 +2015,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
-            "model": "llama-3.3-70b-versatile",
+            "model": "gpt-4o-mini",
             "temperature": 0.3,
             "messages": messages,
         }
@@ -2004,11 +2161,17 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
 
         # Tool loop (max 3 iterations)
         for iteration in range(3):
-            if streamed_voice_active and "tools" not in call_kwargs:
+            # Only stream straight-to-voice for PURE conversational answers. If a tool
+            # ran (web_search especially), the synthesis carries URLs + long sources we
+            # must NOT read aloud — buffer it instead so dispatch can speak a stripped
+            # version while chat gets the full text. Tool turns already have latency, so
+            # buffering costs nothing perceptible.
+            if streamed_voice_active and "tools" not in call_kwargs and not tools_used:
+                await _wait_for_speech_gap(state)  # wait for a lull before talking
                 # PR-5: stream the synthesis turn directly into TTS+upload.
                 try:
                     streamed_reply = await _stream_llm_to_voice(
-                        groq_client, call_kwargs, bot_id, state["last_command_ts"] or now,
+                        openai_client, call_kwargs, bot_id, state["last_command_ts"] or now,
                     )
                 except Exception as stream_exc:
                     print(f"[realtime] streamed LLM failed, falling back: {stream_exc}")
@@ -2023,15 +2186,15 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             synth_calls = None
 
             try:
-                response = await groq_client.chat.completions.create(**call_kwargs)
-            except Exception as groq_exc:
+                response = await openai_client.chat.completions.create(**call_kwargs)
+            except Exception as llm_exc:
                 # Llama 3.3 occasionally emits tool calls as raw `<function=NAME {json}>`
                 # text instead of structured tool_calls; Groq rejects with 400
                 # tool_use_failed. Try to recover by parsing the failed generation.
-                err_str = str(groq_exc)
+                err_str = str(llm_exc)
                 is_400 = "400" in err_str or "tool_use_failed" in err_str
                 if is_400 and "tools" in call_kwargs:
-                    failed_gen = _extract_failed_generation(groq_exc)
+                    failed_gen = _extract_failed_generation(llm_exc)
                     recovered = _recover_tool_calls(failed_gen, valid_tool_names)
                     if recovered:
                         print(
@@ -2043,17 +2206,17 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                 if synth_calls is None:
                     # Couldn't recover. Strip tools and retry once for a plain-text answer.
                     if "tools" in call_kwargs:
-                        print(f"[realtime] tool call format error, retrying without tools: {groq_exc}")
+                        print(f"[realtime] tool call format error, retrying without tools: {llm_exc}")
                         call_kwargs.pop("tools", None)
                         call_kwargs.pop("tool_choice", None)
                         try:
-                            response = await groq_client.chat.completions.create(**call_kwargs)
+                            response = await openai_client.chat.completions.create(**call_kwargs)
                         except Exception as retry_exc:
                             print(f"[realtime] retry-without-tools also failed: {retry_exc}")
                             reply = "Sorry, I had trouble processing that."
                             break
                     else:
-                        print(f"[realtime] command failed without tools: {groq_exc}")
+                        print(f"[realtime] command failed without tools: {llm_exc}")
                         reply = "Sorry, I had trouble processing that."
                         break
 
@@ -2112,8 +2275,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         else:
             # Tool loop exhausted without a text summary — ask LLM to summarise what was done
             try:
-                summary_resp = await groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                summary_resp = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
                     temperature=0.3,
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )
@@ -2146,6 +2309,15 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             print(f"[ambient] generator declined (SILENT) bot={bot_id[:8]}")
             return None
 
+        # Record this turn for conversational continuity so the NEXT command can
+        # complete a multi-turn task (e.g. bot asked "what's the title?" and the
+        # next command is "test"). Skip ambient nudges — they're not part of the
+        # user's command thread. Capped at the last 4 turns.
+        if reply and not ambient:
+            _turns = state.setdefault("recent_turns", [])
+            _turns.append({"command": command, "reply": reply})
+            del _turns[:-4]
+
         # Log command to bot_store and Supabase
         cmd_entry = {
             "command": command,
@@ -2173,9 +2345,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # with token generation. Nothing more to do for voice.
             pass
         elif _streamed_tts_on():
-            await _send_voice_response_streamed(bot_id, reply, cmd_detected_ts=state["last_command_ts"] or now)
+            await _wait_for_speech_gap(state)  # wait for a lull before talking
+            await _send_voice_response_streamed(bot_id, _spoken_version(reply), cmd_detected_ts=state["last_command_ts"] or now)
         else:
-            await _send_voice_response(bot_id, reply)
+            await _wait_for_speech_gap(state)  # wait for a lull before talking
+            await _send_voice_response(bot_id, _spoken_version(reply))
         # Make sure the chat post is finished (or its exception surfaces) before returning.
         try:
             await chat_task
@@ -2231,50 +2405,40 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         state["processing"] = False
         if _barge_in_on():
             await perception_state.clear_session(state, _new_session)
-            # Depth-1 backpressure flush: if a follow-up command was queued
-            # while we were processing, dispatch it now. _dispatch_command
-            # cleared/queued it under the same flag, so this consumes it.
-            #
-            # Reset last_command_ts: the 15s debounce at the top of this
-            # function would otherwise silently drop the replacement (the
-            # cancelled command's timestamp just got recorded). Cancel-and-
-            # replace is meaningless if the new command is debounced.
-            pending = state.pop("pending_replacement_command", None)
-            if pending:
-                cmd_p, spk_p = pending
-                state["last_command_ts"] = 0
-                print(f"[realtime] backpressure flush; dispatching pending command={cmd_p!r}")
-                asyncio.create_task(_process_command(bot_id, cmd_p, spk_p))
+        # FIFO queue drain: if more commands arrived while we were processing,
+        # run the next one now (in order) so consecutive questions are all
+        # answered. Bypass the debounce — these are already-accepted distinct
+        # commands, not transcript re-fires.
+        q = state.get("command_queue")
+        if q:
+            cmd_n, spk_n = q.pop(0)
+            state["last_command_ts"] = 0
+            print(f"[realtime] dispatching queued command={cmd_n!r}")
+            asyncio.create_task(_process_command(bot_id, cmd_n, spk_n))
 
 
 def _dispatch_command(state: dict, bot_id: str, command: str, speaker: str) -> None:
-    """Phase B-aware command dispatch.
+    """Dispatch a detected command.
 
-    - Flag off → spawn _process_command directly (legacy behavior).
-    - Flag on AND no command in flight → spawn directly.
-    - Flag on AND in flight AND no pending → cancel current, queue this as the
-      single replacement (depth-1 backpressure).
-    - Flag on AND in flight AND pending already set → drop (depth-1 full).
+    - Nothing in flight → spawn _process_command directly.
+    - One in flight → QUEUE this (FIFO, depth-capped) to run after it, so two
+      people asking consecutively are BOTH answered in order rather than the
+      second being dropped. The current answer is NOT cut off — to interrupt
+      explicitly, say "Prism, stop" or hit mute.
     """
-    if not _barge_in_on() or not state.get("processing"):
+    if not state.get("processing"):
         asyncio.create_task(_process_command(bot_id, command, speaker))
         return
-    if state.get("pending_replacement_command") is None:
-        sess = perception_state.get_session(state)
-        if sess is not None and not sess.is_cancelled:
-            sess.cancel()
-            _t = perception_state._now_mono()
-            state["last_cancel_timeline"] = {
-                "detected_mono": _t,
-                "session_cancelled_mono": _t,
-                "last_upload_aborted_mono": None,
-                "reason": "cancel_and_replace",
-            }
-        perception_state.bump(state, "replace_depth_hits")
-        state["pending_replacement_command"] = (command, speaker)
-        print(f"[realtime] cancel-and-replace: queueing command={command!r}")
-    else:
-        print(f"[realtime] depth-1 backpressure full; dropping command={command!r}")
+    q = state.setdefault("command_queue", [])
+    norm = _normalize_cmd(command)
+    # Skip near-duplicates of the in-flight command or the queue tail (transcript re-fire).
+    if norm and (norm == state.get("last_command_norm") or (q and _normalize_cmd(q[-1][0]) == norm)):
+        return
+    if len(q) >= 3:
+        print(f"[realtime] command queue full; dropping command={command!r}")
+        return
+    q.append((command, speaker))
+    print(f"[realtime] queued command (depth={len(q)}): {command!r}")
 
 
 def _extract_bot_id_from_payload(payload: dict) -> str:
@@ -2604,9 +2768,8 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     state["compression_cursor"] = min(
                         state["compression_cursor"], len(state["transcript_buffer"])
                     )
-                # Mirror to bot_store so _process_bot_transcript can use it at meeting end
-                if bot_id in bot_store:
-                    bot_store[bot_id]["realtime_transcript_lines"] = state["transcript_buffer"]
+                # Durable full transcript (append-only; survives buffer trims + restart-resume).
+                _append_realtime_line(bot_id, line)
 
                 # Mark meeting start and run all Layer-3 structured extraction + counter updates
                 if state["meeting_start_ts"] is None:
@@ -2707,6 +2870,11 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         if message_text.strip():
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
+            # Bare wake-word with no command ("prism" / "Hi prism") — don't ignore
+            # it. Pass the full message through so the bot acknowledges and offers
+            # help instead of going silent (a real user greets it before asking).
+            if not command and _has_trigger_word(message_text, bot_id):
+                command = message_text
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
@@ -2741,7 +2909,13 @@ async def set_bot_mute(bot_id: str, body: dict):
     if muted:
         state["interjection_state"] = "idle"
         state["pending_offer"] = None
+        state["command_queue"] = []  # drop anything waiting to be spoken
         perception_state.bump(state, "mutes")
+        # Halt in-flight speech immediately — the streaming loops' cancel-checks
+        # honor this (barge-in on by default). Makes mute a true kill-switch.
+        sess = perception_state.get_session(state)
+        if sess is not None and not sess.is_cancelled:
+            sess.cancel()
     print(f"[ambient] mute via API bot={bot_id[:8]} muted={muted}")
     return {"muted": state.get("muted")}
 

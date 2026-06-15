@@ -65,7 +65,7 @@ class FlagTests(unittest.TestCase):
     def test_param_defaults(self):
         import ambient_loop
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(ambient_loop.decider_model(), "llama-3.1-8b-instant")
+            self.assertEqual(ambient_loop.decider_model(), "gpt-4o-mini")
             self.assertEqual(ambient_loop.pause_debounce_s(), 8.0)
             self.assertEqual(ambient_loop.lull_threshold_s(), 35.0)
             self.assertEqual(ambient_loop.autonomy_cap_s(), 300.0)

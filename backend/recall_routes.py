@@ -80,6 +80,10 @@ def _db_load(bot_id: str) -> dict | None:
                     asyncio.create_task(_run_proactive_checker(bot_id))
                 except Exception as exc:
                     print(f"[recall] failed to re-spawn proactive checker: {exc}")
+            # Restore the durable realtime transcript so _process_bot_transcript's
+            # fallback can recover it after a restart when Recall has 0 recordings.
+            rt_blob = row.get("realtime_transcript") or ""
+            rt_lines = rt_blob.split("\n") if rt_blob else []
             return {
                 "status": row.get("status", "joining"),
                 "result": row.get("result"),
@@ -87,6 +91,7 @@ def _db_load(bot_id: str) -> dict | None:
                 "transcript": row.get("transcript"),
                 "commands": row.get("commands") or [],
                 "user_id": row.get("user_id"),
+                "realtime_transcript_lines": rt_lines,
             }
     except Exception as exc:
         print(f"[recall] db load failed for {bot_id}: {exc}")
@@ -168,6 +173,56 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
     except Exception as exc:
         print(f"[recall] dedup lookup skipped (workspace tables likely missing): {exc}")
         return None
+
+
+async def _bot_is_live(bot_id: str) -> bool:
+    """Ask Recall whether a bot is still in the call. Used to confirm a candidate
+    dedup target is genuinely live before reusing it — guards against stale
+    'joining'/'recording' rows left behind by a crashed or removed bot."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+        if resp.status_code != 200:
+            return False
+        changes = resp.json().get("status_changes") or []
+        code = changes[-1].get("code", "") if changes else ""
+        return code in ("joining_call", "in_call_not_recording", "in_call_recording")
+    except Exception:
+        return False
+
+
+async def _find_own_active_bot(client, normalized_url: str, user_id: str) -> dict | None:
+    """Return the requesting user's OWN bot that is still live in this meeting, so a
+    second Join/Rejoin click attaches to it instead of spawning a duplicate bot in the
+    same room (the bug that split a meeting's transcript across two bots). Verifies each
+    candidate against Recall so a stale DB row never blocks a legitimate new join."""
+    if not user_id:
+        return None
+    try:
+        res = (
+            client.table("meeting_bots")
+            .select("bot_id, created_at")
+            .eq("meeting_url", normalized_url)
+            .eq("owner_user_id", user_id)
+            .in_("status", ["joining", "recording"])
+            .order("created_at", desc=True)
+            .limit(3)
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[recall] self-dedup lookup skipped: {exc}")
+        return None
+    for row in (res.data or []):
+        if await _bot_is_live(row["bot_id"]):
+            return {"bot_id": row["bot_id"]}
+        # Stale row — its bot is no longer in the call. Sync status so it stops
+        # showing up as active for future dedup checks.
+        _mb_update_status(row["bot_id"], "error")
+    return None
 
 
 def _mb_update_status(bot_id: str, status: str):
@@ -577,9 +632,25 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     # Optionally link bot to authenticated user (enables live tool access)
     user_id = await _optional_user_id(request)
 
-    # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
     if user_id and supabase:
         normalized_url = _normalize_meeting_url(req.meeting_url)
+
+        # Self-dedup: if THIS user already has a live bot in this meeting (a second
+        # Join/Rejoin click), attach to it instead of spawning a duplicate bot — two
+        # bots in one room split the transcript so analysis polls a bot that never
+        # captured anything. Verified against Recall so stale rows don't block joins.
+        own = await _find_own_active_bot(supabase, normalized_url, user_id)
+        if own:
+            print(f"[recall] self-dedup: reusing live bot {own['bot_id']} for {user_id}")
+            return {
+                "skip": True,
+                "self": True,
+                "existing_bot_id": own["bot_id"],
+                "owner_user_id": user_id,
+                "owner_user_email": "",
+            }
+
+        # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
         existing = _find_shared_workspace_bot(supabase, normalized_url, user_id)
         if existing:
             print(f"[recall] dedup: skipping join for {user_id}, existing bot {existing['bot_id']} from {existing['owner_user_id']}")

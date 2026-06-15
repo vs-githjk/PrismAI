@@ -103,7 +103,7 @@ function detectGlobalIntent(msg) {
 function detectAgentIntent(msg) {
   const m = msg.toLowerCase()
   if (/undo|revert|restore|back to (the )?(original|old|previous|last|before)|reset (the )?(card|email|summary|action|decision)/.test(m)) return 'undo'
-  if (/email/.test(m) && /redraft|rewrite|redo|revise|make|formal|casual|shorter|longer|concise|tone|style|angry|angrier|polite|friendl|professional/.test(m)) return 'email_drafter'
+  if (/e-?mail/.test(m) && /draft|write|compose|create|generate|prepare|redraft|rewrite|redo|revise|make|formal|casual|short|long|concise|tone|style|angr|polite|friendl|professional|improve|update|follow.?up/.test(m)) return 'email_drafter'
   if (/action item|task|todo/.test(m) && /redo|regenerate|update|add|remove|change|rewrite/.test(m)) return 'action_items'
   if (/summar/.test(m) && /redo|regenerate|rewrite|update|change|shorten|shorter|longer|make|improve|concise/.test(m)) return 'summarizer'
   if (/calendar|follow.up time|reschedule/.test(m) && /redo|regenerate|suggest|change|update|set|move|shift|reschedule/.test(m)) return 'calendar_suggester'
@@ -243,7 +243,12 @@ export default function ChatPanel({
     setInput('')
     setLoading(true)
 
-    const agentIntent = result && transcript ? detectAgentIntent(msg) : null
+    // Gate on `result` only — NOT transcript. Tier-2 agents (email, calendar, health)
+    // re-run from the result context the backend rebuilds, and edit agents ship
+    // existing_items, so the raw transcript is optional. Requiring it meant a recovered
+    // or reopened meeting (which often has no transcript in chat context) could never
+    // run an agent — every "draft an email" fell through to ungrounded generic chat.
+    const agentIntent = result ? detectAgentIntent(msg) : null
     const globalIntent = !agentIntent && detectGlobalIntent(msg)
 
     try {
@@ -268,7 +273,7 @@ export default function ChatPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agent: agentIntent,
-            transcript,
+            transcript: transcript || '',
             instruction: msg,
             existing_items: existingItems,
             // Ship the current result so a Tier-2 agent (health, calendar, email)
@@ -375,8 +380,9 @@ export default function ChatPanel({
           narrow side panel (previously the "Chat" eyebrow butted into the
           agent-aware pill, rendering as "CHAT…ENT-AWARE"). */}
       <div className="flex flex-shrink-0 flex-col gap-2 border-b border-white/[0.08] px-4 py-3">
-        {/* Row 1 — identity + live model status */}
-        <div className="flex items-center gap-2">
+        {/* Row 1 — identity + live model status. pr-9 reserves space for the
+            absolute close-X (right-3, ~28px) so the badge isn't obstructed. */}
+        <div className="flex items-center gap-2 pr-9">
           <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/[0.10]">
             <MessagesSquare className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
           </div>
@@ -386,7 +392,7 @@ export default function ChatPanel({
           </div>
           <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-            llama-3.3-70b
+            Prism
           </span>
         </div>
 
@@ -658,11 +664,20 @@ export default function ChatPanel({
 
       {/* Composer */}
       <div className="flex flex-shrink-0 items-center gap-2 border-t border-white/[0.08] px-4 py-3">
-        <input
+        {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
+            the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
+        <textarea
+          rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
           disabled={!!viewingSession}
+          name="prism-chat"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          data-1p-ignore
+          data-lpignore="true"
           placeholder={
             viewingSession
               ? 'Viewing past chat — start a new chat to send messages'
@@ -670,7 +685,7 @@ export default function ChatPanel({
               ? 'Ask or say "redraft email more formally"…'
               : 'Ask a question…'
           }
-          className="flex-1 rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 resize-none rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button
           type="button"

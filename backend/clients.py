@@ -4,18 +4,18 @@ from typing import Optional
 
 import httpx
 from fastapi import Request
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=3.0, read=30.0, write=10.0, pool=3.0)
 
 _shared_http: Optional[httpx.AsyncClient] = None
-_shared_groq: Optional[AsyncGroq] = None
+_shared_openai: Optional[AsyncOpenAI] = None
 
 
 def bind(app) -> None:
-    global _shared_http, _shared_groq
+    global _shared_http, _shared_openai
     _shared_http = getattr(app.state, "http", None)
-    _shared_groq = getattr(app.state, "groq", None)
+    _shared_openai = getattr(app.state, "openai", None)
 
 
 @asynccontextmanager
@@ -33,12 +33,15 @@ async def get_http(request: Optional[Request] = None):
         yield transient
 
 
-def get_groq(request: Optional[Request] = None) -> AsyncGroq:
+def get_openai(request: Optional[Request] = None) -> AsyncOpenAI:
+    """Shared OpenAI client — used for the OpenAI-shaped tool-calling / streaming
+    surfaces (chat + live bot) and audio transcription. (Claude handles the agent
+    + RAG paths via agents.utils.llm_call.)"""
     if request is not None:
-        c = getattr(request.app.state, "groq", None)
+        c = getattr(request.app.state, "openai", None)
         if c is not None:
             return c
-    if _shared_groq is not None:
-        return _shared_groq
-    print("WARNING [clients] shared groq client missing; fell back to transient")
-    return AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+    if _shared_openai is not None:
+        return _shared_openai
+    print("WARNING [clients] shared openai client missing; fell back to transient")
+    return AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))

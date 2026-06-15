@@ -23,28 +23,28 @@ _stub_supabase()
 
 
 class LlmCallPersonaWrapTests(unittest.TestCase):
-    def _fake_groq(self, captured):
-        """Build a fake Groq client whose chat.completions.create captures the
-        system message and returns a stubbed completion."""
-        groq = MagicMock()
+    def _fake_anthropic(self, captured):
+        """Build a fake Anthropic client whose messages.create captures the
+        system prompt (a separate kwarg in the Messages API) and returns a stub."""
+        client = MagicMock()
         async def create(**kwargs):
-            captured["messages"] = kwargs["messages"]
-            choice = MagicMock()
-            choice.message.content = "ok"
+            captured["system"] = kwargs["system"]
+            block = MagicMock()
+            block.text = "ok"
             resp = MagicMock()
-            resp.choices = [choice]
+            resp.content = [block]
             return resp
-        groq.chat.completions.create = AsyncMock(side_effect=create)
-        return groq
+        client.messages.create = AsyncMock(side_effect=create)
+        return client
 
     def test_no_persona_leaves_system_prompt_unchanged(self):
         import importlib
         from agents import utils
         importlib.reload(utils)
         captured = {}
-        with patch.object(utils, "_get_groq", lambda: self._fake_groq(captured)):
+        with patch.object(utils, "_get_anthropic", lambda: self._fake_anthropic(captured)):
             asyncio.run(utils.llm_call("You are a summarizer.", "transcript here"))
-        self.assertEqual(captured["messages"][0]["content"], "You are a summarizer.")
+        self.assertEqual(captured["system"], "You are a summarizer.")
 
     def test_persona_set_appends_safety_wrapped_suffix(self):
         import importlib
@@ -56,10 +56,10 @@ class LlmCallPersonaWrapTests(unittest.TestCase):
             utils._PERSONA_TEXT.set("Be terse.")
             await utils.llm_call("You are a summarizer.", "transcript")
 
-        with patch.object(utils, "_get_groq", lambda: self._fake_groq(captured)):
+        with patch.object(utils, "_get_anthropic", lambda: self._fake_anthropic(captured)):
             asyncio.run(run())
 
-        sys_msg = captured["messages"][0]["content"]
+        sys_msg = captured["system"]
         self.assertIn("You are a summarizer.", sys_msg)
         self.assertIn("Tone instruction", sys_msg)
         self.assertIn("does not change facts, schema, scores, or JSON keys", sys_msg)

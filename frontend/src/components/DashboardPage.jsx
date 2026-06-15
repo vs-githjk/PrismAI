@@ -325,7 +325,9 @@ function NewMeetingPanel(props) {
                 <div className="flex items-center gap-2 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-3 py-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
                   <p className="text-[11px] text-cyan-300/70">
-                    Prism is already in this meeting via {props.dedupBotInfo.ownerUserEmail || 'a teammate'} — results will appear here when done.
+                    {props.dedupBotInfo.self
+                      ? 'Prism is already in this meeting — reconnecting to your existing session.'
+                      : `Prism is already in this meeting via ${props.dedupBotInfo.ownerUserEmail || 'a teammate'} — results will appear here when done.`}
                   </p>
                 </div>
               )}
@@ -551,6 +553,21 @@ export default function DashboardPage(props) {
 
   // Fetch up to 3 past chat sessions for this meeting on entry. If there's a pending
   // exit-save POST for the same meeting, wait for it first so the fetch sees the new row.
+  // Merge a partial result update into the live result AND persist it, so card edits
+  // and chat-driven regenerations (email edits, calendar, etc.) survive a refresh
+  // instead of reverting to the saved version. Shared by MeetingView + ChatPanel.
+  const persistResultPatch = useCallback((patch) => {
+    const merged = { ...(props.result || {}), ...patch }
+    props.setResult(merged)
+    if (props.meetingId) {
+      apiFetch(`/meetings/${props.meetingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ result: merged }),
+      }).catch(() => {})
+    }
+  }, [props.result, props.meetingId, props.setResult])
+
   // Per-meeting chat history. ChatPanel saves the live thread continuously
   // (one growing session per meeting); this just (re)loads the session list —
   // called on meeting change and whenever ChatPanel reports a brand-new session.
@@ -560,7 +577,7 @@ export default function DashboardPage(props) {
       .then((res) => (res.ok ? res.json() : { sessions: [] }))
       .then((data) => setPastSessions(data.sessions || []))
       .catch(() => setPastSessions([]))
-  }, [props.meetingId, props.user])
+  }, [props.meetingId, props.user?.id])
 
   // Clear stale sessions immediately on meeting switch (ChatPanel is keyed by
   // meetingId and remounts before the new fetch lands — must not see the old
@@ -603,7 +620,7 @@ export default function DashboardPage(props) {
       .then((r) => r.ok ? r.json() : [])
       .then((data) => { setWorkspaces(data); setWorkspacesLoaded(true) })
       .catch(() => { setWorkspaces([]); setWorkspacesLoaded(true) })
-  }, [props.user])
+  }, [props.user?.id])
 
   // Build userId→email map for attribution when active workspace changes
   useEffect(() => {
@@ -1055,6 +1072,7 @@ export default function DashboardPage(props) {
                       recordedByEmail={recordedByEmail}
                       workspaceId={activeWorkspaceId}
                       suggestedEmails={suggestedAttendeeEmails}
+                      onResultUpdate={persistResultPatch}
                     />
                   </Suspense>
                 </>
@@ -1126,20 +1144,7 @@ export default function DashboardPage(props) {
                 onThreadSaved={refreshPastSessions}
                 transcript={props.transcript}
                 result={props.result}
-                onResultUpdate={(patch) => {
-                  // Merge the agent re-run into the live result AND persist it,
-                  // so chat-driven regenerations (email, calendar, etc.) survive
-                  // a page refresh instead of reverting to the saved version.
-                  const merged = { ...(props.result || {}), ...patch }
-                  props.setResult(merged)
-                  if (props.meetingId) {
-                    apiFetch(`/meetings/${props.meetingId}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ result: merged }),
-                    }).catch(() => {})
-                  }
-                }}
+                onResultUpdate={persistResultPatch}
                 isSignedIn={!!props.user}
                 personaPreset={props.personaPreset}
                 personaCustomPrompt={props.personaCustomPrompt}

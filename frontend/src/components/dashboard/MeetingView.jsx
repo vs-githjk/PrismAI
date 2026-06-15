@@ -87,7 +87,7 @@ function SemicircularGauge({ score }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [] }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate }) {
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -409,7 +409,14 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
 
-      {!readOnly && <EmailCard email={result.follow_up_email} gmailConnected={gmailConnected} suggestedEmails={suggestedEmails} />}
+      {!readOnly && (
+        <EmailCard
+          email={result.follow_up_email}
+          gmailConnected={gmailConnected}
+          suggestedEmails={suggestedEmails}
+          onSave={(updated) => onResultUpdate?.({ follow_up_email: updated })}
+        />
+      )}
 
       <CalendarCard
         suggestion={result.calendar_suggestion}
