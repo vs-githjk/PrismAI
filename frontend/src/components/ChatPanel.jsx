@@ -391,7 +391,7 @@ export default function ChatPanel({
           </div>
           <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-            Prism AI
+            Prism
           </span>
         </div>
 
@@ -663,19 +663,18 @@ export default function ChatPanel({
 
       {/* Composer */}
       <div className="flex flex-shrink-0 items-center gap-2 border-t border-white/[0.08] px-4 py-3">
-        <input
+        {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
+            the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
+        <textarea
+          rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
           disabled={!!viewingSession}
-          // Stop the browser/password managers from popping saved-email autofill
-          // over the chat box (the "email" in the placeholder triggers it).
           name="prism-chat"
-          type="text"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
-          spellCheck={true}
           data-1p-ignore
           data-lpignore="true"
           placeholder={
@@ -685,7 +684,7 @@ export default function ChatPanel({
               ? 'Ask or say "redraft email more formally"…'
               : 'Ask a question…'
           }
-          className="flex-1 rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 resize-none rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button
           type="button"
