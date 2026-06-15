@@ -391,7 +391,7 @@ export default function ChatPanel({
           </div>
           <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-            llama-3.3-70b
+            Prism AI
           </span>
         </div>
 
@@ -668,6 +668,16 @@ export default function ChatPanel({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
           disabled={!!viewingSession}
+          // Stop the browser/password managers from popping saved-email autofill
+          // over the chat box (the "email" in the placeholder triggers it).
+          name="prism-chat"
+          type="text"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={true}
+          data-1p-ignore
+          data-lpignore="true"
           placeholder={
             viewingSession
               ? 'Viewing past chat — start a new chat to send messages'
