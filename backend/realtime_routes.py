@@ -157,7 +157,15 @@ def _looks_command_complete(cmd: str) -> bool:
 
 
 def _barge_in_on() -> bool:
-    return os.getenv("PRISM_BARGE_IN") == "1"
+    # Default ON: enables "Prism, stop" verbal interrupt, halting in-flight speech
+    # on mute, and the gap-before-speaking checks. Set PRISM_BARGE_IN=0 to disable.
+    return os.getenv("PRISM_BARGE_IN", "1") != "0"
+
+
+# How long to suppress repeat command-processing. Only there to absorb transcript
+# re-fires of the SAME command (prefix-dedup + event-id dedup do the real work);
+# kept short so a second person asking right after the first isn't dropped.
+_COMMAND_DEBOUNCE_S = float(os.getenv("PRISM_COMMAND_DEBOUNCE_S", "3"))
 
 
 def _streamed_tts_on() -> bool:
@@ -1119,6 +1127,46 @@ def _estimate_play_seconds(text: str) -> float:
     return max(0.8, min(15.0, len(text or "") / 13.0))
 
 
+_URL_RE = re.compile(r"https?://\S+")
+_SOURCE_PAREN_RE = re.compile(r"\s*\((?:source|sources|src)\s*:[^)]*\)", re.IGNORECASE)
+
+
+def _spoken_version(text: str) -> str:
+    """Strip URLs and '(source: ...)' citations so they aren't read aloud — TTS
+    mangles URLs ('h-t-t-p-s colon slash slash...'). The FULL text (with links +
+    sources) still goes to the meeting chat; only the spoken copy is cleaned."""
+    if not text:
+        return text
+    t = _SOURCE_PAREN_RE.sub("", text)
+    t = _URL_RE.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t)            # collapse gaps left by removals
+    t = re.sub(r"\s+([.,;:!?])", r"\1", t)   # tidy space-before-punctuation
+    return t.strip()
+
+
+_GAP_SILENCE_S = float(os.getenv("PRISM_GAP_SILENCE_S", "1.2"))
+_GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
+
+
+async def _wait_for_speech_gap(state: dict) -> None:
+    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't
+    talk over someone mid-sentence. Returns as soon as there's been ~_GAP_SILENCE_S
+    of quiet (tracked via last_segment_ts), or after _GAP_MAX_WAIT_S regardless so it
+    never hangs if the room never goes quiet. Bails early if the speaking session was
+    cancelled (mute / "stop"). Disable with PRISM_GAP_WAIT=0."""
+    if os.getenv("PRISM_GAP_WAIT", "1") == "0":
+        return
+    deadline = time.time() + _GAP_MAX_WAIT_S
+    while time.time() < deadline:
+        sess = perception_state.get_session(state)
+        if sess is not None and sess.is_cancelled:
+            return
+        last = state.get("last_segment_ts", 0.0) or 0.0
+        if time.time() - last >= _GAP_SILENCE_S:
+            return
+        await asyncio.sleep(0.2)
+
+
 async def _send_voice_response(bot_id: str, text: str):
     """Convert text to speech and play it in the meeting via Recall.ai bot.
     Buffered (default) path: one TTS call, one upload."""
@@ -1821,9 +1869,17 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
     and the finalized reply text is returned (None on decline)."""
     state = _get_bot_state(bot_id)
 
-    # Debounce — don't process commands within 15 seconds of each other
+    # Kill switch: a muted bot ignores commands entirely. The app's mute button
+    # (and /bot/{id}/mute) set state["muted"] — this makes it a real "make it stop"
+    # control, not just a proactive-nudge silencer.
+    if state.get("muted"):
+        print(f"[realtime] muted — ignoring command from {speaker!r}")
+        return
+
+    # Debounce — suppress transcript re-fires of the same command. Short (3s) so a
+    # SECOND speaker asking right after the first isn't dropped.
     now = time.time()
-    if now - state["last_command_ts"] < 15:
+    if now - state["last_command_ts"] < _COMMAND_DEBOUNCE_S:
         return
     if state["processing"]:
         return
@@ -2105,7 +2161,13 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
 
         # Tool loop (max 3 iterations)
         for iteration in range(3):
-            if streamed_voice_active and "tools" not in call_kwargs:
+            # Only stream straight-to-voice for PURE conversational answers. If a tool
+            # ran (web_search especially), the synthesis carries URLs + long sources we
+            # must NOT read aloud — buffer it instead so dispatch can speak a stripped
+            # version while chat gets the full text. Tool turns already have latency, so
+            # buffering costs nothing perceptible.
+            if streamed_voice_active and "tools" not in call_kwargs and not tools_used:
+                await _wait_for_speech_gap(state)  # wait for a lull before talking
                 # PR-5: stream the synthesis turn directly into TTS+upload.
                 try:
                     streamed_reply = await _stream_llm_to_voice(
@@ -2283,9 +2345,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # with token generation. Nothing more to do for voice.
             pass
         elif _streamed_tts_on():
-            await _send_voice_response_streamed(bot_id, reply, cmd_detected_ts=state["last_command_ts"] or now)
+            await _wait_for_speech_gap(state)  # wait for a lull before talking
+            await _send_voice_response_streamed(bot_id, _spoken_version(reply), cmd_detected_ts=state["last_command_ts"] or now)
         else:
-            await _send_voice_response(bot_id, reply)
+            await _wait_for_speech_gap(state)  # wait for a lull before talking
+            await _send_voice_response(bot_id, _spoken_version(reply))
         # Make sure the chat post is finished (or its exception surfaces) before returning.
         try:
             await chat_task
@@ -2341,50 +2405,40 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         state["processing"] = False
         if _barge_in_on():
             await perception_state.clear_session(state, _new_session)
-            # Depth-1 backpressure flush: if a follow-up command was queued
-            # while we were processing, dispatch it now. _dispatch_command
-            # cleared/queued it under the same flag, so this consumes it.
-            #
-            # Reset last_command_ts: the 15s debounce at the top of this
-            # function would otherwise silently drop the replacement (the
-            # cancelled command's timestamp just got recorded). Cancel-and-
-            # replace is meaningless if the new command is debounced.
-            pending = state.pop("pending_replacement_command", None)
-            if pending:
-                cmd_p, spk_p = pending
-                state["last_command_ts"] = 0
-                print(f"[realtime] backpressure flush; dispatching pending command={cmd_p!r}")
-                asyncio.create_task(_process_command(bot_id, cmd_p, spk_p))
+        # FIFO queue drain: if more commands arrived while we were processing,
+        # run the next one now (in order) so consecutive questions are all
+        # answered. Bypass the debounce — these are already-accepted distinct
+        # commands, not transcript re-fires.
+        q = state.get("command_queue")
+        if q:
+            cmd_n, spk_n = q.pop(0)
+            state["last_command_ts"] = 0
+            print(f"[realtime] dispatching queued command={cmd_n!r}")
+            asyncio.create_task(_process_command(bot_id, cmd_n, spk_n))
 
 
 def _dispatch_command(state: dict, bot_id: str, command: str, speaker: str) -> None:
-    """Phase B-aware command dispatch.
+    """Dispatch a detected command.
 
-    - Flag off → spawn _process_command directly (legacy behavior).
-    - Flag on AND no command in flight → spawn directly.
-    - Flag on AND in flight AND no pending → cancel current, queue this as the
-      single replacement (depth-1 backpressure).
-    - Flag on AND in flight AND pending already set → drop (depth-1 full).
+    - Nothing in flight → spawn _process_command directly.
+    - One in flight → QUEUE this (FIFO, depth-capped) to run after it, so two
+      people asking consecutively are BOTH answered in order rather than the
+      second being dropped. The current answer is NOT cut off — to interrupt
+      explicitly, say "Prism, stop" or hit mute.
     """
-    if not _barge_in_on() or not state.get("processing"):
+    if not state.get("processing"):
         asyncio.create_task(_process_command(bot_id, command, speaker))
         return
-    if state.get("pending_replacement_command") is None:
-        sess = perception_state.get_session(state)
-        if sess is not None and not sess.is_cancelled:
-            sess.cancel()
-            _t = perception_state._now_mono()
-            state["last_cancel_timeline"] = {
-                "detected_mono": _t,
-                "session_cancelled_mono": _t,
-                "last_upload_aborted_mono": None,
-                "reason": "cancel_and_replace",
-            }
-        perception_state.bump(state, "replace_depth_hits")
-        state["pending_replacement_command"] = (command, speaker)
-        print(f"[realtime] cancel-and-replace: queueing command={command!r}")
-    else:
-        print(f"[realtime] depth-1 backpressure full; dropping command={command!r}")
+    q = state.setdefault("command_queue", [])
+    norm = _normalize_cmd(command)
+    # Skip near-duplicates of the in-flight command or the queue tail (transcript re-fire).
+    if norm and (norm == state.get("last_command_norm") or (q and _normalize_cmd(q[-1][0]) == norm)):
+        return
+    if len(q) >= 3:
+        print(f"[realtime] command queue full; dropping command={command!r}")
+        return
+    q.append((command, speaker))
+    print(f"[realtime] queued command (depth={len(q)}): {command!r}")
 
 
 def _extract_bot_id_from_payload(payload: dict) -> str:
@@ -2850,7 +2904,13 @@ async def set_bot_mute(bot_id: str, body: dict):
     if muted:
         state["interjection_state"] = "idle"
         state["pending_offer"] = None
+        state["command_queue"] = []  # drop anything waiting to be spoken
         perception_state.bump(state, "mutes")
+        # Halt in-flight speech immediately — the streaming loops' cancel-checks
+        # honor this (barge-in on by default). Makes mute a true kill-switch.
+        sess = perception_state.get_session(state)
+        if sess is not None and not sess.is_cancelled:
+            sess.cancel()
     print(f"[ambient] mute via API bot={bot_id[:8]} muted={muted}")
     return {"muted": state.get("muted")}
 

@@ -311,13 +311,15 @@ class CompareMode(unittest.IsolatedAsyncioTestCase):
 
     async def test_legacy_fuzzy_dedup_is_simulated(self):
         # Two near-identical chunks within 3s — legacy 3s fuzzy dedup
-        # should drop the second one even in compare mode.
+        # should drop the second one even in compare mode. Neutral text (no
+        # wake word, no stop verb) so barge-in's stop-command path — on by
+        # default — doesn't intercept and drop the chunk before the buffer.
         await rr._handle_realtime_payload(
-            self._make_payload("bot_d", "pid_a", "Alice", "prism stop"),
+            self._make_payload("bot_d", "pid_a", "Alice", "the quick brown fox"),
             verified_bot_id="bot_d",
         )
         await rr._handle_realtime_payload(
-            self._make_payload("bot_d", "pid_a", "Alice", "prism stop"),
+            self._make_payload("bot_d", "pid_a", "Alice", "the quick brown fox"),
             verified_bot_id="bot_d",
         )
         state = rr._bot_state["bot_d"]
