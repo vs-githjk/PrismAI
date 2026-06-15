@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 
 /**
  * Topbar island: page title (left) + global search pill (right).
@@ -7,10 +7,9 @@ import { ArrowLeft, Search } from 'lucide-react'
  * (Home / Trend / Knowledge). When the title overflows its track it
  * slowly cycles horizontally; short titles stay static, and
  * prefers-reduced-motion falls back to a plain ellipsis.
- * `onBack`, when provided (meeting view), renders a back affordance
- * left of the title that returns to Home.
+ * Navigation back to Home is via the Home item in the sidebar.
  */
-export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, onBack = null }) {
+export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null }) {
   const trackRef = useRef(null)
   const textRef = useRef(null)
   const [shift, setShift] = useState(0) // px the title must travel to reveal its tail; 0 = no marquee
@@ -35,18 +34,8 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
 
   return (
     <header className="dashboard-topbar dashboard-island z-30 flex items-center gap-4 px-6">
-      {/* Left: optional back affordance + page title (marquee on overflow) + inline actions */}
+      {/* Left: page title (marquee on overflow) + inline actions */}
       <div className="flex min-w-0 items-center gap-3">
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to dashboard"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/70 transition hover:border-cyan-400/45 hover:bg-white/[0.07] hover:text-white"
-          >
-            <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
-          </button>
-        )}
         <div ref={trackRef} className="dashboard-title-track min-w-0">
           <span
             ref={textRef}

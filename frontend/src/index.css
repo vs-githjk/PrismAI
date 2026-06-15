@@ -1075,8 +1075,8 @@ h1, h2, h3, .font-display {
 }
 
 .dashboard-page {
-  --dashboard-chrome-bg: #08080a;
-  --dashboard-bg: #0e0e11;
+  --dashboard-chrome-bg: #19191a;
+  --dashboard-bg: #202021;
   --dashboard-topbar-h: 76px;
   --dashboard-sidebar-w: 300px;
   --dashboard-gutter: 16px;
@@ -1087,21 +1087,21 @@ h1, h2, h3, .font-display {
 }
 
 /* Floating glass chrome island — neutral dark glassmorphism (no color tint).
-   A faint white translucent film over the near-black page reads as glass under
+   A faint white translucent film over the dark-gray page reads as glass under
    a heavy, lightly-saturated blur, with a bright top edge for the light catch. */
 .dashboard-island {
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.055) 0%,
-      rgba(255, 255, 255, 0.028) 100%
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.035) 100%
     );
   backdrop-filter: blur(26px) saturate(115%);
   -webkit-backdrop-filter: blur(26px) saturate(115%);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 16px;
   box-shadow:
-    0 16px 44px rgba(0, 0, 0, 0.55),
+    0 10px 30px rgba(0, 0, 0, 0.32),
     0 1px 0 rgba(255, 255, 255, 0.10) inset,
     0 -1px 0 rgba(0, 0, 0, 0.20) inset;
 }
@@ -1113,14 +1113,14 @@ h1, h2, h3, .font-display {
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.055) 0%,
-      rgba(255, 255, 255, 0.028) 100%
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.035) 100%
     );
   backdrop-filter: blur(40px) saturate(120%);
   -webkit-backdrop-filter: blur(40px) saturate(120%);
   border: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow:
-    0 16px 44px rgba(0, 0, 0, 0.55),
+    0 10px 30px rgba(0, 0, 0, 0.32),
     0 1px 0 rgba(255, 255, 255, 0.10) inset,
     0 -1px 0 rgba(0, 0, 0, 0.20) inset;
 }
