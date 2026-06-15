@@ -2870,6 +2870,11 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         if message_text.strip():
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
+            # Bare wake-word with no command ("prism" / "Hi prism") — don't ignore
+            # it. Pass the full message through so the bot acknowledges and offers
+            # help instead of going silent (a real user greets it before asking).
+            if not command and _has_trigger_word(message_text, bot_id):
+                command = message_text
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
