@@ -380,8 +380,9 @@ export default function ChatPanel({
           narrow side panel (previously the "Chat" eyebrow butted into the
           agent-aware pill, rendering as "CHAT…ENT-AWARE"). */}
       <div className="flex flex-shrink-0 flex-col gap-2 border-b border-white/[0.08] px-4 py-3">
-        {/* Row 1 — identity + live model status */}
-        <div className="flex items-center gap-2">
+        {/* Row 1 — identity + live model status. pr-9 reserves space for the
+            absolute close-X (right-3, ~28px) so the badge isn't obstructed. */}
+        <div className="flex items-center gap-2 pr-9">
           <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/[0.10]">
             <MessagesSquare className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
           </div>
