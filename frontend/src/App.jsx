@@ -1410,7 +1410,13 @@ export default function App() {
     return () => clearTimeout(timeoutId)
   }, [authReady, isDashboard, isTestAccount])
 
-  // Detect Google Calendar OAuth callback (?code=...&state=calendar_connect)
+  // Detect Google Calendar OAuth callback (?code=...&state=calendar_connect).
+  // Capture the code + PKCE verifier on mount, but DEFER the exchange until the
+  // auth session is ready (next effect). The exchange endpoint is auth-gated, and
+  // on the post-redirect full page reload the Supabase session restores async —
+  // firing before it's ready 401s, and the single-use code + verifier are then
+  // gone, leaving the user "connected on Google's side but still showing Connect".
+  const pendingCalExchangeRef = useRef(null)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
@@ -1426,7 +1432,14 @@ export default function App() {
       console.warn('[calendar] No PKCE verifier found for calendar callback')
       return
     }
+    pendingCalExchangeRef.current = { code, verifier }
+  }, [])
 
+  // Fire the deferred calendar exchange once the user/session is available.
+  useEffect(() => {
+    if (!user || !pendingCalExchangeRef.current) return
+    const { code, verifier } = pendingCalExchangeRef.current
+    pendingCalExchangeRef.current = null
     apiFetch('/calendar/exchange-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1439,7 +1452,7 @@ export default function App() {
       if (res.ok) setCalendarConnected(true)
       else console.warn('[calendar] exchange-code failed:', res.status)
     }).catch(err => console.warn('[calendar] exchange-code error:', err))
-  }, [])
+  }, [user])
 
   const signInWithGoogle = async () => {
     if (!supabase) {
