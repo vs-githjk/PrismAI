@@ -277,6 +277,29 @@ class SharedGapTests(unittest.TestCase):
 
         self.assertGreaterEqual(asyncio.run(_run()), 0.35)  # blocked → waited to max
 
+    def test_terminal_check_is_optional(self):
+        # buf[-1] is the bot's own pre-appended reply with no terminal punctuation.
+        # The command path (require_terminal=False) must not block on it; the lane
+        # (require_terminal=True) enforces a complete thought.
+        now = 1000.0
+        state = {"last_audio_ts": now - 10, "transcript_buffer": ["Prism: Done"]}
+        self.assertTrue(ambient_loop.speech_gap_clear(state, now, require_terminal=False))
+        self.assertFalse(ambient_loop.speech_gap_clear(state, now, require_terminal=True))
+
+    def test_command_gap_does_not_block_on_unterminated_bot_reply(self):
+        # Regression: pre-fix, the command path inherited the terminal check and
+        # waited the full _GAP_MAX_WAIT_S on a short, unpunctuated bot reply.
+        async def _run():
+            state = {"last_audio_ts": time.time() - 10,
+                     "transcript_buffer": ["Prism: Done"]}
+            with patch.dict(os.environ, {"PRISM_GAP_WAIT": "1"}), \
+                 patch.object(rt, "_GAP_MAX_WAIT_S", 4.0):
+                start = time.monotonic()
+                await rt._wait_for_speech_gap(state)
+                return time.monotonic() - start
+
+        self.assertLess(asyncio.run(_run()), 0.5)          # clears fast, not 4s
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1754,7 +1754,8 @@ async def _wait_for_speech_gap(state: dict) -> None:
         sess = perception_state.get_session(state)
         if sess is not None and sess.is_cancelled:
             return
-        if ambient_loop.speech_gap_clear(state, time.time(), quiet_s=_GAP_SILENCE_S):
+        if ambient_loop.speech_gap_clear(state, time.time(), quiet_s=_GAP_SILENCE_S,
+                                         require_terminal=False):
             return
         await asyncio.sleep(0.2)
 
