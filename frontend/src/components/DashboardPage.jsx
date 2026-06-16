@@ -955,6 +955,7 @@ export default function DashboardPage(props) {
         title={pageTitle}
         searchValue={props.historySearch}
         onSearchChange={handleHistorySearchChange}
+        onBack={activeView === 'meeting' ? () => persistView('home') : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
             <MeetingActionsBar
