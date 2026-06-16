@@ -301,5 +301,78 @@ class SharedGapTests(unittest.TestCase):
         self.assertLess(asyncio.run(_run()), 0.5)          # clears fast, not 4s
 
 
+class CancelDuringGapTests(unittest.TestCase):
+    """A mute / 'stop' that lands DURING the pre-speak gap cancels the speaking
+    session. The streamed send self-checks mid-pipeline, but the buffered send
+    does not — so _process_command re-checks the cancel right after the gap and
+    stays silent. Chat still posts (it fired in parallel before the gap)."""
+
+    def _fake_openai(self, content="Done"):
+        msg = types.SimpleNamespace(content=content, tool_calls=None)
+        choice = types.SimpleNamespace(message=msg, finish_reason="stop")
+        resp = types.SimpleNamespace(choices=[choice])
+        return types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(create=AsyncMock(return_value=resp))
+            )
+        )
+
+    def _drive(self, cancel_during_gap):
+        bot_id = "bot-cancel-gap-" + ("c" if cancel_during_gap else "n")
+        rt._get_bot_state(bot_id)  # fresh state (resets debounce/processing)
+        voice = AsyncMock()
+        voice_streamed = AsyncMock()
+        chat = AsyncMock()
+
+        async def fake_gap(state):
+            # Model the mute/"stop" landing during the lull wait: the active
+            # speaking session gets cancelled before we emit any audio.
+            if cancel_during_gap:
+                sess = rt.perception_state.get_session(state)
+                if sess is not None:
+                    sess.cancel()
+
+        async def _run():
+            with mock.patch.object(rt, "OPENAI_API_KEY", "k"), \
+                 mock.patch.object(rt, "RECALL_API_KEY", "k"), \
+                 mock.patch.object(rt, "get_openai", return_value=self._fake_openai()), \
+                 mock.patch.object(rt, "_barge_in_on", return_value=True), \
+                 mock.patch.object(rt, "_streamed_tts_on", return_value=False), \
+                 mock.patch.object(rt, "_streamed_llm_on", return_value=False), \
+                 mock.patch.object(rt, "get_available_tools", return_value=[]), \
+                 mock.patch.object(rt.meeting_memory, "build_memory_context",
+                                   return_value=""), \
+                 mock.patch.object(rt, "_get_settings_for_bot",
+                                   new=AsyncMock(return_value={"persona_text": "", "bot_name": "Prism"})), \
+                 mock.patch.object(rt, "_arm_ack", return_value=None), \
+                 mock.patch.object(rt, "_cancel_ack", return_value=None), \
+                 mock.patch.object(rt, "_db_append_command", return_value=None), \
+                 mock.patch.object(rt, "_wait_for_speech_gap", new=fake_gap), \
+                 mock.patch.object(rt, "_send_voice_response", new=voice), \
+                 mock.patch.object(rt, "_send_voice_response_streamed", new=voice_streamed), \
+                 mock.patch.object(rt, "_send_chat_response", new=chat):
+                await rt._process_command(bot_id, "what's on my calendar today")
+
+        try:
+            asyncio.run(_run())
+        finally:
+            rt.cleanup_bot_state(bot_id)
+        return voice, voice_streamed, chat
+
+    def test_cancel_during_gap_suppresses_buffered_voice(self):
+        voice, voice_streamed, chat = self._drive(cancel_during_gap=True)
+        voice.assert_not_awaited()           # buffered send skipped on cancel
+        voice_streamed.assert_not_awaited()
+        chat.assert_awaited()                # chat still posted (fired before the gap)
+
+    def test_clear_gap_still_speaks(self):
+        # Guard against over-suppression: no cancel during the gap → the buffered
+        # voice send still fires. (Proves the new re-check doesn't silence normal replies.)
+        voice, voice_streamed, chat = self._drive(cancel_during_gap=False)
+        voice.assert_awaited()
+        voice_streamed.assert_not_awaited()
+        chat.assert_awaited()
+
+
 if __name__ == "__main__":
     unittest.main()

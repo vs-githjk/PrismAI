@@ -3136,12 +3136,19 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
             pass
-        elif _streamed_tts_on():
-            await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response_streamed(bot_id, _spoken_condense(reply), cmd_detected_ts=state["last_command_ts"] or now)
         else:
             await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response(bot_id, _spoken_condense(reply))
+            # If a mute / "stop" landed during the gap, the speaking session was
+            # cancelled — honour it before we emit any audio. The streamed send
+            # self-checks mid-pipeline, but the buffered fallback does not, so a
+            # cancel arriving exactly during the gap could otherwise still play
+            # one clip. One re-check here keeps both paths silent on cancel.
+            if _barge_in_on() and _session_cancelled(state, "pre_send"):
+                pass
+            elif _streamed_tts_on():
+                await _send_voice_response_streamed(bot_id, _spoken_condense(reply), cmd_detected_ts=state["last_command_ts"] or now)
+            else:
+                await _send_voice_response(bot_id, _spoken_condense(reply))
         # Make sure the chat post is finished (or its exception surfaces) before returning.
         try:
             await chat_task
