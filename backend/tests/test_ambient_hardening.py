@@ -233,5 +233,50 @@ class LatestWinsTests(unittest.TestCase):
         self.assertTrue(t2_alive)            # Q2 is generating, not dropped
 
 
+class SharedGapTests(unittest.TestCase):
+    """Consolidation: the wake-word command path and the autonomous lane share ONE
+    gap detector (ambient_loop.speech_gap_clear) on ONE bot-excluded timestamp
+    (last_audio_ts), instead of two that can drift."""
+
+    def test_speech_gap_clear_honors_custom_quiet_s(self):
+        now = 1000.0
+        state = {"last_audio_ts": now - 1.0}             # quiet for 1.0s
+        self.assertFalse(ambient_loop.speech_gap_clear(state, now, quiet_s=1.5))
+        self.assertTrue(ambient_loop.speech_gap_clear(state, now, quiet_s=0.5))
+
+    def test_gate_clear_delegates_to_speech_gap_clear(self):
+        now = 1000.0
+        loud = {"last_audio_ts": now}
+        quiet = {"last_audio_ts": now - 100.0}
+        self.assertEqual(ambient_loop.gate_clear(quiet, now),
+                         ambient_loop.speech_gap_clear(quiet, now))
+        self.assertEqual(ambient_loop.gate_clear(loud, now),
+                         ambient_loop.speech_gap_clear(loud, now))
+
+    def test_command_gap_keys_off_last_audio_ts_not_last_segment_ts(self):
+        # The command path now ignores last_segment_ts (which was stamped for the
+        # bot's own audio too) and uses the bot-excluded last_audio_ts.
+        async def _run():
+            state = {"last_audio_ts": time.time() - 10,   # quiet for 10s
+                     "last_segment_ts": time.time()}       # stale signal, now ignored
+            with patch.dict(os.environ, {"PRISM_GAP_WAIT": "1"}):
+                start = time.monotonic()
+                await rt._wait_for_speech_gap(state)
+                return time.monotonic() - start
+
+        self.assertLess(asyncio.run(_run()), 0.5)          # cleared fast, didn't wait
+
+    def test_command_gap_blocks_while_room_is_loud(self):
+        async def _run():
+            state = {"last_audio_ts": time.time()}         # someone speaking right now
+            with patch.dict(os.environ, {"PRISM_GAP_WAIT": "1"}), \
+                 patch.object(rt, "_GAP_MAX_WAIT_S", 0.4):
+                start = time.monotonic()
+                await rt._wait_for_speech_gap(state)
+                return time.monotonic() - start
+
+        self.assertGreaterEqual(asyncio.run(_run()), 0.35)  # blocked → waited to max
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1739,11 +1739,14 @@ _GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
 
 
 async def _wait_for_speech_gap(state: dict) -> None:
-    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't
-    talk over someone mid-sentence. Returns as soon as there's been ~_GAP_SILENCE_S
-    of quiet (tracked via last_segment_ts), or after _GAP_MAX_WAIT_S regardless so it
-    never hangs if the room never goes quiet. Bails early if the speaking session was
-    cancelled (mute / "stop"). Disable with PRISM_GAP_WAIT=0."""
+    """Politeness gate for the wake-word command path: wait for a brief lull before
+    the bot speaks so it doesn't talk over someone. Uses the SAME shared gap check
+    and bot-excluded `last_audio_ts` as the autonomous lane
+    (`ambient_loop.speech_gap_clear`) — quiet + no pending partial + complete
+    thought — so the two paths can't drift (and the bot never waits on its own TTS).
+    Returns as soon as the gap is clear, after _GAP_MAX_WAIT_S regardless so it never
+    hangs, or if the speaking session was cancelled (mute / "stop"). Disable with
+    PRISM_GAP_WAIT=0."""
     if os.getenv("PRISM_GAP_WAIT", "1") == "0":
         return
     deadline = time.time() + _GAP_MAX_WAIT_S
@@ -1751,8 +1754,7 @@ async def _wait_for_speech_gap(state: dict) -> None:
         sess = perception_state.get_session(state)
         if sess is not None and sess.is_cancelled:
             return
-        last = state.get("last_segment_ts", 0.0) or 0.0
-        if time.time() - last >= _GAP_SILENCE_S:
+        if ambient_loop.speech_gap_clear(state, time.time(), quiet_s=_GAP_SILENCE_S):
             return
         await asyncio.sleep(0.2)
 

@@ -318,12 +318,26 @@ def last_utterance_terminal(state: dict) -> bool:
     return not (words and words[-1] in _TRAILING_CONNECTIVES)
 
 
-def gate_clear(state: dict, now: float) -> bool:
-    """All three speak-time conditions: audio-quiet >= quiet_gap_s, no pending
-    partial utterance in the accumulator, last utterance semantically terminal."""
-    if (now - state.get("last_audio_ts", 0.0)) < quiet_gap_s():
+def speech_gap_clear(state: dict, now: float, quiet_s: float | None = None) -> bool:
+    """Shared "is it polite to speak now?" check — used by BOTH the autonomous
+    contribution lane (`gate_clear`) and the wake-word command path
+    (`realtime_routes._wait_for_speech_gap`), so there is ONE gap detector, not
+    two that can drift. All three must hold: the room has been audio-quiet for
+    `quiet_s` (default PRISM_QUIET_GAP_S), no partial utterance is mid-flight in
+    the accumulator, and the last flushed utterance ended on a complete thought
+    (not a trailing connective). Reads the bot-excluded `last_audio_ts` (stamped
+    by realtime_routes._ambient_note_audio) so the bot never waits on / yields to
+    its own transcribed TTS."""
+    q = quiet_gap_s() if quiet_s is None else quiet_s
+    if (now - state.get("last_audio_ts", 0.0)) < q:
         return False
     acc = state.get("accumulator")
     if acc is not None and getattr(acc, "pending", None):
         return False
     return last_utterance_terminal(state)
+
+
+def gate_clear(state: dict, now: float) -> bool:
+    """Lane timing gate (spec R2) — the shared speech-gap check at the lane's own
+    quiet threshold (PRISM_QUIET_GAP_S)."""
+    return speech_gap_clear(state, now)
