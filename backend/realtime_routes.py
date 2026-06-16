@@ -41,6 +41,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # live-bot command path runs o
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 
+# The bot joins Recall under this display name (see recall_routes), so its own
+# injected TTS — if transcribed back into the meeting — is attributed to this
+# speaker. Used to keep the bot's own audio out of the ambient timing-gate +
+# yield signal (last_audio_ts), which would otherwise make it yield to itself.
+_RECALL_BOT_DISPLAY_NAME = "PrismAI"
+
 # In-memory state per bot
 # bot_id -> { transcript_buffer: [], last_command_ts: float, user_settings: dict }
 _bot_state: dict = {}
@@ -899,6 +905,20 @@ async def _dispatch_slow_path_command(
 
 
 # ── Ambient contribution lane wiring (PRISM_AUTONOMOUS) ───────────────────────
+async def _cancel_ambient_spec(state: dict) -> None:
+    """Cancel any in-flight question speculation and wait for it to fully unwind
+    (its finally releases _ambient_busy) before the next one starts. This is the
+    latest-wins rule: a newer question must supersede an older one's generation,
+    not be dropped as an _ambient_busy collision."""
+    task = state.pop("_ambient_spec_task", None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
 async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
     """Ambient contribution lane (spec 2026-06-11): per completed utterance,
     handle mute, then arm/clear the pending-question slot (trigger Q) or fire
@@ -909,6 +929,7 @@ async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
     if cmd == "mute":
         state["muted"] = True
         state["pending_question"] = None
+        await _cancel_ambient_spec(state)
         perception_state.bump(state, "mutes")
         print(f"[ambient] muted bot={bot_id[:8]}")
         return
@@ -937,10 +958,15 @@ async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
         if (not same_speaker and len((u.text or "").split()) >= 4
                 and not ambient_loop.is_question(u.text)):
             state["pending_question"] = None
+            await _cancel_ambient_spec(state)   # humans handled it — stop generating
             perception_state.bump(state, "ambient_discarded_answered")
 
-    # Trigger Q: arm (a newer question replaces an older one — the room moved on).
+    # Trigger Q: arm. Latest-wins — a newer question supersedes an older one, so
+    # cancel any in-flight speculation (freeing _ambient_busy) before generating
+    # this one; otherwise the newer question is dropped as a busy collision. The
+    # speculation runs as a tracked task so it no longer blocks utterance ingest.
     if ambient_loop.is_question(u.text):
+        await _cancel_ambient_spec(state)
         slot = {
             "text": u.text,
             "speaker_id": u.speaker_id or "",
@@ -953,7 +979,9 @@ async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
         }
         state["pending_question"] = slot
         perception_state.bump(state, "ambient_q_triggers")
-        await _ambient_speculate(bot_id, state, slot)
+        state["_ambient_spec_task"] = asyncio.create_task(
+            _ambient_speculate(bot_id, state, slot)
+        )
         return
 
     # Trigger B: blocker / decision moment — chat-tier capped in v1.
@@ -972,6 +1000,23 @@ def _speaker_names(state: dict) -> list:
             if head and len(head) <= 40:
                 names.add(head)
     return list(names)
+
+
+def _ambient_note_audio(state: dict, speaker: str, speaker_id: str, now: float) -> None:
+    """Stamp `last_audio_ts` for HUMAN speech only (it drives the ambient timing
+    gate + yield rule), and learn the bot's own Recall speaker_id from its display
+    name. The bot's injected TTS, if transcribed back, must NOT stamp — otherwise
+    the bot yields to itself and the gate never re-clears. We match the bot by id
+    (once learned) OR by display name, so an empty/unstable speaker_id on the
+    bot's own chunk is still excluded; genuine human chunks always stamp."""
+    is_bot = (
+        bool(speaker_id and state.get("bot_self_speaker_id") == speaker_id)
+        or (speaker or "").strip().lower() == _RECALL_BOT_DISPLAY_NAME.lower()
+    )
+    if is_bot and speaker_id and not state.get("bot_self_speaker_id"):
+        state["bot_self_speaker_id"] = speaker_id  # learn for future chunks
+    if not is_bot:
+        state["last_audio_ts"] = now
 
 
 async def _ambient_kb_search(bot_id: str, query: str) -> list:
@@ -1063,11 +1108,20 @@ async def _ambient_deliver(bot_id: str, state: dict, out: dict, *, max_tier: str
                 f"subject={out['subject']!r} text={out['contribution'][:160]!r} bot={bot_id[:8]}"
             )
             return
+        demoted = False
         if tier == "voice" and ambient_loop.voice_cooldown_clear(state, time.time()):
             if await _ambient_deliver_voice(bot_id, state, out):
                 return
-            # no gap appeared — fall through to the chat tier (demotion)
-        if not ambient_loop.chat_cooldown_clear(state, time.time()):
+            # Voice didn't happen. If the bot was muted / switched out of
+            # autonomous during the gate wait, abort entirely — mute blocks BOTH
+            # tiers, so there is no chat fallback. Otherwise it's a no-gap demotion.
+            if state.get("muted") or state.get("mode") != "autonomous":
+                return
+            demoted = True
+        # Organic chat-tier posts respect the chat cooldown; a no-gap voice
+        # demotion bypasses it so the high-value contribution still lands
+        # (spec R2: "nothing is lost" when the room never quiets).
+        if not demoted and not ambient_loop.chat_cooldown_clear(state, time.time()):
             return
         await _send_chat_response(bot_id, f"ℹ️ {out['contribution']}")
         state["ambient_chat_last_ts"] = time.time()
@@ -1087,6 +1141,11 @@ async def _ambient_deliver_voice(bot_id: str, state: dict, out: dict) -> bool:
     gate_ok = False
     deadline = time.time() + ambient_loop.gap_wait_s()
     while time.time() < deadline:
+        # Mute (or a mode switch) during the wait is the in-meeting kill switch —
+        # bail immediately so the bot never speaks after being silenced. Returns
+        # False like a no-gap, but the caller re-checks mute and skips chat too.
+        if state.get("muted") or state.get("mode") != "autonomous":
+            return False
         if ambient_loop.gate_clear(state, time.time()):
             gate_ok = True
             break
@@ -3419,11 +3478,9 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         if text.strip():
             print(f"[realtime] extracted speaker={speaker!r} text={text[:120]!r}")
 
-            # Ambient lane: stamp human speech arrival for the speak-time
-            # timing gate + yield rule. The bot's own TTS feedback (when
-            # identified) must not look like human audio.
-            if not (speaker_id and state.get("bot_self_speaker_id") == speaker_id):
-                state["last_audio_ts"] = time.time()
+            # Ambient lane: stamp human speech arrival for the speak-time timing
+            # gate + yield rule (excludes the bot's own transcribed TTS).
+            _ambient_note_audio(state, speaker, speaker_id, time.time())
 
             # Owner participant-ID lock attempt. Only runs when the flag is on.
             # No-op until the grace window elapses; then locks on the first
@@ -3768,6 +3825,10 @@ def cleanup_bot_state(bot_id: str) -> None:
         ack_task = state.get("_ack_task")
         if ack_task is not None and not ack_task.done():
             ack_task.cancel()
+        # Cancel any in-flight ambient question speculation.
+        spec_task = state.get("_ambient_spec_task")
+        if spec_task is not None and not spec_task.done():
+            spec_task.cancel()
         acc = state.get("accumulator")
         if acc is not None:
             try:

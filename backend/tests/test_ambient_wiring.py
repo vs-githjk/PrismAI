@@ -73,7 +73,9 @@ class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
                                new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
                 "bot1", state, FakeUtterance("What is the SLA, again?"))
-        spec.assert_awaited()
+            # Speculation now runs as a background task (latest-wins) — await it.
+            await state["_ambient_spec_task"]
+            spec.assert_awaited()
         self.assertIsNotNone(state["pending_question"])
 
     async def test_mute_command_routes_to_lane(self):

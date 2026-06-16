@@ -332,9 +332,11 @@ class TriggerArmingTests(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(rt, "_detect_command", return_value=None), \
              mock.patch.object(rt, "_ambient_speculate", new=mock.AsyncMock()) as spec:
             await rt._ambient_on_utterance("bot-1", state, FakeUtt("What was Q3 revenue?"))
+            # Speculation now runs as a background task (latest-wins) — await it.
+            await state["_ambient_spec_task"]
+            spec.assert_awaited()
         self.assertIsNotNone(state["pending_question"])
         self.assertEqual(state["pending_question"]["text"], "What was Q3 revenue?")
-        spec.assert_awaited()
         self.assertEqual(perception_state.ensure_counters(state)["ambient_q_triggers"], 1)
 
     async def test_different_speaker_substantive_reply_clears(self):

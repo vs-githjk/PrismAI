@@ -15,6 +15,7 @@ Spec: docs/superpowers/specs/2026-06-11-ambient-contribution-lane-design.md
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -110,6 +111,13 @@ def voice_cooldown_s() -> float:
 
 def chat_cooldown_s() -> float:
     return float(os.getenv("PRISM_AMBIENT_CHAT_COOLDOWN_S", "25"))
+
+def ambient_timeout_s() -> float:
+    """Hard cap on the generator call. Bounds both the OpenAI client (so the
+    socket is released) and an asyncio.wait_for guard (so the caller's
+    _ambient_busy flag is freed even if the SDK ignores its own timeout) — a
+    hung request must never wedge the lane for the rest of the meeting."""
+    return float(os.getenv("PRISM_AMBIENT_TIMEOUT_S", "8"))
 
 
 # ── Trigger Q: question detection + addressee window ─────────────────────────
@@ -214,6 +222,7 @@ async def _call_ambient_model(system: str, user: str) -> str:
         model=ambient_model(),
         temperature=0.2,
         max_tokens=220,
+        timeout=ambient_timeout_s(),
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -237,8 +246,13 @@ async def generate_contribution(state: dict, trigger_kind: str, evidence: str,
     )
     perception_state.bump(state, "ambient_generations")
     try:
-        raw = await _call_ambient_model(_contribution_system(bot_name), user)
+        raw = await asyncio.wait_for(
+            _call_ambient_model(_contribution_system(bot_name), user),
+            timeout=ambient_timeout_s(),
+        )
     except Exception as e:
+        # asyncio.TimeoutError (a hung call) lands here too — stay silent so a
+        # wedged request can't hold _ambient_busy for the rest of the meeting.
         print(f"[ambient] generator error: {e}")
         return None
     out = parse_contribution_output(raw)
