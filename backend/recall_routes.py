@@ -724,6 +724,8 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                             "events": [
                                 "transcript.data",
                                 "participant_events.chat_message",
+                                "participant_events.join",
+                                "participant_events.leave",
                             ],
                         }
                     ],

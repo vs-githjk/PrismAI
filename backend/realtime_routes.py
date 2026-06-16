@@ -20,7 +20,7 @@ import perception_state
 import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences, persona_suffix_agentic
-from personas import persona_identity_resolved, DEFAULT_BOT_NAME
+from personas import persona_identity_resolved, DEFAULT_BOT_NAME, PERSONA_NAMES
 from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
@@ -160,6 +160,62 @@ def _barge_in_on() -> bool:
     # Default ON: enables "Prism, stop" verbal interrupt, halting in-flight speech
     # on mute, and the gap-before-speaking checks. Set PRISM_BARGE_IN=0 to disable.
     return os.getenv("PRISM_BARGE_IN", "1") != "0"
+
+
+# ── Solo free-flow (one human in the room → no wake word needed) ──────────────
+# When exactly one human is present, the bot assumes every substantive utterance
+# is addressed to it and responds without requiring "Prism, …". Counting is
+# driven by Recall participant join/leave events; a distinct-speaker fallback
+# covers the case where those events are unavailable (e.g. mid-meeting restart).
+def _solo_freeflow_on() -> bool:
+    return os.getenv("PRISM_SOLO_FREEFLOW", "1") != "0"
+
+
+# Names that mark a participant as our own bot (so it isn't counted as a human).
+_BOT_SELF_NAMES = {DEFAULT_BOT_NAME.lower(), "prism", "prismai", "prism ai"} | {
+    n.lower() for n in PERSONA_NAMES.values()
+}
+
+
+def _looks_like_bot_participant(name: str, raw: dict) -> bool:
+    """Best-effort: is this participant our recording bot rather than a human?"""
+    if isinstance(raw, dict) and (raw.get("is_current_user") is True or raw.get("is_bot") is True):
+        return True
+    return (name or "").strip().lower() in _BOT_SELF_NAMES
+
+
+def _human_participant_count(state: dict) -> int:
+    return sum(1 for p in state.get("participants", {}).values() if not p.get("is_bot"))
+
+
+def _note_human_count(state: dict, count: int) -> None:
+    """Track the high-water mark of distinct humans so the speaker-based
+    fallback never drops a group meeting into free-flow."""
+    if count > state.get("max_humans_seen", 0):
+        state["max_humans_seen"] = count
+
+
+def _solo_mode_active(state: dict) -> bool:
+    if not _solo_freeflow_on():
+        return False
+    # Primary: live participant roster from Recall join/leave events.
+    if state.get("participants_seen"):
+        return _human_participant_count(state) == 1
+    # Fallback (no participant events): exactly one distinct human has spoken,
+    # and we've never observed two or more (don't free-flow a group post-restart).
+    humans = state.get("human_speaker_ids") or set()
+    return len(humans) == 1 and state.get("max_humans_seen", 0) <= 1
+
+
+def _solo_freeflow_eligible(u) -> bool:
+    """Filter out backchannel/filler so the bot doesn't pounce on 'um, okay'.
+    Stop/mute phrases are owned by the barge-in + interjection layers."""
+    text = (u.text or "").strip()
+    if getattr(u, "word_count", 0) < 3:
+        return False
+    if ambient_loop.detect_mute_command(text):
+        return False
+    return True
 
 
 # How long to suppress repeat command-processing. Only there to absorb transcript
@@ -707,6 +763,15 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
     if state["meeting_start_ts"] is None:
         state["meeting_start_ts"] = time.time()
 
+    # Distinct-speaker tracking — the fallback signal for solo free-flow when
+    # Recall participant events aren't available (e.g. after a restart).
+    if not _looks_like_bot_participant(u.speaker_name, {}):
+        sid = u.speaker_id or u.speaker_name
+        if sid:
+            humans = state.setdefault("human_speaker_ids", set())
+            humans.add(sid)
+            _note_human_count(state, len(humans))
+
     # Layer-3 structured extraction on the completed utterance. Cleaner
     # input than the legacy chunk-level invocation — full coherent text
     # instead of fragments.
@@ -738,6 +803,11 @@ async def _dispatch_slow_path_command(
     if ambient_loop.autonomous_enabled() and ambient_loop.detect_mute_command(u.text):
         return  # mute/unmute is handled by the ambient interjection layer, not as a command
     command = _detect_command(u.text, bot_id)
+    if not command and _solo_mode_active(state) and _solo_freeflow_eligible(u):
+        # Solo free-flow: only one human in the room, so treat every substantive
+        # utterance as if it were addressed to the bot — no wake word required.
+        command = u.text.strip()
+        print(f"[realtime] solo free-flow command={command!r} from={u.speaker_name!r}")
     if not command:
         return
     print(
@@ -771,6 +841,8 @@ async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
     if ambient_loop.detect_mute_command(u.text):
         await _run_interject(bot_id, state, u, now)
         return
+    if _solo_mode_active(state):
+        return  # solo free-flow owns every utterance; skip the ambient funnel
     mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
     if _detect_command(u.text, bot_id):
         return  # explicit command path owns this utterance
@@ -910,6 +982,15 @@ def _get_bot_state(bot_id: str) -> dict:
             # Last extracted participant_id from a chunk. Used by owner-lock
             # and (later) the utterance accumulator for stable speaker keys.
             "_last_speaker_id": "",
+            # Solo free-flow participant tracking. `participants` is the live
+            # roster (id -> {name, is_bot}) from Recall join/leave events;
+            # `participants_seen` flips True once any such event arrives.
+            # `human_speaker_ids` is the distinct-speaker fallback; both feed
+            # `_solo_mode_active`. `max_humans_seen` is a safety high-water mark.
+            "participants": {},
+            "participants_seen": False,
+            "human_speaker_ids": set(),
+            "max_humans_seen": 0,
             # Utterance accumulator (gated by PRISM_ACCUMULATOR). Built
             # lazily below so we don't pay the construction cost when the
             # flag is off. Tick task is lazy-started by add_chunk —
@@ -2878,6 +2959,38 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
+
+    elif event_type in (
+        "participant_events.join",
+        "participant_events.leave",
+        "participant_events.update",
+        "participant_join",
+        "participant_leave",
+    ):
+        # Live participant roster — powers solo free-flow (no wake word when one
+        # human is present). Payload mirrors chat_message: data.data.participant.
+        outer = data_field
+        action_obj = outer.get("data") if isinstance(outer.get("data"), dict) else outer
+        participant = (action_obj or {}).get("participant") or {}
+        pid = str(participant.get("id") or participant.get("participant_id") or "").strip()
+        pname = participant.get("name") or ""
+        is_leave = "leave" in event_type
+        if pid:
+            parts = state.setdefault("participants", {})
+            if is_leave:
+                parts.pop(pid, None)
+            else:
+                parts[pid] = {
+                    "name": pname,
+                    "is_bot": _looks_like_bot_participant(pname, participant),
+                }
+            state["participants_seen"] = True
+            _note_human_count(state, _human_participant_count(state))
+            print(
+                f"[realtime] participant {'leave' if is_leave else 'join'} "
+                f"name={pname!r} humans={_human_participant_count(state)} "
+                f"solo={_solo_mode_active(state)}"
+            )
 
     return {"ok": True}
 
