@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { deriveDisplayTitle, scoreBand, formatMeetingDate } from '../../lib/insights'
+import { overallHealth } from '../../lib/healthScore'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
 
 function buildPath(points, width, height, pad) {
@@ -14,14 +15,14 @@ function buildPath(points, width, height, pad) {
 export default function HealthTrend({ history, onSelect }) {
   const [hovered, setHovered] = useState(null)
   const data = useMemo(() => [...history]
-    .filter((entry) => entry?.result?.health_score?.score !== undefined && entry?.result?.health_score?.score !== null)
+    .filter((entry) => overallHealth(entry?.result?.health_score) !== null)
     .slice(0, 10)
     .reverse()
     .map((entry) => ({
       id: entry.id,
       title: deriveDisplayTitle(entry),
       date: formatMeetingDate(entry.date),
-      score: Number(entry.result.health_score.score),
+      score: overallHealth(entry.result.health_score),
       badges: entry.result.health_score.badges || [],
       raw: entry,
     })), [history])

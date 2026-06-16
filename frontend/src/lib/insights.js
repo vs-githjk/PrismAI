@@ -1,3 +1,5 @@
+import { overallHealth } from './healthScore'
+
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'will', 'into', 'your',
   'their', 'about', 'after', 'before', 'need', 'needs', 'next', 'then', 'than', 'just',
@@ -57,11 +59,11 @@ export function deriveInsights(history = []) {
     .filter((entry) => entry?.result)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
 
-  const scoredMeetings = meetings.filter((entry) => entry.result?.health_score?.score !== undefined && entry.result?.health_score?.score !== null)
-  const latestScore = scoredMeetings[0]?.result?.health_score?.score ?? null
-  const oldestScore = scoredMeetings.at(-1)?.result?.health_score?.score ?? null
+  const scoredMeetings = meetings.filter((entry) => overallHealth(entry.result?.health_score) !== null)
+  const latestScore = overallHealth(scoredMeetings[0]?.result?.health_score)
+  const oldestScore = overallHealth(scoredMeetings.at(-1)?.result?.health_score)
   const avgScore = scoredMeetings.length
-    ? Math.round(scoredMeetings.reduce((sum, entry) => sum + (entry.result.health_score?.score ?? 0), 0) / scoredMeetings.length)
+    ? Math.round(scoredMeetings.reduce((sum, entry) => sum + (overallHealth(entry.result.health_score) ?? 0), 0) / scoredMeetings.length)
     : null
   const scoreDelta = latestScore !== null && oldestScore !== null ? latestScore - oldestScore : null
 

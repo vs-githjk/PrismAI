@@ -1,5 +1,6 @@
 import { Check, Clock, UserRound } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
+import { overallHealth } from '../../lib/healthScore'
 
 const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
 
@@ -114,7 +115,7 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
           {history.length ? (
             <div className="space-y-2.5">
               {history.map((entry) => {
-                const score = entry.result?.health_score?.score
+                const score = overallHealth(entry.result?.health_score)
                 const band = scoreBand(score)
                 const hasScore = Number.isFinite(Number(score))
                 const isSelected = entry.id === selectedMeetingId

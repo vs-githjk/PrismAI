@@ -17,6 +17,23 @@ export function useCountUp(target, duration = 1000) {
   return display
 }
 
+// Single source of truth for a meeting's "Overall" health number.
+// Overall = round(mean of the 3 breakdown axes: clarity / action / engagement).
+// The triangle and the home "Recent meetings" card MUST both use this so they
+// never disagree. Falls back to the LLM's holistic `score` only for legacy
+// meetings that have no breakdown. Returns null when nothing is scorable.
+export function overallHealth(healthScore) {
+  const bd = healthScore?.breakdown
+  if (bd) {
+    const axes = [bd.clarity, bd.action_orientation, bd.engagement].map(Number)
+    if (axes.every(Number.isFinite)) {
+      return Math.round((axes[0] + axes[1] + axes[2]) / 3)
+    }
+  }
+  const score = Number(healthScore?.score)
+  return Number.isFinite(score) ? Math.round(score) : null
+}
+
 export const BADGE_POSITIVE = new Set([
   'Clear Decisions',
   'Action-Oriented',
