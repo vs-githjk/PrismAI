@@ -1716,6 +1716,26 @@ def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> 
     _db_save(bot_id, {"realtime_transcript": "\n".join(rt_lines)})
 
 
+def _record_bot_line(bot_id: str, state: dict, text: str, bot_name: str) -> None:
+    """Record the bot's own utterance into BOTH the live-memory buffer and the
+    durable transcript, attributed to the active persona name — so the saved
+    meeting reads as a real dialogue (not 'talking to myself' in a 1-on-1) and
+    there's a lasting record of what the bot said. Caller holds the memory lock.
+    """
+    text = (text or "").strip()
+    if not text:
+        return
+    line = f"{bot_name or DEFAULT_BOT_NAME}: {text}"
+    buf = state["transcript_buffer"]
+    buf.append(line)
+    if len(buf) > meeting_memory.MAX_BUFFER_LINES:
+        state["transcript_buffer"] = buf[-meeting_memory.TRIM_TO:]
+    # Durable, append-only copy (survives trims + restart) so it lands in the
+    # final saved transcript alongside the human lines, in chronological order.
+    _append_realtime_line(bot_id, line)
+    _maybe_persist_transcript(bot_id, state)
+
+
 async def _compress_and_persist(bot_id: str, state: dict) -> None:
     """
     Wrapper around meeting_memory.maybe_compress that also persists the updated summary
@@ -1992,6 +2012,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         await perception_state.supersede_session(state, _new_session)
 
     messages = None  # ensure always in scope for haiku fallback
+    bot_name = DEFAULT_BOT_NAME  # ditto — used by _record_bot_line in the fallback
     try:
         user_settings = await _get_settings_for_bot(bot_id)
         persona_text = user_settings.get("persona_text", "")
@@ -2413,9 +2434,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
         _db_append_command(bot_id, cmd_entry)
         async with perception_state.get_memory_lock(state):
-            state["transcript_buffer"].append(f"Prism: {reply}")
-            if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
-                state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
+            _record_bot_line(bot_id, state, reply, bot_name)
 
         # Respond via voice + chat — fire in parallel so the chat message doesn't
         # add a Recall round-trip to TTFB before TTS begins.
@@ -2471,9 +2490,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
                     _db_append_command(bot_id, cmd_entry)
                     async with perception_state.get_memory_lock(state):
-                        state["transcript_buffer"].append(f"Prism: {reply}")
-                        if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
-                            state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
+                        _record_bot_line(bot_id, state, reply, bot_name)
                     print(f"[realtime] haiku fallback reply={reply!r}")
                     await _send_chat_response(bot_id, reply)
                     await _send_voice_response(bot_id, reply)

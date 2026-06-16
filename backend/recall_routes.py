@@ -15,7 +15,15 @@ from pydantic import BaseModel
 from analysis_service import build_analysis_transcript, run_full_analysis
 from auth import supabase, require_user_id
 from cross_meeting_service import looks_like_blocker, build_blocker_snippet
-from personas import persona_identity_resolved, persona_greeting_from_preset
+from personas import persona_identity_resolved, persona_greeting_from_preset, DEFAULT_BOT_NAME, PERSONA_NAMES
+
+# Line prefixes that mark a transcript line as the bot's own turn (recorded by
+# realtime_routes._record_bot_line). Covers every persona display name + the
+# default. Used to detect whether the bot participated when assembling the
+# final transcript.
+_BOT_NAME_PREFIXES = tuple(
+    f"{n}:" for n in ({DEFAULT_BOT_NAME, "Prism", "PrismAI"} | set(PERSONA_NAMES.values()))
+)
 
 
 router = APIRouter(tags=["recall"])
@@ -565,14 +573,21 @@ async def _process_bot_transcript(bot_id: str):
             transcript = _transcript_from_recall_data(raw)
             segments = _segments_from_recall_data(raw)
 
-        # Fallback: use realtime-streamed transcript lines accumulated during the meeting.
-        # Segments stay None here — the live buffer has no global timestamps, so the player
-        # gracefully degrades to a plain transcript view for these meetings.
-        if not transcript.strip():
-            rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
-            if rt_lines:
-                transcript = "\n".join(rt_lines)
-                print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
+        # The realtime buffer interleaves the humans' utterances with the bot's
+        # own turns (recorded via _record_bot_line) in chronological order. When
+        # the bot actually spoke, prefer it as the transcript: Recall's audio
+        # transcript wouldn't contain the bot's chat replies, so it'd read as a
+        # monologue ("talking to myself" in a 1-on-1). Segments still come from
+        # Recall for the recording player. Otherwise it's a plain fallback when
+        # Recall returned nothing.
+        rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
+        bot_spoke = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in rt_lines)
+        if bot_spoke and rt_lines:
+            transcript = "\n".join(rt_lines)
+            print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
+        elif not transcript.strip() and rt_lines:
+            transcript = "\n".join(rt_lines)
+            print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
 
         if not transcript.strip():
             error_msg = "No transcript content found — the meeting may have been too short or had no speech"

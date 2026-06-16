@@ -99,3 +99,40 @@ def test_eligibility_rejects_filler():
 
 def test_eligibility_accepts_real_utterance():
     assert rr._solo_freeflow_eligible(_u("what did we decide about the budget")) is True
+
+
+# ── bot-utterance recording (so the saved transcript shows the dialogue) ──────
+def test_record_bot_line_writes_durable_and_buffer():
+    import recall_routes as rc
+
+    bot_id = "test-bot-record"
+    rr.bot_store[bot_id] = {"realtime_transcript_lines": []}
+    state = {"transcript_buffer": []}
+    try:
+        rr._record_bot_line(bot_id, state, "Here's the summary.", "Flash")
+        # Live-memory buffer + durable transcript both get the persona-named line.
+        assert state["transcript_buffer"] == ["Flash: Here's the summary."]
+        assert rr.bot_store[bot_id]["realtime_transcript_lines"] == ["Flash: Here's the summary."]
+        # The recall-side detector recognizes it as a bot turn.
+        assert rr.bot_store[bot_id]["realtime_transcript_lines"][0].startswith(rc._BOT_NAME_PREFIXES)
+    finally:
+        rr.bot_store.pop(bot_id, None)
+
+
+def test_record_bot_line_ignores_empty():
+    bot_id = "test-bot-empty"
+    rr.bot_store[bot_id] = {"realtime_transcript_lines": []}
+    state = {"transcript_buffer": []}
+    try:
+        rr._record_bot_line(bot_id, state, "   ", "Prism")
+        assert state["transcript_buffer"] == []
+        assert rr.bot_store[bot_id]["realtime_transcript_lines"] == []
+    finally:
+        rr.bot_store.pop(bot_id, None)
+
+
+def test_human_only_lines_not_flagged_as_bot():
+    import recall_routes as rc
+
+    lines = ["Alice: hello there", "Bob: what's the plan"]
+    assert not any(ln.startswith(rc._BOT_NAME_PREFIXES) for ln in lines)
