@@ -42,6 +42,59 @@ build); Feature B is the lighter sibling (mostly assembly over existing infra).
 
 # FEATURE A — Async Proxy ("Stand-in")
 
+## A.0 — FINAL v1 design (decided 2026-06-17) — supersedes details below
+
+Key decisions that override / sharpen the original A.1–A.8 sketch:
+
+- **Entry point:** a per-meeting **"Can't make it"** button next to each upcoming
+  meeting's **Join** button (in the New Meeting → Join panel / `UpcomingMeetings`).
+  Stand-in is meeting-specific, so it lives on the meeting, not as a top-level input mode.
+- **Delivery = SEND PRISM ON THE USER'S BEHALF (not piggyback).** On approval we create
+  a **scheduled Recall bot** (`join_at` = the meeting's start time; Recall requires ≥10
+  min in the future and reserves the machine — no custom cron needed). The bot is owned
+  by the absent user, bound to the meeting URL. When it joins, the normal webhook flow
+  runs: at `in_call_recording` it delivers the stand-in update (chat + brief, spoken on
+  request, recorded in transcript via `_record_bot_line`), then records + analyzes the
+  meeting so the absent user gets the **full result + a catch-up afterward**. This turns
+  it into a complete async-attendance loop and reuses recording + Feature B.
+  Refs: docs.recall.ai/docs/scheduling-guide, docs.recall.ai/reference/bot_create.
+- **Standing "Proxy profile":** its OWN personal nav item in the sidebar, positioned
+  **below Knowledge** (NOT part of Knowledge — Knowledge is shared workspace docs; this is
+  personal). Holds the user's role/focus + standing notes the bot draws from when drafting.
+  Built in v1.
+- **On approval, save BOTH:** the approved update for this meeting **and** enrich the
+  standing Proxy profile (durable facts) for future meetings.
+- **Trust gate unchanged:** nothing is delivered until the user approves; the conversation
+  is a pre-meeting briefing chat; approved text is frozen and delivered verbatim, labelled
+  as a stand-in on the user's behalf.
+
+**Dependencies / edge rules (v1):**
+- Stand-in is offered ONLY on calendar meetings with a real start time **≥10 min out**
+  (need `join_at`; no start time / <10 min → not eligible, show why).
+- **Dedup:** the scheduled bot registers in `meeting_bots` at schedule time; the existing
+  dedup must treat a not-yet-joined scheduled bot as the room's bot so a teammate joining
+  live (or another scheduled stand-in) doesn't double-book. If a teammate's bot is already
+  scheduled/live, the second stand-in attaches its update to that bot instead of spawning
+  another (delivered together).
+- **Cancellation / reschedule:** canceling before the meeting deletes the scheduled Recall
+  bot (Recall DELETE) + marks the representation `canceled`. If the calendar time changes,
+  update the bot's `join_at`.
+- **Bot announces** it's attending on behalf of the absent user (consent/clarity), reusing
+  the existing intro/consent line pattern.
+
+**Data model additions (beyond `proxy_representations` in A.2):**
+- `proxy_profiles` (per user): `user_id` pk (text), `role_focus`, `standing_notes`,
+  `structured` jsonb, `updated_at`. Personal; drawn into every draft; enriched on approve.
+- `proxy_representations` gains `scheduled_bot_id` (the Recall bot created for delivery)
+  and `join_at`.
+
+**Proposed phasing (still one feature, shipped in slices):**
+- A1: `proxy_profiles` + `proxy_representations` tables/migration; the composer
+  (draft-from-items+profile, converse, approve) + endpoints.
+- A2: scheduled-bot creation on approve (`join_at`) + dedup handling + cancel.
+- A3: bot-side delivery at `in_call_recording` (chat + brief + transcript) + spoken intent.
+- A4: standing Proxy profile nav section (view/edit) + enrichment-on-approve.
+
 ## A.1 End-to-end flow
 
 1. **Trigger.** In `UpcomingMeetings`, a workspace-matched meeting shows a

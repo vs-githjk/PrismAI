@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '../lib/api'
 import { dueInfo, dueLabel, compareDue } from '../lib/dueStatus'
+import StandInComposer from './StandInComposer'
 
 const BRIEF_DUE_STYLE = {
   overdue: { color: '#fca5a5', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.30)' },
@@ -174,7 +175,8 @@ function matchWorkspace(attendeeEmails, workspaces) {
   return bestOverlap > 0 ? best : null
 }
 
-export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting }) {
+export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null }) {
+  const [standIn, setStandIn] = useState(null) // { url, label, workspaceId, scheduledFor }
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -395,6 +397,24 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
                     </svg>
                   </button>
 
+                  {/* Can't make it → stand-in. Only when the meeting is ≥10 min out
+                      (a scheduled join needs join_at >10 min in the future). */}
+                  {user && mins !== null && mins >= 10 && (
+                    <button
+                      onClick={() => setStandIn({
+                        url: event.meeting_link,
+                        label: event.title,
+                        workspaceId: matchedWs?.id ?? null,
+                        scheduledFor: event.start,
+                      })}
+                      aria-label={`Can't make ${event.title} — have Prism represent you`}
+                      title="Can't make it? Have Prism represent you"
+                      className="flex-shrink-0 text-[10px] font-medium px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                      style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                      Can't make it
+                    </button>
+                  )}
+
                   {/* Join button */}
                   <button
                     onClick={() => onJoin(event.meeting_link, matchedWs?.id ?? null)}
@@ -417,6 +437,10 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
             )
           })}
         </div>
+      )}
+
+      {standIn && (
+        <StandInComposer meeting={standIn} user={user} onClose={() => setStandIn(null)} />
       )}
     </div>
   )

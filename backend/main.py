@@ -20,6 +20,7 @@ from realtime_routes import router as realtime_router
 from recall_routes import router as recall_router
 from knowledge_routes import router as knowledge_router
 from storage_routes import router as storage_router
+from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
 
 
@@ -50,6 +51,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(storage_router)
+app.include_router(proxy_router)
 app.include_router(knowledge_router)
 app.include_router(workspace_router)
 app.include_router(recall_router)

@@ -274,6 +274,7 @@ function NewMeetingPanel(props) {
                   <Suspense fallback={null}>
                     <UpcomingMeetings
                       workspaces={props.workspaces || []}
+                      user={props.user}
                       onJoin={(url, wsId) => {
                         props.setMeetingUrl(url)
                         if (wsId) props.onJoinWithWorkspace?.(wsId)
