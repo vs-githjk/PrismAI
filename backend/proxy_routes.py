@@ -193,19 +193,43 @@ def _owned_rep(rep_id: str, user_id: str) -> dict:
 # ── Endpoints ────────────────────────────────────────────────────────────────
 @router.post("/proxy/representations")
 async def create_representation(body: CreateRepRequest, user_id: str = Depends(require_user_id)):
-    """Start a stand-in for a meeting. Drafts a first-pass update from the caller's
-    action items + standing profile, persists a draft row, returns it + the draft."""
+    """Open the stand-in for a meeting. If one already exists for this meeting
+    (not canceled), RESUME it — return its saved draft + conversation — instead of
+    regenerating. Otherwise draft a first-pass update from the caller's action
+    items + standing profile and persist a new draft row."""
     _require_storage()
     _gate_workspace(user_id, body.workspace_id)
     if not body.meeting_url.strip():
         raise HTTPException(status_code=400, detail="Meeting URL required")
 
     normalized = _normalize_meeting_url(body.meeting_url)
+
+    # Resume an existing stand-in for this meeting rather than starting over.
+    existing = (
+        supabase.table("proxy_representations")
+        .select("*")
+        .eq("author_user_id", user_id)
+        .eq("meeting_url", normalized)
+        .neq("status", "canceled")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        rep = existing.data[0]
+        return {
+            "representation": rep,
+            "draft": rep.get("approved_body") or rep.get("draft_body") or "",
+            "messages": rep.get("messages") or [],
+            "resumed": True,
+        }
+
     names = _author_names(user_id, body.author_name, body.author_email)
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names)
     system = _draft_system(_profile_context(profile), _items_block(items), body.meeting_label)
     draft = await _llm_reply(system, [], "Draft my stand-in update for this meeting.")
+    messages = [{"role": "assistant", "content": draft}]
 
     row = {
         "workspace_id": body.workspace_id,
@@ -217,11 +241,12 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
         "author_name": body.author_name,
         "author_email": body.author_email,
         "draft_body": draft,
+        "messages": messages,
         "status": "draft",
     }
     res = supabase.table("proxy_representations").insert(row).execute()
     saved = (res.data or [row])[0]
-    return {"representation": saved, "draft": draft, "system": system}
+    return {"representation": saved, "draft": draft, "messages": messages, "resumed": False}
 
 
 @router.post("/proxy/representations/{rep_id}/message")
@@ -241,14 +266,24 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
         "\n\nThe user is refining the draft. Reply conversationally AND end your message "
         "with the full updated draft on its own, prefixed exactly with 'DRAFT: '."
     )
-    reply = await _llm_reply(system, body.history or [], body.message)
+    # Use the persisted conversation as history (source of truth), not client-sent.
+    history = row.get("messages") or body.history or []
+    reply = await _llm_reply(system, history, body.message)
 
     # Extract the updated draft if the model marked one; else keep the reply as draft.
     new_draft = reply
     if "DRAFT:" in reply:
         new_draft = reply.split("DRAFT:", 1)[1].strip()
-    supabase.table("proxy_representations").update({"draft_body": new_draft}).eq("id", rep_id).execute()
-    return {"reply": reply, "draft": new_draft}
+
+    # Persist the turn so reopening resumes the chat ("saves that chat to memory").
+    messages = (row.get("messages") or []) + [
+        {"role": "user", "content": body.message},
+        {"role": "assistant", "content": reply},
+    ]
+    supabase.table("proxy_representations").update(
+        {"draft_body": new_draft, "messages": messages}
+    ).eq("id", rep_id).execute()
+    return {"reply": reply, "draft": new_draft, "messages": messages}
 
 
 @router.post("/proxy/representations/{rep_id}/approve")

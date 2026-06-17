@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '../lib/api'
 import { dueInfo, dueLabel, compareDue } from '../lib/dueStatus'
-import StandInComposer from './StandInComposer'
 
 const BRIEF_DUE_STYLE = {
   overdue: { color: '#fca5a5', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.30)' },
@@ -175,8 +174,7 @@ function matchWorkspace(attendeeEmails, workspaces) {
   return bestOverlap > 0 ? best : null
 }
 
-export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null }) {
-  const [standIn, setStandIn] = useState(null) // { url, label, workspaceId, scheduledFor }
+export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null, onCantMakeIt }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -329,100 +327,101 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
             return (
               <div key={event.id}
                 style={isNow ? { background: 'rgba(14,165,233,0.04)' } : {}}>
-                <div className="px-3 py-2.5 flex items-center gap-2.5 group">
+                <div className="px-3 py-2.5 group">
 
-                  {/* Status dot */}
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isNow ? 'bg-sky-400 animate-pulse' : 'bg-gray-700'}`} />
+                  {/* Top: dot + info (full width) + mark star */}
+                  <div className="flex items-start gap-2.5">
+                    <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${isNow ? 'bg-sky-400 animate-pulse' : 'bg-gray-700'}`} />
 
-                  {/* Event info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[11px] font-medium text-gray-300 truncate">{event.title}</span>
-                      <MeetingLinkIcon link={event.meeting_link} />
-                      {matchedWs ? (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                          style={{ background: 'rgba(34,211,238,0.10)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.18)' }}>
-                          {matchedWs.name}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                          style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
-                          Personal
-                        </span>
-                      )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11.5px] font-medium text-gray-200 truncate">{event.title}</span>
+                        <MeetingLinkIcon link={event.meeting_link} />
+                        {matchedWs ? (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                            style={{ background: 'rgba(34,211,238,0.10)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.18)' }}>
+                            {matchedWs.name}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                            style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                            Personal
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-gray-600 mt-0.5 whitespace-nowrap">
+                        {formatEventTime(event.start)}
+                        {mins !== null && mins > 0 && mins < 60 && (
+                          <span className="ml-1 text-sky-500/80">· in {mins}m</span>
+                        )}
+                        {mins !== null && mins <= 0 && mins > -60 && (
+                          <span className="ml-1 text-emerald-500/80">· in progress</span>
+                        )}
+                      </p>
                     </div>
-                    <p className="text-[10px] text-gray-600 mt-0.5">
-                      {formatEventTime(event.start)}
-                      {mins !== null && mins > 0 && mins < 60 && (
-                        <span className="ml-1 text-sky-500/80">· in {mins}m</span>
-                      )}
-                      {mins !== null && mins <= 0 && mins > -60 && (
-                        <span className="ml-1 text-emerald-500/80">· in progress</span>
-                      )}
-                    </p>
+
+                    {/* Mark star */}
+                    <button
+                      onClick={() => toggleMark(event.id)}
+                      aria-label={marked.has(event.id) ? 'Unmark event' : 'Mark for auto-join'}
+                      className="flex-shrink-0 p-1 rounded-md transition-all"
+                      style={{ color: marked.has(event.id) ? '#fbbf24' : 'transparent', opacity: marked.has(event.id) ? 1 : undefined }}
+                      title={marked.has(event.id) ? 'Marked for auto-join' : 'Mark for auto-join'}>
+                      <svg
+                        className={`w-3.5 h-3.5 transition-all group-hover:opacity-100 ${marked.has(event.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
+                        viewBox="0 0 24 24"
+                        fill={marked.has(event.id) ? 'currentColor' : 'none'}
+                        stroke="currentColor" strokeWidth="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                      </svg>
+                    </button>
                   </div>
 
-                  {/* Brief button — only for workspace-matched events */}
-                  {matchedWs && (
+                  {/* Actions row — own line so nothing gets squeezed */}
+                  <div className="mt-2 flex items-center justify-end gap-1.5">
+                    {matchedWs && (
+                      <button
+                        onClick={() => toggleBrief(event.id, matchedWs.id)}
+                        aria-label="View workspace brief"
+                        aria-expanded={briefExpanded}
+                        className="text-[10px] font-medium px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
+                        style={{
+                          background: briefExpanded ? 'rgba(34,211,238,0.18)' : 'rgba(255,255,255,0.04)',
+                          color: briefExpanded ? '#67e8f9' : '#94a3b8',
+                          border: `1px solid ${briefExpanded ? 'rgba(34,211,238,0.3)' : 'rgba(255,255,255,0.10)'}`,
+                        }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        Brief
+                      </button>
+                    )}
+
+                    {/* Can't make it → stand-in. Only ≥10 min out (scheduled join needs join_at >10 min ahead). */}
+                    {user && mins !== null && mins >= 10 && (
+                      <button
+                        onClick={() => onCantMakeIt?.({
+                          url: event.meeting_link,
+                          label: event.title,
+                          workspaceId: matchedWs?.id ?? null,
+                          scheduledFor: event.start,
+                        })}
+                        aria-label={`Can't make ${event.title} — have Prism represent you`}
+                        title="Can't make it? Have Prism represent you"
+                        className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all"
+                        style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                        Can't make it
+                      </button>
+                    )}
+
                     <button
-                      onClick={() => toggleBrief(event.id, matchedWs.id)}
-                      aria-label="View workspace brief"
-                      aria-expanded={briefExpanded}
-                      className="flex-shrink-0 text-[10px] font-medium px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
-                      style={{
-                        background: briefExpanded ? 'rgba(34,211,238,0.18)' : 'rgba(255,255,255,0.04)',
-                        color: briefExpanded ? '#67e8f9' : '#94a3b8',
-                        border: `1px solid ${briefExpanded ? 'rgba(34,211,238,0.3)' : 'rgba(255,255,255,0.10)'}`,
-                      }}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                      </svg>
-                      Brief
+                      onClick={() => onJoin(event.meeting_link, matchedWs?.id ?? null)}
+                      aria-label={`Join ${event.title} with PrismAI`}
+                      className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all"
+                      style={{ background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                      Join
                     </button>
-                  )}
-
-                  {/* Mark button */}
-                  <button
-                    onClick={() => toggleMark(event.id)}
-                    aria-label={marked.has(event.id) ? 'Unmark event' : 'Mark for auto-join'}
-                    className="flex-shrink-0 p-1 rounded-md transition-all"
-                    style={{ color: marked.has(event.id) ? '#fbbf24' : 'transparent', opacity: marked.has(event.id) ? 1 : undefined }}
-                    title={marked.has(event.id) ? 'Marked for auto-join' : 'Mark for auto-join'}>
-                    <svg
-                      className={`w-3.5 h-3.5 transition-all group-hover:opacity-100 ${marked.has(event.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
-                      viewBox="0 0 24 24"
-                      fill={marked.has(event.id) ? 'currentColor' : 'none'}
-                      stroke="currentColor" strokeWidth="2">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                    </svg>
-                  </button>
-
-                  {/* Can't make it → stand-in. Only when the meeting is ≥10 min out
-                      (a scheduled join needs join_at >10 min in the future). */}
-                  {user && mins !== null && mins >= 10 && (
-                    <button
-                      onClick={() => setStandIn({
-                        url: event.meeting_link,
-                        label: event.title,
-                        workspaceId: matchedWs?.id ?? null,
-                        scheduledFor: event.start,
-                      })}
-                      aria-label={`Can't make ${event.title} — have Prism represent you`}
-                      title="Can't make it? Have Prism represent you"
-                      className="flex-shrink-0 text-[10px] font-medium px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                      style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
-                      Can't make it
-                    </button>
-                  )}
-
-                  {/* Join button */}
-                  <button
-                    onClick={() => onJoin(event.meeting_link, matchedWs?.id ?? null)}
-                    aria-label={`Join ${event.title} with PrismAI`}
-                    className="flex-shrink-0 text-[10px] font-medium px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                    style={{ background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
-                    Join
-                  </button>
+                  </div>
                 </div>
 
                 {/* Inline brief panel */}
@@ -437,10 +436,6 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
             )
           })}
         </div>
-      )}
-
-      {standIn && (
-        <StandInComposer meeting={standIn} user={user} onClose={() => setStandIn(null)} />
       )}
     </div>
   )

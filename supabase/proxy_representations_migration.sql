@@ -50,6 +50,11 @@ create table if not exists proxy_representations (
     delivered_at      timestamptz
 );
 
+-- Persisted composer conversation (the "saves that chat to memory" part), so
+-- reopening a stand-in resumes the chat instead of regenerating from scratch.
+alter table proxy_representations
+    add column if not exists messages jsonb not null default '[]'::jsonb;
+
 create index if not exists idx_proxy_rep_bind
     on proxy_representations (workspace_id, meeting_url, status);
 create index if not exists idx_proxy_rep_author

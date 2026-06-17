@@ -16,6 +16,7 @@ import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
 import LiveCatchup from './LiveCatchup'
+import StandInComposer from './StandInComposer'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -275,6 +276,7 @@ function NewMeetingPanel(props) {
                     <UpcomingMeetings
                       workspaces={props.workspaces || []}
                       user={props.user}
+                      onCantMakeIt={props.onCantMakeIt}
                       onJoin={(url, wsId) => {
                         props.setMeetingUrl(url)
                         if (wsId) props.onJoinWithWorkspace?.(wsId)
@@ -493,6 +495,10 @@ function AnalyzingBanner({ result }) {
 
 export default function DashboardPage(props) {
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
+  // Stand-in composer lives at page level (NOT inside the New Meeting dropdown):
+  // the dropdown closes on outside-click, so a portaled modal inside it would be
+  // torn down the moment you interact with it.
+  const [standIn, setStandIn] = useState(null)
   const [activeView, setActiveView] = useState(
     () => sessionStorage.getItem('prism_active_view') ||
           (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
@@ -1005,7 +1011,13 @@ export default function DashboardPage(props) {
         setNewMeetingOpen={setNewMeetingOpen}
         onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
         newMeetingPanel={
-          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
+          <NewMeetingPanel
+            {...props}
+            workspaces={workspaces}
+            onClose={() => setNewMeetingOpen(false)}
+            onOpenMeeting={handleOpenMeetingById}
+            onCantMakeIt={(m) => { setNewMeetingOpen(false); setStandIn(m) }}
+          />
         }
       />
 
@@ -1174,6 +1186,10 @@ export default function DashboardPage(props) {
             </button>
           )}
         </>
+      )}
+
+      {standIn && (
+        <StandInComposer meeting={standIn} user={props.user} onClose={() => setStandIn(null)} />
       )}
 
       <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>

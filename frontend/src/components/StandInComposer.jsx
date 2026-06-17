@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 
 /**
@@ -19,12 +20,21 @@ export default function StandInComposer({ meeting, user, onClose }) {
   const [input, setInput] = useState('')
   const [phase, setPhase] = useState('loading') // loading | chatting | approved | error
   const [busy, setBusy] = useState(false)
+  const [savedStatus, setSavedStatus] = useState(null) // existing rep status, if resumed
+  const [approvedText, setApprovedText] = useState('') // frozen text when already approved
   const scrollRef = useRef(null)
+
+  // When already approved, the button should only re-activate if the draft was edited.
+  const isApproved = savedStatus === 'pending'
+  const isDirty = draft.trim() !== approvedText.trim()
 
   const authorName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || ''
   const authorEmail = user?.email || ''
 
   useEffect(() => {
+    // Don't auto-scroll the initial draft — let the user read it from the top.
+    // Only follow the conversation once they've started refining.
+    if (thread.length <= 1) return
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [thread])
 
@@ -47,7 +57,14 @@ export default function StandInComposer({ meeting, user, onClose }) {
       const data = await res.json()
       setRepId(data.representation?.id)
       setDraft(data.draft || '')
-      setThread([{ role: 'prism', text: data.draft || "Here's a draft — anything to change?" }])
+      setSavedStatus(data.representation?.status || null)
+      if (data.representation?.status === 'pending') setApprovedText(data.draft || '')
+      const msgs = data.messages || []
+      setThread(
+        msgs.length
+          ? msgs.map((m) => ({ role: m.role === 'user' ? 'you' : 'prism', text: m.content }))
+          : [{ role: 'prism', text: data.draft || "Here's a draft — anything to change?" }]
+      )
       setPhase('chatting')
     } catch {
       setPhase('error')
@@ -107,9 +124,9 @@ export default function StandInComposer({ meeting, user, onClose }) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col" style={{ maxHeight: '85vh', background: '#0d0d12', border: '1px solid rgba(34,211,238,0.2)' }}>
+  return createPortal((
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
+      <div className="flex flex-col rounded-2xl overflow-hidden" style={{ width: 'min(900px, 94vw)', height: '88vh', maxHeight: '900px', background: '#0d0d12', border: '1px solid rgba(34,211,238,0.2)' }}>
         {/* Header */}
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <div className="min-w-0">
@@ -166,25 +183,40 @@ export default function StandInComposer({ meeting, user, onClose }) {
 
             {/* Editable approve box */}
             <div className="px-4 pb-4 pt-2 space-y-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              <p className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">Your stand-in update — edit before approving</p>
+              {isApproved && (
+                <p className="text-[10.5px] text-cyan-300/80">
+                  ✓ Already approved for this meeting{isDirty ? ' — re-approve to save your edits.' : '.'}
+                </p>
+              )}
+              <p className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">
+                Your stand-in update{isApproved ? '' : ' — edit before approving'}
+              </p>
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                rows={3}
+                rows={4}
                 disabled={phase !== 'chatting'}
                 className="w-full resize-none rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px] leading-relaxed text-gray-100 outline-none focus:bg-white/[0.06]"
               />
-              <button
-                onClick={approve}
-                disabled={busy || !draft.trim() || phase !== 'chatting'}
-                className="w-full rounded-lg bg-cyan-400 py-2 text-[12.5px] font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ✓ Approve this stand-in
-              </button>
+              {isApproved && !isDirty ? (
+                // Already approved and unchanged — no action to take; show state, not a CTA.
+                <div className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                  <span className="text-[12px] font-medium text-cyan-300">✓ Approved — Prism will share this</span>
+                  <button onClick={onClose} className="text-[11px] font-semibold text-gray-400 hover:text-white">Done</button>
+                </div>
+              ) : (
+                <button
+                  onClick={approve}
+                  disabled={busy || !draft.trim() || phase !== 'chatting'}
+                  className="w-full rounded-lg bg-cyan-400 py-2 text-[12.5px] font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isApproved ? '✓ Re-approve update' : '✓ Approve this stand-in'}
+                </button>
+              )}
             </div>
           </>
         )}
       </div>
     </div>
-  )
+  ), document.body)
 }
