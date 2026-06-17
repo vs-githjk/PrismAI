@@ -10,6 +10,7 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from analysis_service import build_analysis_transcript, run_full_analysis
@@ -241,6 +242,14 @@ def _mb_update_status(bot_id: str, status: str):
         supabase.table("meeting_bots").update({"status": status}).eq("bot_id", bot_id).execute()
     except Exception as exc:
         print(f"[recall] meeting_bots status update failed for {bot_id}: {exc}")
+
+
+def _live_token_for_bot(bot_id: str) -> str | None:
+    """Best-effort lookup of a bot's live_token (in-memory, then DB). Used to hand
+    a dedup'd teammate the shared bot's live token so they can open the live view
+    + private catch-up from their own dashboard."""
+    entry = bot_store.get(bot_id) or _db_load(bot_id) or {}
+    return entry.get("live_token")
 
 
 class JoinMeetingRequest(BaseModel):
@@ -663,6 +672,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "existing_bot_id": own["bot_id"],
                 "owner_user_id": user_id,
                 "owner_user_email": "",
+                "live_token": _live_token_for_bot(own["bot_id"]),
             }
 
         # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
@@ -674,6 +684,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "existing_bot_id": existing["bot_id"],
                 "owner_user_id": existing["owner_user_id"],
                 "owner_user_email": existing.get("owner_user_email", ""),
+                "live_token": _live_token_for_bot(existing["bot_id"]),
             }
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
@@ -937,6 +948,69 @@ async def live_meeting(live_token: str):
         "transcript": entry.get("transcript") if status == "done" else None,
         "counters": op_counters,
     }
+
+
+class LiveAskRequest(BaseModel):
+    question: str = ""
+    mode: str = "qa"  # "catchup" | "qa"
+
+
+@router.post("/live/{live_token}/ask")
+async def live_ask(live_token: str, body: LiveAskRequest, request: Request):
+    """Private live catch-up / Q&A over a meeting's live state. Token-gated like
+    GET /live/{token} (no login required); streams the answer back to the caller
+    only — never into the meeting. A valid Bearer token whose user is a member of
+    the bot's workspace unlocks the knowledge-base fallback (else meeting-only)."""
+    bot_id = _live_token_index.get(live_token)
+    if not bot_id and supabase:
+        try:
+            res = supabase.table("bot_sessions").select("bot_id").eq("live_token", live_token).maybe_single().execute()
+            if res.data:
+                bot_id = res.data["bot_id"]
+                _live_token_index[live_token] = bot_id
+        except Exception:
+            pass
+    if not bot_id:
+        raise HTTPException(status_code=404, detail="Live session not found")
+
+    from realtime_routes import stream_catchup_answer, _catchup_rate_ok
+    if not _catchup_rate_ok(live_token):
+        raise HTTPException(status_code=429, detail="One moment — too many questions in a row.")
+
+    if bot_id not in bot_store:
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
+
+    # RAG fallback unlock — only for a logged-in member of the bot's workspace
+    # (or the owner of a personal, no-workspace bot). Anonymous => meeting-only.
+    member_user_id = None
+    caller_id = await _optional_user_id(request)
+    if caller_id:
+        entry = bot_store.get(bot_id) or {}
+        ws_id = entry.get("workspace_id")
+        if ws_id and supabase:
+            try:
+                m = (
+                    supabase.table("workspace_members")
+                    .select("user_id")
+                    .eq("workspace_id", ws_id)
+                    .eq("user_id", caller_id)
+                    .maybe_single()
+                    .execute()
+                )
+                if m and m.data:
+                    member_user_id = caller_id
+            except Exception:
+                pass
+        elif not ws_id and entry.get("user_id") == caller_id:
+            member_user_id = caller_id
+
+    mode = body.mode if body.mode in ("catchup", "qa") else "qa"
+    return StreamingResponse(
+        stream_catchup_answer(bot_id, mode, body.question or "", member_user_id),
+        media_type="text/event-stream",
+    )
 
 
 @router.get("/bot-counters/{bot_id}")

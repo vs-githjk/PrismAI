@@ -3,6 +3,7 @@ import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from './lib/sessionK
 import { deriveDisplayTitle } from './lib/insights'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
+import LiveCatchup from './components/LiveCatchup'
 import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
 import PricingSection from './components/PricingSection'
@@ -709,6 +710,9 @@ function LiveMeetingView({ token }) {
       </div>
 
       <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
+        {status === 'recording' && (
+          <LiveCatchup liveToken={token} accessToken={session?.access_token || null} />
+        )}
         {status !== 'done' && <PreMeetingBrief brief={data?.brief} />}
         {/* Prism commands log */}
         {commands.length > 0 && (
@@ -1759,6 +1763,12 @@ export default function App() {
         setDedupBotInfo({ botId: data.existing_bot_id, ownerUserId: data.owner_user_id, ownerUserEmail: data.owner_user_email || '', self: !!data.self })
         setActiveBotId(data.existing_bot_id)
         sessionStorage.setItem('prism_active_bot_id', data.existing_bot_id)
+        // The shared bot's live token lets a dedup'd teammate open the live view +
+        // private catch-up straight from their dashboard.
+        if (data.live_token) {
+          setActiveLiveToken(data.live_token)
+          sessionStorage.setItem('prism_active_live_token', data.live_token)
+        }
         startPolling(data.existing_bot_id, data.owner_user_id)
         return
       }
@@ -2740,6 +2750,8 @@ export default function App() {
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}
           botStatus={botStatus}
+          activeLiveToken={activeLiveToken}
+          accessToken={authSession?.access_token || null}
           botError={botError}
           dedupBotInfo={dedupBotInfo}
           botTranscriptReady={botTranscriptReady}

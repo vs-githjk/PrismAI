@@ -15,6 +15,7 @@ import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
+import LiveCatchup from './LiveCatchup'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -360,6 +361,10 @@ function NewMeetingPanel(props) {
                     </button>
                   </div>
                 </div>
+              )}
+
+              {props.botStatus === 'recording' && props.activeLiveToken && (
+                <LiveCatchup liveToken={props.activeLiveToken} accessToken={props.accessToken} />
               )}
 
               {props.liveCommands?.length > 0 && (

@@ -1177,6 +1177,146 @@ async def _send_chat_response(bot_id: str, message: str):
         print(f"[realtime] failed to send chat response: {exc}")
 
 
+# ── Private live catch-up ("Ask Prism, just you") ────────────────────────────
+# Token-gated, streaming Q&A over the LIVE meeting state. Returns ONLY to the
+# caller's browser — never spoken or posted into the meeting. The workspace
+# knowledge-base fallback is unlocked only for verified workspace members
+# (anonymous link-holders stay meeting-only). Endpoint lives in recall_routes
+# next to /live/{token}; this is the streaming generator + rate limiter.
+_CATCHUP_RATE: dict[str, list[float]] = {}
+_CATCHUP_MIN_INTERVAL_S = 1.5
+_CATCHUP_MAX_PER_MIN = 12
+
+
+def _catchup_rate_ok(key: str) -> bool:
+    """Per-live-token rate limit: min interval + per-minute cap."""
+    now = time.time()
+    hist = _CATCHUP_RATE.setdefault(key, [])
+    hist[:] = [t for t in hist if t > now - 60]
+    if hist and now - hist[-1] < _CATCHUP_MIN_INTERVAL_S:
+        return False
+    if len(hist) >= _CATCHUP_MAX_PER_MIN:
+        return False
+    hist.append(now)
+    return True
+
+
+def _build_catchup_context(state: dict) -> str:
+    """Assemble the live meeting context (rolling summary + decisions + action
+    items + recent transcript) the catch-up answers from."""
+    snapshot = meeting_memory.get_memory_snapshot(state)
+    summary = (snapshot.get("memory_summary") or "").strip()
+    decisions = snapshot.get("live_decisions") or []
+    actions = snapshot.get("live_action_items") or []
+    recent = (state.get("transcript_buffer") or [])[-30:]
+    parts: list[str] = []
+    if summary:
+        parts.append(f"Running summary of the meeting so far:\n{summary}")
+    dec = "\n".join(
+        f"- {d.get('text', '')}" for d in decisions[-10:]
+        if isinstance(d, dict) and d.get("text")
+    )
+    if dec:
+        parts.append(f"Decisions so far:\n{dec}")
+    act = "\n".join(
+        f"- {a.get('task', '')}" + (f" (owner: {a.get('owner')})" if a.get("owner") else "")
+        for a in actions[-10:] if isinstance(a, dict) and a.get("task")
+    )
+    if act:
+        parts.append(f"Action items so far:\n{act}")
+    if recent:
+        parts.append("Most recent transcript:\n" + "\n".join(recent))
+    return "\n\n".join(parts)
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+async def stream_catchup_answer(
+    bot_id: str, mode: str, question: str, member_user_id: str | None = None
+):
+    """Async generator yielding SSE lines for the private live catch-up.
+    Streams gpt-4o-mini tokens; the final event carries done + sources."""
+    state = _get_bot_state(bot_id)
+    context = _build_catchup_context(state)
+
+    if not context.strip():
+        yield _sse({"token": "The meeting just started — nothing to catch up on yet."})
+        yield _sse({"done": True, "sources": []})
+        return
+
+    question = (question or "").strip()
+    sources: list[str] = []
+    rag_block = ""
+
+    # Knowledge-base fallback — members only, qa mode, with a real question.
+    if mode == "qa" and question and member_user_id:
+        try:
+            from knowledge_service import search_knowledge
+            results = await search_knowledge(question, user_id=member_user_id, k=4)
+            lines = []
+            for r in (results or []):
+                name = r.get("doc_name") or r.get("source_type") or "doc"
+                snippet = (r.get("content") or "")[:400]
+                if snippet:
+                    lines.append(f"[{name}] {snippet}")
+                    if name not in sources:
+                        sources.append(name)
+            if lines:
+                rag_block = (
+                    "\n\nBackground from your workspace knowledge base (use ONLY if the "
+                    "meeting context above doesn't answer the question; name the doc when "
+                    "you rely on it):\n" + "\n".join(lines)
+                )
+        except Exception as exc:
+            print(f"[catchup] knowledge search failed: {exc}")
+            sources = []
+
+    if mode == "catchup" or not question:
+        system = (
+            "You help someone who just joined or stepped away from a live meeting get "
+            "caught up. Using ONLY the meeting context provided, give a tight catch-up: "
+            "what's been discussed, any decisions, open action items, and where things "
+            "stand right now. 4-6 sentences, plain and skimmable. Do not invent anything."
+        )
+        user = f"{context}\n\nCatch me up on what I've missed so far."
+    else:
+        system = (
+            "You answer a meeting participant's private question. Prefer the live meeting "
+            "context. If the answer isn't there, use the background knowledge if provided. "
+            "If neither covers it, say it hasn't come up in the meeting yet. Be concise and "
+            "do not invent anything."
+        )
+        user = f"{context}{rag_block}\n\nQuestion: {question}"
+
+    openai_client = get_openai()
+    if openai_client is None:
+        yield _sse({"token": "Catch-up is unavailable right now."})
+        yield _sse({"done": True, "sources": []})
+        return
+
+    try:
+        stream = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=450,
+            stream=True,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        async for event in stream:
+            if event.choices and event.choices[0].delta.content:
+                yield _sse({"token": event.choices[0].delta.content})
+    except Exception as exc:
+        print(f"[catchup] stream failed: {exc}")
+        yield _sse({"token": " (sorry, something went wrong)"})
+
+    yield _sse({"done": True, "sources": sources})
+
+
 async def _upload_audio_to_recall(bot_id: str, audio_bytes: bytes) -> bool:
     """Upload a single audio blob to Recall's output_audio endpoint. Returns True on 2xx."""
     if not RECALL_API_KEY or not audio_bytes:
