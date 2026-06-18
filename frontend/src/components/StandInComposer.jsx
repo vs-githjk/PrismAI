@@ -120,6 +120,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
       const data = await res.json().catch(() => ({}))
       setScheduled(!!data.scheduled)
       setPhase('approved')
+      window.dispatchEvent(new Event('prism:standin-changed'))
     } catch {
       /* keep editing */
     } finally {

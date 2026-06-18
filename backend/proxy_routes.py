@@ -81,15 +81,20 @@ async def _enrich_profile(user_id: str, messages: list, approved_body: str) -> N
             "stand-in update, and the conversation, output an UPDATED standing-notes "
             "paragraph that keeps only DURABLE facts about their role, ownership, and "
             "ongoing responsibilities — NOT transient status like 'finished X today'. "
-            "Merge new durable facts into the existing notes, stay under 500 characters, "
-            "and if nothing durable is new, return the existing notes unchanged. Output "
-            "ONLY the notes text, no preamble."
+            "Merge new durable facts into the existing notes, stay under 500 characters. "
+            "If there are NO durable facts to record, output an empty string and nothing "
+            "else. Output ONLY the notes text — no preamble, no placeholders like '(none)'."
         )
         user = (
-            f"Current standing notes:\n{current or '(none)'}\n\n"
+            f"Current standing notes:\n{current or '(empty)'}\n\n"
             f"Recent stand-in update:\n{approved_body}\n\nConversation:\n{convo}"
         )
         updated = (await _llm_reply(system, [], user)).strip()[:700]
+        # Guard against the model echoing a placeholder / writing junk.
+        _JUNK = {"", "(none)", "none", "n/a", "(empty)", "empty", "no durable facts",
+                 "no notes", "(no notes)", "none."}
+        if updated.lower() in _JUNK:
+            return
         if updated and updated != current:
             supabase.table("proxy_profiles").upsert({
                 "user_id": user_id,

@@ -29,7 +29,9 @@ export default function ProxyProfile() {
       if (pRes.ok) {
         const { profile } = await pRes.json()
         setRoleFocus(profile?.role_focus || '')
-        setNotes(profile?.standing_notes || '')
+        // Guard against a stale placeholder ('(none)' etc.) ever showing as content.
+        const n = (profile?.standing_notes || '').trim()
+        setNotes(['(none)', 'none', '(empty)', 'n/a'].includes(n.toLowerCase()) ? '' : (profile?.standing_notes || ''))
       }
       if (rRes.ok) {
         const { representations } = await rRes.json()
@@ -40,6 +42,18 @@ export default function ProxyProfile() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Refresh on tab focus AND on an explicit signal from the composer, so a
+  // just-approved/canceled stand-in shows up without navigating away and back.
+  useEffect(() => {
+    const reload = () => load()
+    window.addEventListener('focus', reload)
+    window.addEventListener('prism:standin-changed', reload)
+    return () => {
+      window.removeEventListener('focus', reload)
+      window.removeEventListener('prism:standin-changed', reload)
+    }
+  }, [load])
 
   const save = async () => {
     setSaveState('saving')
