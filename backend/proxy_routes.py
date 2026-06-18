@@ -9,6 +9,7 @@ A1 scope: tables + composer endpoints (draft -> converse -> approve/cancel) + th
 standing profile get/upsert. Scheduled-bot delivery (A2/A3) and profile-enrichment
 on approve (A4) land in later slices.
 """
+import asyncio
 import os
 from datetime import datetime, timezone, timedelta
 
@@ -60,6 +61,44 @@ def _load_profile(user_id: str) -> dict:
         return res.data or {}
     except Exception:
         return {}
+
+
+async def _enrich_profile(user_id: str, messages: list, approved_body: str) -> None:
+    """Enrichment-on-approve: distil DURABLE facts about the user (role, ownership,
+    ongoing responsibilities — not transient status) from the stand-in conversation
+    and merge them into their standing_notes, so the next draft starts smarter.
+    Best-effort; never raises into the approve path."""
+    try:
+        profile = _load_profile(user_id)
+        current = (profile.get("standing_notes") or "").strip()
+        convo = "\n".join(
+            f"{m.get('role')}: {m.get('content')}" for m in (messages or [])[-8:]
+            if isinstance(m, dict)
+        )
+        system = (
+            "You maintain a concise standing profile of a user so an assistant can "
+            "represent them in meetings. Given their CURRENT standing notes, a recent "
+            "stand-in update, and the conversation, output an UPDATED standing-notes "
+            "paragraph that keeps only DURABLE facts about their role, ownership, and "
+            "ongoing responsibilities — NOT transient status like 'finished X today'. "
+            "Merge new durable facts into the existing notes, stay under 500 characters, "
+            "and if nothing durable is new, return the existing notes unchanged. Output "
+            "ONLY the notes text, no preamble."
+        )
+        user = (
+            f"Current standing notes:\n{current or '(none)'}\n\n"
+            f"Recent stand-in update:\n{approved_body}\n\nConversation:\n{convo}"
+        )
+        updated = (await _llm_reply(system, [], user)).strip()[:700]
+        if updated and updated != current:
+            supabase.table("proxy_profiles").upsert({
+                "user_id": user_id,
+                "role_focus": profile.get("role_focus", ""),
+                "standing_notes": updated,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, on_conflict="user_id").execute()
+    except Exception as exc:
+        print(f"[proxy] profile enrichment failed: {exc}")
 
 
 def _profile_context(profile: dict) -> str:
@@ -344,6 +383,10 @@ async def approve(rep_id: str, body: ApproveRequest, user_id: str = Depends(requ
                 print(f"[proxy] schedule on approve failed: {exc}")
 
     supabase.table("proxy_representations").update(update).eq("id", rep_id).execute()
+
+    # Enrichment-on-approve: learn durable facts for next time (background, best-effort).
+    asyncio.create_task(_enrich_profile(user_id, row.get("messages") or [], text))
+
     return {"ok": True, "status": "pending", "scheduled": scheduled}
 
 

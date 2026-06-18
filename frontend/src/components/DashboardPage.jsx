@@ -17,6 +17,7 @@ import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
 import LiveCatchup from './LiveCatchup'
 import StandInComposer from './StandInComposer'
+const ProxyProfile = lazy(() => import('./ProxyProfile'))
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -919,6 +920,8 @@ export default function DashboardPage(props) {
       ? 'Trend'
       : activeView === 'knowledge'
         ? 'Knowledge'
+        : activeView === 'standin'
+        ? 'Stand-in'
         : activeView === 'meeting' && (currentMeeting || props.result)
           ? deriveDisplayTitle(currentMeeting || { result: props.result })
           : 'Home'
@@ -999,6 +1002,7 @@ export default function DashboardPage(props) {
         filteredHistory={filteredHistory}
         activeView={activeView}
         onGoHome={() => persistView('home')}
+        onOpenStandin={() => persistView('standin')}
         onOpenTrend={handleOpenTrend}
         onOpenKnowledge={() => persistView('knowledge')}
         onSelectMeeting={handleSelectMeeting}
@@ -1113,6 +1117,11 @@ export default function DashboardPage(props) {
                 workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
               />
+            </Suspense>
+          )}
+          {activeView === 'standin' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <ProxyProfile />
             </Suspense>
           )}
           </div>
