@@ -125,24 +125,32 @@ def _user_owns_item(owner: str, names: list[str]) -> bool:
     return False
 
 
-def _gather_my_items(user_id: str, names: list[str]) -> dict:
-    """Pull the caller's recent action items (open + completed) across their last
-    30 days of meetings, name-matched. Returns {open: [...], done: [...]}."""
+def _gather_my_items(user_id: str, names: list[str], workspace_id: str | None = None) -> dict:
+    """Pull the caller's recent action items (open + completed) from the last 30 days,
+    name-matched, SCOPED to the meeting's context: a workspace stand-in pulls only that
+    workspace's meetings (never your personal to-dos); a personal stand-in pulls only
+    your own no-workspace meetings. Returns {open: [...], done: [...]}."""
     out = {"open": [], "done": []}
     since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     try:
-        res = (
-            supabase.table("meetings")
-            .select("title,date,result")
-            .eq("user_id", user_id)
-            .gte("date", since)
-            .order("date", desc=True)
-            .limit(60)
-            .execute()
-        )
+        q = supabase.table("meetings").select("title,date,result,user_id").gte("date", since)
+        if workspace_id:
+            q = q.eq("workspace_id", workspace_id)        # this workspace only
+        else:
+            q = q.eq("user_id", user_id).is_("workspace_id", "null")  # personal only
+        res = q.order("date", desc=True).limit(80).execute()
     except Exception:
         return out
-    for meeting in (res.data or []):
+
+    # Dedup workspace fan-out copies (same meeting fanned to each member) by minute,
+    # preferring the caller's own row.
+    seen: dict = {}
+    for row in (res.data or []):
+        key = (row.get("date") or "")[:16]
+        if key not in seen or row.get("user_id") == user_id:
+            seen[key] = row
+
+    for meeting in seen.values():
         result = meeting.get("result") or {}
         for item in (result.get("action_items") or []):
             task = (item.get("task") or "").strip()
@@ -286,7 +294,7 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
 
     names = _author_names(user_id, body.author_name, body.author_email)
     profile = _load_profile(user_id)
-    items = _gather_my_items(user_id, names)
+    items = _gather_my_items(user_id, names, body.workspace_id)
     system = _draft_system(_profile_context(profile), _items_block(items), body.meeting_label)
     draft = await _llm_reply(system, [], "Draft my stand-in update for this meeting.")
     messages = [{"role": "assistant", "content": draft}]
@@ -320,7 +328,7 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
 
     names = _author_names(user_id, row.get("author_name", ""), row.get("author_email", ""))
     profile = _load_profile(user_id)
-    items = _gather_my_items(user_id, names)
+    items = _gather_my_items(user_id, names, row.get("workspace_id"))
     system = _draft_system(_profile_context(profile), _items_block(items), row.get("meeting_label", ""))
     system += (
         "\n\nThe user is refining the draft. Reply conversationally AND end your message "
