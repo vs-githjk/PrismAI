@@ -203,7 +203,8 @@ export default function StandInComposer({ meeting, user, onClose }) {
                 onChange={(e) => setDraft(e.target.value)}
                 rows={4}
                 disabled={phase !== 'chatting'}
-                className="w-full resize-none rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px] leading-relaxed text-gray-100 outline-none focus:bg-white/[0.06]"
+                placeholder="Tell Prism above what to share or ask — your update will appear here. You can also type it directly."
+                className="w-full resize-none rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px] leading-relaxed text-gray-100 outline-none placeholder:text-white/25 focus:bg-white/[0.06]"
               />
               {isApproved && !isDirty ? (
                 // Already approved and unchanged — no action to take; show state, not a CTA.
