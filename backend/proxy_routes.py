@@ -183,7 +183,31 @@ def _items_block(items: dict) -> str:
     return "\n\n".join(parts) if parts else "(no recent action items found under your name)"
 
 
-def _draft_system(profile_ctx: str, items_block: str, meeting_label: str, current_draft: str = "") -> str:
+def _workspace_member_names(workspace_id: str | None, exclude_user_id: str) -> list[str]:
+    """Other members of the workspace (friendly names from their emails) so the draft
+    can address them naturally instead of a generic 'Hey team'. Same lookup we already
+    do for action items — basically free. Empty for personal meetings."""
+    if not workspace_id:
+        return []
+    try:
+        res = (
+            supabase.table("workspace_members").select("user_id, user_email")
+            .eq("workspace_id", workspace_id).execute()
+        )
+    except Exception:
+        return []
+    names = []
+    for m in (res.data or []):
+        if m.get("user_id") == exclude_user_id:
+            continue
+        local = (m.get("user_email") or "").split("@")[0].strip()
+        if local:
+            names.append(local)
+    return names
+
+
+def _draft_system(profile_ctx: str, items_block: str, meeting_label: str,
+                  current_draft: str = "", member_names: list[str] | None = None) -> str:
     base = (
         "You help a user prepare a stand-in message that Prism will deliver on their behalf "
         f"in a meeting they can't attend ({meeting_label or 'an upcoming meeting'}). The "
@@ -212,6 +236,8 @@ def _draft_system(profile_ctx: str, items_block: str, meeting_label: str, curren
     if profile_ctx:
         ctx += f"\n\nWho they are:\n{profile_ctx}"
     ctx += f"\n\n{items_block}"
+    if member_names:
+        ctx += f"\n\nOthers in this meeting: {', '.join(member_names)}. Address them naturally."
     if current_draft.strip():
         ctx += f"\n\nCurrent draft (refine this; keep it unless the user changes direction):\n{current_draft}"
     return base + ctx
@@ -333,7 +359,8 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
     names = _author_names(user_id, body.author_name, body.author_email)
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names, body.workspace_id)
-    system = _draft_system(_profile_context(profile), _items_block(items), body.meeting_label)
+    members = _workspace_member_names(body.workspace_id, user_id)
+    system = _draft_system(_profile_context(profile), _items_block(items), body.meeting_label, member_names=members)
     raw = await _llm_reply(system, [], "Prepare my stand-in update for this meeting.")
     reply, draft = _split_reply_draft(raw)
     messages = [{"role": "assistant", "content": reply}]
@@ -368,9 +395,11 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
     names = _author_names(user_id, row.get("author_name", ""), row.get("author_email", ""))
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names, row.get("workspace_id"))
+    members = _workspace_member_names(row.get("workspace_id"), user_id)
     old_draft = row.get("draft_body") or ""
     system = _draft_system(
-        _profile_context(profile), _items_block(items), row.get("meeting_label", ""), current_draft=old_draft
+        _profile_context(profile), _items_block(items), row.get("meeting_label", ""),
+        current_draft=old_draft, member_names=members,
     )
     # Use the persisted conversation as history (source of truth), not client-sent.
     history = row.get("messages") or body.history or []
