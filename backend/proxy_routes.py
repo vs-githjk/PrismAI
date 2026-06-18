@@ -175,21 +175,39 @@ def _items_block(items: dict) -> str:
     return "\n\n".join(parts) if parts else "(no recent action items found under your name)"
 
 
-def _draft_system(profile_ctx: str, items_block: str, meeting_label: str) -> str:
+def _draft_system(profile_ctx: str, items_block: str, meeting_label: str, current_draft: str = "") -> str:
     base = (
-        "You are drafting a short stand-in update on behalf of a user who can't attend "
-        f"a meeting ({meeting_label or 'an upcoming meeting'}). Write in the user's own "
-        "voice, first person, like a concise stand-up update: what they've finished, "
-        "what's in progress, and any blockers. 2-4 sentences. Ground it ONLY in the "
-        "action items and profile provided — never invent completed work. If something is "
-        "ambiguous (e.g. an item could be done or not), ask the user a brief clarifying "
-        "question instead of guessing."
+        "You help a user prepare a stand-in update that Prism will deliver on their behalf "
+        f"in a meeting they can't attend ({meeting_label or 'an upcoming meeting'}).\n\n"
+        "Always reply in EXACTLY two parts:\n"
+        "1) A brief conversational message to the USER — e.g. 'Here's a draft' or, if you "
+        "need more info, a clarifying question.\n"
+        "2) On a new line, 'DRAFT:' followed by the exact update to be read aloud in the "
+        "meeting — first person, concise stand-up style (finished / in progress / blockers), "
+        "2-4 sentences, grounded ONLY in the action items + profile (never invent completed "
+        "work). If there isn't enough to report yet, put NOTHING after 'DRAFT:'.\n"
+        "The DRAFT is spoken to the TEAM, so it must be an update — NEVER a question to the user."
     )
     ctx = ""
     if profile_ctx:
         ctx += f"\n\nWho they are:\n{profile_ctx}"
     ctx += f"\n\n{items_block}"
+    if current_draft.strip():
+        ctx += f"\n\nCurrent draft (refine this; keep it unless the user changes direction):\n{current_draft}"
     return base + ctx
+
+
+def _split_reply_draft(raw: str) -> tuple[str, str]:
+    """Split an LLM reply into (conversational message, deliverable draft). The model
+    is told to put the deliverable after a 'DRAFT:' marker; the conversational part is
+    what's shown in chat, the draft is what gets delivered in the meeting."""
+    raw = (raw or "").strip()
+    if "DRAFT:" in raw:
+        before, after = raw.split("DRAFT:", 1)
+        reply = before.strip() or "Here's a draft — anything to change?"
+        return reply, after.strip()
+    # No marker — treat the whole thing as conversation, with no deliverable yet.
+    return raw, ""
 
 
 async def _llm_reply(system: str, history: list[dict], user_msg: str | None) -> str:
@@ -296,8 +314,9 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names, body.workspace_id)
     system = _draft_system(_profile_context(profile), _items_block(items), body.meeting_label)
-    draft = await _llm_reply(system, [], "Draft my stand-in update for this meeting.")
-    messages = [{"role": "assistant", "content": draft}]
+    raw = await _llm_reply(system, [], "Prepare my stand-in update for this meeting.")
+    reply, draft = _split_reply_draft(raw)
+    messages = [{"role": "assistant", "content": reply}]
 
     row = {
         "workspace_id": body.workspace_id,
@@ -314,7 +333,7 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
     }
     res = supabase.table("proxy_representations").insert(row).execute()
     saved = (res.data or [row])[0]
-    return {"representation": saved, "draft": draft, "messages": messages, "resumed": False}
+    return {"representation": saved, "reply": reply, "draft": draft, "messages": messages, "resumed": False}
 
 
 @router.post("/proxy/representations/{rep_id}/message")
@@ -329,22 +348,19 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
     names = _author_names(user_id, row.get("author_name", ""), row.get("author_email", ""))
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names, row.get("workspace_id"))
-    system = _draft_system(_profile_context(profile), _items_block(items), row.get("meeting_label", ""))
-    system += (
-        "\n\nThe user is refining the draft. Reply conversationally AND end your message "
-        "with the full updated draft on its own, prefixed exactly with 'DRAFT: '."
+    old_draft = row.get("draft_body") or ""
+    system = _draft_system(
+        _profile_context(profile), _items_block(items), row.get("meeting_label", ""), current_draft=old_draft
     )
     # Use the persisted conversation as history (source of truth), not client-sent.
     history = row.get("messages") or body.history or []
-    reply = await _llm_reply(system, history, body.message)
+    raw = await _llm_reply(system, history, body.message)
+    reply, new_draft = _split_reply_draft(raw)
+    if not new_draft:
+        new_draft = old_draft  # a turn that produced no deliverable keeps the last one
 
-    # Extract the updated draft if the model marked one; else keep the reply as draft.
-    new_draft = reply
-    if "DRAFT:" in reply:
-        new_draft = reply.split("DRAFT:", 1)[1].strip()
-
-    # Persist the turn so reopening resumes the chat ("saves that chat to memory").
-    messages = (row.get("messages") or []) + [
+    # Persist the turn (conversational message only) so reopening resumes the chat.
+    messages = history + [
         {"role": "user", "content": body.message},
         {"role": "assistant", "content": reply},
     ]
