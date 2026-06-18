@@ -136,3 +136,31 @@ def test_human_only_lines_not_flagged_as_bot():
 
     lines = ["Alice: hello there", "Bob: what's the plan"]
     assert not any(ln.startswith(rc._BOT_NAME_PREFIXES) for ln in lines)
+
+
+# ── stand-in spoken-on-request (Feature A3) ───────────────────────────────────
+def test_standin_query_regex_matches():
+    for q in [
+        "any updates from people who couldn't make it",
+        "who is out today",
+        "who's away",
+        "any async updates",
+        "stand-in updates please",
+        "updates from the team who couldn't attend",
+    ]:
+        assert rr._STANDIN_QUERY_RE.search(q), q
+
+
+def test_standin_query_regex_ignores_unrelated():
+    assert not rr._STANDIN_QUERY_RE.search("what time is the launch")
+    assert not rr._STANDIN_QUERY_RE.search("summarize the meeting")
+
+
+def test_standin_spoken_summary_single_and_multi():
+    s1 = rr._standin_spoken_summary([{"name": "Alice", "body": "Finished the API."}])
+    assert "Alice" in s1 and "Finished the API." in s1
+    s2 = rr._standin_spoken_summary([
+        {"name": "Alice", "body": "Did X."}, {"name": "Bob", "body": "Did Y."},
+    ])
+    assert "Alice says: Did X." in s2 and "Bob says: Did Y." in s2
+    assert rr._standin_spoken_summary([]) == ""

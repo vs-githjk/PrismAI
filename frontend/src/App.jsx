@@ -664,6 +664,7 @@ function LiveMeetingView({ token }) {
   const commands = data?.commands || []
   const lines = data?.transcript_lines || []
   const result = data?.result || {}
+  const standinUpdates = data?.standin_updates || []
 
   if (error) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
@@ -712,6 +713,23 @@ function LiveMeetingView({ token }) {
       <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
         {status === 'recording' && (
           <LiveCatchup liveToken={token} accessToken={session?.access_token || null} />
+        )}
+        {standinUpdates.length > 0 && (
+          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(34,211,238,0.14)' }}>
+            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <span className="text-xs">📋</span>
+              <span className="text-xs font-semibold text-cyan-200">Stand-in updates</span>
+              <span className="ml-auto text-[10px] text-gray-600">{standinUpdates.length}</span>
+            </div>
+            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+              {standinUpdates.map((u, i) => (
+                <div key={i} className="px-4 py-2.5">
+                  <p className="text-[11px] font-semibold text-cyan-300/80">{u.name} · couldn’t attend</p>
+                  <p className="text-[12px] text-gray-300 mt-0.5 leading-relaxed">{u.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
         {status !== 'done' && <PreMeetingBrief brief={data?.brief} />}
         {/* Prism commands log */}

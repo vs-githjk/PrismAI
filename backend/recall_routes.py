@@ -51,6 +51,11 @@ _proactive_respawned: set[str] = set()
 # usage (this is what exhausted the Groq daily limit). One analysis per bot.
 _processing_bots: set[str] = set()
 
+# Stand-in delivery guards (in-memory; the DB pending->delivered flip is the real
+# idempotency, these just avoid redundant work on repeated in_call_recording events).
+_standin_delivered: set[str] = set()
+_standin_intro_sent: set[str] = set()
+
 
 def _db_save(bot_id: str, fields: dict):
     """Persist bot state to Supabase (best-effort, non-blocking)."""
@@ -433,6 +438,79 @@ async def cancel_standin_bot(bot_id: str, user_id: str, rep_id: str) -> None:
     except Exception as exc:
         print(f"[standin] cancel bot delete failed: {exc}")
     _mb_update_status(bot_id, "canceled")
+
+
+async def deliver_standins_for_bot(bot_id: str) -> None:
+    """When a bot reaches the meeting, deliver any pending stand-in updates bound to
+    its meeting URL: a consolidated chat post (which announces who couldn't attend) +
+    recorded into the transcript + stashed on bot_store for the live brief and the
+    spoken-on-request path. Each rep is claimed via a conditional pending->delivered
+    update, so it delivers exactly once even across bots / restarts.
+
+    Runs for ANY bot (not just scheduled stand-in bots): when stand-ins were dedup'd
+    onto a teammate's regular bot, that bot delivers them too."""
+    if not supabase:
+        return
+    try:
+        mb = (
+            supabase.table("meeting_bots").select("meeting_url")
+            .eq("bot_id", bot_id).maybe_single().execute()
+        )
+    except Exception:
+        return
+    meeting_url = (mb.data or {}).get("meeting_url") if mb else None
+    if not meeting_url:
+        return
+    try:
+        reps = (
+            supabase.table("proxy_representations").select("*")
+            .eq("meeting_url", meeting_url).eq("status", "pending").execute()
+        )
+    except Exception as exc:
+        print(f"[standin] deliver lookup failed: {exc}")
+        return
+    pending = reps.data or []
+    if not pending:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    delivered = []
+    for rep in pending:
+        try:
+            upd = (
+                supabase.table("proxy_representations")
+                .update({"status": "delivered", "delivered_at": now, "delivered_bot_id": bot_id})
+                .eq("id", rep["id"]).eq("status", "pending").execute()
+            )
+            if upd.data:  # we claimed it
+                delivered.append(rep)
+        except Exception as exc:
+            print(f"[standin] deliver claim failed: {exc}")
+
+    lines, updates = [], []
+    for rep in delivered:
+        name = (rep.get("author_name") or "A teammate").strip()
+        body = (rep.get("approved_body") or "").strip()
+        if not body:
+            continue
+        lines.append(f"• {name} — “{body}”")
+        updates.append({"name": name, "body": body})
+    if not lines:
+        return
+
+    msg = "\U0001F4CB Stand-in updates — from people who couldn't attend:\n" + "\n".join(lines)
+    bot_store.setdefault(bot_id, {})["standin_updates"] = updates
+
+    from realtime_routes import _send_chat_response, _record_bot_line, _get_bot_state
+    import perception_state
+    await _send_chat_response(bot_id, msg)
+    try:
+        state = _get_bot_state(bot_id)
+        async with perception_state.get_memory_lock(state):
+            _record_bot_line(bot_id, state, msg, DEFAULT_BOT_NAME)
+    except Exception as exc:
+        print(f"[standin] transcript record failed: {exc}")
+    print(f"[standin] delivered {len(updates)} stand-in update(s) for bot {bot_id}")
 
 
 class JoinMeetingRequest(BaseModel):
@@ -995,6 +1073,15 @@ async def bot_status(bot_id: str):
     recall_status = recall_data.get("status_changes", [{}])[-1].get("code", "") if recall_data.get("status_changes") else ""
     our_status = STATUS_MAP.get(recall_status, bot_store.get(bot_id, {}).get("status", "joining"))
 
+    if recall_status == "in_call_recording" and bot_id not in _standin_delivered:
+        # Fallback for the webhook in_call_recording trigger (idempotent via guard +
+        # DB claim) so stand-ins still deliver if the webhook is missed.
+        _standin_delivered.add(bot_id)
+        if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
+            _standin_intro_sent.add(bot_id)
+            asyncio.create_task(_send_bot_intro(bot_id))
+        asyncio.create_task(deliver_standins_for_bot(bot_id))
+
     if recall_status in ("call_ended", "done"):
         # The call has ended → make sure analysis runs, exactly once. Skip if it's
         # already finished (done/error) or currently in flight. _process_bot_transcript
@@ -1075,6 +1162,8 @@ async def live_meeting(live_token: str):
         "live_action_items": memory_snapshot.get("live_action_items", []),
         "top_entities": memory_snapshot.get("top_entities", []),
         "idea_history": memory_snapshot.get("idea_history", []),
+        # Stand-in updates delivered into this meeting (Feature A) — for the brief panel.
+        "standin_updates": entry.get("standin_updates", []),
         # Include transcript when done so signed-in viewers can save a copy
         "transcript": entry.get("transcript") if status == "done" else None,
         "counters": op_counters,
@@ -1213,6 +1302,15 @@ async def recall_webhook(request: Request):
         bot_store[bot_id]["status"] = "recording"
         _db_save(bot_id, {"status": "recording"})
         _mb_update_status(bot_id, "recording")
+        # A scheduled stand-in bot got no intro at creation — introduce it now that
+        # it's actually in the room (announces it's attending on someone's behalf).
+        if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
+            _standin_intro_sent.add(bot_id)
+            asyncio.create_task(_send_bot_intro(bot_id))
+        # Any bot reaching the room delivers pending stand-ins bound to its meeting.
+        if bot_id not in _standin_delivered:
+            _standin_delivered.add(bot_id)
+            asyncio.create_task(deliver_standins_for_bot(bot_id))
     elif event in ("bot.call_ended", "call_ended", "bot.done", "done"):
         if bot_store[bot_id].get("status") not in ("processing", "done"):
             bot_store[bot_id]["status"] = "processing"

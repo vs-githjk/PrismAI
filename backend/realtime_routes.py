@@ -2102,6 +2102,27 @@ async def _run_proactive_checker(bot_id: str):
             state["recurring_blocker_checked"] = True
 
 
+# Stand-in spoken-on-request (Feature A): attendees can ask the bot to read aloud the
+# updates left by people who couldn't attend.
+_STANDIN_QUERY_RE = re.compile(
+    r"(stand[- ]?in|couldn'?t\s+(make|attend|join|be here)|can'?t\s+make\s+it|"
+    r"who(\s+is|'?s)\s+(out|away|absent|missing)|async\s+update|"
+    r"people\s+who\s+(couldn'?t|can'?t)|anyone\s+(out|absent|missing)|"
+    r"updates?\s+from\s+(anyone|people|those|the team))",
+    re.IGNORECASE,
+)
+
+
+def _standin_spoken_summary(updates: list[dict]) -> str:
+    if not updates:
+        return ""
+    if len(updates) == 1:
+        u = updates[0]
+        return f"Here's the update from {u.get('name', 'a teammate')}, who couldn't attend. {u.get('body', '')}"
+    parts = [f"{u.get('name', 'a teammate')} says: {u.get('body', '')}" for u in updates]
+    return "Here are the updates from people who couldn't attend. " + " ".join(parts)
+
+
 async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False):
     """Process a detected command: use LLM to pick tools, execute, respond.
 
@@ -2142,6 +2163,19 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
     state["last_command_ts"] = now
     state["last_command_text"] = command
     state["last_command_norm"] = cmd_norm
+
+    # Stand-in spoken-on-request: read aloud the updates from people who couldn't
+    # attend. Deterministic (no LLM); only hijacks the turn when such updates exist.
+    if not ambient and _STANDIN_QUERY_RE.search(command):
+        updates = (bot_store.get(bot_id) or {}).get("standin_updates")
+        if updates:
+            summary = _standin_spoken_summary(updates)
+            print(f"[standin] spoken-on-request: {len(updates)} update(s)")
+            if _barge_in_on():
+                await _wait_for_speech_gap(state)
+            await _send_voice_response(bot_id, _spoken_version(summary))
+            await _send_chat_response(bot_id, summary)
+            return
     state["processing"] = True
 
     # Phase B: install a fresh speaking session for this command. supersede_session
