@@ -303,17 +303,20 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
     return body
 
 
-def _find_existing_bot_for_standin(client, normalized_url: str, user_id: str) -> dict | None:
-    """Stand-in dedup: is there already a bot (scheduled or live) for this meeting that
-    we should attach to instead of spawning another? Matches the user's own bot OR a
-    teammate's bot in a shared workspace. Includes 'scheduled' status (unlike the live
-    dedup helpers) since a stand-in bot may not have joined yet."""
+def _find_existing_bot_for_standin(client, normalized_url: str, user_id: str,
+                                   statuses=("scheduled", "joining", "recording", "processing")) -> dict | None:
+    """Stand-in dedup: is there already a bot for this meeting that we should attach to
+    instead of spawning another? Matches the user's own bot OR a teammate's bot in a
+    shared workspace. Includes 'scheduled' status (unlike the live dedup helpers) since a
+    stand-in bot may not have joined yet. Pass statuses=("scheduled",) to check ONLY
+    not-yet-joined bots (used by /join-meeting so a live-dedup's stale-row check isn't
+    re-run here)."""
     try:
         rows = (
             client.table("meeting_bots")
             .select("bot_id, owner_user_id")
             .eq("meeting_url", normalized_url)
-            .in_("status", ["scheduled", "joining", "recording", "processing"])
+            .in_("status", list(statuses))
             .execute()
         )
     except Exception as exc:
@@ -946,6 +949,23 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "owner_user_id": existing["owner_user_id"],
                 "owner_user_email": existing.get("owner_user_email", ""),
                 "live_token": _live_token_for_bot(existing["bot_id"]),
+            }
+
+        # Scheduled stand-in dedup: a bot may already be SCHEDULED for this meeting
+        # (you set a stand-in because you couldn't attend) but not yet joined, so the
+        # live-dedup checks above miss it. Attach to it instead of spawning a second
+        # bot — this is what prevents auto-join from double-booking a stand-in meeting.
+        scheduled = _find_existing_bot_for_standin(
+            supabase, normalized_url, user_id, statuses=("scheduled",)
+        )
+        if scheduled:
+            print(f"[recall] scheduled-dedup: attaching join to scheduled bot {scheduled['bot_id']}")
+            return {
+                "skip": True,
+                "existing_bot_id": scheduled["bot_id"],
+                "owner_user_id": scheduled["owner_user_id"],
+                "owner_user_email": "",
+                "live_token": _live_token_for_bot(scheduled["bot_id"]),
             }
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
