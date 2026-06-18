@@ -45,7 +45,10 @@ def _join_at_ok(scheduled_for: str | None) -> bool:
 
 # Bot names that mark a transcript action-item owner as NOT the user. (unused here
 # but kept explicit: owner matching is by display name — see _user_owns_item.)
-_DRAFT_MODEL = "gpt-4o-mini"
+# The composer is a deliberate, low-volume path where reasoning quality matters
+# (it's representing a person in a meeting), so it runs on a stronger model than the
+# high-volume chat path. Override with PRISM_PROXY_MODEL.
+_DRAFT_MODEL = os.getenv("PRISM_PROXY_MODEL", "gpt-4o")
 
 
 def _require_storage():
@@ -191,7 +194,11 @@ def _draft_system(profile_ctx: str, items_block: str, meeting_label: str, curren
         "meeting — first person, concise stand-up style (finished / in progress / blockers), "
         "2-4 sentences, grounded ONLY in the action items + profile (never invent completed "
         "work). If there isn't enough to report yet, put NOTHING after 'DRAFT:'.\n"
-        "The DRAFT is spoken to the TEAM, so it must be an update — NEVER a question to the user."
+        "The DRAFT is spoken to the TEAM, so it must be an update — NEVER a question to the user.\n\n"
+        "Use the FULL conversation and the current draft to interpret what the user means. "
+        "When they refer back to something they already said (e.g. 'the two things I mentioned'), "
+        "resolve it from the conversation and act on it — do NOT ask them to repeat themselves. "
+        "Only ask a clarifying question when something is genuinely unspecified."
     )
     ctx = ""
     if profile_ctx:
