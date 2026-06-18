@@ -252,6 +252,189 @@ def _live_token_for_bot(bot_id: str) -> str | None:
     return entry.get("live_token")
 
 
+def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: str,
+                            join_at: str | None = None) -> dict:
+    """The Recall bot-create payload, shared by immediate joins and scheduled
+    stand-in bots. `join_at` (ISO 8601, >10 min out) makes Recall schedule the
+    join instead of joining now."""
+    body = {
+        "meeting_url": meeting_url,
+        "bot_name": "PrismAI",
+        "webhook_url": webhook_url,
+        "recording_config": {
+            "video_mixed_layout": "speaker_view",
+            "video_mixed_mp4": {},
+            "audio_mixed_mp3": {},
+            "transcript": {
+                "provider": {
+                    "deepgram_streaming": {
+                        "model": "nova-3",
+                        "language": "en",
+                        "smart_format": "true",
+                        "punctuate": "true",
+                        "diarize": "true",
+                        "endpointing": 300,
+                        "utterance_end_ms": 1000,
+                        "interim_results": "true",
+                    }
+                }
+            },
+            "realtime_endpoints": [
+                {
+                    "type": "webhook",
+                    "url": realtime_url,
+                    "events": [
+                        "transcript.data",
+                        "participant_events.chat_message",
+                        "participant_events.join",
+                        "participant_events.leave",
+                    ],
+                }
+            ],
+        },
+    }
+    if join_at:
+        body["join_at"] = join_at
+    return body
+
+
+def _find_existing_bot_for_standin(client, normalized_url: str, user_id: str) -> dict | None:
+    """Stand-in dedup: is there already a bot (scheduled or live) for this meeting that
+    we should attach to instead of spawning another? Matches the user's own bot OR a
+    teammate's bot in a shared workspace. Includes 'scheduled' status (unlike the live
+    dedup helpers) since a stand-in bot may not have joined yet."""
+    try:
+        rows = (
+            client.table("meeting_bots")
+            .select("bot_id, owner_user_id")
+            .eq("meeting_url", normalized_url)
+            .in_("status", ["scheduled", "joining", "recording", "processing"])
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[standin] dedup lookup skipped: {exc}")
+        return None
+    if not rows.data:
+        return None
+    from caches import get_user_workspace_ids
+    my_ws = get_user_workspace_ids(client, user_id) or []
+    for bot in rows.data:
+        if bot["owner_user_id"] == user_id:
+            return bot
+        if my_ws:
+            shared = (
+                client.table("workspace_members")
+                .select("workspace_id")
+                .eq("user_id", bot["owner_user_id"])
+                .in_("workspace_id", my_ws)
+                .limit(1)
+                .execute()
+            )
+            if shared.data:
+                return bot
+    return None
+
+
+async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str | None,
+                               owner_name: str | None, join_at: str) -> dict | None:
+    """Create (or reuse) a Recall bot scheduled to join `meeting_url` at `join_at`
+    to deliver a stand-in. Returns {bot_id, reused}. Skips intro/proactive — those
+    fire when the bot actually joins (A3). Returns None if Recall isn't configured
+    or the create failed."""
+    if not RECALL_API_KEY:
+        return None
+    normalized = _normalize_meeting_url(meeting_url)
+
+    # Dedup: attach to an existing scheduled/live bot for this meeting if there is one.
+    if supabase:
+        existing = _find_existing_bot_for_standin(supabase, normalized, user_id)
+        if existing:
+            print(f"[standin] reusing existing bot {existing['bot_id']} for stand-in")
+            return {"bot_id": existing["bot_id"], "reused": True}
+
+    realtime_token = secrets.token_urlsafe(32)
+    realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
+    webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
+    body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url, join_at=join_at)
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{RECALL_API_BASE}/bot/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}", "Content-Type": "application/json"},
+                json=body,
+                timeout=15,
+            )
+    except Exception as exc:
+        print(f"[standin] recall schedule request failed: {exc}")
+        return None
+    if resp.status_code not in (200, 201):
+        print(f"[standin] recall schedule failed ({resp.status_code}): {resp.text[:200]}")
+        return None
+
+    bot_id = resp.json()["id"]
+    live_token = secrets.token_hex(16)
+    bot_store[bot_id] = {
+        "status": "scheduled", "result": None, "error": None, "commands": [],
+        "user_id": user_id, "live_token": live_token, "owner_name": owner_name,
+        "workspace_id": workspace_id, "realtime_token": realtime_token,
+        "initial_mode": None, "standin": True,
+    }
+    _live_token_index[live_token] = bot_id
+    _db_save(bot_id, {"status": "scheduled", "user_id": user_id, "live_token": live_token})
+
+    from realtime_routes import init_bot_realtime, register_realtime_token
+    register_realtime_token(realtime_token, bot_id)
+    if supabase:
+        try:
+            supabase.table("meeting_bots").insert({
+                "bot_id": bot_id, "meeting_url": normalized,
+                "owner_user_id": user_id, "status": "scheduled",
+            }).execute()
+        except Exception as exc:
+            print(f"[standin] meeting_bots insert failed: {exc}")
+    init_bot_realtime(bot_id)
+    print(f"[standin] scheduled bot {bot_id} for {join_at}")
+    return {"bot_id": bot_id, "reused": False}
+
+
+async def cancel_standin_bot(bot_id: str, user_id: str, rep_id: str) -> None:
+    """Best-effort teardown of a scheduled stand-in bot when its representation is
+    canceled. Only deletes the Recall bot if WE own it, it hasn't joined yet, and no
+    other live stand-in still needs it — never kills a teammate's or an already-live bot."""
+    if not RECALL_API_KEY:
+        return
+    if supabase:
+        try:
+            others = (
+                supabase.table("proxy_representations").select("id")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled").neq("id", rep_id)
+                .limit(1).execute()
+            )
+            if others.data:
+                return  # another stand-in still relies on this bot
+            mb = (
+                supabase.table("meeting_bots").select("owner_user_id, status")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            if mb and mb.data and (
+                mb.data.get("owner_user_id") != user_id
+                or mb.data.get("status") not in ("scheduled", "joining")
+            ):
+                return  # not ours, or already live — leave it alone
+        except Exception as exc:
+            print(f"[standin] cancel guard check failed: {exc}")
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+    except Exception as exc:
+        print(f"[standin] cancel bot delete failed: {exc}")
+    _mb_update_status(bot_id, "canceled")
+
+
 class JoinMeetingRequest(BaseModel):
     meeting_url: str
     owner_name: str | None = None
@@ -704,59 +887,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "Authorization": f"Token {RECALL_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={
-                "meeting_url": req.meeting_url,
-                "bot_name": "PrismAI",
-                "webhook_url": webhook_url,
-                "recording_config": {
-                    # Video output — required for post-meeting playback.
-                    # speaker_view composites the active speaker as the main pane;
-                    # gallery_view is the multi-tile alternative.
-                    "video_mixed_layout": "speaker_view",
-                    "video_mixed_mp4": {},
-                    # Always-on audio fallback — used by the player when no video
-                    # is captured (phone bridges, screenshare-disabled meetings).
-                    "audio_mixed_mp3": {},
-                    "transcript": {
-                        "provider": {
-                            # endpointing=500 → wait 500ms of silence before finalizing
-                            #   (default 10ms makes Deepgram emit one "final" per word).
-                            # utterance_end_ms=1000 → bounded fallback in case endpointing under-fires.
-                            # smart_format + punctuate + diarize → better readability, fewer mishears,
-                            #   and Recall already attaches speaker labels separately.
-                            # Note: Recall.ai validates Deepgram params as URL-style strings
-                            # (booleans must be "true"/"false", not JSON true/false). Numeric
-                            # params can stay as integers.
-                            # endpointing=300: 30x longer than the 10ms default (which
-                            #   was causing one-word "finals"), but lower than 500 to
-                            #   reduce TTFB. The same-fragment-completion heuristic +
-                            #   accumulator in realtime_routes handles the rare split case.
-                            "deepgram_streaming": {
-                                "model": "nova-3",
-                                "language": "en",
-                                "smart_format": "true",
-                                "punctuate": "true",
-                                "diarize": "true",
-                                "endpointing": 300,
-                                "utterance_end_ms": 1000,
-                                "interim_results": "true",
-                            }
-                        }
-                    },
-                    "realtime_endpoints": [
-                        {
-                            "type": "webhook",
-                            "url": realtime_url,
-                            "events": [
-                                "transcript.data",
-                                "participant_events.chat_message",
-                                "participant_events.join",
-                                "participant_events.leave",
-                            ],
-                        }
-                    ],
-                },
-            },
+            json=_recall_bot_create_json(req.meeting_url, realtime_url, webhook_url),
             timeout=15,
         )
 

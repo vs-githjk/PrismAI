@@ -1,5 +1,7 @@
-"""Stand-in proxy (Feature A) — A1 pure-logic tests (owner matching, synthesis)."""
+"""Stand-in proxy (Feature A) — A1/A2 pure-logic tests."""
+import os
 import unittest
+from datetime import datetime, timezone, timedelta
 
 import proxy_routes as pr
 
@@ -51,6 +53,42 @@ class BlockFormattingTests(unittest.TestCase):
         self.assertIn("Backend lead", ctx)
         self.assertIn("owns payments", ctx)
         self.assertEqual(pr._profile_context({}), "")
+
+
+class ScheduleGatingTests(unittest.TestCase):
+    def _iso(self, **delta):
+        return (datetime.now(timezone.utc) + timedelta(**delta)).isoformat()
+
+    def test_join_at_ok_far_future(self):
+        self.assertTrue(pr._join_at_ok(self._iso(minutes=30)))
+
+    def test_join_at_too_soon(self):
+        self.assertFalse(pr._join_at_ok(self._iso(minutes=5)))
+
+    def test_join_at_past(self):
+        self.assertFalse(pr._join_at_ok(self._iso(minutes=-30)))
+
+    def test_join_at_missing_or_bad(self):
+        self.assertFalse(pr._join_at_ok(None))
+        self.assertFalse(pr._join_at_ok(""))
+        self.assertFalse(pr._join_at_ok("not-a-date"))
+
+    def test_join_at_handles_z_suffix(self):
+        z = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertTrue(pr._join_at_ok(z))
+
+    def test_schedule_flag(self):
+        old = os.environ.get("PRISM_STANDIN_SCHEDULE")
+        try:
+            os.environ["PRISM_STANDIN_SCHEDULE"] = "0"
+            self.assertFalse(pr._standin_schedule_on())
+            os.environ["PRISM_STANDIN_SCHEDULE"] = "1"
+            self.assertTrue(pr._standin_schedule_on())
+            del os.environ["PRISM_STANDIN_SCHEDULE"]
+            self.assertTrue(pr._standin_schedule_on())  # default ON
+        finally:
+            if old is not None:
+                os.environ["PRISM_STANDIN_SCHEDULE"] = old
 
 
 if __name__ == "__main__":

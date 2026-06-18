@@ -9,6 +9,7 @@ A1 scope: tables + composer endpoints (draft -> converse -> approve/cancel) + th
 standing profile get/upsert. Scheduled-bot delivery (A2/A3) and profile-enrichment
 on approve (A4) land in later slices.
 """
+import os
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +21,26 @@ from clients import get_openai
 from recall_routes import _normalize_meeting_url
 
 router = APIRouter(tags=["proxy"])
+
+
+def _standin_schedule_on() -> bool:
+    """Kill-switch for actually sending a scheduled bot on approve. Default ON;
+    set PRISM_STANDIN_SCHEDULE=0 to approve/save stand-ins without spawning real
+    future Recall bots (e.g. while testing the rest of the loop)."""
+    return os.getenv("PRISM_STANDIN_SCHEDULE", "1") != "0"
+
+
+def _join_at_ok(scheduled_for: str | None) -> bool:
+    """Recall requires join_at to be >10 min in the future to guarantee the join."""
+    if not scheduled_for:
+        return False
+    try:
+        start = datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        return start > datetime.now(timezone.utc) + timedelta(minutes=10)
+    except Exception:
+        return False
 
 # Bot names that mark a transcript action-item owner as NOT the user. (unused here
 # but kept explicit: owner matching is by display name — see _user_owns_item.)
@@ -288,27 +309,56 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
 
 @router.post("/proxy/representations/{rep_id}/approve")
 async def approve(rep_id: str, body: ApproveRequest, user_id: str = Depends(require_user_id)):
-    """Freeze the approved text. A1 stops here (status -> pending); A2 attaches a
-    scheduled bot for delivery, A4 enriches the standing profile."""
+    """Freeze the approved text and (A2) schedule a Recall bot to join the meeting
+    at its start time and deliver this stand-in. Dedups onto an existing bot for the
+    meeting when one is already scheduled/live. Gated by PRISM_STANDIN_SCHEDULE."""
     _require_storage()
-    _owned_rep(rep_id, user_id)
+    row = _owned_rep(rep_id, user_id)
     text = (body.approved_body or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Nothing to approve")
-    supabase.table("proxy_representations").update({
+
+    update = {
         "approved_body": text,
         "draft_body": text,
         "status": "pending",
         "approved_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", rep_id).execute()
-    return {"ok": True, "status": "pending"}
+    }
+
+    # Schedule (or attach to) a bot for delivery, unless one is already attached.
+    scheduled = False
+    if _standin_schedule_on() and not row.get("scheduled_bot_id"):
+        join_at = row.get("scheduled_for")
+        if _join_at_ok(join_at):
+            try:
+                from recall_routes import schedule_standin_bot
+                res = await schedule_standin_bot(
+                    row["meeting_url"], user_id, row.get("workspace_id"),
+                    row.get("author_name"), join_at,
+                )
+                if res:
+                    update["scheduled_bot_id"] = res["bot_id"]
+                    update["join_at"] = join_at
+                    scheduled = True
+            except Exception as exc:
+                print(f"[proxy] schedule on approve failed: {exc}")
+
+    supabase.table("proxy_representations").update(update).eq("id", rep_id).execute()
+    return {"ok": True, "status": "pending", "scheduled": scheduled}
 
 
 @router.post("/proxy/representations/{rep_id}/cancel")
 async def cancel(rep_id: str, user_id: str = Depends(require_user_id)):
     _require_storage()
-    _owned_rep(rep_id, user_id)
+    row = _owned_rep(rep_id, user_id)
     supabase.table("proxy_representations").update({"status": "canceled"}).eq("id", rep_id).execute()
+    bot_id = row.get("scheduled_bot_id")
+    if bot_id:
+        try:
+            from recall_routes import cancel_standin_bot
+            await cancel_standin_bot(bot_id, user_id, rep_id)
+        except Exception as exc:
+            print(f"[proxy] cancel bot teardown failed: {exc}")
     return {"ok": True, "status": "canceled"}
 
 

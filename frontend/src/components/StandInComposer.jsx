@@ -22,6 +22,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
   const [busy, setBusy] = useState(false)
   const [savedStatus, setSavedStatus] = useState(null) // existing rep status, if resumed
   const [approvedText, setApprovedText] = useState('') // frozen text when already approved
+  const [scheduled, setScheduled] = useState(false) // whether a bot was actually scheduled
   const scrollRef = useRef(null)
 
   // When already approved, the button should only re-activate if the draft was edited.
@@ -116,6 +117,8 @@ export default function StandInComposer({ meeting, user, onClose }) {
         body: JSON.stringify({ approved_body: text }),
       })
       if (!res.ok) throw new Error('approve failed')
+      const data = await res.json().catch(() => ({}))
+      setScheduled(!!data.scheduled)
       setPhase('approved')
     } catch {
       /* keep editing */
@@ -141,8 +144,11 @@ export default function StandInComposer({ meeting, user, onClose }) {
             <div className="text-2xl">✓</div>
             <p className="text-sm font-semibold text-cyan-200">Stand-in approved</p>
             <p className="text-[12px] text-gray-400 leading-relaxed">
-              Saved as your update for <span className="text-gray-200">{meeting.label}</span>.
-              Prism will share it when the meeting runs.
+              {scheduled ? (
+                <>Prism will join <span className="text-gray-200">{meeting.label}</span> at its start time and share your update.</>
+              ) : (
+                <>Saved as your update for <span className="text-gray-200">{meeting.label}</span>. (Prism isn’t scheduled to attend this one yet.)</>
+              )}
             </p>
             <button onClick={onClose} className="mt-3 rounded-lg bg-cyan-400/[0.14] px-4 py-2 text-[12px] font-semibold text-cyan-200 hover:bg-cyan-400/[0.22]">
               Done
