@@ -56,6 +56,10 @@ _processing_bots: set[str] = set()
 _standin_delivered: set[str] = set()
 _standin_intro_sent: set[str] = set()
 
+# Bots with a live server-side lifecycle poller (scheduled stand-in bots — see
+# _poll_standin_lifecycle). Prevents spawning two pollers for the same bot.
+_standin_pollers: set[str] = set()
+
 
 def _db_save(bot_id: str, fields: dict):
     """Persist bot state to Supabase (best-effort, non-blocking)."""
@@ -258,13 +262,15 @@ def _live_token_for_bot(bot_id: str) -> str | None:
 
 
 def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: str,
-                            join_at: str | None = None) -> dict:
+                            join_at: str | None = None, bot_name: str = "PrismAI") -> dict:
     """The Recall bot-create payload, shared by immediate joins and scheduled
     stand-in bots. `join_at` (ISO 8601, >10 min out) makes Recall schedule the
-    join instead of joining now."""
+    join instead of joining now. `bot_name` is the in-meeting display name —
+    stand-in bots pass the represented person's name so attendees recognise (and
+    admit) it and know whose update it carries."""
     body = {
         "meeting_url": meeting_url,
-        "bot_name": "PrismAI",
+        "bot_name": bot_name,
         "webhook_url": webhook_url,
         "recording_config": {
             "video_mixed_layout": "speaker_view",
@@ -363,7 +369,11 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     realtime_token = secrets.token_urlsafe(32)
     realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
-    body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url, join_at=join_at)
+    # Name the bot after the person it stands in for, so attendees recognise it in
+    # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
+    display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else "PrismAI"
+    body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url,
+                                   join_at=join_at, bot_name=display_name)
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -401,6 +411,9 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
         except Exception as exc:
             print(f"[standin] meeting_bots insert failed: {exc}")
     init_bot_realtime(bot_id)
+    # Drive this headless bot's lifecycle ourselves — nothing else polls it (no
+    # dashboard, no Recall account webhook). See _poll_standin_lifecycle.
+    asyncio.create_task(_poll_standin_lifecycle(bot_id, join_at))
     print(f"[standin] scheduled bot {bot_id} for {join_at}")
     return {"bot_id": bot_id, "reused": False}
 
@@ -441,6 +454,121 @@ async def cancel_standin_bot(bot_id: str, user_id: str, rep_id: str) -> None:
     except Exception as exc:
         print(f"[standin] cancel bot delete failed: {exc}")
     _mb_update_status(bot_id, "canceled")
+
+
+async def _poll_standin_lifecycle(bot_id: str, join_at: str | None = None) -> None:
+    """Server-side lifecycle driver for a headless scheduled stand-in bot.
+
+    A scheduled stand-in bot has no dashboard polling /bot-status for it, and there is
+    no Recall account webhook hitting /recall-webhook — so nothing would otherwise fire
+    its join/end handlers. This task polls Recall's bot status directly and runs the
+    SAME idempotent handlers the /bot-status poll runs: intro + stand-in delivery on
+    in_call_recording, analysis on call_ended.
+
+    In-memory task: it does NOT survive a process restart (same limitation as
+    bot_store / the live token index). That's acceptable — it makes a single scheduled
+    stand-in work end-to-end without any external webhook config."""
+    if not RECALL_API_KEY or bot_id in _standin_pollers:
+        return
+    _standin_pollers.add(bot_id)
+    try:
+        # Wait until shortly before the scheduled join so we don't burn polls for a
+        # meeting that's an hour out. Capped so a bad/far join_at can't sleep forever.
+        if join_at:
+            try:
+                start = datetime.fromisoformat(join_at.replace("Z", "+00:00"))
+                if start.tzinfo is None:
+                    start = start.replace(tzinfo=timezone.utc)
+                lead = (start - datetime.now(timezone.utc)).total_seconds() - 60
+                if lead > 0:
+                    await asyncio.sleep(min(lead, 6 * 3600))
+            except Exception:
+                pass
+
+        deadline = time.time() + 4 * 3600  # hard safety cap so the task always exits
+        in_meeting = False
+        async with httpx.AsyncClient() as client:
+            while time.time() < deadline:
+                try:
+                    resp = await client.get(
+                        f"{RECALL_API_BASE}/bot/{bot_id}/",
+                        headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                        timeout=10,
+                    )
+                    code = ""
+                    if resp.status_code == 200:
+                        changes = resp.json().get("status_changes") or []
+                        code = changes[-1].get("code", "") if changes else ""
+                except Exception as exc:
+                    print(f"[standin] poll error bot={bot_id[:8]}: {exc}")
+                    await asyncio.sleep(15)
+                    continue
+
+                if code == "in_call_recording" and bot_id not in _standin_delivered:
+                    _standin_delivered.add(bot_id)
+                    if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
+                        _standin_intro_sent.add(bot_id)
+                        asyncio.create_task(_send_bot_intro(bot_id))
+                    asyncio.create_task(deliver_standins_for_bot(bot_id))
+                    in_meeting = True
+
+                if code in ("call_ended", "done"):
+                    entry = bot_store.setdefault(
+                        bot_id, {"status": "joining", "result": None, "error": None, "commands": []}
+                    )
+                    if entry.get("status") not in ("done", "error") and bot_id not in _processing_bots:
+                        entry["status"] = "processing"
+                        _db_save(bot_id, {"status": "processing"})
+                        asyncio.create_task(_process_bot_transcript(bot_id))
+                    return
+
+                if code in ("fatal", "error"):
+                    print(f"[standin] poll stopping — bot={bot_id[:8]} status={code}")
+                    return
+
+                # Poll briskly while in/approaching the call, lazily while still waiting.
+                await asyncio.sleep(
+                    8 if in_meeting or code in ("in_call_recording", "in_call_not_recording", "joining_call")
+                    else 20
+                )
+        print(f"[standin] poll hit safety cap bot={bot_id[:8]}")
+    finally:
+        _standin_pollers.discard(bot_id)
+
+
+def standin_updates_for_bot(bot_id: str) -> list[dict]:
+    """Durable read of the stand-in updates bound to a bot's meeting, straight from
+    Supabase (status pending OR delivered). Used by the spoken-on-request path so it
+    never depends on in-memory bot_store (which a restart or a second worker process
+    wipes) — and so it can NEVER fall through to the LLM and invent people. Returns
+    [{name, body}], approval order."""
+    if not supabase:
+        return []
+    try:
+        mb = (
+            supabase.table("meeting_bots").select("meeting_url")
+            .eq("bot_id", bot_id).maybe_single().execute()
+        )
+        meeting_url = (mb.data or {}).get("meeting_url") if mb else None
+        if not meeting_url:
+            return []
+        reps = (
+            supabase.table("proxy_representations")
+            .select("author_name, approved_body, approved_at")
+            .eq("meeting_url", meeting_url)
+            .in_("status", ["pending", "delivered"])
+            .order("approved_at")
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[standin] updates_for_bot lookup failed: {exc}")
+        return []
+    out = []
+    for rep in (reps.data or []):
+        body = (rep.get("approved_body") or "").strip()
+        if body:
+            out.append({"name": (rep.get("author_name") or "A teammate").strip(), "body": body})
+    return out
 
 
 async def deliver_standins_for_bot(bot_id: str) -> None:

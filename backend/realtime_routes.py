@@ -207,15 +207,24 @@ def _solo_mode_active(state: dict) -> bool:
     return len(humans) == 1 and state.get("max_humans_seen", 0) <= 1
 
 
+def _solo_freeflow_text_eligible(text: str) -> bool:
+    """Solo free-flow filter on raw text (legacy path has Deepgram finals, not
+    FlushedUtterances). Drops backchannel/filler so the bot doesn't pounce on
+    'um, okay'; mute/stop phrases are owned by the barge-in layer."""
+    t = (text or "").strip()
+    if len(re.findall(r"\b\w+\b", t)) < 3:
+        return False
+    if ambient_loop.detect_mute_command(t):
+        return False
+    return True
+
+
 def _solo_freeflow_eligible(u) -> bool:
     """Filter out backchannel/filler so the bot doesn't pounce on 'um, okay'.
     Stop/mute phrases are owned by the barge-in + interjection layers."""
-    text = (u.text or "").strip()
     if getattr(u, "word_count", 0) < 3:
         return False
-    if ambient_loop.detect_mute_command(text):
-        return False
-    return True
+    return _solo_freeflow_text_eligible(u.text or "")
 
 
 # How long to suppress repeat command-processing. Only there to absorb transcript
@@ -2165,17 +2174,30 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
     state["last_command_norm"] = cmd_norm
 
     # Stand-in spoken-on-request: read aloud the updates from people who couldn't
-    # attend. Deterministic (no LLM); only hijacks the turn when such updates exist.
+    # attend. ALWAYS deterministic (no LLM) once the question is recognised — the model
+    # must never improvise stand-in updates, so a matched query is fully owned here and
+    # never falls through to the command path. Reads from the durable DB (not just the
+    # in-memory bot_store, which a restart / second worker wipes); if nobody left an
+    # update, it says so plainly rather than inventing people.
     if not ambient and _STANDIN_QUERY_RE.search(command):
         updates = (bot_store.get(bot_id) or {}).get("standin_updates")
-        if updates:
-            summary = _standin_spoken_summary(updates)
-            print(f"[standin] spoken-on-request: {len(updates)} update(s)")
-            if _barge_in_on():
-                await _wait_for_speech_gap(state)
-            await _send_voice_response(bot_id, _spoken_version(summary))
-            await _send_chat_response(bot_id, summary)
-            return
+        if not updates:
+            try:
+                from recall_routes import standin_updates_for_bot
+                updates = standin_updates_for_bot(bot_id)
+            except Exception as exc:
+                print(f"[standin] db read failed: {exc}")
+                updates = []
+        summary = (
+            _standin_spoken_summary(updates) if updates
+            else "No one left a stand-in update for this meeting."
+        )
+        print(f"[standin] spoken-on-request: {len(updates)} update(s)")
+        if _barge_in_on():
+            await _wait_for_speech_gap(state)
+        await _send_voice_response(bot_id, _spoken_version(summary))
+        await _send_chat_response(bot_id, summary)
+        return
     state["processing"] = True
 
     # Phase B: install a fresh speaking session for this command. supersede_session
@@ -3067,6 +3089,21 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                 state["pending_trigger_ts"]
                 and time.time() - state["pending_trigger_ts"] < PENDING_TRIGGER_WINDOW
             )
+
+            # Solo free-flow (legacy path): exactly one human in the meeting → treat a
+            # complete, substantive utterance as a command without the wake word. Gated
+            # to complete-looking text so we don't fire on a mid-sentence Deepgram
+            # fragment (the accumulator path gets full utterances; the legacy path only
+            # sees finals). Skipped while a wake-word command window is already open.
+            if (
+                not command
+                and not within_window
+                and _solo_mode_active(state)
+                and _looks_command_complete(text)
+                and _solo_freeflow_text_eligible(text)
+            ):
+                command = text.strip()
+                print(f"[realtime] solo free-flow command={command!r} from={speaker!r}")
 
             if command:
                 # Trigger + (partial or full) command in this fragment.
