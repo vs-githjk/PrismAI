@@ -10,6 +10,7 @@ import {
   Trash2,
   UserCircle,
   UserRoundCheck,
+  CalendarDays,
 } from 'lucide-react'
 import { deriveDisplayTitle } from '../../lib/insights'
 import { formatHistoryDate, IntegrationsIcon } from './chrome'
@@ -60,6 +61,7 @@ export default function DashboardSidebar(props) {
     onOpenTrend,
     onOpenKnowledge,
     onOpenStandin,
+    onOpenCalendar,
     onSelectMeeting,
     onDeleteMeeting,
     currentMeetingId,
@@ -77,6 +79,7 @@ export default function DashboardSidebar(props) {
   const onTrend = activeView === 'intelligence'
   const onKnowledge = activeView === 'knowledge'
   const onStandin = activeView === 'standin'
+  const onCalendar = activeView === 'calendar'
 
   // Collapsible date groups (Today / This week / Earlier).
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
@@ -124,6 +127,18 @@ export default function DashboardSidebar(props) {
         >
           <TrendingUp className="h-[18px] w-[18px] shrink-0" />
           Trend
+        </button>
+        <button
+          type="button"
+          onClick={onOpenCalendar}
+          className={`${navItemBase} ${
+            onCalendar
+              ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
+              : 'text-white/70 hover:bg-white/[0.06] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+          }`}
+        >
+          <CalendarDays className="h-[18px] w-[18px] shrink-0" />
+          Calendar
         </button>
         <button
           type="button"

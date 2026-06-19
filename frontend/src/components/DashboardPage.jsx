@@ -18,6 +18,7 @@ import StatsCanvas from './dashboard/StatsCanvas'
 import LiveCatchup from './LiveCatchup'
 import StandInComposer from './StandInComposer'
 const ProxyProfile = lazy(() => import('./ProxyProfile'))
+const CalendarView = lazy(() => import('./CalendarView'))
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -526,10 +527,15 @@ export default function DashboardPage(props) {
   const [shareErrorId, setShareErrorId] = useState(null)
 
   // Persist active view so hard refresh restores the same view
+  // Remember where the user was before opening a meeting, so the back arrow returns
+  // there (e.g. Calendar → meeting → back → Calendar) instead of always going Home.
+  const lastNonMeetingViewRef = useRef('home')
   const persistView = (view) => {
+    if (view !== 'meeting') lastNonMeetingViewRef.current = view
     sessionStorage.setItem('prism_active_view', view)
     setActiveView(view)
   }
+  const goBackFromMeeting = () => persistView(lastNonMeetingViewRef.current || 'home')
 
   const historyCount = props.history?.length || 0
   const isFirstRender = useRef(true)
@@ -922,6 +928,8 @@ export default function DashboardPage(props) {
         ? 'Knowledge'
         : activeView === 'standin'
         ? 'Stand-in'
+        : activeView === 'calendar'
+        ? 'Calendar'
         : activeView === 'meeting' && (currentMeeting || props.result)
           ? deriveDisplayTitle(currentMeeting || { result: props.result })
           : 'Home'
@@ -970,7 +978,7 @@ export default function DashboardPage(props) {
         title={pageTitle}
         searchValue={props.historySearch}
         onSearchChange={handleHistorySearchChange}
-        onBack={activeView === 'meeting' ? () => persistView('home') : null}
+        onBack={activeView === 'meeting' ? goBackFromMeeting : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
             <MeetingActionsBar
@@ -1003,6 +1011,7 @@ export default function DashboardPage(props) {
         activeView={activeView}
         onGoHome={() => persistView('home')}
         onOpenStandin={() => persistView('standin')}
+        onOpenCalendar={() => persistView('calendar')}
         onOpenTrend={handleOpenTrend}
         onOpenKnowledge={() => persistView('knowledge')}
         onSelectMeeting={handleSelectMeeting}
@@ -1090,7 +1099,7 @@ export default function DashboardPage(props) {
                       gmailConnected={props.calendarConnected}
                       onToggleActionItem={props.toggleActionItem}
                       transcript={props.transcript}
-                      onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
+                      onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); goBackFromMeeting() }}
                       recordedByEmail={recordedByEmail}
                       workspaceId={activeWorkspaceId}
                       suggestedEmails={suggestedAttendeeEmails}
@@ -1126,6 +1135,16 @@ export default function DashboardPage(props) {
                 workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
                 onOpenMeeting={handleOpenMeetingById}
+              />
+            </Suspense>
+          )}
+          {activeView === 'calendar' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <CalendarView
+                history={props.history}
+                onOpenMeeting={handleOpenMeetingById}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                calendarConnected={props.calendarConnected}
               />
             </Suspense>
           )}
