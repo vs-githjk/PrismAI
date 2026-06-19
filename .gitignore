@@ -24,3 +24,8 @@ skills-lock.json
 
 # Git worktrees (isolated working copies)
 .worktrees/
+
+# Playwright E2E artifacts
+frontend/test-results/
+frontend/playwright-report/
+.playwright-mcp/

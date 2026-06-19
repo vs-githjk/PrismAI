@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CalendarPlus, Check, ExternalLink, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
+import { notifyStatus } from '../../lib/statusNotify'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
 import DatePopover from './DatePopover'
 import TimePopover from './TimePopover'
@@ -102,6 +103,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       }
       const data = await res.json()
       setCreated({ link: data.link })
+      notifyStatus({ kind: 'calendar', message: 'Added to calendar' })
     } catch {
       setError('Network error — try again.')
     } finally {

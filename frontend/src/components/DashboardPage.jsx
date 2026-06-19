@@ -33,6 +33,9 @@ import {
 import SkeletonCard from './SkeletonCard'
 import DashboardSidebar from './dashboard/DashboardSidebar'
 import DashboardTopbar from './dashboard/DashboardTopbar'
+import LiveMeetingView from './dashboard/LiveMeetingView'
+import { deriveStatus } from './dashboard/StatusIsland'
+import { useStatusNotification } from '../lib/statusNotify'
 import WorkspaceIsland from './dashboard/WorkspaceIsland'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
@@ -487,11 +490,24 @@ function AnalyzingBanner({ result }) {
 
 export default function DashboardPage(props) {
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
-  const [activeView, setActiveView] = useState(
-    () => sessionStorage.getItem('prism_active_view') ||
-          (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
-  )
+  const [activeView, setActiveView] = useState(() => {
+    // A live/share token (deep-link) wins over the persisted view.
+    if (props.liveToken) return 'live'
+    if (props.shareData || props.shareLoading) return 'shared'
+    return sessionStorage.getItem('prism_active_view') ||
+      (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
+  })
   const [showGateDialog, setShowGateDialog] = useState(false)
+  // Live sub-view status, lifted from LiveMeetingView so the status island can
+  // reflect live progress (joining|recording|processing|done|error).
+  const [liveStatus, setLiveStatus] = useState(null)
+  // Transient island notifications (fire-and-forget; preempt the base state ~2.5s).
+  const notification = useStatusNotification()
+  // Unauthenticated viewer (arrived via a live/share link): the dashboard chrome
+  // renders but every feature is locked behind the sign-in gate.
+  const signedOut = !props.user && !props.isDemoMode
+  const [showSignInGate, setShowSignInGate] = useState(false)
+  const requestSignIn = useCallback(() => setShowSignInGate(true), [])
 
   // --- Workspace state (activeWorkspaceId owned by App.jsx, synced via props) ---
   const [workspaces, setWorkspaces] = useState([])
@@ -512,11 +528,27 @@ export default function DashboardPage(props) {
   const [shareWorkspaceId, setShareWorkspaceId] = useState(null)
   const [shareErrorId, setShareErrorId] = useState(null)
 
-  // Persist active view so hard refresh restores the same view
+  // Persist active view so hard refresh restores the same view. Live/shared are
+  // token-driven (not persisted) so they never become the restored default.
   const persistView = (view) => {
     sessionStorage.setItem('prism_active_view', view)
     setActiveView(view)
   }
+
+  // Keep activeView in sync with the live/share hash router (App owns the tokens
+  // and updates them on deep-link, in-app nav, and browser back/forward). A token
+  // switches us into the sub-view; clearing it (e.g. back) restores the last
+  // persisted view.
+  useEffect(() => {
+    if (props.liveToken) { setActiveView('live'); return }
+    setLiveStatus(null) // left the live sub-view — reset so the island doesn't keep a stale live state
+    if (props.shareData || props.shareLoading) { setActiveView('shared'); return }
+    setActiveView((prev) =>
+      prev === 'live' || prev === 'shared'
+        ? (sessionStorage.getItem('prism_active_view') || 'home')
+        : prev,
+    )
+  }, [props.liveToken, props.shareData, props.shareLoading])
 
   const historyCount = props.history?.length || 0
   const isFirstRender = useRef(true)
@@ -903,13 +935,44 @@ export default function DashboardPage(props) {
   // Page title shown in the topbar island: the focused meeting's name, or the
   // current view's label.
   const pageTitle =
-    activeView === 'intelligence'
-      ? 'Trend'
-      : activeView === 'knowledge'
-        ? 'Knowledge'
-        : activeView === 'meeting' && (currentMeeting || props.result)
-          ? deriveDisplayTitle(currentMeeting || { result: props.result })
-          : 'Home'
+    activeView === 'live'
+      ? 'Live meeting'
+      : activeView === 'shared'
+        ? (props.shareData?.title || 'Shared meeting')
+        : activeView === 'intelligence'
+          ? 'Trend'
+          : activeView === 'knowledge'
+            ? 'Knowledge'
+            : activeView === 'meeting' && (currentMeeting || props.result)
+              ? deriveDisplayTitle(currentMeeting || { result: props.result })
+              : 'Home'
+
+  // Status island state — single source of truth, derived per active view:
+  //  - live: maps the lifted live status (recording/joining → live, processing →
+  //    analysing, done → analysed). A live error surfaces in-view, not the island.
+  //  - shared: a read-only shared meeting.
+  //  - meeting: a manual analysis (analysing while loading, analysed when result
+  //    lands, or the persistent error pill keyed off App's `error` state).
+  let islandStatus
+  if (activeView === 'live') {
+    if (liveStatus === 'processing') islandStatus = deriveStatus(null, true)
+    else if (liveStatus === 'done') islandStatus = deriveStatus('analysed', false)
+    else islandStatus = deriveStatus('live', false) // joining / recording / null
+  } else if (activeView === 'shared') {
+    islandStatus = deriveStatus('shared', false)
+  } else {
+    const islandMode = activeView === 'meeting' && props.result ? 'analysed' : null
+    const islandError = props.error
+      ? { detail: 'Analysis failed', onRetry: props.onRetryAnalysis, onDismiss: props.onDismissError }
+      : null
+    islandStatus = deriveStatus(islandMode, !!props.loading, {}, islandError)
+  }
+
+  // A live notification preempts the base state (except the persistent error pill,
+  // which must not be hidden by a transient toast).
+  if (notification && islandStatus.state !== 'error') {
+    islandStatus = { state: 'notify', detail: notification.message, kind: notification.kind }
+  }
 
   const showHomeNudge =
     props.user &&
@@ -922,6 +985,7 @@ export default function DashboardPage(props) {
     <div
       className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]"
     >
+      {!signedOut && (
       <WorkspaceIsland
         user={props.user}
         workspaces={workspaces}
@@ -950,11 +1014,15 @@ export default function DashboardPage(props) {
         closeWsSettings={closeWsSettings}
         onSaveWorkspacePersona={saveWorkspacePersona}
       />
+      )}
 
       <DashboardTopbar
         title={pageTitle}
+        status={islandStatus}
         searchValue={props.historySearch}
         onSearchChange={handleHistorySearchChange}
+        signedOut={signedOut}
+        onLockedFeature={requestSignIn}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
             <MeetingActionsBar
@@ -992,6 +1060,10 @@ export default function DashboardPage(props) {
         onDeleteMeeting={handleDeleteHistoryEntry}
         currentMeetingId={props.meetingId}
         botActive={props.botStatus && !['done', 'error'].includes(props.botStatus)}
+        hasLiveSession={!!props.liveToken}
+        liveStatus={liveStatus}
+        liveActive={activeView === 'live'}
+        onSelectLive={() => persistView('live')}
         setShowIntegrations={props.setShowIntegrations}
         signOut={props.signOut}
         newMeetingOpen={newMeetingOpen}
@@ -1000,6 +1072,8 @@ export default function DashboardPage(props) {
         newMeetingPanel={
           <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
         }
+        signedOut={signedOut}
+        onLockedFeature={requestSignIn}
       />
 
       <div className={`dashboard-content ${activeView === 'home' ? 'is-home' : ''}`}>
@@ -1096,6 +1170,40 @@ export default function DashboardPage(props) {
               />
             </Suspense>
           )}
+          {activeView === 'live' && props.liveToken && (
+            <LiveMeetingView token={props.liveToken} onStatusChange={setLiveStatus} />
+          )}
+          {activeView === 'shared' && (
+            props.shareLoading ? (
+              <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 py-16">
+                <div className="h-8 w-8 animate-pulse rounded-xl" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }} />
+                <p className="text-xs text-white/40">Loading shared meeting…</p>
+              </div>
+            ) : props.shareData ? (
+              <Suspense fallback={<SkeletonCard lines={4} tall />}>
+                <MeetingView
+                  result={props.shareData.result || {}}
+                  meeting={{ title: props.shareData.title, date: props.shareData.date }}
+                  readOnly
+                  transcript={props.shareData.transcript || ''}
+                />
+                <section className="mt-8 rounded-xl border border-white/[0.08] bg-white/[0.02] px-5 py-6 text-center">
+                  <p className="text-sm font-semibold text-white">Analyze your own meetings</p>
+                  <p className="mt-1 text-xs text-white/85">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
+                  <a
+                    href={`${window.location.origin}/`}
+                    className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-4 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
+                  >
+                    Try PrismAI free →
+                  </a>
+                </section>
+              </Suspense>
+            ) : (
+              <div className="mx-auto max-w-2xl py-16 text-center">
+                <p className="text-sm text-white/50">This shared meeting could not be found or has expired.</p>
+              </div>
+            )
+          )}
           </div>
         </main>
       </div>
@@ -1184,6 +1292,39 @@ export default function DashboardPage(props) {
               className="rounded-full border border-white/[0.12] bg-white/[0.06] px-4 py-1.5 text-sm font-semibold text-white/80 transition hover:border-white/[0.22] hover:bg-white/[0.10]"
             >
               Got it
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSignInGate} onOpenChange={setShowSignInGate}>
+        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-white">Sign in to access this</DialogTitle>
+            <DialogDescription className="mt-2 text-sm leading-5 text-white/58">
+              Create a free account to analyze your own meetings, save history, and use the full dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-3 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => { setShowSignInGate(false); props.onSignIn?.() }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#191c1e] transition hover:bg-white/90"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+              </svg>
+              Sign in with Google
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSignInGate(false)}
+              className="rounded-full px-4 py-1.5 text-sm font-medium text-white/55 transition hover:text-white/80"
+            >
+              Not now
             </button>
           </div>
         </DialogContent>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Copy, Pencil, Plus, Send } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
+import { notifyStatus } from '../../lib/statusNotify'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 export default function EmailCard({ email, gmailConnected = false, suggestedEmails = [], onSave }) {
@@ -73,6 +74,7 @@ export default function EmailCard({ email, gmailConnected = false, suggestedEmai
       })
       setSent(true)
       setShowSendForm(false)
+      notifyStatus({ kind: 'send', message: 'Email sent' })
       setTimeout(() => setSent(false), 4000)
     } catch (err) {
       setSendError(err?.message || 'Send failed — check Gmail connection.')
