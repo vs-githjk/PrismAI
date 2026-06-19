@@ -9,7 +9,7 @@ import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
-import { useCountUp } from '../../lib/healthScore'
+import { useCountUp, overallHealth } from '../../lib/healthScore'
 import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
@@ -132,6 +132,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   }
   const hasBreakdown = !!breakdown &&
     [breakdown.clarity, breakdown.action, breakdown.engagement].every(Number.isFinite)
+  // Overall = mean of axes (shared helper); used for the verdict color tint so it
+  // matches the triangle's Overall band instead of the LLM's standalone score.
+  const overallScore = overallHealth(healthScore)
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
@@ -238,11 +241,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             {healthScore?.verdict && (
               <figure
                 className="mt-3.5 border-l-2 pl-3.5"
-                style={{ borderColor: healthColor(healthScore.score) }}
+                style={{ borderColor: healthColor(overallScore) }}
               >
                 <figcaption
                   className="text-[9.5px] font-semibold uppercase tracking-[0.18em]"
-                  style={{ color: healthColor(healthScore.score) }}
+                  style={{ color: healthColor(overallScore) }}
                 >
                   Verdict
                 </figcaption>

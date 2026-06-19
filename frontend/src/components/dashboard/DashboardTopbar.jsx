@@ -8,7 +8,8 @@ import StatusIsland from './StatusIsland'
  * (Home / Trend / Knowledge). When the title overflows its track it
  * slowly cycles horizontally; short titles stay static, and
  * prefers-reduced-motion falls back to a plain ellipsis.
- * Navigation back to Home is via the Home item in the sidebar.
+ * Navigation back to Home is via the Home item in the sidebar (the topbar back
+ * arrow was intentionally dropped).
  */
 export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature }) {
   const trackRef = useRef(null)

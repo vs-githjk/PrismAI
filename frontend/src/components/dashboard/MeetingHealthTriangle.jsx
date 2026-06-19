@@ -1,4 +1,4 @@
-import { useCountUp } from '../../lib/healthScore'
+import { useCountUp, overallHealth } from '../../lib/healthScore'
 
 // Balance triangle (3-axis radar) for the meeting health sub-scores.
 // Clarity / Action / Engagement each score 0-100 and contribute one third of
@@ -42,7 +42,15 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
   const engagement = useCountUp(scores.engagement, 1000)
   const animated = { clarity, action, engagement }
 
-  const overall = Math.round((scores.clarity + scores.action + scores.engagement) / 3)
+  // Mean of the 3 axes via the shared helper so this never drifts from the
+  // home card. (The helper keys on action_orientation; map our local `action`.)
+  const overall = overallHealth({
+    breakdown: {
+      clarity: scores.clarity,
+      action_orientation: scores.action,
+      engagement: scores.engagement,
+    },
+  })
   const displayedOverall = useCountUp(overall, 1000)
   const overallColor = triColor(displayedOverall)
 

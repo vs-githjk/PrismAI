@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { overallHealth } from '../lib/healthScore'
 
 function useCountUp(target, duration = 1000) {
   const [display, setDisplay] = useState(0)
@@ -79,7 +80,9 @@ function BreakdownBar({ label, value, color }) {
 export default function HealthScoreCard({ healthScore }) {
   if (!healthScore || healthScore.score === undefined || healthScore.score === null) return null
 
-  const { score, verdict, badges = [], breakdown = {} } = healthScore
+  const { verdict, badges = [], breakdown = {} } = healthScore
+  // Overall = mean of the 3 axes (shared helper) so this matches the dashboard.
+  const score = overallHealth(healthScore)
   const color = SCORE_COLOR(score)
 
   return (
