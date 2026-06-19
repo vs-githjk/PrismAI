@@ -1121,7 +1121,12 @@ export default function DashboardPage(props) {
           )}
           {activeView === 'standin' && (
             <Suspense fallback={<SkeletonCard lines={4} tall />}>
-              <ProxyProfile />
+              <ProxyProfile
+                user={props.user}
+                workspaceId={activeWorkspaceId}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                onOpenMeeting={handleOpenMeetingById}
+              />
             </Suspense>
           )}
           </div>

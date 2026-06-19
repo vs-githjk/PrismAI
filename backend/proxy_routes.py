@@ -183,6 +183,123 @@ def _items_block(items: dict) -> str:
     return "\n\n".join(parts) if parts else "(no recent action items found under your name)"
 
 
+def _decision_text(d) -> str:
+    """A decision may be a bare string or a dict under various keys."""
+    if isinstance(d, str):
+        return d.strip()
+    if isinstance(d, dict):
+        for k in ("decision", "text", "title", "summary"):
+            v = (d.get(k) or "").strip()
+            if v:
+                return v
+    return ""
+
+
+def _decision_person(d) -> str:
+    if isinstance(d, dict):
+        for k in ("owner", "decided_by", "by", "person", "author", "made_by"):
+            v = (d.get(k) or "").strip()
+            if v:
+                return v
+    return ""
+
+
+def _gather_my_digest(user_id: str, names: list[str], workspace_id: str | None = None) -> dict:
+    """The Stand-in dashboard feed: the caller's OPEN action items + the decisions that
+    are theirs, scoped to the active workspace (or personal when none), last 30 days. Each
+    item carries meeting_id for click-through. A decision is 'mine' if its person field
+    matches me OR it links (via decision_links) to one of my action items — so decisions
+    with no explicit owner still attach to me through my work."""
+    out = {"action_items": [], "decisions": []}
+    if not supabase:
+        return out
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    try:
+        q = supabase.table("meetings").select("id,title,date,result,user_id").gte("date", since)
+        if workspace_id:
+            q = q.eq("workspace_id", workspace_id)
+        else:
+            q = q.eq("user_id", user_id).is_("workspace_id", "null")
+        res = q.order("date", desc=True).limit(80).execute()
+    except Exception:
+        return out
+
+    # Dedup workspace fan-out copies by minute, preferring the caller's own row.
+    seen: dict = {}
+    for row in (res.data or []):
+        key = (row.get("date") or "")[:16]
+        if key not in seen or row.get("user_id") == user_id:
+            seen[key] = row
+
+    for meeting in seen.values():
+        result = meeting.get("result") or {}
+        mid = meeting.get("id")
+        title = meeting.get("title") or "a meeting"
+        actions = result.get("action_items") or []
+        decisions = result.get("decisions") or []
+        links = result.get("decision_links") or []
+        dec_by_action = {a: l.get("decision") for l in links for a in (l.get("actions") or [])}
+        actions_by_dec = {l.get("decision"): (l.get("actions") or []) for l in links}
+
+        my_action_idx = set()
+        for i, item in enumerate(actions):
+            task = (item.get("task") or "").strip()
+            if not task or item.get("completed") or not _user_owns_item(item.get("owner", ""), names):
+                continue
+            my_action_idx.add(i)
+            from_dec = None
+            di = dec_by_action.get(i)
+            if di is not None and 0 <= di < len(decisions):
+                from_dec = _decision_text(decisions[di])
+            out["action_items"].append({
+                "task": task,
+                "owner": (item.get("owner") or "").strip(),
+                "due_date": item.get("due_date") or item.get("due") or "",
+                "meeting_id": mid,
+                "meeting": title,
+                "from_decision": from_dec,
+            })
+
+        for di, d in enumerate(decisions):
+            text = _decision_text(d)
+            if not text:
+                continue
+            person = _decision_person(d)
+            mine = _user_owns_item(person, names) if person else False
+            if not mine and any(a in my_action_idx for a in actions_by_dec.get(di, [])):
+                mine = True
+            if not mine:
+                continue
+            out["decisions"].append({
+                "decision": text,
+                "rationale": (d.get("rationale") if isinstance(d, dict) else "") or "",
+                "importance": (d.get("importance") if isinstance(d, dict) else 3) or 3,
+                "person": person,
+                "meeting_id": mid,
+                "meeting": title,
+                "has_action": bool(actions_by_dec.get(di)),
+            })
+
+    # Action items: overdue / soonest-first; undated last. due_date is ISO (YYYY-MM-DD),
+    # so a lexical sort is chronological — past dates (overdue) bubble to the top.
+    out["action_items"].sort(key=lambda a: (0, a["due_date"]) if a.get("due_date") else (1, ""))
+    out["decisions"].sort(key=lambda x: x.get("importance", 3))
+    return out
+
+
+def _decisions_block(decisions: list[dict]) -> str:
+    """Compact block of the caller's decisions for the stand-in draft context. Importance-
+    sorted upstream; cap so the prompt stays tight."""
+    if not decisions:
+        return ""
+    lines = []
+    for d in decisions[:8]:
+        text = (d.get("decision") or "").strip()
+        if text:
+            lines.append(f"- {text}")
+    return "Key decisions you made or own:\n" + "\n".join(lines) if lines else ""
+
+
 def _workspace_member_names(workspace_id: str | None, exclude_user_id: str) -> list[str]:
     """Other members of the workspace (friendly names from their emails) so the draft
     can address them naturally instead of a generic 'Hey team'. Same lookup we already
@@ -207,7 +324,8 @@ def _workspace_member_names(workspace_id: str | None, exclude_user_id: str) -> l
 
 
 def _draft_system(profile_ctx: str, items_block: str, meeting_label: str,
-                  current_draft: str = "", member_names: list[str] | None = None) -> str:
+                  current_draft: str = "", member_names: list[str] | None = None,
+                  decisions_block: str = "") -> str:
     base = (
         "You help a user prepare a stand-in message that Prism will deliver on their behalf "
         f"in a meeting they can't attend ({meeting_label or 'an upcoming meeting'}). The "
@@ -236,6 +354,8 @@ def _draft_system(profile_ctx: str, items_block: str, meeting_label: str,
     if profile_ctx:
         ctx += f"\n\nWho they are:\n{profile_ctx}"
     ctx += f"\n\n{items_block}"
+    if decisions_block:
+        ctx += f"\n\n{decisions_block}\n(Reference these decisions if relevant — they show what the user owns/drove.)"
     if member_names:
         ctx += f"\n\nOthers in this meeting: {', '.join(member_names)}. Address them naturally."
     if current_draft.strip():
@@ -359,8 +479,12 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
     names = _author_names(user_id, body.author_name, body.author_email)
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names, body.workspace_id)
+    decisions = _gather_my_digest(user_id, names, body.workspace_id)["decisions"]
     members = _workspace_member_names(body.workspace_id, user_id)
-    system = _draft_system(_profile_context(profile), _items_block(items), body.meeting_label, member_names=members)
+    system = _draft_system(
+        _profile_context(profile), _items_block(items), body.meeting_label,
+        member_names=members, decisions_block=_decisions_block(decisions),
+    )
     raw = await _llm_reply(system, [], "Prepare my stand-in update for this meeting.")
     reply, draft = _split_reply_draft(raw)
     messages = [{"role": "assistant", "content": reply}]
@@ -395,11 +519,12 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
     names = _author_names(user_id, row.get("author_name", ""), row.get("author_email", ""))
     profile = _load_profile(user_id)
     items = _gather_my_items(user_id, names, row.get("workspace_id"))
+    decisions = _gather_my_digest(user_id, names, row.get("workspace_id"))["decisions"]
     members = _workspace_member_names(row.get("workspace_id"), user_id)
     old_draft = row.get("draft_body") or ""
     system = _draft_system(
         _profile_context(profile), _items_block(items), row.get("meeting_label", ""),
-        current_draft=old_draft, member_names=members,
+        current_draft=old_draft, member_names=members, decisions_block=_decisions_block(decisions),
     )
     # Use the persisted conversation as history (source of truth), not client-sent.
     history = row.get("messages") or body.history or []
@@ -479,18 +604,70 @@ async def cancel(rep_id: str, user_id: str = Depends(require_user_id)):
 
 
 @router.get("/proxy/representations")
-async def list_representations(user_id: str = Depends(require_user_id)):
+async def list_representations(
+    workspace_id: str | None = None,
+    user_id: str = Depends(require_user_id),
+):
+    """The caller's stand-ins. Scoped to the active workspace (personal when none) so
+    each workspace shows its own history, matching the rest of the Stand-in page."""
     _require_storage()
-    res = (
+    q = (
         supabase.table("proxy_representations")
         .select("*")
         .eq("author_user_id", user_id)
         .neq("status", "canceled")
-        .order("created_at", desc=True)
-        .limit(50)
-        .execute()
     )
+    if workspace_id:
+        q = q.eq("workspace_id", workspace_id)
+    else:
+        q = q.is_("workspace_id", "null")
+    res = q.order("created_at", desc=True).limit(50).execute()
     return {"representations": res.data or []}
+
+
+@router.get("/proxy/digest")
+async def proxy_digest(
+    workspace_id: str | None = None,
+    author_name: str = "",
+    author_email: str = "",
+    user_id: str = Depends(require_user_id),
+):
+    """The Stand-in dashboard feed: the caller's open action items + their decisions for
+    the active workspace (personal when none). Each carries meeting_id for click-through."""
+    _require_storage()
+    _gate_workspace(user_id, workspace_id)
+    names = _author_names(user_id, author_name, author_email)
+    return _gather_my_digest(user_id, names, workspace_id)
+
+
+class PreviewRequest(BaseModel):
+    workspace_id: str | None = None
+    author_name: str = ""
+    author_email: str = ""
+
+
+@router.post("/proxy/preview")
+async def preview_standin(body: PreviewRequest, user_id: str = Depends(require_user_id)):
+    """Generate how Prism would represent the caller RIGHT NOW (no real meeting) from their
+    open action items + standing profile — so they can see their stand-in voice anytime."""
+    _require_storage()
+    _gate_workspace(user_id, body.workspace_id)
+    names = _author_names(user_id, body.author_name, body.author_email)
+    profile = _load_profile(user_id)
+    items = _gather_my_items(user_id, names, body.workspace_id)
+    decisions = _gather_my_digest(user_id, names, body.workspace_id)["decisions"]
+    members = _workspace_member_names(body.workspace_id, user_id)
+    system = _draft_system(
+        _profile_context(profile), _items_block(items), "an upcoming meeting",
+        member_names=members, decisions_block=_decisions_block(decisions),
+    )
+    raw = await _llm_reply(
+        system, [],
+        "Show me how you would represent me if I missed a meeting right now. "
+        "Reply with ONLY the stand-in update I'd want delivered — no preamble.",
+    )
+    reply, draft = _split_reply_draft(raw)
+    return {"preview": (draft or reply or "").strip()}
 
 
 @router.get("/proxy/profile")
