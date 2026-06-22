@@ -892,11 +892,17 @@ async def _send_bot_intro(bot_id: str):
         pass
 
 
-async def _fetch_transcript(bot_id: str):
+async def _fetch_transcript(bot_id: str, attempts: int = 12):
     """Fetch transcript — tries media_shortcuts download URL first (async providers),
-    then falls back to /bot/{id}/transcript/ (streaming providers like recallai_streaming)."""
-    for attempt in range(12):
-        print(f"[recall] fetch transcript attempt {attempt + 1}/12 for bot {bot_id}")
+    then falls back to /bot/{id}/transcript/ (streaming providers like recallai_streaming).
+
+    `attempts` is the patience budget. The full 12 (~10 min of backoff) is for audio-only
+    meetings where Recall's transcript trickles in after the call ends. When we already
+    hold a usable live transcript (the bot spoke / chat was captured), the caller passes a
+    small number — Recall is then only needed for the recording segments, not the analysis,
+    so there's no reason to block for minutes."""
+    for attempt in range(attempts):
+        print(f"[recall] fetch transcript attempt {attempt + 1}/{attempts} for bot {bot_id}")
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RECALL_API_BASE}/bot/{bot_id}/",
@@ -1112,7 +1118,13 @@ async def _process_bot_transcript(bot_id: str):
     bot_store.setdefault(bot_id, {"status": "processing", "result": None, "error": None, "commands": []})
     try:
         print(f"[recall] starting transcript processing for bot {bot_id}")
-        resp = await _fetch_transcript(bot_id)
+        # If we already hold a usable live transcript, we'll analyse from it regardless of
+        # Recall (the bot's chat replies + typed chat aren't in Recall's audio transcript),
+        # so only give Recall a brief window to provide recording segments — don't block
+        # the ~10-min audio-retry budget. Saves up to ~10 min before a meeting lands on the
+        # dashboard whenever the bot was active.
+        _live_lines = [ln for ln in (bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []) if ln.strip()]
+        resp = await _fetch_transcript(bot_id, attempts=2 if len(_live_lines) >= 2 else 12)
 
         transcript = ""
         segments: list[dict] | None = None
