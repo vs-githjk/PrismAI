@@ -553,6 +553,35 @@ async def _poll_standin_lifecycle(bot_id: str, join_at: str | None = None) -> No
         _standin_pollers.discard(bot_id)
 
 
+def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
+    """The real email of the bot's owner, so the live bot can email/relay TO them instead
+    of inventing a placeholder. For a stand-in it's the representation's author_email; for
+    any workspace bot, the owner's workspace_members email. Best-effort, returns '' if
+    unknown (the bot then asks for the address rather than guessing)."""
+    if not supabase:
+        return ""
+    try:
+        rep = (
+            supabase.table("proxy_representations").select("author_email")
+            .eq("scheduled_bot_id", bot_id).neq("status", "canceled").limit(1).execute()
+        )
+        if rep.data and (rep.data[0].get("author_email") or "").strip():
+            return rep.data[0]["author_email"].strip()
+    except Exception:
+        pass
+    if user_id:
+        try:
+            wm = (
+                supabase.table("workspace_members").select("user_email")
+                .eq("user_id", user_id).limit(1).execute()
+            )
+            if wm.data and (wm.data[0].get("user_email") or "").strip():
+                return wm.data[0]["user_email"].strip()
+        except Exception:
+            pass
+    return ""
+
+
 async def recover_active_bots() -> None:
     """Startup recovery: re-spawn lifecycle pollers for any bots left in a live state.
 

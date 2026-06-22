@@ -419,11 +419,32 @@ _STATIC_TOOL_POLICY = (
 )
 
 
+def _owner_email_for_bot(bot_id: str) -> str:
+    """The owner's real email, memoized on bot_store. Resolved lazily (stand-in rep →
+    workspace member) on first miss so 'email this to the owner' uses a real address
+    rather than a guessed one. Caches even an empty result to avoid re-querying."""
+    entry = bot_store.get(bot_id) or {}
+    cached = entry.get("owner_email")
+    if cached is not None:
+        return cached or ""
+    email = ""
+    try:
+        from recall_routes import resolve_owner_email
+        email = resolve_owner_email(bot_id, entry.get("user_id")) or ""
+    except Exception as exc:
+        print(f"[realtime] owner email resolve failed: {exc}")
+    if bot_id in bot_store:
+        bot_store[bot_id]["owner_email"] = email
+    return email
+
+
 def _build_static_prefix(
     has_gmail: bool,
     has_calendar: bool,
     persona_text: str = "",
     bot_name: str = "",
+    owner_name: str = "",
+    owner_email: str = "",
 ) -> str:
     """Static system prompt — byte-identical across commands within a meeting
     when the user's tool grants don't change. This is the cache-eligible
@@ -474,7 +495,24 @@ def _build_static_prefix(
             f"addresses you, refers to you, or asks who you are, respond as "
             f"{bot_name}. Do not call yourself Prism in this meeting."
         )
-    return base + name_line + persona_suffix_agentic(persona_text)
+    # Owner identity: meeting-stable (rides the cache like bot_name). Gives the bot the
+    # real address to use when asked to email/relay TO the owner, so it never invents one
+    # (which silently bounces). Only meaningful for stand-ins, where the owner is absent.
+    owner_line = ""
+    if owner_name:
+        owner_line = f"\n\nYou are attending this meeting on behalf of {owner_name}, who could not attend."
+        if owner_email:
+            owner_line += (
+                f" If anyone asks you to email, send, or relay something TO {owner_name} "
+                f"(or 'the owner' / 'them'), the recipient address is {owner_email}. "
+                f"Use exactly that address — never invent or guess one."
+            )
+        else:
+            owner_line += (
+                f" You do NOT have {owner_name}'s email address — if asked to email them, "
+                f"say so and ask for it. Never invent an address."
+            )
+    return base + name_line + owner_line + persona_suffix_agentic(persona_text)
 
 
 def _recent_turn_messages(recent_turns: list | None) -> list[dict]:
@@ -507,6 +545,8 @@ def _build_command_messages(
     is_owner: bool = True,
     persona_text: str = "",
     bot_name: str = "",
+    owner_name: str = "",
+    owner_email: str = "",
     recent_turns: list | None = None,
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
@@ -529,7 +569,7 @@ def _build_command_messages(
     history = _recent_turn_messages(recent_turns)
     if prompt_cache_on:
         return [
-            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)},
+            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name, owner_name, owner_email)},
             {
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
@@ -542,7 +582,7 @@ def _build_command_messages(
         {
             "role": "system",
             "content": (
-                _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)
+                _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name, owner_name, owner_email)
                 + "\n"
                 + f"Current date and time: {now_str}.\n\n"
                 + memory_context
@@ -1857,6 +1897,29 @@ def _append_realtime_line(bot_id: str, line: str) -> None:
         del rt[: len(rt) - _RT_TRANSCRIPT_CAP]
 
 
+async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
+    """Record a human's in-meeting CHAT message into the transcript (buffer + durable),
+    mirroring _record_bot_line for the bot's side. Recall only transcribes spoken AUDIO,
+    so without this a chat-driven meeting (or any typed aside) would analyse to a one-
+    sided monologue of just the bot's replies. Skips the bot's own chat (already recorded
+    via _record_bot_line) so it isn't double-counted."""
+    text = (text or "").strip()
+    if not text or _looks_like_bot_participant(sender, {}):
+        return
+    st = _get_bot_state(bot_id)
+    line = f"{sender or 'Someone'}: {text}"
+    try:
+        async with perception_state.get_memory_lock(st):
+            buf = st.setdefault("transcript_buffer", [])
+            buf.append(line)
+            if len(buf) > meeting_memory.MAX_BUFFER_LINES:
+                st["transcript_buffer"] = buf[-meeting_memory.TRIM_TO:]
+            _append_realtime_line(bot_id, line)
+            _maybe_persist_transcript(bot_id, st)
+    except Exception as exc:
+        print(f"[realtime] chat-line record failed: {exc}")
+
+
 def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> None:
     """Best-effort durable persistence of the accumulated realtime transcript.
     Throttled to one write per _TRANSCRIPT_PERSIST_EVERY new lines so we don't
@@ -2325,6 +2388,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         else:
             is_owner = perception_state.is_owner_speaker(speaker, _owner_full)
 
+        # Owner's real email so "email/relay this to {owner}" resolves correctly instead of
+        # the bot inventing a placeholder. Cached on bot_store; lazily resolved (stand-in
+        # rep → workspace member) and memoized on first miss.
+        _owner_email = _owner_email_for_bot(bot_id)
+
         messages = _build_command_messages(
             has_gmail=has_gmail,
             has_calendar=has_calendar,
@@ -2337,6 +2405,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             is_owner=is_owner,
             persona_text=persona_text,
             bot_name=bot_name,
+            owner_name=_owner_full,
+            owner_email=_owner_email,
             recent_turns=state.get("recent_turns", []),
         )
 
@@ -3234,6 +3304,9 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
 
         if message_text.strip():
+            # Record the human's chat line into the transcript so chat-driven meetings
+            # analyse to a real two-sided dialogue (Recall transcribes audio only).
+            asyncio.create_task(_record_human_chat_line(bot_id, sender, message_text))
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
             # Bare wake-word with no command ("prism" / "Hi prism") — don't ignore

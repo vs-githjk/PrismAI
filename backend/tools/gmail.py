@@ -23,6 +23,22 @@ async def gmail_send(args: dict, user_settings: dict | None = None) -> dict:
     to = args.get("to", [])
     if isinstance(to, str):
         to = [to]
+    to = [t.strip() for t in to if t and t.strip()]
+
+    # Reject placeholder / obviously-invented recipients. The live bot, asked to "email
+    # Vidyut" without knowing his address, will guess something like vidyut@example.com
+    # — which silently bounces. Refuse so the bot asks for a real address instead.
+    _PLACEHOLDER_DOMAINS = {"example.com", "example.org", "example.net", "email.com",
+                            "test.com", "domain.com", "company.com", "yourcompany.com"}
+    if not to:
+        return {"error": "No recipient address provided. Ask the user for the recipient's "
+                         "email before sending."}
+    bad = [t for t in to if "@" not in t or t.split("@")[-1].lower() in _PLACEHOLDER_DOMAINS]
+    if bad:
+        return {"error": f"Recipient address looks like a placeholder/guess ({', '.join(bad)}). "
+                         "Do NOT invent an address — ask the user for the real email and confirm "
+                         "it before sending."}
+
     subject = args.get("subject", "")
     body = args.get("body", "")
 
