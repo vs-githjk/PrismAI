@@ -812,9 +812,15 @@ async def _dispatch_slow_path_command(
     if ambient_loop.autonomous_enabled() and ambient_loop.detect_mute_command(u.text):
         return  # mute/unmute is handled by the ambient interjection layer, not as a command
     command = _detect_command(u.text, bot_id)
-    if not command and _solo_mode_active(state) and _solo_freeflow_eligible(u):
+    if (
+        not command
+        and _solo_mode_active(state)
+        and not _looks_like_bot_participant(u.speaker_name, {})
+        and _solo_freeflow_eligible(u)
+    ):
         # Solo free-flow: only one human in the room, so treat every substantive
         # utterance as if it were addressed to the bot — no wake word required.
+        # Never treat the bot's own transcribed TTS as a command (feedback loop).
         command = u.text.strip()
         print(f"[realtime] solo free-flow command={command!r} from={u.speaker_name!r}")
     if not command:
@@ -2112,7 +2118,15 @@ async def _run_proactive_checker(bot_id: str):
 
 
 # Stand-in spoken-on-request (Feature A): attendees can ask the bot to read aloud the
-# updates left by people who couldn't attend.
+# updates left by people who couldn't attend. Two triggers:
+#   _STANDIN_QUERY_RE   — explicit "any updates from people who couldn't make it" → read
+#                         all updates (or say none). Always authoritative.
+#   _STANDIN_PERSON_RE  — a question SHAPED like it's about an absent person ("why isn't
+#                         X here", "does X have any updates", "is X coming"). Permissive
+#                         on purpose — it only fires when the question also NAMES someone
+#                         who actually left a stand-in update (see _updates_for_named).
+#                         So "where is the budget doc" matches the shape but, naming no
+#                         absent teammate, falls through to the normal command flow.
 _STANDIN_QUERY_RE = re.compile(
     r"(stand[- ]?in|couldn'?t\s+(make|attend|join|be here)|can'?t\s+make\s+it|"
     r"who(\s+is|'?s)\s+(out|away|absent|missing)|async\s+update|"
@@ -2120,6 +2134,32 @@ _STANDIN_QUERY_RE = re.compile(
     r"updates?\s+from\s+(anyone|people|those|the team))",
     re.IGNORECASE,
 )
+
+_STANDIN_PERSON_RE = re.compile(
+    r"\b(why|where)\b.*\b(here|come|coming|join|joining|attend|attending|make|made|"
+    r"around|in)\b"
+    r"|\b(updates?|news|word|info|information|anything|something)\b.*\bfrom\b"
+    r"|\b(have|has|having|got|get)\b.*\b(updates?|info|information|anything|something|"
+    r"to\s+(say|share|tell|add|report))\b"
+    r"|\bis\b\s+\w+\s+\b(here|coming|joining|attending|absent|missing|out|around)\b"
+    r"|\bhear(d)?\s+from\b",
+    re.IGNORECASE,
+)
+
+
+def _updates_for_named(command: str, updates: list[dict]) -> list[dict]:
+    """Updates whose author's name (full or first name, >=3 chars) appears in the command.
+    Lets 'why isn't vidyut here' surface Vidyut's stand-in specifically."""
+    c = (command or "").lower()
+    out = []
+    for u in updates:
+        name = (u.get("name") or "").strip().lower()
+        if not name:
+            continue
+        tokens = {name, *name.split()}
+        if any(len(t) >= 3 and re.search(rf"\b{re.escape(t)}\b", c) for t in tokens):
+            out.append(u)
+    return out
 
 
 def _standin_spoken_summary(updates: list[dict]) -> str:
@@ -2179,7 +2219,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
     # never falls through to the command path. Reads from the durable DB (not just the
     # in-memory bot_store, which a restart / second worker wipes); if nobody left an
     # update, it says so plainly rather than inventing people.
-    if not ambient and _STANDIN_QUERY_RE.search(command):
+    explicit = not ambient and bool(_STANDIN_QUERY_RE.search(command))
+    person_shaped = not ambient and bool(_STANDIN_PERSON_RE.search(command))
+    if explicit or person_shaped:
         updates = (bot_store.get(bot_id) or {}).get("standin_updates")
         if not updates:
             try:
@@ -2188,16 +2230,26 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             except Exception as exc:
                 print(f"[standin] db read failed: {exc}")
                 updates = []
-        summary = (
-            _standin_spoken_summary(updates) if updates
-            else "No one left a stand-in update for this meeting."
-        )
-        print(f"[standin] spoken-on-request: {len(updates)} update(s)")
-        if _barge_in_on():
-            await _wait_for_speech_gap(state)
-        await _send_voice_response(bot_id, _spoken_version(summary))
-        await _send_chat_response(bot_id, summary)
-        return
+        chosen = updates
+        # A person-shaped question that ISN'T the explicit query only counts as a stand-in
+        # ask if it actually names someone who left an update — otherwise it's an unrelated
+        # "where is X" and we must let the normal LLM flow answer it.
+        if person_shaped and not explicit:
+            chosen = _updates_for_named(command, updates)
+            if not chosen:
+                person_shaped = False
+        if explicit or person_shaped:
+            summary = (
+                _standin_spoken_summary(chosen) if chosen
+                else "No one left a stand-in update for this meeting."
+            )
+            print(f"[standin] spoken-on-request: {len(chosen)} update(s) "
+                  f"(explicit={explicit}, named={person_shaped and not explicit})")
+            if _barge_in_on():
+                await _wait_for_speech_gap(state)
+            await _send_voice_response(bot_id, _spoken_version(summary))
+            await _send_chat_response(bot_id, summary)
+            return
     state["processing"] = True
 
     # Phase B: install a fresh speaking session for this command. supersede_session
@@ -3095,10 +3147,15 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # to complete-looking text so we don't fire on a mid-sentence Deepgram
             # fragment (the accumulator path gets full utterances; the legacy path only
             # sees finals). Skipped while a wake-word command window is already open.
+            # CRITICAL: skip the bot's OWN transcribed speech — its TTS audio comes back
+            # through Recall as a transcript line (speaker=PrismAI/persona), and without
+            # the wake-word gate that other paths have, solo free-flow would treat it as a
+            # new command → the bot replies to itself in an endless loop.
             if (
                 not command
                 and not within_window
                 and _solo_mode_active(state)
+                and not _looks_like_bot_participant(speaker, {})
                 and _looks_command_complete(text)
                 and _solo_freeflow_text_eligible(text)
             ):

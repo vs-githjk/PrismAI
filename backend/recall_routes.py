@@ -60,6 +60,11 @@ _standin_intro_sent: set[str] = set()
 # _poll_standin_lifecycle). Prevents spawning two pollers for the same bot.
 _standin_pollers: set[str] = set()
 
+# Stand-in bots whose analysed meeting we've already promoted into the `meetings`
+# table (see _persist_standin_meeting). The real idempotency is the existing-row
+# check; this just avoids re-querying on repeat calls.
+_standin_persisted: set[str] = set()
+
 
 def _db_save(bot_id: str, fields: dict):
     """Persist bot state to Supabase (best-effort, non-blocking)."""
@@ -163,15 +168,20 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
             client.table("meeting_bots")
             .select("bot_id, owner_user_id")
             .eq("meeting_url", normalized_url)
-            .in_("status", ["joining", "recording", "processing"])
+            # Include 'scheduled' so a teammate's not-yet-joined stand-in bot is caught
+            # here too — otherwise an auto-join racing the stand-in's join double-books.
+            .in_("status", ["scheduled", "joining", "recording", "processing"])
             .execute()
         )
         if not active.data:
+            print(f"[recall] dedup: no active meeting_bots for url={normalized_url[:60]}")
             return None
 
         from caches import get_user_workspace_ids
         my_ws_ids = get_user_workspace_ids(client, requesting_user_id)
         if not my_ws_ids:
+            print(f"[recall] dedup: {requesting_user_id} has no workspaces — can't match "
+                  f"{len(active.data)} active bot(s) for this url")
             return None
 
         for bot in active.data:
@@ -187,6 +197,9 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
             )
             if shared.data:
                 return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
+        owners = [b.get("owner_user_id") for b in active.data]
+        print(f"[recall] dedup: {len(active.data)} active bot(s) for this url but none "
+              f"share a workspace with {requesting_user_id} (owners={owners})")
         return None
     except Exception as exc:
         print(f"[recall] dedup lookup skipped (workspace tables likely missing): {exc}")
@@ -506,6 +519,10 @@ async def _poll_standin_lifecycle(bot_id: str, join_at: str | None = None) -> No
 
                 if code == "in_call_recording" and bot_id not in _standin_delivered:
                     _standin_delivered.add(bot_id)
+                    # Keep meeting_bots accurate so the live workspace-dedup can see this
+                    # bot is in the room (a stale 'scheduled' row makes a teammate's join
+                    # double-book instead of attaching).
+                    _mb_update_status(bot_id, "recording")
                     if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
                         _standin_intro_sent.add(bot_id)
                         asyncio.create_task(_send_bot_intro(bot_id))
@@ -534,6 +551,38 @@ async def _poll_standin_lifecycle(bot_id: str, join_at: str | None = None) -> No
         print(f"[standin] poll hit safety cap bot={bot_id[:8]}")
     finally:
         _standin_pollers.discard(bot_id)
+
+
+async def recover_active_bots() -> None:
+    """Startup recovery: re-spawn lifecycle pollers for any bots left in a live state.
+
+    The lifecycle poller is in-memory and dies with the process — so a server restart
+    (local dev, or a Render cold start) mid-meeting leaves a scheduled stand-in with
+    nothing driving its join/delivery/analysis. Worse, even a finished bot would never
+    get analysed or promoted to the dashboard. On boot we scan meeting_bots for any bot
+    still in a non-terminal state and re-attach a poller; the poller's first Recall
+    status read then drives it the rest of the way (deliver if recording, analyse +
+    auto-promote if already ended). Idempotent via the _standin_pollers / _processing_bots
+    guards, so it's safe alongside the Recall webhook in production."""
+    if not supabase or not RECALL_API_KEY:
+        return
+    try:
+        rows = (
+            supabase.table("meeting_bots").select("bot_id")
+            .in_("status", ["scheduled", "joining", "recording", "processing"])
+            .execute().data or []
+        )
+    except Exception as exc:
+        print(f"[standin] startup recovery query skipped: {exc}")
+        return
+    spawned = 0
+    for row in rows:
+        bid = row.get("bot_id")
+        if bid and bid not in _standin_pollers:
+            asyncio.create_task(_poll_standin_lifecycle(bid))
+            spawned += 1
+    if spawned:
+        print(f"[standin] startup recovery re-spawned {spawned} lifecycle poller(s)")
 
 
 def standin_updates_for_bot(bot_id: str) -> list[dict]:
@@ -948,6 +997,69 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
     return segments or None
 
 
+async def _persist_standin_meeting(bot_id: str) -> None:
+    """Promote a headless stand-in bot's analysis into the `meetings` table.
+
+    A scheduled stand-in is headless by design — no browser is polling /bot-status, so
+    the frontend's POST /meetings (which is what normally puts a bot result on the
+    dashboard) never fires, and the analysed meeting would otherwise live only in
+    bot_sessions, invisible to the user. This mirrors that save server-side: it runs
+    only for bots that a (non-canceled) proxy_representation points at, pulls the
+    owner + workspace from that rep, and reuses save_meeting (so workspace fan-out +
+    transcript indexing happen too). Idempotent: in-memory guard + an existing-row
+    check on meetings.recall_bot_id, so it never double-writes alongside a browser save."""
+    if not supabase or bot_id in _standin_persisted:
+        return
+    try:
+        rep = (
+            supabase.table("proxy_representations")
+            .select("author_user_id, workspace_id")
+            .eq("scheduled_bot_id", bot_id).neq("status", "canceled")
+            .limit(1).execute()
+        )
+        if not rep.data:
+            return  # not a stand-in bot — its owner's browser saves it normally
+        owner_user_id = rep.data[0].get("author_user_id")
+        workspace_id = rep.data[0].get("workspace_id")
+        if not owner_user_id:
+            return
+        existing = (
+            supabase.table("meetings").select("id")
+            .eq("recall_bot_id", bot_id).limit(1).execute()
+        )
+        if existing.data:
+            _standin_persisted.add(bot_id)
+            return  # already on a dashboard (browser saved it first)
+        bs = (
+            supabase.table("bot_sessions").select("result, transcript")
+            .eq("bot_id", bot_id).maybe_single().execute()
+        )
+        data = bs.data if bs else None
+        if not data or not data.get("result"):
+            return
+        result = data["result"]
+        transcript = data.get("transcript") or ""
+        summary = (result.get("summary") or "") if isinstance(result, dict) else ""
+        health = (result.get("health_score") or {}) if isinstance(result, dict) else {}
+        from storage_routes import save_meeting, MeetingEntry
+        entry = MeetingEntry(
+            id=(int(time.time() * 1000) * 1000) + secrets.randbelow(1000),
+            date=datetime.now(timezone.utc).isoformat(),
+            title=(result.get("title") if isinstance(result, dict) else None) or summary[:65] or "Stand-in meeting",
+            score=health.get("score"),
+            transcript=transcript,
+            result=result,
+            share_token=secrets.token_hex(8),
+            workspace_id=workspace_id,
+            recall_bot_id=bot_id,
+        )
+        _standin_persisted.add(bot_id)
+        await save_meeting(entry, owner_user_id)
+        print(f"[standin] auto-promoted bot {bot_id} into meetings for {owner_user_id}")
+    except Exception as exc:
+        print(f"[standin] auto-promote failed for {bot_id}: {exc}")
+
+
 async def _process_bot_transcript(bot_id: str):
     # Idempotency: never run two analyses for the same bot concurrently. The
     # /bot-status poll re-triggers this while status=="processing" (to recover
@@ -1014,6 +1126,9 @@ async def _process_bot_transcript(bot_id: str):
         })
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
+        # Headless stand-in bots have no browser to POST /meetings — promote ourselves.
+        # No-ops for regular interactive bots (no rep points at them).
+        await _persist_standin_meeting(bot_id)
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:

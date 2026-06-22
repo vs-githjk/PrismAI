@@ -33,6 +33,11 @@ async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(http2=True, timeout=DEFAULT_TIMEOUT)
     app.state.openai = openai_client
     bind_clients(app)
+    # Re-attach lifecycle pollers for any bots left mid-flight by a previous process
+    # (restart / cold start) so headless stand-ins still get delivered, analysed, and
+    # promoted to the dashboard without a browser or webhook. Best-effort, non-blocking.
+    from recall_routes import recover_active_bots
+    asyncio.create_task(recover_active_bots())
     try:
         yield
     finally:
