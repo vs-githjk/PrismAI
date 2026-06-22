@@ -23,6 +23,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
   const [savedStatus, setSavedStatus] = useState(null) // existing rep status, if resumed
   const [approvedText, setApprovedText] = useState('') // frozen text when already approved
   const [scheduled, setScheduled] = useState(false) // whether a bot was actually scheduled
+  const [borrowOptions, setBorrowOptions] = useState([]) // spaces offered to borrow from
   const scrollRef = useRef(null)
 
   // When already approved, the button should only re-activate if the draft was edited.
@@ -59,6 +60,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
       setRepId(data.representation?.id)
       setDraft(data.draft || '')
       setSavedStatus(data.representation?.status || null)
+      setBorrowOptions(data.awaiting_cross_workspace ? (data.borrow_options || []) : [])
       if (data.representation?.status === 'pending') setApprovedText(data.draft || '')
       const msgs = data.messages || []
       setThread(
@@ -74,19 +76,21 @@ export default function StandInComposer({ meeting, user, onClose }) {
 
   useEffect(() => { start() }, [start])
 
-  const send = async (e) => {
-    e?.preventDefault()
-    const msg = input.trim()
-    if (!msg || busy || !repId) return
-    setInput('')
+  // One refine turn. `opts.borrowScopes` is set when the user clicked a "pull from"
+  // chip — a borrow pick carries no typed message; the backend drafts from the widened
+  // scope. `opts.youText` overrides the bubble shown for the user's turn.
+  const turn = async (msg, opts = {}) => {
+    if (busy || !repId) return
+    const youText = opts.youText ?? msg
     const history = thread.map((m) => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text }))
-    setThread((t) => [...t, { role: 'you', text: msg }, { role: 'prism', text: '…', pending: true }])
+    setBorrowOptions([]) // a turn consumes the offer
+    setThread((t) => [...t, { role: 'you', text: youText }, { role: 'prism', text: '…', pending: true }])
     setBusy(true)
     try {
       const res = await apiFetch(`/proxy/representations/${repId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, history }),
+        body: JSON.stringify({ message: msg, history, borrow_scopes: opts.borrowScopes ?? null }),
       })
       const data = await res.json()
       setThread((t) => {
@@ -104,6 +108,18 @@ export default function StandInComposer({ meeting, user, onClose }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const send = async (e) => {
+    e?.preventDefault()
+    const msg = input.trim()
+    if (!msg) return
+    setInput('')
+    turn(msg)
+  }
+
+  const borrowFrom = (opt) => {
+    turn('', { borrowScopes: [opt.id ?? null], youText: `Pull from ${opt.name}` })
   }
 
   const approve = async () => {
@@ -175,6 +191,23 @@ export default function StandInComposer({ meeting, user, onClose }) {
                 </div>
               ))}
             </div>
+
+            {/* Borrow-from chips — shown when this space is too thin to draft. */}
+            {borrowOptions.length > 0 && (
+              <div className="px-4 pb-1 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-500 mr-1">Pull from</span>
+                {borrowOptions.map((o) => (
+                  <button
+                    key={o.id ?? 'personal'}
+                    onClick={() => borrowFrom(o)}
+                    disabled={busy}
+                    className="rounded-full border border-cyan-400/30 bg-cyan-400/[0.08] px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-400/[0.16] disabled:opacity-40"
+                  >
+                    {o.name}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Chat input */}
             <form onSubmit={send} className="px-4 pb-2 flex items-center gap-2">

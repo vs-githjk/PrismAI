@@ -58,21 +58,34 @@ def _require_storage():
 
 
 # ── Profile ──────────────────────────────────────────────────────────────────
-def _load_profile(user_id: str) -> dict:
+def _ws_key(workspace_id: str | None) -> str:
+    """Stand-in profiles are per-(user, workspace). Personal is stored as '' (empty
+    string) — NOT null — so the (user_id, workspace_id) primary key + upsert conflict
+    target work cleanly without partial-index gymnastics."""
+    return workspace_id or ""
+
+
+def _load_profile(user_id: str, workspace_id: str | None = None) -> dict:
     try:
-        res = supabase.table("proxy_profiles").select("*").eq("user_id", user_id).maybe_single().execute()
+        res = (
+            supabase.table("proxy_profiles").select("*")
+            .eq("user_id", user_id).eq("workspace_id", _ws_key(workspace_id))
+            .maybe_single().execute()
+        )
         return res.data or {}
     except Exception:
         return {}
 
 
-async def _enrich_profile(user_id: str, messages: list, approved_body: str) -> None:
+async def _enrich_profile(user_id: str, workspace_id: str | None,
+                          messages: list, approved_body: str) -> None:
     """Enrichment-on-approve: distil DURABLE facts about the user (role, ownership,
     ongoing responsibilities — not transient status) from the stand-in conversation
-    and merge them into their standing_notes, so the next draft starts smarter.
-    Best-effort; never raises into the approve path."""
+    and merge them into their standing_notes FOR THIS WORKSPACE, so the next draft in
+    the same space starts smarter without bleeding into other teams. Best-effort;
+    never raises into the approve path."""
     try:
-        profile = _load_profile(user_id)
+        profile = _load_profile(user_id, workspace_id)
         current = (profile.get("standing_notes") or "").strip()
         convo = "\n".join(
             f"{m.get('role')}: {m.get('content')}" for m in (messages or [])[-8:]
@@ -101,10 +114,11 @@ async def _enrich_profile(user_id: str, messages: list, approved_body: str) -> N
         if updated and updated != current:
             supabase.table("proxy_profiles").upsert({
                 "user_id": user_id,
+                "workspace_id": _ws_key(workspace_id),
                 "role_focus": profile.get("role_focus", ""),
                 "standing_notes": updated,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-            }, on_conflict="user_id").execute()
+            }, on_conflict="user_id,workspace_id").execute()
     except Exception as exc:
         print(f"[proxy] profile enrichment failed: {exc}")
 
@@ -116,6 +130,65 @@ def _profile_context(profile: dict) -> str:
     if (profile.get("standing_notes") or "").strip():
         parts.append(f"Standing notes: {profile['standing_notes'].strip()}")
     return "\n".join(parts)
+
+
+def _profile_context_multi(user_id: str, scopes: list) -> str:
+    """Build the 'who they are' context from the per-workspace profiles for the given
+    scopes (the meeting's own scope, plus any the user authorized borrowing from). The
+    first scope's role_focus wins; standing notes from every scope are merged. With a
+    single scope this is identical to _profile_context of that workspace's profile."""
+    role = ""
+    notes: list[str] = []
+    for sc in scopes:
+        p = _load_profile(user_id, sc)
+        if not role and (p.get("role_focus") or "").strip():
+            role = p["role_focus"].strip()
+        n = (p.get("standing_notes") or "").strip()
+        if n and n not in notes:
+            notes.append(n)
+    parts = []
+    if role:
+        parts.append(f"Role / focus: {role}")
+    if notes:
+        parts.append("Standing notes: " + " ".join(notes))
+    return "\n".join(parts)
+
+
+def _scope_is_thin(items: dict, decisions: list, profile_ctx: str) -> bool:
+    """True when there's barely anything to ground a draft in for this scope: fewer than
+    two work items AND no standing profile notes. That's when we ask to borrow rather
+    than emit a hollow (or personal-bleeding) draft."""
+    n = len(items.get("open", [])) + len(items.get("done", [])) + len(decisions or [])
+    return n < 2 and not (profile_ctx or "").strip()
+
+
+def _borrow_options(user_id: str, current_workspace_id: str | None) -> list[dict]:
+    """The OTHER spaces the user could borrow stand-in context from: their workspaces
+    (minus the current one) plus Personal (when the current meeting is a workspace one).
+    Each is {id, name}; id is null for Personal. Drives the composer's 'pull from' chips."""
+    opts: list[dict] = []
+    try:
+        if current_workspace_id:
+            opts.append({"id": None, "name": "Personal"})
+        rows = (
+            supabase.table("workspace_members").select("workspace_id")
+            .eq("user_id", user_id).execute().data or []
+        )
+        ids = [
+            r["workspace_id"] for r in rows
+            if r.get("workspace_id") and r["workspace_id"] != current_workspace_id
+        ]
+        if ids:
+            wss = supabase.table("workspaces").select("id,name").in_("id", ids).execute().data or []
+            seen = set()
+            for w in wss:
+                if w["id"] in seen:
+                    continue
+                seen.add(w["id"])
+                opts.append({"id": w["id"], "name": (w.get("name") or "Workspace")})
+    except Exception:
+        pass
+    return opts
 
 
 # ── Action-item synthesis source (the "meaningful update" fuel) ───────────────
@@ -133,32 +206,56 @@ def _user_owns_item(owner: str, names: list[str]) -> bool:
     return False
 
 
-def _gather_my_items(user_id: str, names: list[str], workspace_id: str | None = None) -> dict:
+def _scope_list(workspace_id: str | None, borrow_scopes: list | None) -> list:
+    """Build the ordered, de-duplicated list of meeting scopes to pull from: the
+    meeting's own scope first, then any spaces the user explicitly authorized borrowing
+    from. A scope is a workspace_id string, or None for personal (no-workspace) meetings."""
+    scopes: list = []
+    for s in [workspace_id, *(borrow_scopes or [])]:
+        sv = s or None  # treat '' / null uniformly as personal
+        if sv not in scopes:
+            scopes.append(sv)
+    return scopes
+
+
+def _fetch_meetings_for_scopes(user_id: str, scopes: list) -> list:
+    """Fetch + dedup the caller's recent meetings across one or more scopes. Workspace
+    scopes pull that workspace's meetings; the personal scope (None) pulls the caller's
+    own no-workspace rows. Dedup is per-(scope, minute), preferring the caller's own
+    fan-out copy."""
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    rows: list = []
+    for sc in scopes:
+        try:
+            q = supabase.table("meetings").select(
+                "id,title,date,result,user_id,workspace_id"
+            ).gte("date", since)
+            if sc:
+                q = q.eq("workspace_id", sc)
+            else:
+                q = q.eq("user_id", user_id).is_("workspace_id", "null")
+            rows.extend(q.order("date", desc=True).limit(80).execute().data or [])
+        except Exception:
+            continue
+    seen: dict = {}
+    for row in rows:
+        key = ((row.get("workspace_id") or ""), (row.get("date") or "")[:16])
+        if key not in seen or row.get("user_id") == user_id:
+            seen[key] = row
+    return list(seen.values())
+
+
+def _gather_my_items(user_id: str, names: list[str], workspace_id: str | None = None,
+                     borrow_scopes: list | None = None) -> dict:
     """Pull the caller's recent action items (open + completed) from the last 30 days,
     name-matched, SCOPED to the meeting's context: a workspace stand-in pulls only that
     workspace's meetings (never your personal to-dos); a personal stand-in pulls only
-    your own no-workspace meetings. Returns {open: [...], done: [...]}."""
+    your own no-workspace meetings. When the user has authorized borrowing, the scope
+    widens to include those spaces too. Returns {open: [...], done: [...]}."""
     out = {"open": [], "done": []}
-    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    try:
-        q = supabase.table("meetings").select("title,date,result,user_id").gte("date", since)
-        if workspace_id:
-            q = q.eq("workspace_id", workspace_id)        # this workspace only
-        else:
-            q = q.eq("user_id", user_id).is_("workspace_id", "null")  # personal only
-        res = q.order("date", desc=True).limit(80).execute()
-    except Exception:
-        return out
+    meetings = _fetch_meetings_for_scopes(user_id, _scope_list(workspace_id, borrow_scopes))
 
-    # Dedup workspace fan-out copies (same meeting fanned to each member) by minute,
-    # preferring the caller's own row.
-    seen: dict = {}
-    for row in (res.data or []):
-        key = (row.get("date") or "")[:16]
-        if key not in seen or row.get("user_id") == user_id:
-            seen[key] = row
-
-    for meeting in seen.values():
+    for meeting in meetings:
         result = meeting.get("result") or {}
         for item in (result.get("action_items") or []):
             task = (item.get("task") or "").strip()
@@ -204,34 +301,20 @@ def _decision_person(d) -> str:
     return ""
 
 
-def _gather_my_digest(user_id: str, names: list[str], workspace_id: str | None = None) -> dict:
+def _gather_my_digest(user_id: str, names: list[str], workspace_id: str | None = None,
+                      borrow_scopes: list | None = None) -> dict:
     """The Stand-in dashboard feed: the caller's OPEN action items + the decisions that
     are theirs, scoped to the active workspace (or personal when none), last 30 days. Each
     item carries meeting_id for click-through. A decision is 'mine' if its person field
     matches me OR it links (via decision_links) to one of my action items — so decisions
-    with no explicit owner still attach to me through my work."""
+    with no explicit owner still attach to me through my work. When borrowing is
+    authorized, the scope widens to include the chosen spaces."""
     out = {"action_items": [], "decisions": []}
     if not supabase:
         return out
-    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    try:
-        q = supabase.table("meetings").select("id,title,date,result,user_id").gte("date", since)
-        if workspace_id:
-            q = q.eq("workspace_id", workspace_id)
-        else:
-            q = q.eq("user_id", user_id).is_("workspace_id", "null")
-        res = q.order("date", desc=True).limit(80).execute()
-    except Exception:
-        return out
+    meetings = _fetch_meetings_for_scopes(user_id, _scope_list(workspace_id, borrow_scopes))
 
-    # Dedup workspace fan-out copies by minute, preferring the caller's own row.
-    seen: dict = {}
-    for row in (res.data or []):
-        key = (row.get("date") or "")[:16]
-        if key not in seen or row.get("user_id") == user_id:
-            seen[key] = row
-
-    for meeting in seen.values():
+    for meeting in meetings:
         result = meeting.get("result") or {}
         mid = meeting.get("id")
         title = meeting.get("title") or "a meeting"
@@ -415,9 +498,13 @@ class CreateRepRequest(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    message: str
+    message: str = ""
     # The conversation transcript so far, [{role, content}], owned by the client.
     history: list[dict] = []
+    # Spaces the user just authorized borrowing context from (workspace ids; null =
+    # Personal). Sent when they click a "pull from" chip. Merged into the rep's
+    # persisted borrow_scopes so refinements keep the widened scope.
+    borrow_scopes: list | None = None
 
 
 class ApproveRequest(BaseModel):
@@ -427,6 +514,7 @@ class ApproveRequest(BaseModel):
 class ProfileRequest(BaseModel):
     role_focus: str = ""
     standing_notes: str = ""
+    workspace_id: str | None = None
 
 
 def _gate_workspace(user_id: str, workspace_id: str | None):
@@ -477,20 +565,14 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
         }
 
     names = _author_names(user_id, body.author_name, body.author_email)
-    profile = _load_profile(user_id)
-    items = _gather_my_items(user_id, names, body.workspace_id)
-    decisions = _gather_my_digest(user_id, names, body.workspace_id)["decisions"]
-    members = _workspace_member_names(body.workspace_id, user_id)
-    system = _draft_system(
-        _profile_context(profile), _items_block(items), body.meeting_label,
-        member_names=members, decisions_block=_decisions_block(decisions),
-    )
-    raw = await _llm_reply(system, [], "Prepare my stand-in update for this meeting.")
-    reply, draft = _split_reply_draft(raw)
-    messages = [{"role": "assistant", "content": reply}]
+    ws = body.workspace_id
+    profile_ctx = _profile_context_multi(user_id, [ws])
+    items = _gather_my_items(user_id, names, ws)
+    decisions = _gather_my_digest(user_id, names, ws)["decisions"]
+    members = _workspace_member_names(ws, user_id)
 
-    row = {
-        "workspace_id": body.workspace_id,
+    base_row = {
+        "workspace_id": ws,
         "meeting_url": normalized,
         "calendar_event_id": body.calendar_event_id,
         "meeting_label": body.meeting_label,
@@ -498,10 +580,39 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
         "author_user_id": user_id,
         "author_name": body.author_name,
         "author_email": body.author_email,
-        "draft_body": draft,
-        "messages": messages,
-        "status": "draft",
+        "borrow_scopes": [],
     }
+
+    # Thin scope → don't draft from thin air (or bleed another space). Ask whether to
+    # borrow context from another space the user belongs to. Only when borrowing is
+    # actually possible; otherwise fall through and let the model ask what to share.
+    if _scope_is_thin(items, decisions, profile_ctx):
+        opts = _borrow_options(user_id, ws)
+        if opts:
+            label = body.meeting_label or "this meeting"
+            reply = (
+                f"I don't have much on you in {label} yet. Want me to pull context from "
+                "another space to flesh this out? Pick one below — or just tell me what "
+                "to share and I'll draft from that."
+            )
+            messages = [{"role": "assistant", "content": reply}]
+            row = {**base_row, "draft_body": "", "messages": messages, "status": "draft"}
+            res = supabase.table("proxy_representations").insert(row).execute()
+            saved = (res.data or [row])[0]
+            return {
+                "representation": saved, "reply": reply, "draft": "", "messages": messages,
+                "resumed": False, "awaiting_cross_workspace": True, "borrow_options": opts,
+            }
+
+    system = _draft_system(
+        profile_ctx, _items_block(items), body.meeting_label,
+        member_names=members, decisions_block=_decisions_block(decisions),
+    )
+    raw = await _llm_reply(system, [], "Prepare my stand-in update for this meeting.")
+    reply, draft = _split_reply_draft(raw)
+    messages = [{"role": "assistant", "content": reply}]
+
+    row = {**base_row, "draft_body": draft, "messages": messages, "status": "draft"}
     res = supabase.table("proxy_representations").insert(row).execute()
     saved = (res.data or [row])[0]
     return {"representation": saved, "reply": reply, "draft": draft, "messages": messages, "resumed": False}
@@ -517,31 +628,51 @@ async def converse(rep_id: str, body: MessageRequest, user_id: str = Depends(req
         raise HTTPException(status_code=400, detail="This stand-in is no longer editable")
 
     names = _author_names(user_id, row.get("author_name", ""), row.get("author_email", ""))
-    profile = _load_profile(user_id)
-    items = _gather_my_items(user_id, names, row.get("workspace_id"))
-    decisions = _gather_my_digest(user_id, names, row.get("workspace_id"))["decisions"]
-    members = _workspace_member_names(row.get("workspace_id"), user_id)
+    ws = row.get("workspace_id")
+
+    # Merge any newly-authorized borrow spaces into the rep's persisted scope.
+    borrow = list(row.get("borrow_scopes") or [])
+    if body.borrow_scopes is not None:
+        for s in body.borrow_scopes:
+            sv = s or None
+            if sv not in borrow:
+                borrow.append(sv)
+
+    items = _gather_my_items(user_id, names, ws, borrow_scopes=borrow)
+    decisions = _gather_my_digest(user_id, names, ws, borrow_scopes=borrow)["decisions"]
+    profile_ctx = _profile_context_multi(user_id, _scope_list(ws, borrow))
+    members = _workspace_member_names(ws, user_id)
     old_draft = row.get("draft_body") or ""
+
+    # When the turn IS a borrow pick (chip click, no typed message), drive a fresh draft
+    # from the now-widened context rather than treating it as a content instruction.
+    user_msg = (body.message or "").strip()
+    if body.borrow_scopes and not user_msg:
+        wanted = [s or None for s in body.borrow_scopes]
+        picked = [o["name"] for o in _borrow_options(user_id, ws) if (o["id"] or None) in wanted]
+        where = " and ".join(picked) if picked else "my other spaces"
+        user_msg = f"Pull from {where} and draft my stand-in update for this meeting."
+
     system = _draft_system(
-        _profile_context(profile), _items_block(items), row.get("meeting_label", ""),
+        profile_ctx, _items_block(items), row.get("meeting_label", ""),
         current_draft=old_draft, member_names=members, decisions_block=_decisions_block(decisions),
     )
     # Use the persisted conversation as history (source of truth), not client-sent.
     history = row.get("messages") or body.history or []
-    raw = await _llm_reply(system, history, body.message)
+    raw = await _llm_reply(system, history, user_msg)
     reply, new_draft = _split_reply_draft(raw)
     if not new_draft:
         new_draft = old_draft  # a turn that produced no deliverable keeps the last one
 
     # Persist the turn (conversational message only) so reopening resumes the chat.
     messages = history + [
-        {"role": "user", "content": body.message},
+        {"role": "user", "content": user_msg},
         {"role": "assistant", "content": reply},
     ]
     supabase.table("proxy_representations").update(
-        {"draft_body": new_draft, "messages": messages}
+        {"draft_body": new_draft, "messages": messages, "borrow_scopes": borrow}
     ).eq("id", rep_id).execute()
-    return {"reply": reply, "draft": new_draft, "messages": messages}
+    return {"reply": reply, "draft": new_draft, "messages": messages, "borrow_scopes": borrow}
 
 
 @router.post("/proxy/representations/{rep_id}/approve")
@@ -583,7 +714,7 @@ async def approve(rep_id: str, body: ApproveRequest, user_id: str = Depends(requ
     supabase.table("proxy_representations").update(update).eq("id", rep_id).execute()
 
     # Enrichment-on-approve: learn durable facts for next time (background, best-effort).
-    asyncio.create_task(_enrich_profile(user_id, row.get("messages") or [], text))
+    asyncio.create_task(_enrich_profile(user_id, row.get("workspace_id"), row.get("messages") or [], text))
 
     return {"ok": True, "status": "pending", "scheduled": scheduled}
 
@@ -653,12 +784,12 @@ async def preview_standin(body: PreviewRequest, user_id: str = Depends(require_u
     _require_storage()
     _gate_workspace(user_id, body.workspace_id)
     names = _author_names(user_id, body.author_name, body.author_email)
-    profile = _load_profile(user_id)
+    profile_ctx = _profile_context_multi(user_id, [body.workspace_id])
     items = _gather_my_items(user_id, names, body.workspace_id)
     decisions = _gather_my_digest(user_id, names, body.workspace_id)["decisions"]
     members = _workspace_member_names(body.workspace_id, user_id)
     system = _draft_system(
-        _profile_context(profile), _items_block(items), "an upcoming meeting",
+        profile_ctx, _items_block(items), "an upcoming meeting",
         member_names=members, decisions_block=_decisions_block(decisions),
     )
     raw = await _llm_reply(
@@ -671,19 +802,22 @@ async def preview_standin(body: PreviewRequest, user_id: str = Depends(require_u
 
 
 @router.get("/proxy/profile")
-async def get_profile(user_id: str = Depends(require_user_id)):
+async def get_profile(workspace_id: str | None = None, user_id: str = Depends(require_user_id)):
     _require_storage()
-    return {"profile": _load_profile(user_id)}
+    _gate_workspace(user_id, workspace_id)
+    return {"profile": _load_profile(user_id, workspace_id)}
 
 
 @router.put("/proxy/profile")
 async def upsert_profile(body: ProfileRequest, user_id: str = Depends(require_user_id)):
     _require_storage()
+    _gate_workspace(user_id, body.workspace_id)
     row = {
         "user_id": user_id,
+        "workspace_id": _ws_key(body.workspace_id),
         "role_focus": body.role_focus,
         "standing_notes": body.standing_notes,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    supabase.table("proxy_profiles").upsert(row, on_conflict="user_id").execute()
+    supabase.table("proxy_profiles").upsert(row, on_conflict="user_id,workspace_id").execute()
     return {"ok": True, "profile": row}

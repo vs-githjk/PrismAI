@@ -67,7 +67,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
   const loadProfileAndReps = useCallback(async () => {
     try {
       const [pRes, rRes] = await Promise.all([
-        apiFetch('/proxy/profile'),
+        apiFetch('/proxy/profile' + (workspaceId ? `?workspace_id=${workspaceId}` : '')),
         apiFetch('/proxy/representations' + (workspaceId ? `?workspace_id=${workspaceId}` : '')),
       ])
       if (pRes.ok) {
@@ -118,7 +118,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
       const res = await apiFetch('/proxy/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role_focus: roleFocus, standing_notes: notes }),
+        body: JSON.stringify({ role_focus: roleFocus, standing_notes: notes, workspace_id: workspaceId || null }),
       })
       setSaveState(res.ok ? 'saved' : 'idle')
       if (res.ok) setTimeout(() => setSaveState('idle'), 1800)
@@ -328,6 +328,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
           {/* Profile */}
           <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
             <h2 className="text-[12px] font-semibold uppercase tracking-wide text-white/45">What Prism should know about you</h2>
+            <p className="mt-1 text-[11px] text-white/35">Specific to <span className="text-white/55">{scopeLabel}</span> — each space keeps its own, so team and personal context never mix.</p>
             {profileEmpty && (
               <p className="ps-anim mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-[11.5px] leading-relaxed text-cyan-100/90">
                 <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
