@@ -5,7 +5,7 @@ import json
 import os
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -566,10 +566,17 @@ async def recover_active_bots() -> None:
     guards, so it's safe alongside the Recall webhook in production."""
     if not supabase or not RECALL_API_KEY:
         return
+    # Only recover RECENT bots. A non-terminal row older than this is stale — a bot that
+    # crashed or was abandoned mid-meeting and never reached a terminal status — and
+    # re-spawning its poller just retries a transcript that will never exist (0 recordings
+    # / 400 spam for ~12 min before it errors out). The window comfortably covers the
+    # poller's own 4h safety cap plus a scheduled bot's lead time.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
     try:
         rows = (
             supabase.table("meeting_bots").select("bot_id")
             .in_("status", ["scheduled", "joining", "recording", "processing"])
+            .gte("created_at", cutoff)
             .execute().data or []
         )
     except Exception as exc:

@@ -1,5 +1,6 @@
 import operator
 import os
+import re
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -185,6 +186,14 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
         if 0 <= i < len(decisions_list)
     ]
 
+    # Surface the meeting owner (parsed from the transcript header set by
+    # build_analysis_transcript) into the Tier-2 context. email_drafter runs
+    # context-only (no transcript), so without this it can't know whose voice to
+    # write the follow-up FROM — critical for stand-in meetings, where the bot spoke
+    # for the owner and the only human name in the transcript is the OTHER attendee.
+    owner_m = re.match(r"\[Meeting owner:\s*([^\]]+)\]", state.get("transcript", "") or "")
+    owner_name = owner_m.group(1).strip() if owner_m else ""
+
     return {
         "results": {"decision_linker": link_out},
         "context": {
@@ -193,6 +202,7 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
             "action_items": action_items_list,
             "sentiment": r.get("sentiment", {}).get("sentiment", {}),
             "unactioned_decisions": unactioned_texts,
+            "owner_name": owner_name,
         },
     }
 
