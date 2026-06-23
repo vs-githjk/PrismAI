@@ -582,6 +582,69 @@ def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
     return ""
 
 
+def _resolve_owner_name(bot_id: str) -> str:
+    """The name of the person this bot represents/serves. Prefers the in-memory value but
+    falls back to the stand-in representation's author_name — so a server restart that
+    wiped bot_store doesn't leave the analysis (and the follow-up email's sender) without
+    a meeting owner, which makes the email agent guess a participant instead."""
+    entry = bot_store.get(bot_id) or {}
+    if (entry.get("owner_name") or "").strip():
+        return entry["owner_name"].strip()
+    if supabase:
+        try:
+            rep = (
+                supabase.table("proxy_representations").select("author_name")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled").limit(1).execute()
+            )
+            if rep.data and (rep.data[0].get("author_name") or "").strip():
+                return rep.data[0]["author_name"].strip()
+        except Exception:
+            pass
+    return ""
+
+
+async def _resolve_bot_persona_name(bot_id: str) -> str:
+    """The single display name the bot used in this meeting (e.g. 'Glint'). Used to
+    normalise transcript lines so the bot isn't analysed as two speakers — its stand-in
+    delivery records under the default name while its replies use the persona name."""
+    entry = bot_store.get(bot_id) or {}
+    user_id = entry.get("user_id")
+    workspace_id = entry.get("workspace_id")
+    if not user_id and supabase:
+        try:
+            rep = (
+                supabase.table("proxy_representations").select("author_user_id, workspace_id")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled").limit(1).execute()
+            )
+            if rep.data:
+                user_id = rep.data[0].get("author_user_id")
+                workspace_id = workspace_id or rep.data[0].get("workspace_id")
+        except Exception:
+            pass
+    if not user_id or not supabase:
+        return DEFAULT_BOT_NAME
+    try:
+        resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
+        row = (resp.data if resp is not None else None) or {}
+        name, _text, _preset = await persona_identity_resolved(supabase, row, workspace_id)
+        return name or DEFAULT_BOT_NAME
+    except Exception:
+        return DEFAULT_BOT_NAME
+
+
+def _normalize_bot_speaker(lines: list[str], canonical: str) -> list[str]:
+    """Rewrite every bot-attributed line prefix to one canonical name so the bot reads as
+    a single speaker in analysis (sentiment per-speaker, etc.)."""
+    out = []
+    for ln in lines:
+        for pfx in _BOT_NAME_PREFIXES:
+            if ln.startswith(pfx):
+                ln = f"{canonical}:{ln[len(pfx):]}"
+                break
+        out.append(ln)
+    return out
+
+
 async def recover_active_bots() -> None:
     """Startup recovery: re-spawn lifecycle pollers for any bots left in a live state.
 
@@ -1144,6 +1207,9 @@ async def _process_bot_transcript(bot_id: str):
         rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
         bot_spoke = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in rt_lines)
         if bot_spoke and rt_lines:
+            # Collapse the bot's two names (persona for replies, default for the stand-in
+            # delivery) into one so it isn't analysed as two separate speakers.
+            rt_lines = _normalize_bot_speaker(rt_lines, await _resolve_bot_persona_name(bot_id))
             transcript = "\n".join(rt_lines)
             print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
         elif not transcript.strip() and rt_lines:
@@ -1159,7 +1225,9 @@ async def _process_bot_transcript(bot_id: str):
             return
 
         print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
-        owner_name = (bot_store.get(bot_id) or {}).get("owner_name")
+        # Durable owner lookup (survives a restart that wiped bot_store) so the follow-up
+        # email is written FROM the represented owner, not a guessed participant.
+        owner_name = _resolve_owner_name(bot_id)
         analysis_transcript = build_analysis_transcript(transcript, owner_name=owner_name)
         result = await run_full_analysis(analysis_transcript)
         bot_store[bot_id]["transcript"] = transcript
