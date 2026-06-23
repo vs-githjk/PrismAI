@@ -1,7 +1,17 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from calendar_resolution import resolve_relative_date
 from .utils import strip_fences, llm_call
+
+
+def _default_followup_slot(reference_date):
+    """A sensible future slot for a recommended follow-up when the meeting named no
+    concrete time: the next business day at 10:00. Avoids the old failure where an
+    unresolved follow-up showed no date and Add-to-Calendar fell back to 'now'."""
+    d = reference_date + timedelta(days=1)
+    while d.weekday() >= 5:  # skip Sat (5) / Sun (6)
+        d += timedelta(days=1)
+    return d.isoformat(), d.strftime("%A"), "10:00"
 
 SYSTEM_PROMPT = (
     "You are a calendar scheduling assistant. Based on the meeting, determine if a follow-up meeting is needed "
@@ -86,6 +96,16 @@ async def run(transcript: str, context: dict = {}) -> dict:
             if not resolved.get("resolved_time") and suggestion.get("suggested_time"):
                 t = resolve_relative_date(suggestion["suggested_time"], reference_date=reference_date)
                 resolved["resolved_time"] = t.get("resolved_time", "")
+
+            # A recommended follow-up with no concrete time the meeting agreed on still
+            # needs a usable proposed slot — otherwise the card shows no date and
+            # Add-to-Calendar defaults to "now". Fill a sensible future default.
+            if suggestion.get("recommended"):
+                if not resolved.get("resolved_date"):
+                    rd, rday, rt = _default_followup_slot(reference_date)
+                    resolved["resolved_date"], resolved["resolved_day"], resolved["resolved_time"] = rd, rday, rt
+                elif not resolved.get("resolved_time"):
+                    resolved["resolved_time"] = "10:00"
 
             suggestion.setdefault("agenda", [])
             suggestion.setdefault("attendees", [])
