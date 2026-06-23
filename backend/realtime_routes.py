@@ -1420,6 +1420,32 @@ def _spoken_version(text: str) -> str:
     return t.strip()
 
 
+_LIST_LINE_RE = re.compile(r"(^|\n)\s*([-*•]|\d+[.)])\s+", re.M)
+
+
+def _spoken_condense(text: str, max_sentences: int = 3, max_chars: int = 340) -> str:
+    """The SPOKEN copy of a reply, length-capped. Each spoken sentence blocks the next for
+    its real playback duration (so multiple voices don't overlap), which means a long reply
+    — a 6-bullet outline read aloud — stalls every queued command behind it. That's the #1
+    source of live-conversation lag. So we speak a tight lead and push the rest to chat
+    (which already gets the FULL reply). Short, non-list replies are spoken verbatim."""
+    if not (text or "").strip():
+        return text
+    m = _LIST_LINE_RE.search(text)
+    if m:
+        # A list / outline: speak only the lead-in before the first bullet (reading bullets
+        # aloud is both laggy and useless), then point to chat for the rest.
+        lead = " ".join(_chunk_reply(_spoken_version(text[:m.start()]))[:2]).strip()
+        return (lead + " I've put the full breakdown in the chat.").strip() if lead \
+            else "I've put the full breakdown in the chat."
+    clean = _spoken_version(text)
+    sentences = _chunk_reply(clean)
+    if len(sentences) <= max_sentences and len(clean) <= max_chars:
+        return clean
+    lead = " ".join(sentences[:max_sentences]).strip() or clean[:max_chars].rstrip()
+    return f"{lead} I've put the rest in the chat."
+
+
 _GAP_SILENCE_S = float(os.getenv("PRISM_GAP_SILENCE_S", "1.2"))
 _GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
 
@@ -2764,10 +2790,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             pass
         elif _streamed_tts_on():
             await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response_streamed(bot_id, _spoken_version(reply), cmd_detected_ts=state["last_command_ts"] or now)
+            await _send_voice_response_streamed(bot_id, _spoken_condense(reply), cmd_detected_ts=state["last_command_ts"] or now)
         else:
             await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response(bot_id, _spoken_version(reply))
+            await _send_voice_response(bot_id, _spoken_condense(reply))
         # Make sure the chat post is finished (or its exception surfaces) before returning.
         try:
             await chat_task
@@ -2811,7 +2837,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         _record_bot_line(bot_id, state, reply, bot_name)
                     print(f"[realtime] haiku fallback reply={reply!r}")
                     await _send_chat_response(bot_id, reply)
-                    await _send_voice_response(bot_id, reply)
+                    await _send_voice_response(bot_id, _spoken_condense(reply))
                     return
                 except Exception as haiku_exc:
                     print(f"[realtime] haiku fallback failed: {haiku_exc}")
