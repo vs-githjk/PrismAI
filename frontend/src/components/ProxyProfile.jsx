@@ -57,8 +57,10 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
   const [digest, setDigest] = useState({ action_items: [], decisions: [] })
   const [digestLoading, setDigestLoading] = useState(true)
 
-  const [preview, setPreview] = useState('')
+  const [defaultStandin, setDefaultStandin] = useState('')
   const [previewing, setPreviewing] = useState(false)
+  const [defaultSaveState, setDefaultSaveState] = useState('idle') // idle | saving | saved
+  const [previewThin, setPreviewThin] = useState(false)
 
   const authorName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || ''
   const authorEmail = user?.email || ''
@@ -74,6 +76,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
         const { profile } = await pRes.json()
         setRoleFocus(profile?.role_focus || '')
         setNotes(clean(profile?.standing_notes))
+        setDefaultStandin(profile?.default_standin || '')
       }
       if (rRes.ok) {
         const { representations } = await rRes.json()
@@ -99,8 +102,9 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
 
   useEffect(() => { loadProfileAndReps() }, [loadProfileAndReps])
   useEffect(() => { loadDigest() }, [loadDigest])
-  // Reset the preview when the scope changes — it's no longer relevant.
-  useEffect(() => { setPreview('') }, [workspaceId])
+  // Reset the generate-thin hint when the scope changes (the saved default reloads
+  // with the profile fetch).
+  useEffect(() => { setPreviewThin(false); setDefaultSaveState('idle') }, [workspaceId])
 
   useEffect(() => {
     const reload = () => { loadProfileAndReps(); loadDigest() }
@@ -125,8 +129,11 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
     } catch { setSaveState('idle') }
   }
 
-  const runPreview = async () => {
-    setPreviewing(true); setPreview('')
+  // Draft a candidate default from the caller's recent work + profile, into the editable
+  // box. When there's too little to ground one, flag it (UI shows a nudge) rather than
+  // dumping the model asking a question back.
+  const generateDefault = async () => {
+    setPreviewing(true); setPreviewThin(false); setDefaultSaveState('idle')
     try {
       const res = await apiFetch('/proxy/preview', {
         method: 'POST',
@@ -134,9 +141,23 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
         body: JSON.stringify({ workspace_id: workspaceId, author_name: authorName, author_email: authorEmail }),
       })
       const data = await res.json().catch(() => ({}))
-      setPreview(data.preview || "I couldn't find enough about your work to preview a stand-in yet.")
-    } catch { setPreview('Something went wrong generating the preview.') }
+      if (data.grounded === false || !data.preview) setPreviewThin(true)
+      else setDefaultStandin(data.preview)
+    } catch { setPreviewThin(true) }
     finally { setPreviewing(false) }
+  }
+
+  const saveDefault = async () => {
+    setDefaultSaveState('saving')
+    try {
+      const res = await apiFetch('/proxy/default-standin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_standin: defaultStandin, workspace_id: workspaceId || null }),
+      })
+      setDefaultSaveState(res.ok ? 'saved' : 'idle')
+      if (res.ok) setTimeout(() => setDefaultSaveState('idle'), 1800)
+    } catch { setDefaultSaveState('idle') }
   }
 
   const cancelRep = async (id) => {
@@ -360,26 +381,40 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
             </div>
           </section>
 
-          {/* Preview my stand-in */}
+          {/* Your default stand-in — the fallback that seeds the composer */}
           <section className="overflow-hidden rounded-2xl border p-5"
             style={{ borderColor: 'rgba(167,139,250,0.22)', background: 'linear-gradient(160deg, rgba(167,139,250,0.07), rgba(240,171,252,0.04))' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-violet-300" />
-              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-violet-200/80">Preview your stand-in</h2>
+              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-violet-200/80">Your default stand-in</h2>
             </div>
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-white/50">
-              See how Prism would represent you right now in <span className="font-medium text-violet-200/90">{scopeLabel}</span> — from your work above and your profile.
+              What Prism leads with if you're pulled into a <span className="font-medium text-violet-200/90">{scopeLabel}</span> meeting with no time to compose. Saved here, it pre-fills your stand-in draft so you're one click from approving.
             </p>
-            {preview && (
-              <div className="ps-scroll mt-3 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/[0.07] bg-black/30 px-3 py-2.5 text-[12.5px] leading-relaxed text-white/85">
-                {preview}
-              </div>
+            <textarea
+              value={defaultStandin}
+              onChange={(e) => { setDefaultStandin(e.target.value); setPreviewThin(false) }}
+              rows={5}
+              placeholder="Generate one from your work, or write your own…"
+              className="ps-scroll mt-3 w-full resize-none rounded-lg border border-white/[0.08] bg-black/30 px-3 py-2.5 text-[12.5px] leading-relaxed text-white/85 outline-none placeholder:text-white/25 focus:border-violet-400/40"
+            />
+            {previewThin && (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-violet-200/80">
+                <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-violet-300" />
+                Not enough recent work in {scopeLabel} to draft one — write your own, or add your role / notes above so Prism has more to go on.
+              </p>
             )}
-            <button onClick={runPreview} disabled={previewing}
-              className="ps-anim mt-3 flex w-full items-center justify-center gap-2 rounded-lg py-2 text-[12.5px] font-semibold text-[#06080d] transition disabled:opacity-50"
-              style={{ background: 'linear-gradient(90deg,#c4b5fd,#f0abfc)' }}>
-              {previewing ? <><Loader2 className="ps-anim h-3.5 w-3.5 animate-spin" /> Generating…</> : <><Sparkles className="h-3.5 w-3.5" /> {preview ? 'Regenerate' : 'Preview my stand-in'}</>}
-            </button>
+            <div className="mt-3 flex items-center gap-2">
+              <button onClick={generateDefault} disabled={previewing}
+                className="ps-anim flex flex-1 items-center justify-center gap-2 rounded-lg border border-violet-400/30 bg-violet-400/[0.08] py-2 text-[12px] font-semibold text-violet-100 transition hover:bg-violet-400/[0.16] disabled:opacity-50">
+                {previewing ? <><Loader2 className="ps-anim h-3.5 w-3.5 animate-spin" /> Generating…</> : <><Sparkles className="h-3.5 w-3.5" /> {defaultStandin.trim() ? 'Regenerate' : 'Generate from my work'}</>}
+              </button>
+              <button onClick={saveDefault} disabled={defaultSaveState === 'saving' || !defaultStandin.trim()}
+                className="ps-anim rounded-lg px-4 py-2 text-[12px] font-semibold text-[#06080d] transition disabled:opacity-40"
+                style={{ background: 'linear-gradient(90deg,#c4b5fd,#f0abfc)' }}>
+                {defaultSaveState === 'saving' ? 'Saving…' : defaultSaveState === 'saved' ? '✓ Saved' : 'Save default'}
+              </button>
+            </div>
           </section>
           {/* Your stand-ins — in the rail, scrollable */}
           <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">

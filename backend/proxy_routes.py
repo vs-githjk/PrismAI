@@ -599,10 +599,20 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
         "borrow_scopes": [],
     }
 
-    # Thin scope → don't draft from thin air (or bleed another space). Ask whether to
-    # borrow context from another space the user belongs to. Only when borrowing is
-    # actually possible; otherwise fall through and let the model ask what to share.
+    # Thin scope → don't draft from thin air (or bleed another space). Priority:
+    #   1. A saved DEFAULT stand-in for this space → seed the draft with it (one approve
+    #      and they're represented — the whole point of the fallback).
+    #   2. Else, ask whether to BORROW context from another space they belong to.
+    #   3. Else fall through to a normal draft / "what do you want to share?".
     if _scope_is_thin(items, decisions, profile_ctx):
+        default_standin = (_load_profile(user_id, ws).get("default_standin") or "").strip()
+        if default_standin:
+            reply = "I don't have fresh updates for this space, so I've loaded your saved default — edit it or approve as-is."
+            messages = [{"role": "assistant", "content": reply}]
+            row = {**base_row, "draft_body": default_standin, "messages": messages, "status": "draft"}
+            res = supabase.table("proxy_representations").insert(row).execute()
+            saved = (res.data or [row])[0]
+            return {"representation": saved, "reply": reply, "draft": default_standin, "messages": messages, "resumed": False}
         opts = _borrow_options(user_id, ws)
         if opts:
             label = body.meeting_label or "this meeting"
@@ -795,14 +805,20 @@ class PreviewRequest(BaseModel):
 
 @router.post("/proxy/preview")
 async def preview_standin(body: PreviewRequest, user_id: str = Depends(require_user_id)):
-    """Generate how Prism would represent the caller RIGHT NOW (no real meeting) from their
-    open action items + standing profile — so they can see their stand-in voice anytime."""
+    """Generate a candidate DEFAULT stand-in for the caller from their open action items +
+    standing profile — the message Prism would lead with if they were pulled into a meeting
+    with no time to compose. The user can edit + save the result as their default (see
+    PUT /proxy/default-standin). When there's too little to ground a real representation,
+    return grounded=False so the UI shows an honest 'add more' nudge instead of the model
+    awkwardly asking the user a question."""
     _require_storage()
     _gate_workspace(user_id, body.workspace_id)
     names = _author_names(user_id, body.author_name, body.author_email)
     profile_ctx = _profile_context_multi(user_id, [body.workspace_id])
     items = _gather_my_items(user_id, names, body.workspace_id)
     decisions = _gather_my_digest(user_id, names, body.workspace_id)["decisions"]
+    if _scope_is_thin(items, decisions, profile_ctx):
+        return {"preview": "", "grounded": False}
     members = _workspace_member_names(body.workspace_id, user_id)
     system = _draft_system(
         profile_ctx, _items_block(items), "an upcoming meeting",
@@ -811,10 +827,31 @@ async def preview_standin(body: PreviewRequest, user_id: str = Depends(require_u
     raw = await _llm_reply(
         system, [],
         "Show me how you would represent me if I missed a meeting right now. "
-        "Reply with ONLY the stand-in update I'd want delivered — no preamble.",
+        "Reply with ONLY the stand-in update I'd want delivered — no preamble, no questions.",
     )
     reply, draft = _split_reply_draft(raw)
-    return {"preview": (draft or reply or "").strip()}
+    return {"preview": (draft or reply or "").strip(), "grounded": True}
+
+
+class DefaultStandinRequest(BaseModel):
+    default_standin: str = ""
+    workspace_id: str | None = None
+
+
+@router.put("/proxy/default-standin")
+async def save_default_standin(body: DefaultStandinRequest, user_id: str = Depends(require_user_id)):
+    """Save the caller's default stand-in for this space — the fallback Prism uses to seed
+    the composer when they're absent with thin data. Stored on the per-space profile; only
+    this field is written so it never clobbers role/notes (and vice-versa)."""
+    _require_storage()
+    _gate_workspace(user_id, body.workspace_id)
+    supabase.table("proxy_profiles").upsert({
+        "user_id": user_id,
+        "workspace_id": _ws_key(body.workspace_id),
+        "default_standin": (body.default_standin or "").strip()[:1500],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }, on_conflict="user_id,workspace_id").execute()
+    return {"ok": True}
 
 
 @router.get("/proxy/profile")
