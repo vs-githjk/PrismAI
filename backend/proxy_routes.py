@@ -557,12 +557,28 @@ async def create_representation(body: CreateRepRequest, user_id: str = Depends(r
     )
     if existing.data:
         rep = existing.data[0]
-        return {
+        draft = rep.get("approved_body") or rep.get("draft_body") or ""
+        out = {
             "representation": rep,
-            "draft": rep.get("approved_body") or rep.get("draft_body") or "",
+            "draft": draft,
             "messages": rep.get("messages") or [],
             "resumed": True,
         }
+        # Re-offer cross-workspace borrow if this stand-in is still stuck at the thin
+        # ask — no draft yet, nothing borrowed. Otherwise reopening it loses the "Pull
+        # from" chips (the ask message persists in `messages`, but the options didn't),
+        # leaving a dead-end "Pick one below" with nothing to pick.
+        if not draft.strip() and rep.get("status") == "draft" and not (rep.get("borrow_scopes") or []):
+            names = _author_names(user_id, body.author_name, body.author_email)
+            ws = rep.get("workspace_id")
+            items = _gather_my_items(user_id, names, ws)
+            decisions = _gather_my_digest(user_id, names, ws)["decisions"]
+            if _scope_is_thin(items, decisions, _profile_context_multi(user_id, [ws])):
+                opts = _borrow_options(user_id, ws)
+                if opts:
+                    out["awaiting_cross_workspace"] = True
+                    out["borrow_options"] = opts
+        return out
 
     names = _author_names(user_id, body.author_name, body.author_email)
     ws = body.workspace_id
