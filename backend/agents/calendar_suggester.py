@@ -38,6 +38,7 @@ SYSTEM_PROMPT = (
 _DEFAULT = {"calendar_suggestion": {
     "recommended": False, "reason": "", "suggested_timeframe": "", "suggested_time": "",
     "agenda": [], "attendees": [], "resolved_date": "", "resolved_day": "", "resolved_time": "",
+    "time_defaulted": False,
 }}
 
 
@@ -99,13 +100,18 @@ async def run(transcript: str, context: dict = {}) -> dict:
 
             # A recommended follow-up with no concrete time the meeting agreed on still
             # needs a usable proposed slot — otherwise the card shows no date and
-            # Add-to-Calendar defaults to "now". Fill a sensible future default.
+            # Add-to-Calendar defaults to "now". Fill a sensible future default and flag
+            # it (time_defaulted) so the UI can say it wasn't set in the meeting.
+            time_defaulted = False
             if suggestion.get("recommended"):
                 if not resolved.get("resolved_date"):
                     rd, rday, rt = _default_followup_slot(reference_date)
                     resolved["resolved_date"], resolved["resolved_day"], resolved["resolved_time"] = rd, rday, rt
+                    time_defaulted = True
                 elif not resolved.get("resolved_time"):
                     resolved["resolved_time"] = "10:00"
+                    time_defaulted = True
+            suggestion["time_defaulted"] = time_defaulted
 
             suggestion.setdefault("agenda", [])
             suggestion.setdefault("attendees", [])

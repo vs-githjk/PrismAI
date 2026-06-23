@@ -143,6 +143,13 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       )}
       <p className="mt-2 text-sm leading-7 text-white/75">{suggestion.reason}</p>
 
+      {suggestion.time_defaulted && (
+        <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-2.5 py-1.5 text-[11.5px] leading-relaxed text-amber-200/90">
+          <span className="mt-px">⚠</span>
+          <span>No time was set in the meeting. Suggested slot: <span className="font-medium text-amber-100">{resolvedLabel}{effTime ? ` · ${formatTime12(effTime)}` : ''}</span> — confirm or change it before adding.</span>
+        </p>
+      )}
+
       {agenda.length > 0 && (
         <div className="mt-3">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">Proposed agenda</p>
