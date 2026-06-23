@@ -3314,6 +3314,17 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # help instead of going silent (a real user greets it before asking).
             if not command and _has_trigger_word(message_text, bot_id):
                 command = message_text
+            # Solo free-flow applies to TYPED chat too: with one human present, a
+            # substantive chat message is a command without the wake word — matching the
+            # spoken path. Without this, chat asks ("send a summary to …") are silently
+            # dropped in a 1-on-1. Never fires on the bot's own chat.
+            if (
+                not command
+                and _solo_mode_active(_get_bot_state(bot_id))
+                and not _looks_like_bot_participant(sender, {})
+                and _solo_freeflow_text_eligible(message_text)
+            ):
+                command = message_text
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
