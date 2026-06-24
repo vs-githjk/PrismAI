@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -364,6 +365,68 @@ class CreateEventRequest(BaseModel):
     description: str | None = None
     attendees: list[str] = []  # emails; names without "@" are dropped
     timezone: str = "UTC"
+    confirm: bool = False  # set true to create despite a detected duplicate/overlap
+
+
+def _to_aware(iso: str, tzname: str) -> datetime:
+    """Parse an ISO datetime to a tz-aware UTC-comparable value. A naive string is
+    interpreted in the event's timezone; falls back to UTC for a bad tz name."""
+    dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        try:
+            dt = dt.replace(tzinfo=ZoneInfo(tzname or "UTC"))
+        except Exception:
+            dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+async def _find_calendar_conflicts(token: str, title: str, start: datetime, end: datetime) -> dict | None:
+    """List events overlapping [start, end] and classify the first conflict.
+    Returns {type: 'duplicate'|'overlap', events: [{title, start, end}]} or None.
+    Best-effort — any lookup failure returns None so creation isn't blocked."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
+                headers={"Authorization": f"Bearer {token}"},
+                params={
+                    "timeMin": start.isoformat(),
+                    "timeMax": end.isoformat(),
+                    "singleEvents": "true",
+                    "orderBy": "startTime",
+                    "maxResults": "10",
+                },
+                timeout=10,
+            )
+        if resp.status_code != 200:
+            return None
+        items = resp.json().get("items", []) or []
+    except Exception:
+        return None
+
+    duplicates, overlaps = [], []
+    for ev in items:
+        ev_start_s = (ev.get("start") or {}).get("dateTime")
+        ev_end_s = (ev.get("end") or {}).get("dateTime")
+        if not ev_start_s:
+            continue  # all-day event — skip
+        summary = (ev.get("summary") or "").strip()
+        info = {"title": summary or "(untitled)", "start": ev_start_s, "end": ev_end_s}
+        try:
+            ev_start = datetime.fromisoformat(ev_start_s.replace("Z", "+00:00"))
+        except Exception:
+            ev_start = None
+        same_title = summary.lower() == (title or "").strip().lower()
+        same_start = ev_start is not None and abs((ev_start - start).total_seconds()) < 60
+        if same_title and same_start:
+            duplicates.append(info)
+        else:
+            overlaps.append(info)
+    if duplicates:
+        return {"type": "duplicate", "events": duplicates}
+    if overlaps:
+        return {"type": "overlap", "events": overlaps}
+    return None
 
 
 @router.post("/calendar/create-event")
@@ -372,7 +435,9 @@ async def calendar_create_event_route(
     user_id: str = Depends(require_user_id),
 ):
     """Create a Google Calendar event from a follow-up suggestion. Reuses the
-    same insert logic the live bot uses (adds a Meet link when attendees exist)."""
+    same insert logic the live bot uses (adds a Meet link when attendees exist).
+    Before creating, checks for an existing duplicate/overlapping event and returns
+    a conflict (without creating) unless req.confirm is set."""
     from tools.calendar import calendar_create_event
 
     access_token = await get_valid_token(user_id)  # raises 404 if not connected
@@ -384,6 +449,14 @@ async def calendar_create_event_route(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid start datetime")
         end = (start_dt + timedelta(minutes=30)).isoformat()
+
+    if not req.confirm:
+        conflict = await _find_calendar_conflicts(
+            access_token, req.title,
+            _to_aware(req.start, req.timezone), _to_aware(end, req.timezone),
+        )
+        if conflict:
+            return {"conflict": True, **conflict}
 
     args = {
         "title": req.title,
