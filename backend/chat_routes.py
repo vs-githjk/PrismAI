@@ -77,6 +77,10 @@ class AgentRequest(BaseModel):
     # payload.
     persona_preset: str | None = None
     persona_custom_prompt: str | None = None
+    # Who the follow-up email should be written FROM. The frontend ships the
+    # current viewer's name so each person can regenerate the draft as themselves
+    # (per-viewer authorship) instead of a single owner-authored draft.
+    owner_name: str | None = None
 
 
 class ConfirmToolRequest(BaseModel):
@@ -311,6 +315,8 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
                 "action_items": r.get("action_items", []) or [],
                 "sentiment": r.get("sentiment", {}) or {},
                 "unactioned_decisions": [d for d in unactioned if d],
+                # Per-viewer authorship: email_drafter writes FROM this person.
+                "owner_name": (req.owner_name or "").strip(),
             }
             return await AGENT_MAP[req.agent](augmented, context)
         return await AGENT_MAP[req.agent](augmented)

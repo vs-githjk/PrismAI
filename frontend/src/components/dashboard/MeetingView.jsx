@@ -87,7 +87,7 @@ function SemicircularGauge({ score }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate, viewerName = '' }) {
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -418,6 +418,10 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           gmailConnected={gmailConnected}
           suggestedEmails={suggestedEmails}
           onSave={(updated) => onResultUpdate?.({ follow_up_email: updated })}
+          viewerName={viewerName}
+          meetingId={meetingId}
+          transcript={transcript}
+          result={result}
         />
       )}
 

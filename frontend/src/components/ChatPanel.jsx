@@ -113,6 +113,38 @@ function detectAgentIntent(msg) {
   return null
 }
 
+// "Replace the name David with Devaj everywhere / in the cards" — a deterministic
+// find-and-replace across every card, NOT a task for the model (which used to call a
+// Linear tool). Scoped to clear rename phrasing so it can't hijack normal edits.
+function detectRenameIntent(msg) {
+  const m = msg.trim()
+  if (!/\bname\b|\bcards?\b|\beverywhere\b/i.test(m)) return null
+  const re = /\b(?:replace|rename|change|swap|substitute)\b(?:\s+(?:the\s+)?name)?\s+["']?([A-Za-z][\w.'-]*)["']?\s+(?:with|to|into|for|->|→)\s+["']?([A-Za-z][\w.'-]*)["']?/i
+  const match = m.match(re)
+  if (!match) return null
+  const [, from, to] = match
+  if (!from || !to || from.toLowerCase() === to.toLowerCase()) return null
+  return { from, to }
+}
+
+// Recursively replace whole-word occurrences of `from` with `to` in every string of a
+// result object (case-insensitive). Returns a new object; the original is untouched.
+function deepRename(value, from, to) {
+  const esc = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`\\b${esc}\\b`, 'gi')
+  const walk = (v) => {
+    if (typeof v === 'string') return v.replace(re, to)
+    if (Array.isArray(v)) return v.map(walk)
+    if (v && typeof v === 'object') {
+      const out = {}
+      for (const k of Object.keys(v)) out[k] = walk(v[k])
+      return out
+    }
+    return v
+  }
+  return walk(value)
+}
+
 function formatSessionDate(value) {
   if (!value) return ''
   const parsed = new Date(value)
@@ -248,11 +280,20 @@ export default function ChatPanel({
     // existing_items, so the raw transcript is optional. Requiring it meant a recovered
     // or reopened meeting (which often has no transcript in chat context) could never
     // run an agent — every "draft an email" fell through to ungrounded generic chat.
-    const agentIntent = result ? detectAgentIntent(msg) : null
-    const globalIntent = !agentIntent && detectGlobalIntent(msg)
+    const rename = result ? detectRenameIntent(msg) : null
+    const agentIntent = !rename && result ? detectAgentIntent(msg) : null
+    const globalIntent = !rename && !agentIntent && detectGlobalIntent(msg)
 
     try {
-      if (agentIntent === 'undo') {
+      if (rename) {
+        // Deterministic cross-card rename — no model call, no Linear ticket.
+        prevResultRef.current = result
+        onResultUpdate(deepRename(result, rename.from, rename.to))
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: `Replaced “${rename.from}” with “${rename.to}” across all cards.`,
+        }])
+      } else if (agentIntent === 'undo') {
         if (prevResultRef.current) {
           onResultUpdate(prevResultRef.current)
           prevResultRef.current = null

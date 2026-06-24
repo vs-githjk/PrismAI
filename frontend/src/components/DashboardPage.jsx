@@ -1104,6 +1104,7 @@ export default function DashboardPage(props) {
                       workspaceId={activeWorkspaceId}
                       suggestedEmails={suggestedAttendeeEmails}
                       onResultUpdate={persistResultPatch}
+                      viewerName={props.user?.user_metadata?.full_name || props.user?.email?.split('@')[0] || ''}
                     />
                   </Suspense>
                 </>
