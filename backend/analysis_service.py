@@ -1,6 +1,5 @@
 import operator
 import os
-import re
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -117,15 +116,19 @@ class AnalysisState(TypedDict, total=False):
     agents_to_run: list[str]
     results: Annotated[dict, operator.or_]
     context: dict
+    owner_name: str               # meeting owner — passed to email_drafter via context, NOT into the transcript
     persona_preset: str           # 'default' | 'concise' | 'formal' | 'cheeky' | 'socratic' | 'custom'
     persona_custom_prompt: str    # only when persona_preset == 'custom'
 
 
 def build_analysis_transcript(transcript: str, speakers: list | None = None, owner_name: str | None = None) -> str:
+    # NOTE: owner_name is intentionally NOT prepended to the transcript. A
+    # "[Meeting owner: NAME]" line in the analyzed text makes sentiment/speaker_coach
+    # fabricate a phantom participant (a tone + talk-share for a non-speaker). The
+    # owner reaches email_drafter via graph state → Tier-2 context instead. The param
+    # is kept for call-site compatibility.
     speakers = speakers or []
     lines = []
-    if owner_name and owner_name.strip():
-        lines.append(f"[Meeting owner: {owner_name.strip()}]")
     if speakers:
         lines.append("Meeting participants:")
         for speaker in speakers:
@@ -186,13 +189,13 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
         if 0 <= i < len(decisions_list)
     ]
 
-    # Surface the meeting owner (parsed from the transcript header set by
-    # build_analysis_transcript) into the Tier-2 context. email_drafter runs
-    # context-only (no transcript), so without this it can't know whose voice to
-    # write the follow-up FROM — critical for stand-in meetings, where the bot spoke
-    # for the owner and the only human name in the transcript is the OTHER attendee.
-    owner_m = re.match(r"\[Meeting owner:\s*([^\]]+)\]", state.get("transcript", "") or "")
-    owner_name = owner_m.group(1).strip() if owner_m else ""
+    # Surface the meeting owner (carried on the graph state — kept OUT of the
+    # transcript so sentiment/speaker_coach don't read it as a participant) into the
+    # Tier-2 context. email_drafter runs context-only (no transcript), so without this
+    # it can't know whose voice to write the follow-up FROM — critical for stand-in
+    # meetings, where the bot spoke for the owner and the only human name in the
+    # transcript is the OTHER attendee.
+    owner_name = (state.get("owner_name") or "").strip()
 
     return {
         "results": {"decision_linker": link_out},
@@ -326,12 +329,14 @@ async def run_full_analysis(
     transcript: str,
     persona_preset: str | None = None,
     persona_custom_prompt: str | None = None,
+    owner_name: str | None = None,
 ) -> dict:
     initial: dict = {
         "transcript": transcript,
         "agents_to_run": [],
         "results": {},
         "context": {},
+        "owner_name": (owner_name or "").strip(),
     }
     if persona_preset:
         initial["persona_preset"] = persona_preset

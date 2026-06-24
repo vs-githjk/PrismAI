@@ -214,5 +214,35 @@ class EmailDrafterInputTests(unittest.TestCase):
         self.assertTrue(user_content.strip())
 
 
+class OwnerNotInTranscriptTests(unittest.TestCase):
+    """Regression: the meeting owner must NOT appear in the analyzed transcript —
+    a '[Meeting owner: NAME]' line there makes sentiment/speaker_coach fabricate a
+    phantom participant (a tone + talk-share for someone who never spoke). The owner
+    instead rides the graph state into the Tier-2 context for email_drafter."""
+
+    def test_build_transcript_omits_owner_header(self):
+        out = analysis_service.build_analysis_transcript(
+            "Vijay: hello\nPrism: noted", owner_name="Vidyut",
+        )
+        self.assertNotIn("Meeting owner", out)
+        self.assertNotIn("Vidyut", out)
+        self.assertIn("Vijay: hello", out)
+
+    def test_barrier_carries_owner_from_state_to_context(self):
+        state = {
+            "transcript": "Vijay: hello\nPrism: noted",
+            "owner_name": "Vidyut",
+            "results": {},
+            "context": {},
+        }
+        out = asyncio.run(analysis_service._tier1_barrier(state))
+        self.assertEqual(out["context"]["owner_name"], "Vidyut")
+
+    def test_barrier_owner_defaults_empty_without_state(self):
+        state = {"transcript": "Vijay: hi", "results": {}, "context": {}}
+        out = asyncio.run(analysis_service._tier1_barrier(state))
+        self.assertEqual(out["context"]["owner_name"], "")
+
+
 if __name__ == "__main__":
     unittest.main()
