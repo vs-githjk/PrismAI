@@ -437,6 +437,13 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
             }).execute()
         except Exception as exc:
             print(f"[standin] meeting_bots insert failed: {exc}")
+        if workspace_id:
+            try:
+                supabase.table("meeting_bots").update(
+                    {"workspace_id": workspace_id}
+                ).eq("bot_id", bot_id).execute()
+            except Exception:
+                pass
     init_bot_realtime(bot_id)
     # Drive this headless bot's lifecycle ourselves — nothing else polls it (no
     # dashboard, no Recall account webhook). See _poll_standin_lifecycle.
@@ -696,6 +703,29 @@ async def recover_active_bots() -> None:
             spawned += 1
     if spawned:
         print(f"[standin] startup recovery re-spawned {spawned} lifecycle poller(s)")
+
+    # Backfill any bot whose analysis finished but never landed on a dashboard — e.g.
+    # a regular bot whose browser tab crashed/closed before POST /meetings, or a meeting
+    # the delayed fallback missed because the process restarted within its window.
+    # _persist_bot_meeting dedups on recall_bot_id, so already-saved meetings are skipped.
+    backfill_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    try:
+        done_rows = (
+            supabase.table("meeting_bots").select("bot_id")
+            .eq("status", "done").gte("created_at", backfill_cutoff)
+            .execute().data or []
+        )
+    except Exception as exc:
+        print(f"[recall] startup backfill query skipped: {exc}")
+        done_rows = []
+    backfilled = 0
+    for row in done_rows:
+        bid = row.get("bot_id")
+        if bid and bid not in _standin_persisted:
+            await _persist_bot_meeting(bid)
+            backfilled += 1
+    if backfilled:
+        print(f"[recall] startup backfill checked {backfilled} finished bot(s) for missing dashboard rows")
 
 
 def standin_updates_for_bot(bot_id: str) -> list[dict]:
@@ -1116,32 +1146,56 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
     return segments or None
 
 
-async def _persist_standin_meeting(bot_id: str) -> None:
-    """Promote a headless stand-in bot's analysis into the `meetings` table.
+def _resolve_owner_workspace(bot_id: str) -> tuple[str | None, str | None]:
+    """Best-effort (owner_user_id, workspace_id) for a bot, durable across a restart.
+    Precedence: a stand-in rep → the live bot_store entry → the meeting_bots row.
+    workspace_id is only durable for stand-ins (rep) or once meeting_bots carries it;
+    a regular bot recovered after a restart that wiped bot_store falls back to personal."""
+    owner_user_id: str | None = None
+    workspace_id: str | None = None
+    if supabase:
+        try:
+            rep = (
+                supabase.table("proxy_representations")
+                .select("author_user_id, workspace_id")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled")
+                .limit(1).execute()
+            )
+            if rep.data:
+                owner_user_id = rep.data[0].get("author_user_id")
+                workspace_id = rep.data[0].get("workspace_id")
+        except Exception:
+            pass
+    mem = bot_store.get(bot_id) or {}
+    owner_user_id = owner_user_id or mem.get("user_id")
+    workspace_id = workspace_id or mem.get("workspace_id")
+    if (not owner_user_id or not workspace_id) and supabase:
+        try:
+            mb = (
+                supabase.table("meeting_bots").select("owner_user_id, workspace_id")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            row = (mb.data if mb else None) or {}
+            owner_user_id = owner_user_id or row.get("owner_user_id")
+            workspace_id = workspace_id or row.get("workspace_id")
+        except Exception:
+            pass
+    return owner_user_id, workspace_id
 
-    A scheduled stand-in is headless by design — no browser is polling /bot-status, so
-    the frontend's POST /meetings (which is what normally puts a bot result on the
-    dashboard) never fires, and the analysed meeting would otherwise live only in
-    bot_sessions, invisible to the user. This mirrors that save server-side: it runs
-    only for bots that a (non-canceled) proxy_representation points at, pulls the
-    owner + workspace from that rep, and reuses save_meeting (so workspace fan-out +
-    transcript indexing happen too). Idempotent: in-memory guard + an existing-row
-    check on meetings.recall_bot_id, so it never double-writes alongside a browser save."""
+
+async def _persist_bot_meeting(bot_id: str) -> None:
+    """Promote ANY bot's analysis into the `meetings` table, server-side.
+
+    Normally the owner's browser does this (POST /meetings on status=done). But a
+    headless stand-in has no browser, and a regular bot whose dashboard tab crashed or
+    was closed before analysis finished would otherwise live only in bot_sessions —
+    invisible to the user. This saves it ourselves via save_meeting (so workspace
+    fan-out + transcript indexing happen too). Idempotent: in-memory guard + an
+    existing-row check on meetings.recall_bot_id, so it never double-writes alongside a
+    browser save (the browser POST sets recall_bot_id, which this checks first)."""
     if not supabase or bot_id in _standin_persisted:
         return
     try:
-        rep = (
-            supabase.table("proxy_representations")
-            .select("author_user_id, workspace_id")
-            .eq("scheduled_bot_id", bot_id).neq("status", "canceled")
-            .limit(1).execute()
-        )
-        if not rep.data:
-            return  # not a stand-in bot — its owner's browser saves it normally
-        owner_user_id = rep.data[0].get("author_user_id")
-        workspace_id = rep.data[0].get("workspace_id")
-        if not owner_user_id:
-            return
         existing = (
             supabase.table("meetings").select("id")
             .eq("recall_bot_id", bot_id).limit(1).execute()
@@ -1149,6 +1203,9 @@ async def _persist_standin_meeting(bot_id: str) -> None:
         if existing.data:
             _standin_persisted.add(bot_id)
             return  # already on a dashboard (browser saved it first)
+        owner_user_id, workspace_id = _resolve_owner_workspace(bot_id)
+        if not owner_user_id:
+            return
         bs = (
             supabase.table("bot_sessions").select("result, transcript")
             .eq("bot_id", bot_id).maybe_single().execute()
@@ -1164,7 +1221,7 @@ async def _persist_standin_meeting(bot_id: str) -> None:
         entry = MeetingEntry(
             id=(int(time.time() * 1000) * 1000) + secrets.randbelow(1000),
             date=datetime.now(timezone.utc).isoformat(),
-            title=(result.get("title") if isinstance(result, dict) else None) or summary[:65] or "Stand-in meeting",
+            title=(result.get("title") if isinstance(result, dict) else None) or summary[:65] or "Meeting",
             score=health.get("score"),
             transcript=transcript,
             result=result,
@@ -1174,9 +1231,24 @@ async def _persist_standin_meeting(bot_id: str) -> None:
         )
         _standin_persisted.add(bot_id)
         await save_meeting(entry, owner_user_id)
-        print(f"[standin] auto-promoted bot {bot_id} into meetings for {owner_user_id}")
+        print(f"[recall] auto-promoted bot {bot_id} into meetings for {owner_user_id} (workspace={workspace_id})")
     except Exception as exc:
-        print(f"[standin] auto-promote failed for {bot_id}: {exc}")
+        print(f"[recall] auto-promote failed for {bot_id}: {exc}")
+
+
+# Back-compat alias: stand-in bots are headless and persist immediately.
+_persist_standin_meeting = _persist_bot_meeting
+
+
+async def _persist_bot_meeting_delayed(bot_id: str, delay_s: float = 120.0) -> None:
+    """Fallback persist for a regular (browser-driven) bot: wait for the owner's tab to
+    save normally, then promote server-side only if it didn't (crashed/closed tab). The
+    existing-row check in _persist_bot_meeting makes this a no-op when the browser won."""
+    try:
+        await asyncio.sleep(delay_s)
+    except asyncio.CancelledError:
+        return
+    await _persist_bot_meeting(bot_id)
 
 
 async def _process_bot_transcript(bot_id: str):
@@ -1243,7 +1315,7 @@ async def _process_bot_transcript(bot_id: str):
         # email is written FROM the represented owner, not a guessed participant.
         owner_name = _resolve_owner_name(bot_id)
         analysis_transcript = build_analysis_transcript(transcript, owner_name=owner_name)
-        result = await run_full_analysis(analysis_transcript)
+        result = await run_full_analysis(analysis_transcript, owner_name=owner_name)
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
@@ -1256,9 +1328,14 @@ async def _process_bot_transcript(bot_id: str):
         })
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
-        # Headless stand-in bots have no browser to POST /meetings — promote ourselves.
-        # No-ops for regular interactive bots (no rep points at them).
-        await _persist_standin_meeting(bot_id)
+        # Persist to the meetings table server-side so a meeting is never lost to a
+        # crashed/closed dashboard tab. A headless stand-in has no browser → save now;
+        # a regular bot's browser normally saves it → only fall back after a delay if it
+        # didn't. Both dedup on recall_bot_id, so no double-write when the browser wins.
+        if (bot_store.get(bot_id) or {}).get("standin"):
+            await _persist_bot_meeting(bot_id)
+        else:
+            asyncio.create_task(_persist_bot_meeting_delayed(bot_id))
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:
@@ -1401,6 +1478,16 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
             }).execute()
         except Exception as exc:
             print(f"[recall] meeting_bots insert failed: {exc}")
+        # Stamp workspace durably so a server-side persist (after a restart that wiped
+        # bot_store) can still save the meeting to the right workspace. Best-effort —
+        # the column is absent on schemas before meeting_bots_workspace_migration.
+        if req.workspace_id:
+            try:
+                supabase.table("meeting_bots").update(
+                    {"workspace_id": req.workspace_id}
+                ).eq("bot_id", bot_id).execute()
+            except Exception:
+                pass
 
     init_bot_realtime(bot_id)
 

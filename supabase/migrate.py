@@ -47,6 +47,7 @@ MIGRATION_ORDER = [
     "proxy_representations_migration.sql",      # proxy_profiles + proxy_representations
     "proxy_workspace_profiles_migration.sql",   # per-workspace profiles + borrow_scopes
     "proxy_default_standin_migration.sql",       # per-space default stand-in
+    "meeting_bots_workspace_migration.sql",      # meeting_bots.workspace_id (durable server-side persist)
 ]
 
 migrations_dir = Path(__file__).parent
