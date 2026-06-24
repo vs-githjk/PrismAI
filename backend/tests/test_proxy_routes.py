@@ -62,11 +62,17 @@ class ScheduleGatingTests(unittest.TestCase):
     def test_join_at_ok_far_future(self):
         self.assertTrue(pr._join_at_ok(self._iso(minutes=30)))
 
-    def test_join_at_too_soon(self):
-        self.assertFalse(pr._join_at_ok(self._iso(minutes=5)))
+    def test_join_at_soon_is_ok(self):
+        # "Can't make it" works right up to the start — imminent meetings join now.
+        self.assertTrue(pr._join_at_ok(self._iso(minutes=5)))
 
-    def test_join_at_past(self):
-        self.assertFalse(pr._join_at_ok(self._iso(minutes=-30)))
+    def test_join_at_recently_started_is_ok(self):
+        # A meeting that started in the last hour is still joinable (bot joins now).
+        self.assertTrue(pr._join_at_ok(self._iso(minutes=-30)))
+
+    def test_join_at_long_over_is_rejected(self):
+        # Past the 1-hour window, the meeting is treated as over — no bot.
+        self.assertFalse(pr._join_at_ok(self._iso(minutes=-90)))
 
     def test_join_at_missing_or_bad(self):
         self.assertFalse(pr._join_at_ok(None))

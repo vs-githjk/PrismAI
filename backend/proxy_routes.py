@@ -32,14 +32,17 @@ def _standin_schedule_on() -> bool:
 
 
 def _join_at_ok(scheduled_for: str | None) -> bool:
-    """Recall requires join_at to be >10 min in the future to guarantee the join."""
+    """Whether to stand up a bot for this meeting. True for any meeting that's
+    upcoming OR started recently (within the last hour) — schedule_standin_bot
+    joins immediately when join_at is past/imminent, so an in-progress meeting is
+    still covered. False only when there's no time or the meeting is long over."""
     if not scheduled_for:
         return False
     try:
         start = datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
-        return start > datetime.now(timezone.utc) + timedelta(minutes=10)
+        return start > datetime.now(timezone.utc) - timedelta(hours=1)
     except Exception:
         return False
 

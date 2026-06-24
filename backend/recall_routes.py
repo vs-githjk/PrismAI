@@ -277,8 +277,10 @@ def _live_token_for_bot(bot_id: str) -> str | None:
 def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: str,
                             join_at: str | None = None, bot_name: str = "PrismAI") -> dict:
     """The Recall bot-create payload, shared by immediate joins and scheduled
-    stand-in bots. `join_at` (ISO 8601, >10 min out) makes Recall schedule the
-    join instead of joining now. `bot_name` is the in-meeting display name —
+    stand-in bots. A future `join_at` (ISO 8601) makes Recall schedule the join
+    instead of joining now; omit it (None) to join immediately. Callers drop a
+    past/imminent join_at to None so live meetings are covered. `bot_name` is the
+    in-meeting display name —
     stand-in bots pass the represented person's name so attendees recognise (and
     admit) it and know whose update it carries."""
     body = {
@@ -372,6 +374,18 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
         return None
     normalized = _normalize_meeting_url(meeting_url)
 
+    # A meeting that's already started (or about to) can't be "scheduled" for a
+    # future join — Recall needs lead time. If join_at is in the past or imminent,
+    # join now instead so "Can't make it" still works on a live/imminent meeting.
+    effective_join_at = join_at
+    try:
+        if join_at:
+            start = datetime.fromisoformat(join_at.replace("Z", "+00:00"))
+            if start <= datetime.now(timezone.utc) + timedelta(minutes=2):
+                effective_join_at = None
+    except Exception:
+        effective_join_at = join_at
+
     # Dedup: attach to an existing scheduled/live bot for this meeting if there is one.
     if supabase:
         existing = _find_existing_bot_for_standin(supabase, normalized, user_id)
@@ -386,7 +400,7 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
     display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else "PrismAI"
     body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url,
-                                   join_at=join_at, bot_name=display_name)
+                                   join_at=effective_join_at, bot_name=display_name)
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -426,8 +440,8 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     init_bot_realtime(bot_id)
     # Drive this headless bot's lifecycle ourselves — nothing else polls it (no
     # dashboard, no Recall account webhook). See _poll_standin_lifecycle.
-    asyncio.create_task(_poll_standin_lifecycle(bot_id, join_at))
-    print(f"[standin] scheduled bot {bot_id} for {join_at}")
+    asyncio.create_task(_poll_standin_lifecycle(bot_id, effective_join_at))
+    print(f"[standin] bot {bot_id} {'joining now' if not effective_join_at else f'scheduled for {effective_join_at}'}")
     return {"bot_id": bot_id, "reused": False}
 
 

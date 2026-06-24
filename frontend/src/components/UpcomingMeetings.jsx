@@ -397,8 +397,9 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
                       </button>
                     )}
 
-                    {/* Can't make it → stand-in. Only ≥10 min out (scheduled join needs join_at >10 min ahead). */}
-                    {user && mins !== null && mins >= 10 && (
+                    {/* Can't make it → stand-in. Available anytime up to a meeting that's
+                        recently started — if join_at is past/imminent the backend joins now. */}
+                    {user && mins !== null && mins >= -60 && (
                       <button
                         onClick={() => onCantMakeIt?.({
                           url: event.meeting_link,
