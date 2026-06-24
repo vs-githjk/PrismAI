@@ -101,7 +101,10 @@ function detectGlobalIntent(msg) {
 }
 
 function detectAgentIntent(msg) {
-  const m = msg.toLowerCase()
+  // Collapse a split "re-" verb so "re run" / "re-run" / "re analyze" match the same
+  // patterns as "rerun" / "reanalyze". Only fires on a real separator after "re",
+  // so words like "remind"/"are" are untouched.
+  const m = msg.toLowerCase().replace(/\bre[-\s]+(?=[a-z])/g, 're')
   if (/undo|revert|restore|back to (the )?(original|old|previous|last|before)|reset (the )?(card|email|summary|action|decision)/.test(m)) return 'undo'
   if (/e-?mail/.test(m) && /draft|write|compose|create|generate|prepare|redraft|rewrite|redo|revise|make|formal|casual|short|long|concise|tone|style|angr|polite|friendl|professional|improve|update|follow.?up/.test(m)) return 'email_drafter'
   if (/action item|task|todo/.test(m) && /redo|regenerate|update|add|remove|change|rewrite/.test(m)) return 'action_items'
