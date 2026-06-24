@@ -236,6 +236,53 @@ async def list_docs(
     return {"docs": rows}
 
 
+def _signed_original_url(sb, doc: dict) -> Optional[str]:
+    """A link to the doc's source: a short-lived signed URL for uploaded files,
+    or the original source_url for url/notion/gdrive docs. None if neither."""
+    file_path = doc.get("file_path")
+    if file_path:
+        try:
+            res = sb.storage.from_("knowledge").create_signed_url(file_path, 3600)
+            # supabase-py has returned both 'signedURL' and 'signedUrl' across versions
+            return res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
+        except Exception:
+            return None
+    return doc.get("source_url")
+
+
+@router.get("/docs/{doc_id}")
+async def get_doc(doc_id: str, user_id: str = Depends(require_user_id)):
+    """Single doc + its extracted text (what Prism actually indexed). Access mirrors
+    list_docs: the caller's own doc, or one shared into a workspace they belong to."""
+    sb = _supabase()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+
+    doc_resp = await _execute(
+        sb.table("knowledge_docs").select("*").eq("id", doc_id).is_("deleted_at", "null").single()
+    )
+    doc = doc_resp.data
+    if not doc:
+        raise HTTPException(status_code=404, detail="Doc not found")
+
+    # Authorize: own doc, or a doc shared into a workspace the caller is a member of.
+    if doc.get("user_id") != user_id:
+        ws_id = doc.get("workspace_id")
+        if not (ws_id and ws_id in get_user_workspace_ids(sb, user_id)):
+            raise HTTPException(status_code=403, detail="Not allowed to view this document")
+
+    chunks_resp = await _execute(
+        sb.table("knowledge_chunks").select("content,chunk_index")
+        .eq("doc_id", doc_id).order("chunk_index", desc=False)
+    )
+    chunks = chunks_resp.data or []
+    content = "\n\n".join((c.get("content") or "").strip() for c in chunks if c.get("content"))
+
+    doc["content"] = content
+    doc["original_url"] = _signed_original_url(sb, doc)
+    return {"doc": doc}
+
+
 @router.patch("/docs/{doc_id}")
 async def update_doc(doc_id: str, req: UpdateDocRequest, user_id: str = Depends(require_user_id)):
     sb = _supabase()
