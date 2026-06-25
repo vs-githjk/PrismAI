@@ -24,6 +24,7 @@ import DashboardPage from './components/DashboardPage'
 import MeetingView from './components/dashboard/MeetingView'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
+import { readIntegrationStore, writeIntegrationStore, purgeLegacyGlobalIntegrationKeys } from './lib/integrationStore'
 
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
 const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
@@ -1313,18 +1314,19 @@ export default function App() {
 
   // Integrations
   const [showIntegrations, setShowIntegrations] = useState(false)
-  const [integrations, setIntegrations] = useState(() => ({
-    slack_webhook: localStorage.getItem('prism_slack_webhook') || '',
-    notion_token: localStorage.getItem('prism_notion_token') || '',
-    notion_page_id: localStorage.getItem('prism_notion_page_id') || '',
-    auto_send_slack: localStorage.getItem('prism_auto_send_slack') === '1',
-    auto_send_notion: localStorage.getItem('prism_auto_send_notion') === '1',
-  }))
+  // Integration tokens are loaded PER USER once auth resolves (see the effect below).
+  // Start empty + purge the old global keys so a prior account's tokens can't bleed in.
+  const [integrations, setIntegrations] = useState(() => {
+    purgeLegacyGlobalIntegrationKeys()
+    return { slack_webhook: '', notion_token: '', notion_page_id: '', auto_send_slack: false, auto_send_notion: false }
+  })
   const [personaPreset, setPersonaPreset] = useState('default')
   const [personaCustomPrompt, setPersonaCustomPrompt] = useState('')
   // Load tool settings + persona from backend when signed in
   useEffect(() => {
     if (!user || isTestAccount) return
+    // Browser-local integration tokens, scoped to THIS user (no cross-account bleed).
+    setIntegrations(prev => ({ ...prev, ...readIntegrationStore(user.id) }))
     apiFetch('/user-settings').then(async (res) => {
       if (!res.ok) return
       const data = await res.json()
@@ -2860,6 +2862,7 @@ export default function App() {
           <Suspense fallback={null}>
             <IntegrationsModal
               integrations={integrations}
+              userId={user?.id}
               onSave={setIntegrations}
               onClose={() => setShowIntegrations(false)}
               calendarConnected={calendarConnected}
