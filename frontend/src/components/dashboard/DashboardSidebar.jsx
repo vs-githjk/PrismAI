@@ -194,7 +194,13 @@ export default function DashboardSidebar(props) {
             sideOffset={10}
             collisionPadding={12}
             modal={false}
-            className="dashboard-island dashboard-body-font max-h-[var(--radix-popper-available-height,50vh)] w-[340px] overflow-auto p-0"
+            className="dashboard-island dashboard-body-font w-[340px] p-0"
+            // Inline style, not a Tailwind class: the base DropdownMenuContent class has
+            // overflow-hidden, and `max-h-[var(...)]` arbitrary values get dropped by
+            // tailwind-merge — so the height cap never applied and the popover ran off
+            // screen. Inline style beats both. The Radix var gives the real space below
+            // the (mid-page) trigger; 80vh is a fallback if it's ever unset.
+            style={{ maxHeight: 'var(--radix-popper-available-height, 80vh)', overflowY: 'auto' }}
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             {newMeetingPanel}
