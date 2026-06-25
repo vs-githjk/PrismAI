@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, MailCheck, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from '../lib/sessionKeys'
 
@@ -27,138 +27,29 @@ function MicrosoftIcon() {
   )
 }
 
-function AuthField({ id, label, error, ...props }) {
-  return (
-    <div className="signup-field">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        className={error ? 'signup-input signup-input-error' : 'signup-input'}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-        {...props}
-      />
-      {error && <p id={`${id}-error`} className="signup-field-error" role="alert">{error}</p>}
-    </div>
-  )
-}
-
-export default function SignupDialog({ mode = 'signup', onModeChange, onClose }) {
-  const [form, setForm] = useState({ username: '', email: '', password: '' })
-  const [errors, setErrors] = useState({})
+// SSO-only sign-in: Google + Microsoft. Email/password + username were dropped — SSO
+// handles both signup and login, so there's no separate mode toggle anymore.
+export default function SignupDialog({ onClose }) {
   const [submitError, setSubmitError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [verificationSent, setVerificationSent] = useState(false)
-  const isSignup = mode === 'signup'
   const dashboardUrl = typeof window !== 'undefined' ? `${window.location.origin}${DASHBOARD_PATH}` : DASHBOARD_PATH
 
-  const setField = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-    setErrors((prev) => ({ ...prev, [field]: '' }))
+  const signInWith = async (provider, options = {}) => {
     setSubmitError('')
-  }
-
-  const switchMode = (nextMode) => {
-    setErrors({})
-    setSubmitError('')
-    setVerificationSent(false)
-    onModeChange?.(nextMode)
-  }
-
-  const validate = () => {
-    const nextErrors = {}
-    const email = form.email.trim()
-    if (isSignup && !form.username.trim()) nextErrors.username = 'Choose a username.'
-    if (!email) nextErrors.email = 'Enter your email.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.email = 'Enter a valid email.'
-    if (!form.password) nextErrors.password = 'Enter your password.'
-    else if (isSignup && form.password.length < 6) nextErrors.password = 'Use at least 6 characters.'
-    setErrors(nextErrors)
-    return Object.keys(nextErrors).length === 0
-  }
-
-  const goToDashboard = () => {
+    if (!supabase) {
+      setSubmitError('Supabase auth is not configured yet.')
+      return
+    }
     sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
     sessionStorage.setItem(VISITED_KEY, '1')
     sessionStorage.setItem(UI_SCREEN_KEY, 'app')
-    window.location.assign(DASHBOARD_PATH)
-  }
-
-  const handleGoogle = async () => {
-    setSubmitError('')
-    if (!supabase) {
-      setSubmitError('Supabase auth is not configured yet.')
-      return
-    }
-    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: dashboardUrl,
-      },
+      provider,
+      options: { redirectTo: dashboardUrl, ...options },
     })
     if (error) {
       setSubmitError(error.message)
-      setLoading(false)
-    }
-  }
-
-  const handleMicrosoft = async () => {
-    setSubmitError('')
-    if (!supabase) {
-      setSubmitError('Supabase auth is not configured yet.')
-      return
-    }
-    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'azure',
-      options: {
-        redirectTo: dashboardUrl,
-        scopes: 'email',
-      },
-    })
-    if (error) {
-      setSubmitError(error.message)
-      setLoading(false)
-    }
-  }
-
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    setSubmitError('')
-    if (!validate()) return
-    if (!supabase) {
-      setSubmitError('Supabase auth is not configured yet.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      if (isSignup) {
-        const { data, error } = await supabase.auth.signUp({
-          email: form.email.trim(),
-          password: form.password,
-          options: {
-            data: { username: form.username.trim() },
-            emailRedirectTo: dashboardUrl,
-          },
-        })
-        if (error) throw error
-        if (data.session) goToDashboard()
-        else setVerificationSent(true)
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: form.email.trim(),
-          password: form.password,
-        })
-        if (error) throw error
-        goToDashboard()
-      }
-    } catch (error) {
-      setSubmitError(error.message || 'Something went wrong. Try again.')
-    } finally {
       setLoading(false)
     }
   }
@@ -176,86 +67,28 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
           <X aria-hidden="true" />
         </button>
 
-        {verificationSent ? (
-          <div className="signup-verification">
-            <div className="signup-verification-icon" aria-hidden="true">
-              <MailCheck />
-            </div>
-            <p className="signup-kicker">Verify your email</p>
-            <h2 id="signup-title" className="signup-title">Check your inbox.</h2>
-            <p className="signup-body">
-              We sent a verification link to <strong>{form.email.trim()}</strong>. After you confirm, you will be sent to the dashboard.
-            </p>
-            <button type="button" className="signup-submit" onClick={onClose}>Done</button>
-          </div>
-        ) : (
-          <>
-            <p className="signup-kicker">PrismAI account</p>
-            <h2 id="signup-title" className="signup-title">{isSignup ? 'Create your account.' : 'Welcome back.'}</h2>
-            <p className="signup-body">
-              {isSignup ? 'Save meeting history and open your dashboard after signup.' : 'Log in to continue to your dashboard.'}
-            </p>
+        <p className="signup-kicker">PrismAI account</p>
+        <h2 id="auth-dialog-title" className="signup-title">Sign in to PrismAI.</h2>
+        <p className="signup-body">
+          Continue with your Google or Microsoft account. Your meeting history and dashboard open right after.
+        </p>
 
-            <div className="signup-social-row">
-              <button type="button" className="signup-provider-button" onClick={handleGoogle} disabled={loading}>
-                <GoogleIcon />
-                Google
-              </button>
-              <button type="button" className="signup-provider-button" onClick={handleMicrosoft} disabled={loading}>
-                <MicrosoftIcon />
-                Microsoft
-              </button>
-            </div>
+        <div className="signup-social-row">
+          <button type="button" className="signup-provider-button" onClick={() => signInWith('google')} disabled={loading}>
+            <GoogleIcon />
+            Google
+          </button>
+          <button type="button" className="signup-provider-button" onClick={() => signInWith('azure', { scopes: 'email' })} disabled={loading}>
+            <MicrosoftIcon />
+            Microsoft
+          </button>
+        </div>
 
-            <div className="signup-divider"><span>or</span></div>
+        {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
 
-            <form className="signup-form" onSubmit={handleSubmit} noValidate>
-              {isSignup && (
-                <AuthField
-                  id="signup-username"
-                  label="Username"
-                  type="text"
-                  autoComplete="username"
-                  value={form.username}
-                  onChange={(event) => setField('username', event.target.value)}
-                  error={errors.username}
-                />
-              )}
-              <AuthField
-                id="signup-email"
-                label="Email"
-                type="email"
-                autoComplete="email"
-                value={form.email}
-                onChange={(event) => setField('email', event.target.value)}
-                error={errors.email}
-              />
-              <AuthField
-                id="signup-password"
-                label="Password"
-                type="password"
-                autoComplete={isSignup ? 'new-password' : 'current-password'}
-                value={form.password}
-                onChange={(event) => setField('password', event.target.value)}
-                error={errors.password}
-              />
-
-              {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
-
-              <button type="submit" className="signup-submit" disabled={loading}>
-                {loading && <Loader2 className="signup-spinner" aria-hidden="true" />}
-                {isSignup ? 'Sign up' : 'Log in'}
-              </button>
-            </form>
-
-            <p className="signup-mode-note">
-              {isSignup ? 'Already have an account?' : 'New to PrismAI?'}
-              <button type="button" onClick={() => switchMode(isSignup ? 'login' : 'signup')}>
-                {isSignup ? 'Log in' : 'Sign up'}
-              </button>
-            </p>
-          </>
-        )}
+        <p className="signup-mode-note">
+          No password needed — single sign-on keeps your account secure.
+        </p>
       </div>
     </div>
   )
