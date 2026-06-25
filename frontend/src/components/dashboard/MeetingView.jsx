@@ -431,6 +431,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         meetingTitle={meeting?.title || result?.title || ''}
         readOnly={readOnly}
         suggestedEmails={suggestedEmails}
+        meetingId={meetingId}
       />
 
       {/* Secondary insight — kept low, just above the recording/transcript. */}

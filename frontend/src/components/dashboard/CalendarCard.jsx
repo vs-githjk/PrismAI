@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarPlus, Check, ExternalLink, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
@@ -25,7 +25,7 @@ function timeFromMeetingDate(value) {
   return `${hh}:${mm}`
 }
 
-export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [], suggestedEmails = [] }) {
+export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [], suggestedEmails = [], meetingId = null }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')
@@ -35,6 +35,19 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
   const [created, setCreated] = useState(null) // { link }
   const [error, setError] = useState('')
   const [conflict, setConflict] = useState(null) // { type: 'duplicate'|'overlap', events: [] }
+
+  // `created` is component state that resets on reload, so the "Event created" view +
+  // the hidden defaulted-time notice would revert after a refresh. Persist it per
+  // meeting (per browser — the event lives in THIS user's calendar) so the card
+  // remembers across reloads.
+  const createdKey = meetingId ? `prism_cal_created_${meetingId}` : null
+  useEffect(() => {
+    if (!createdKey) return
+    try {
+      const saved = localStorage.getItem(createdKey)
+      if (saved) setCreated(JSON.parse(saved))
+    } catch { /* ignore */ }
+  }, [createdKey])
 
   // Resolve a concrete date/time for display + prefill. Prefer the backend's
   // resolved fields; fall back to client-side parsing of the timeframe phrase
@@ -106,7 +119,9 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       const data = await res.json()
       if (data.conflict) { setConflict({ type: data.type, events: data.events || [] }); return }
       setConflict(null)
-      setCreated({ link: data.link })
+      const createdInfo = { link: data.link }
+      setCreated(createdInfo)
+      if (createdKey) { try { localStorage.setItem(createdKey, JSON.stringify(createdInfo)) } catch { /* ignore */ } }
     } catch {
       setError('Network error — try again.')
     } finally {
@@ -191,6 +206,13 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
                   Open <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
+              <button
+                type="button"
+                onClick={() => { setCreated(null); if (createdKey) { try { localStorage.removeItem(createdKey) } catch { /* ignore */ } } }}
+                className="ml-1 text-white/45 transition hover:text-white/75"
+              >
+                · Add another
+              </button>
             </div>
           ) : open ? (
             <div className="space-y-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
