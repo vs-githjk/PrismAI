@@ -192,7 +192,7 @@ export default function DashboardSidebar(props) {
             side="bottom"
             align="start"
             sideOffset={10}
-            collisionPadding={12}
+            collisionPadding={32}
             modal={false}
             className="dashboard-island dashboard-body-font w-[340px] p-0"
             // Inline style, not a Tailwind class: the base DropdownMenuContent class has
