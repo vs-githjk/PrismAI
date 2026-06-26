@@ -963,7 +963,7 @@ async def _send_bot_intro(bot_id: str):
     owner_name = bot_state.get("owner_name") or "the meeting owner"
     user_id = bot_state.get("user_id")
     workspace_id = bot_state.get("workspace_id")
-    frontend_url = os.getenv("FRONTEND_URL", "https://agentic-meeting-copilot.vercel.app")
+    frontend_url = os.getenv("FRONTEND_URL", "https://meetprismai.com")
     live_link = f"{frontend_url}/#live/{live_token}" if live_token else None
 
     # Persona-flavored greeting line. Pulls the owner's resolved persona preset
