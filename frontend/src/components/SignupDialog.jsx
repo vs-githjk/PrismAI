@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, MailCheck, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from '../lib/sessionKeys'
 
@@ -16,125 +16,40 @@ function GoogleIcon() {
   )
 }
 
-function GitHubIcon() {
+function MicrosoftIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-      <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.56 2.35 1.11 2.92.85.09-.67.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.95c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.81 0 .27.18.59.69.49A10.12 10.12 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#F25022" d="M11.4 11.4H2V2h9.4z" />
+      <path fill="#7FBA00" d="M22 11.4h-9.4V2H22z" />
+      <path fill="#00A4EF" d="M11.4 22H2v-9.4h9.4z" />
+      <path fill="#FFB900" d="M22 22h-9.4v-9.4H22z" />
     </svg>
   )
 }
 
-function AuthField({ id, label, error, ...props }) {
-  return (
-    <div className="signup-field">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        className={error ? 'signup-input signup-input-error' : 'signup-input'}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-        {...props}
-      />
-      {error && <p id={`${id}-error`} className="signup-field-error" role="alert">{error}</p>}
-    </div>
-  )
-}
-
-export default function SignupDialog({ mode = 'signup', onModeChange, onClose }) {
-  const [form, setForm] = useState({ username: '', email: '', password: '' })
-  const [errors, setErrors] = useState({})
+// SSO-only sign-in: Google + Microsoft. Email/password + username were dropped — SSO
+// handles both signup and login, so there's no separate mode toggle anymore.
+export default function SignupDialog({ onClose }) {
   const [submitError, setSubmitError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [verificationSent, setVerificationSent] = useState(false)
-  const isSignup = mode === 'signup'
   const dashboardUrl = typeof window !== 'undefined' ? `${window.location.origin}${DASHBOARD_PATH}` : DASHBOARD_PATH
 
-  const setField = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-    setErrors((prev) => ({ ...prev, [field]: '' }))
+  const signInWith = async (provider, options = {}) => {
     setSubmitError('')
-  }
-
-  const switchMode = (nextMode) => {
-    setErrors({})
-    setSubmitError('')
-    setVerificationSent(false)
-    onModeChange?.(nextMode)
-  }
-
-  const validate = () => {
-    const nextErrors = {}
-    const email = form.email.trim()
-    if (isSignup && !form.username.trim()) nextErrors.username = 'Choose a username.'
-    if (!email) nextErrors.email = 'Enter your email.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.email = 'Enter a valid email.'
-    if (!form.password) nextErrors.password = 'Enter your password.'
-    else if (isSignup && form.password.length < 6) nextErrors.password = 'Use at least 6 characters.'
-    setErrors(nextErrors)
-    return Object.keys(nextErrors).length === 0
-  }
-
-  const goToDashboard = () => {
+    if (!supabase) {
+      setSubmitError('Supabase auth is not configured yet.')
+      return
+    }
     sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
     sessionStorage.setItem(VISITED_KEY, '1')
     sessionStorage.setItem(UI_SCREEN_KEY, 'app')
-    window.location.assign(DASHBOARD_PATH)
-  }
-
-  const handleGoogle = async () => {
-    setSubmitError('')
-    if (!supabase) {
-      setSubmitError('Supabase auth is not configured yet.')
-      return
-    }
-    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: dashboardUrl,
-      },
+      provider,
+      options: { redirectTo: dashboardUrl, ...options },
     })
     if (error) {
       setSubmitError(error.message)
-      setLoading(false)
-    }
-  }
-
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    setSubmitError('')
-    if (!validate()) return
-    if (!supabase) {
-      setSubmitError('Supabase auth is not configured yet.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      if (isSignup) {
-        const { data, error } = await supabase.auth.signUp({
-          email: form.email.trim(),
-          password: form.password,
-          options: {
-            data: { username: form.username.trim() },
-            emailRedirectTo: dashboardUrl,
-          },
-        })
-        if (error) throw error
-        if (data.session) goToDashboard()
-        else setVerificationSent(true)
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: form.email.trim(),
-          password: form.password,
-        })
-        if (error) throw error
-        goToDashboard()
-      }
-    } catch (error) {
-      setSubmitError(error.message || 'Something went wrong. Try again.')
-    } finally {
       setLoading(false)
     }
   }
@@ -152,86 +67,28 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
           <X aria-hidden="true" />
         </button>
 
-        {verificationSent ? (
-          <div className="signup-verification">
-            <div className="signup-verification-icon" aria-hidden="true">
-              <MailCheck />
-            </div>
-            <p className="signup-kicker">Verify your email</p>
-            <h2 id="signup-title" className="signup-title">Check your inbox.</h2>
-            <p className="signup-body">
-              We sent a verification link to <strong>{form.email.trim()}</strong>. After you confirm, you will be sent to the dashboard.
-            </p>
-            <button type="button" className="signup-submit" onClick={onClose}>Done</button>
-          </div>
-        ) : (
-          <>
-            <p className="signup-kicker">PrismAI account</p>
-            <h2 id="signup-title" className="signup-title">{isSignup ? 'Create your account.' : 'Welcome back.'}</h2>
-            <p className="signup-body">
-              {isSignup ? 'Save meeting history and open your dashboard after signup.' : 'Log in to continue to your dashboard.'}
-            </p>
+        <p className="signup-kicker">PrismAI account</p>
+        <h2 id="auth-dialog-title" className="signup-title">Sign in to PrismAI.</h2>
+        <p className="signup-body">
+          Continue with your Google or Microsoft account. Your meeting history and dashboard open right after.
+        </p>
 
-            <div className="signup-social-row">
-              <button type="button" className="signup-provider-button" onClick={handleGoogle} disabled={loading}>
-                <GoogleIcon />
-                Google
-              </button>
-              <button type="button" className="signup-provider-button signup-provider-disabled" disabled title="GitHub signup is coming soon">
-                <GitHubIcon />
-                GitHub
-              </button>
-            </div>
+        <div className="signup-social-row">
+          <button type="button" className="signup-provider-button" onClick={() => signInWith('google')} disabled={loading}>
+            <GoogleIcon />
+            Google
+          </button>
+          <button type="button" className="signup-provider-button" onClick={() => signInWith('azure', { scopes: 'email' })} disabled={loading}>
+            <MicrosoftIcon />
+            Microsoft
+          </button>
+        </div>
 
-            <div className="signup-divider"><span>or</span></div>
+        {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
 
-            <form className="signup-form" onSubmit={handleSubmit} noValidate>
-              {isSignup && (
-                <AuthField
-                  id="signup-username"
-                  label="Username"
-                  type="text"
-                  autoComplete="username"
-                  value={form.username}
-                  onChange={(event) => setField('username', event.target.value)}
-                  error={errors.username}
-                />
-              )}
-              <AuthField
-                id="signup-email"
-                label="Email"
-                type="email"
-                autoComplete="email"
-                value={form.email}
-                onChange={(event) => setField('email', event.target.value)}
-                error={errors.email}
-              />
-              <AuthField
-                id="signup-password"
-                label="Password"
-                type="password"
-                autoComplete={isSignup ? 'new-password' : 'current-password'}
-                value={form.password}
-                onChange={(event) => setField('password', event.target.value)}
-                error={errors.password}
-              />
-
-              {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
-
-              <button type="submit" className="signup-submit" disabled={loading}>
-                {loading && <Loader2 className="signup-spinner" aria-hidden="true" />}
-                {isSignup ? 'Sign up' : 'Log in'}
-              </button>
-            </form>
-
-            <p className="signup-mode-note">
-              {isSignup ? 'Already have an account?' : 'New to PrismAI?'}
-              <button type="button" onClick={() => switchMode(isSignup ? 'login' : 'signup')}>
-                {isSignup ? 'Log in' : 'Sign up'}
-              </button>
-            </p>
-          </>
-        )}
+        <p className="signup-mode-note">
+          No password needed — single sign-on keeps your account secure.
+        </p>
       </div>
     </div>
   )

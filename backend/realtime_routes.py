@@ -20,7 +20,7 @@ import perception_state
 import think_loop
 import utterance_accumulator
 from agents.utils import llm_call, strip_fences, persona_suffix_agentic
-from personas import persona_identity_resolved, DEFAULT_BOT_NAME
+from personas import persona_identity_resolved, DEFAULT_BOT_NAME, PERSONA_NAMES
 from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
@@ -160,6 +160,71 @@ def _barge_in_on() -> bool:
     # Default ON: enables "Prism, stop" verbal interrupt, halting in-flight speech
     # on mute, and the gap-before-speaking checks. Set PRISM_BARGE_IN=0 to disable.
     return os.getenv("PRISM_BARGE_IN", "1") != "0"
+
+
+# ── Solo free-flow (one human in the room → no wake word needed) ──────────────
+# When exactly one human is present, the bot assumes every substantive utterance
+# is addressed to it and responds without requiring "Prism, …". Counting is
+# driven by Recall participant join/leave events; a distinct-speaker fallback
+# covers the case where those events are unavailable (e.g. mid-meeting restart).
+def _solo_freeflow_on() -> bool:
+    return os.getenv("PRISM_SOLO_FREEFLOW", "1") != "0"
+
+
+# Names that mark a participant as our own bot (so it isn't counted as a human).
+_BOT_SELF_NAMES = {DEFAULT_BOT_NAME.lower(), "prism", "prismai", "prism ai"} | {
+    n.lower() for n in PERSONA_NAMES.values()
+}
+
+
+def _looks_like_bot_participant(name: str, raw: dict) -> bool:
+    """Best-effort: is this participant our recording bot rather than a human?"""
+    if isinstance(raw, dict) and (raw.get("is_current_user") is True or raw.get("is_bot") is True):
+        return True
+    return (name or "").strip().lower() in _BOT_SELF_NAMES
+
+
+def _human_participant_count(state: dict) -> int:
+    return sum(1 for p in state.get("participants", {}).values() if not p.get("is_bot"))
+
+
+def _note_human_count(state: dict, count: int) -> None:
+    """Track the high-water mark of distinct humans so the speaker-based
+    fallback never drops a group meeting into free-flow."""
+    if count > state.get("max_humans_seen", 0):
+        state["max_humans_seen"] = count
+
+
+def _solo_mode_active(state: dict) -> bool:
+    if not _solo_freeflow_on():
+        return False
+    # Primary: live participant roster from Recall join/leave events.
+    if state.get("participants_seen"):
+        return _human_participant_count(state) == 1
+    # Fallback (no participant events): exactly one distinct human has spoken,
+    # and we've never observed two or more (don't free-flow a group post-restart).
+    humans = state.get("human_speaker_ids") or set()
+    return len(humans) == 1 and state.get("max_humans_seen", 0) <= 1
+
+
+def _solo_freeflow_text_eligible(text: str) -> bool:
+    """Solo free-flow filter on raw text (legacy path has Deepgram finals, not
+    FlushedUtterances). Drops backchannel/filler so the bot doesn't pounce on
+    'um, okay'; mute/stop phrases are owned by the barge-in layer."""
+    t = (text or "").strip()
+    if len(re.findall(r"\b\w+\b", t)) < 3:
+        return False
+    if ambient_loop.detect_mute_command(t):
+        return False
+    return True
+
+
+def _solo_freeflow_eligible(u) -> bool:
+    """Filter out backchannel/filler so the bot doesn't pounce on 'um, okay'.
+    Stop/mute phrases are owned by the barge-in + interjection layers."""
+    if getattr(u, "word_count", 0) < 3:
+        return False
+    return _solo_freeflow_text_eligible(u.text or "")
 
 
 # How long to suppress repeat command-processing. Only there to absorb transcript
@@ -354,11 +419,32 @@ _STATIC_TOOL_POLICY = (
 )
 
 
+def _owner_email_for_bot(bot_id: str) -> str:
+    """The owner's real email, memoized on bot_store. Resolved lazily (stand-in rep →
+    workspace member) on first miss so 'email this to the owner' uses a real address
+    rather than a guessed one. Caches even an empty result to avoid re-querying."""
+    entry = bot_store.get(bot_id) or {}
+    cached = entry.get("owner_email")
+    if cached is not None:
+        return cached or ""
+    email = ""
+    try:
+        from recall_routes import resolve_owner_email
+        email = resolve_owner_email(bot_id, entry.get("user_id")) or ""
+    except Exception as exc:
+        print(f"[realtime] owner email resolve failed: {exc}")
+    if bot_id in bot_store:
+        bot_store[bot_id]["owner_email"] = email
+    return email
+
+
 def _build_static_prefix(
     has_gmail: bool,
     has_calendar: bool,
     persona_text: str = "",
     bot_name: str = "",
+    owner_name: str = "",
+    owner_email: str = "",
 ) -> str:
     """Static system prompt — byte-identical across commands within a meeting
     when the user's tool grants don't change. This is the cache-eligible
@@ -409,7 +495,24 @@ def _build_static_prefix(
             f"addresses you, refers to you, or asks who you are, respond as "
             f"{bot_name}. Do not call yourself Prism in this meeting."
         )
-    return base + name_line + persona_suffix_agentic(persona_text)
+    # Owner identity: meeting-stable (rides the cache like bot_name). Gives the bot the
+    # real address to use when asked to email/relay TO the owner, so it never invents one
+    # (which silently bounces). Only meaningful for stand-ins, where the owner is absent.
+    owner_line = ""
+    if owner_name:
+        owner_line = f"\n\nYou are attending this meeting on behalf of {owner_name}, who could not attend."
+        if owner_email:
+            owner_line += (
+                f" If anyone asks you to email, send, or relay something TO {owner_name} "
+                f"(or 'the owner' / 'them'), the recipient address is {owner_email}. "
+                f"Use exactly that address — never invent or guess one."
+            )
+        else:
+            owner_line += (
+                f" You do NOT have {owner_name}'s email address — if asked to email them, "
+                f"say so and ask for it. Never invent an address."
+            )
+    return base + name_line + owner_line + persona_suffix_agentic(persona_text)
 
 
 def _recent_turn_messages(recent_turns: list | None) -> list[dict]:
@@ -442,6 +545,8 @@ def _build_command_messages(
     is_owner: bool = True,
     persona_text: str = "",
     bot_name: str = "",
+    owner_name: str = "",
+    owner_email: str = "",
     recent_turns: list | None = None,
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
@@ -464,7 +569,7 @@ def _build_command_messages(
     history = _recent_turn_messages(recent_turns)
     if prompt_cache_on:
         return [
-            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)},
+            {"role": "system", "content": _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name, owner_name, owner_email)},
             {
                 "role": "system",
                 "content": f"Current date and time: {now_str}.\n\n{memory_context}",
@@ -477,7 +582,7 @@ def _build_command_messages(
         {
             "role": "system",
             "content": (
-                _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name)
+                _build_static_prefix(has_gmail, has_calendar, persona_text, bot_name, owner_name, owner_email)
                 + "\n"
                 + f"Current date and time: {now_str}.\n\n"
                 + memory_context
@@ -707,6 +812,15 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
     if state["meeting_start_ts"] is None:
         state["meeting_start_ts"] = time.time()
 
+    # Distinct-speaker tracking — the fallback signal for solo free-flow when
+    # Recall participant events aren't available (e.g. after a restart).
+    if not _looks_like_bot_participant(u.speaker_name, {}):
+        sid = u.speaker_id or u.speaker_name
+        if sid:
+            humans = state.setdefault("human_speaker_ids", set())
+            humans.add(sid)
+            _note_human_count(state, len(humans))
+
     # Layer-3 structured extraction on the completed utterance. Cleaner
     # input than the legacy chunk-level invocation — full coherent text
     # instead of fragments.
@@ -738,6 +852,17 @@ async def _dispatch_slow_path_command(
     if ambient_loop.autonomous_enabled() and ambient_loop.detect_mute_command(u.text):
         return  # mute/unmute is handled by the ambient interjection layer, not as a command
     command = _detect_command(u.text, bot_id)
+    if (
+        not command
+        and _solo_mode_active(state)
+        and not _looks_like_bot_participant(u.speaker_name, {})
+        and _solo_freeflow_eligible(u)
+    ):
+        # Solo free-flow: only one human in the room, so treat every substantive
+        # utterance as if it were addressed to the bot — no wake word required.
+        # Never treat the bot's own transcribed TTS as a command (feedback loop).
+        command = u.text.strip()
+        print(f"[realtime] solo free-flow command={command!r} from={u.speaker_name!r}")
     if not command:
         return
     print(
@@ -771,6 +896,8 @@ async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
     if ambient_loop.detect_mute_command(u.text):
         await _run_interject(bot_id, state, u, now)
         return
+    if _solo_mode_active(state):
+        return  # solo free-flow owns every utterance; skip the ambient funnel
     mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
     if _detect_command(u.text, bot_id):
         return  # explicit command path owns this utterance
@@ -910,6 +1037,15 @@ def _get_bot_state(bot_id: str) -> dict:
             # Last extracted participant_id from a chunk. Used by owner-lock
             # and (later) the utterance accumulator for stable speaker keys.
             "_last_speaker_id": "",
+            # Solo free-flow participant tracking. `participants` is the live
+            # roster (id -> {name, is_bot}) from Recall join/leave events;
+            # `participants_seen` flips True once any such event arrives.
+            # `human_speaker_ids` is the distinct-speaker fallback; both feed
+            # `_solo_mode_active`. `max_humans_seen` is a safety high-water mark.
+            "participants": {},
+            "participants_seen": False,
+            "human_speaker_ids": set(),
+            "max_humans_seen": 0,
             # Utterance accumulator (gated by PRISM_ACCUMULATOR). Built
             # lazily below so we don't pay the construction cost when the
             # flag is off. Tick task is lazy-started by add_chunk —
@@ -1096,6 +1232,146 @@ async def _send_chat_response(bot_id: str, message: str):
         print(f"[realtime] failed to send chat response: {exc}")
 
 
+# ── Private live catch-up ("Ask Prism, just you") ────────────────────────────
+# Token-gated, streaming Q&A over the LIVE meeting state. Returns ONLY to the
+# caller's browser — never spoken or posted into the meeting. The workspace
+# knowledge-base fallback is unlocked only for verified workspace members
+# (anonymous link-holders stay meeting-only). Endpoint lives in recall_routes
+# next to /live/{token}; this is the streaming generator + rate limiter.
+_CATCHUP_RATE: dict[str, list[float]] = {}
+_CATCHUP_MIN_INTERVAL_S = 1.5
+_CATCHUP_MAX_PER_MIN = 12
+
+
+def _catchup_rate_ok(key: str) -> bool:
+    """Per-live-token rate limit: min interval + per-minute cap."""
+    now = time.time()
+    hist = _CATCHUP_RATE.setdefault(key, [])
+    hist[:] = [t for t in hist if t > now - 60]
+    if hist and now - hist[-1] < _CATCHUP_MIN_INTERVAL_S:
+        return False
+    if len(hist) >= _CATCHUP_MAX_PER_MIN:
+        return False
+    hist.append(now)
+    return True
+
+
+def _build_catchup_context(state: dict) -> str:
+    """Assemble the live meeting context (rolling summary + decisions + action
+    items + recent transcript) the catch-up answers from."""
+    snapshot = meeting_memory.get_memory_snapshot(state)
+    summary = (snapshot.get("memory_summary") or "").strip()
+    decisions = snapshot.get("live_decisions") or []
+    actions = snapshot.get("live_action_items") or []
+    recent = (state.get("transcript_buffer") or [])[-30:]
+    parts: list[str] = []
+    if summary:
+        parts.append(f"Running summary of the meeting so far:\n{summary}")
+    dec = "\n".join(
+        f"- {d.get('text', '')}" for d in decisions[-10:]
+        if isinstance(d, dict) and d.get("text")
+    )
+    if dec:
+        parts.append(f"Decisions so far:\n{dec}")
+    act = "\n".join(
+        f"- {a.get('task', '')}" + (f" (owner: {a.get('owner')})" if a.get("owner") else "")
+        for a in actions[-10:] if isinstance(a, dict) and a.get("task")
+    )
+    if act:
+        parts.append(f"Action items so far:\n{act}")
+    if recent:
+        parts.append("Most recent transcript:\n" + "\n".join(recent))
+    return "\n\n".join(parts)
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+async def stream_catchup_answer(
+    bot_id: str, mode: str, question: str, member_user_id: str | None = None
+):
+    """Async generator yielding SSE lines for the private live catch-up.
+    Streams gpt-4o-mini tokens; the final event carries done + sources."""
+    state = _get_bot_state(bot_id)
+    context = _build_catchup_context(state)
+
+    if not context.strip():
+        yield _sse({"token": "The meeting just started — nothing to catch up on yet."})
+        yield _sse({"done": True, "sources": []})
+        return
+
+    question = (question or "").strip()
+    sources: list[str] = []
+    rag_block = ""
+
+    # Knowledge-base fallback — members only, qa mode, with a real question.
+    if mode == "qa" and question and member_user_id:
+        try:
+            from knowledge_service import search_knowledge
+            results = await search_knowledge(question, user_id=member_user_id, k=4)
+            lines = []
+            for r in (results or []):
+                name = r.get("doc_name") or r.get("source_type") or "doc"
+                snippet = (r.get("content") or "")[:400]
+                if snippet:
+                    lines.append(f"[{name}] {snippet}")
+                    if name not in sources:
+                        sources.append(name)
+            if lines:
+                rag_block = (
+                    "\n\nBackground from your workspace knowledge base (use ONLY if the "
+                    "meeting context above doesn't answer the question; name the doc when "
+                    "you rely on it):\n" + "\n".join(lines)
+                )
+        except Exception as exc:
+            print(f"[catchup] knowledge search failed: {exc}")
+            sources = []
+
+    if mode == "catchup" or not question:
+        system = (
+            "You help someone who just joined or stepped away from a live meeting get "
+            "caught up. Using ONLY the meeting context provided, give a tight catch-up: "
+            "what's been discussed, any decisions, open action items, and where things "
+            "stand right now. 4-6 sentences, plain and skimmable. Do not invent anything."
+        )
+        user = f"{context}\n\nCatch me up on what I've missed so far."
+    else:
+        system = (
+            "You answer a meeting participant's private question. Prefer the live meeting "
+            "context. If the answer isn't there, use the background knowledge if provided. "
+            "If neither covers it, say it hasn't come up in the meeting yet. Be concise and "
+            "do not invent anything."
+        )
+        user = f"{context}{rag_block}\n\nQuestion: {question}"
+
+    openai_client = get_openai()
+    if openai_client is None:
+        yield _sse({"token": "Catch-up is unavailable right now."})
+        yield _sse({"done": True, "sources": []})
+        return
+
+    try:
+        stream = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=450,
+            stream=True,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        async for event in stream:
+            if event.choices and event.choices[0].delta.content:
+                yield _sse({"token": event.choices[0].delta.content})
+    except Exception as exc:
+        print(f"[catchup] stream failed: {exc}")
+        yield _sse({"token": " (sorry, something went wrong)"})
+
+    yield _sse({"done": True, "sources": sources})
+
+
 async def _upload_audio_to_recall(bot_id: str, audio_bytes: bytes) -> bool:
     """Upload a single audio blob to Recall's output_audio endpoint. Returns True on 2xx."""
     if not RECALL_API_KEY or not audio_bytes:
@@ -1142,6 +1418,32 @@ def _spoken_version(text: str) -> str:
     t = re.sub(r"\s{2,}", " ", t)            # collapse gaps left by removals
     t = re.sub(r"\s+([.,;:!?])", r"\1", t)   # tidy space-before-punctuation
     return t.strip()
+
+
+_LIST_LINE_RE = re.compile(r"(^|\n)\s*([-*•]|\d+[.)])\s+", re.M)
+
+
+def _spoken_condense(text: str, max_sentences: int = 3, max_chars: int = 340) -> str:
+    """The SPOKEN copy of a reply, length-capped. Each spoken sentence blocks the next for
+    its real playback duration (so multiple voices don't overlap), which means a long reply
+    — a 6-bullet outline read aloud — stalls every queued command behind it. That's the #1
+    source of live-conversation lag. So we speak a tight lead and push the rest to chat
+    (which already gets the FULL reply). Short, non-list replies are spoken verbatim."""
+    if not (text or "").strip():
+        return text
+    m = _LIST_LINE_RE.search(text)
+    if m:
+        # A list / outline: speak only the lead-in before the first bullet (reading bullets
+        # aloud is both laggy and useless), then point to chat for the rest.
+        lead = " ".join(_chunk_reply(_spoken_version(text[:m.start()]))[:2]).strip()
+        return (lead + " I've put the full breakdown in the chat.").strip() if lead \
+            else "I've put the full breakdown in the chat."
+    clean = _spoken_version(text)
+    sentences = _chunk_reply(clean)
+    if len(sentences) <= max_sentences and len(clean) <= max_chars:
+        return clean
+    lead = " ".join(sentences[:max_sentences]).strip() or clean[:max_chars].rstrip()
+    return f"{lead} I've put the rest in the chat."
 
 
 _GAP_SILENCE_S = float(os.getenv("PRISM_GAP_SILENCE_S", "1.2"))
@@ -1621,6 +1923,29 @@ def _append_realtime_line(bot_id: str, line: str) -> None:
         del rt[: len(rt) - _RT_TRANSCRIPT_CAP]
 
 
+async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
+    """Record a human's in-meeting CHAT message into the transcript (buffer + durable),
+    mirroring _record_bot_line for the bot's side. Recall only transcribes spoken AUDIO,
+    so without this a chat-driven meeting (or any typed aside) would analyse to a one-
+    sided monologue of just the bot's replies. Skips the bot's own chat (already recorded
+    via _record_bot_line) so it isn't double-counted."""
+    text = (text or "").strip()
+    if not text or _looks_like_bot_participant(sender, {}):
+        return
+    st = _get_bot_state(bot_id)
+    line = f"{sender or 'Someone'}: {text}"
+    try:
+        async with perception_state.get_memory_lock(st):
+            buf = st.setdefault("transcript_buffer", [])
+            buf.append(line)
+            if len(buf) > meeting_memory.MAX_BUFFER_LINES:
+                st["transcript_buffer"] = buf[-meeting_memory.TRIM_TO:]
+            _append_realtime_line(bot_id, line)
+            _maybe_persist_transcript(bot_id, st)
+    except Exception as exc:
+        print(f"[realtime] chat-line record failed: {exc}")
+
+
 def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> None:
     """Best-effort durable persistence of the accumulated realtime transcript.
     Throttled to one write per _TRANSCRIPT_PERSIST_EVERY new lines so we don't
@@ -1633,6 +1958,26 @@ def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> 
         return
     state["_transcript_persist_len"] = len(rt_lines)
     _db_save(bot_id, {"realtime_transcript": "\n".join(rt_lines)})
+
+
+def _record_bot_line(bot_id: str, state: dict, text: str, bot_name: str) -> None:
+    """Record the bot's own utterance into BOTH the live-memory buffer and the
+    durable transcript, attributed to the active persona name — so the saved
+    meeting reads as a real dialogue (not 'talking to myself' in a 1-on-1) and
+    there's a lasting record of what the bot said. Caller holds the memory lock.
+    """
+    text = (text or "").strip()
+    if not text:
+        return
+    line = f"{bot_name or DEFAULT_BOT_NAME}: {text}"
+    buf = state["transcript_buffer"]
+    buf.append(line)
+    if len(buf) > meeting_memory.MAX_BUFFER_LINES:
+        state["transcript_buffer"] = buf[-meeting_memory.TRIM_TO:]
+    # Durable, append-only copy (survives trims + restart) so it lands in the
+    # final saved transcript alongside the human lines, in chronological order.
+    _append_realtime_line(bot_id, line)
+    _maybe_persist_transcript(bot_id, state)
 
 
 async def _compress_and_persist(bot_id: str, state: dict) -> None:
@@ -1861,6 +2206,61 @@ async def _run_proactive_checker(bot_id: str):
             state["recurring_blocker_checked"] = True
 
 
+# Stand-in spoken-on-request (Feature A): attendees can ask the bot to read aloud the
+# updates left by people who couldn't attend. Two triggers:
+#   _STANDIN_QUERY_RE   — explicit "any updates from people who couldn't make it" → read
+#                         all updates (or say none). Always authoritative.
+#   _STANDIN_PERSON_RE  — a question SHAPED like it's about an absent person ("why isn't
+#                         X here", "does X have any updates", "is X coming"). Permissive
+#                         on purpose — it only fires when the question also NAMES someone
+#                         who actually left a stand-in update (see _updates_for_named).
+#                         So "where is the budget doc" matches the shape but, naming no
+#                         absent teammate, falls through to the normal command flow.
+_STANDIN_QUERY_RE = re.compile(
+    r"(stand[- ]?in|couldn'?t\s+(make|attend|join|be here)|can'?t\s+make\s+it|"
+    r"who(\s+is|'?s)\s+(out|away|absent|missing)|async\s+update|"
+    r"people\s+who\s+(couldn'?t|can'?t)|anyone\s+(out|absent|missing)|"
+    r"updates?\s+from\s+(anyone|people|those|the team))",
+    re.IGNORECASE,
+)
+
+_STANDIN_PERSON_RE = re.compile(
+    r"\b(why|where)\b.*\b(here|come|coming|join|joining|attend|attending|make|made|"
+    r"around|in)\b"
+    r"|\b(updates?|news|word|info|information|anything|something)\b.*\bfrom\b"
+    r"|\b(have|has|having|got|get)\b.*\b(updates?|info|information|anything|something|"
+    r"to\s+(say|share|tell|add|report))\b"
+    r"|\bis\b\s+\w+\s+\b(here|coming|joining|attending|absent|missing|out|around)\b"
+    r"|\bhear(d)?\s+from\b",
+    re.IGNORECASE,
+)
+
+
+def _updates_for_named(command: str, updates: list[dict]) -> list[dict]:
+    """Updates whose author's name (full or first name, >=3 chars) appears in the command.
+    Lets 'why isn't vidyut here' surface Vidyut's stand-in specifically."""
+    c = (command or "").lower()
+    out = []
+    for u in updates:
+        name = (u.get("name") or "").strip().lower()
+        if not name:
+            continue
+        tokens = {name, *name.split()}
+        if any(len(t) >= 3 and re.search(rf"\b{re.escape(t)}\b", c) for t in tokens):
+            out.append(u)
+    return out
+
+
+def _standin_spoken_summary(updates: list[dict]) -> str:
+    if not updates:
+        return ""
+    if len(updates) == 1:
+        u = updates[0]
+        return f"Here's the update from {u.get('name', 'a teammate')}, who couldn't attend. {u.get('body', '')}"
+    parts = [f"{u.get('name', 'a teammate')} says: {u.get('body', '')}" for u in updates]
+    return "Here are the updates from people who couldn't attend. " + " ".join(parts)
+
+
 async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False):
     """Process a detected command: use LLM to pick tools, execute, respond.
 
@@ -1901,6 +2301,44 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
     state["last_command_ts"] = now
     state["last_command_text"] = command
     state["last_command_norm"] = cmd_norm
+
+    # Stand-in spoken-on-request: read aloud the updates from people who couldn't
+    # attend. ALWAYS deterministic (no LLM) once the question is recognised — the model
+    # must never improvise stand-in updates, so a matched query is fully owned here and
+    # never falls through to the command path. Reads from the durable DB (not just the
+    # in-memory bot_store, which a restart / second worker wipes); if nobody left an
+    # update, it says so plainly rather than inventing people.
+    explicit = not ambient and bool(_STANDIN_QUERY_RE.search(command))
+    person_shaped = not ambient and bool(_STANDIN_PERSON_RE.search(command))
+    if explicit or person_shaped:
+        updates = (bot_store.get(bot_id) or {}).get("standin_updates")
+        if not updates:
+            try:
+                from recall_routes import standin_updates_for_bot
+                updates = standin_updates_for_bot(bot_id)
+            except Exception as exc:
+                print(f"[standin] db read failed: {exc}")
+                updates = []
+        chosen = updates
+        # A person-shaped question that ISN'T the explicit query only counts as a stand-in
+        # ask if it actually names someone who left an update — otherwise it's an unrelated
+        # "where is X" and we must let the normal LLM flow answer it.
+        if person_shaped and not explicit:
+            chosen = _updates_for_named(command, updates)
+            if not chosen:
+                person_shaped = False
+        if explicit or person_shaped:
+            summary = (
+                _standin_spoken_summary(chosen) if chosen
+                else "No one left a stand-in update for this meeting."
+            )
+            print(f"[standin] spoken-on-request: {len(chosen)} update(s) "
+                  f"(explicit={explicit}, named={person_shaped and not explicit})")
+            if _barge_in_on():
+                await _wait_for_speech_gap(state)
+            await _send_voice_response(bot_id, _spoken_version(summary))
+            await _send_chat_response(bot_id, summary)
+            return
     state["processing"] = True
 
     # Phase B: install a fresh speaking session for this command. supersede_session
@@ -1911,6 +2349,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         await perception_state.supersede_session(state, _new_session)
 
     messages = None  # ensure always in scope for haiku fallback
+    bot_name = DEFAULT_BOT_NAME  # ditto — used by _record_bot_line in the fallback
     try:
         user_settings = await _get_settings_for_bot(bot_id)
         persona_text = user_settings.get("persona_text", "")
@@ -1975,6 +2414,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         else:
             is_owner = perception_state.is_owner_speaker(speaker, _owner_full)
 
+        # Owner's real email so "email/relay this to {owner}" resolves correctly instead of
+        # the bot inventing a placeholder. Cached on bot_store; lazily resolved (stand-in
+        # rep → workspace member) and memoized on first miss.
+        _owner_email = _owner_email_for_bot(bot_id)
+
         messages = _build_command_messages(
             has_gmail=has_gmail,
             has_calendar=has_calendar,
@@ -1987,6 +2431,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             is_owner=is_owner,
             persona_text=persona_text,
             bot_name=bot_name,
+            owner_name=_owner_full,
+            owner_email=_owner_email,
             recent_turns=state.get("recent_turns", []),
         )
 
@@ -2332,9 +2778,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
         _db_append_command(bot_id, cmd_entry)
         async with perception_state.get_memory_lock(state):
-            state["transcript_buffer"].append(f"Prism: {reply}")
-            if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
-                state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
+            _record_bot_line(bot_id, state, reply, bot_name)
 
         # Respond via voice + chat — fire in parallel so the chat message doesn't
         # add a Recall round-trip to TTFB before TTS begins.
@@ -2346,10 +2790,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             pass
         elif _streamed_tts_on():
             await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response_streamed(bot_id, _spoken_version(reply), cmd_detected_ts=state["last_command_ts"] or now)
+            await _send_voice_response_streamed(bot_id, _spoken_condense(reply), cmd_detected_ts=state["last_command_ts"] or now)
         else:
             await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response(bot_id, _spoken_version(reply))
+            await _send_voice_response(bot_id, _spoken_condense(reply))
         # Make sure the chat post is finished (or its exception surfaces) before returning.
         try:
             await chat_task
@@ -2390,12 +2834,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         bot_store[bot_id].setdefault("commands", []).append(cmd_entry)
                     _db_append_command(bot_id, cmd_entry)
                     async with perception_state.get_memory_lock(state):
-                        state["transcript_buffer"].append(f"Prism: {reply}")
-                        if len(state["transcript_buffer"]) > meeting_memory.MAX_BUFFER_LINES:
-                            state["transcript_buffer"] = state["transcript_buffer"][-meeting_memory.TRIM_TO:]
+                        _record_bot_line(bot_id, state, reply, bot_name)
                     print(f"[realtime] haiku fallback reply={reply!r}")
                     await _send_chat_response(bot_id, reply)
-                    await _send_voice_response(bot_id, reply)
+                    await _send_voice_response(bot_id, _spoken_condense(reply))
                     return
                 except Exception as haiku_exc:
                     print(f"[realtime] haiku fallback failed: {haiku_exc}")
@@ -2796,6 +3238,26 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                 and time.time() - state["pending_trigger_ts"] < PENDING_TRIGGER_WINDOW
             )
 
+            # Solo free-flow (legacy path): exactly one human in the meeting → treat a
+            # complete, substantive utterance as a command without the wake word. Gated
+            # to complete-looking text so we don't fire on a mid-sentence Deepgram
+            # fragment (the accumulator path gets full utterances; the legacy path only
+            # sees finals). Skipped while a wake-word command window is already open.
+            # CRITICAL: skip the bot's OWN transcribed speech — its TTS audio comes back
+            # through Recall as a transcript line (speaker=PrismAI/persona), and without
+            # the wake-word gate that other paths have, solo free-flow would treat it as a
+            # new command → the bot replies to itself in an endless loop.
+            if (
+                not command
+                and not within_window
+                and _solo_mode_active(state)
+                and not _looks_like_bot_participant(speaker, {})
+                and _looks_command_complete(text)
+                and _solo_freeflow_text_eligible(text)
+            ):
+                command = text.strip()
+                print(f"[realtime] solo free-flow command={command!r} from={speaker!r}")
+
             if command:
                 # Trigger + (partial or full) command in this fragment.
                 if _looks_command_complete(command):
@@ -2868,6 +3330,9 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
 
         if message_text.strip():
+            # Record the human's chat line into the transcript so chat-driven meetings
+            # analyse to a real two-sided dialogue (Recall transcribes audio only).
+            asyncio.create_task(_record_human_chat_line(bot_id, sender, message_text))
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
             # Bare wake-word with no command ("prism" / "Hi prism") — don't ignore
@@ -2875,9 +3340,52 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # help instead of going silent (a real user greets it before asking).
             if not command and _has_trigger_word(message_text, bot_id):
                 command = message_text
+            # Solo free-flow applies to TYPED chat too: with one human present, a
+            # substantive chat message is a command without the wake word — matching the
+            # spoken path. Without this, chat asks ("send a summary to …") are silently
+            # dropped in a 1-on-1. Never fires on the bot's own chat.
+            if (
+                not command
+                and _solo_mode_active(_get_bot_state(bot_id))
+                and not _looks_like_bot_participant(sender, {})
+                and _solo_freeflow_text_eligible(message_text)
+            ):
+                command = message_text
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r}")
                 asyncio.create_task(_process_command(bot_id, command, sender))
+
+    elif event_type in (
+        "participant_events.join",
+        "participant_events.leave",
+        "participant_events.update",
+        "participant_join",
+        "participant_leave",
+    ):
+        # Live participant roster — powers solo free-flow (no wake word when one
+        # human is present). Payload mirrors chat_message: data.data.participant.
+        outer = data_field
+        action_obj = outer.get("data") if isinstance(outer.get("data"), dict) else outer
+        participant = (action_obj or {}).get("participant") or {}
+        pid = str(participant.get("id") or participant.get("participant_id") or "").strip()
+        pname = participant.get("name") or ""
+        is_leave = "leave" in event_type
+        if pid:
+            parts = state.setdefault("participants", {})
+            if is_leave:
+                parts.pop(pid, None)
+            else:
+                parts[pid] = {
+                    "name": pname,
+                    "is_bot": _looks_like_bot_participant(pname, participant),
+                }
+            state["participants_seen"] = True
+            _note_human_count(state, _human_participant_count(state))
+            print(
+                f"[realtime] participant {'leave' if is_leave else 'join'} "
+                f"name={pname!r} humans={_human_participant_count(state)} "
+                f"solo={_solo_mode_active(state)}"
+            )
 
     return {"ok": True}
 

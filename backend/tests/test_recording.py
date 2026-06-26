@@ -108,7 +108,7 @@ class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
         def fake_db_save(bot_id, fields):
             saved_fields.append(fields)
 
-        async def fake_run_full_analysis(_t):
+        async def fake_run_full_analysis(_t, **_kwargs):
             return {"summary": "ok"}
 
         with patch.object(recall_routes, "_fetch_transcript", AsyncMock(return_value=fake_response)), \
@@ -137,7 +137,7 @@ class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
 
         # _fetch_transcript returns None → triggers realtime-buffer fallback
         saved_fields: list[dict] = []
-        async def fake_run_full_analysis(_t):
+        async def fake_run_full_analysis(_t, **_kwargs):
             return {"summary": "ok"}
 
         with patch.object(recall_routes, "_fetch_transcript", AsyncMock(return_value=None)), \

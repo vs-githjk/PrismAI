@@ -5,17 +5,26 @@ import json
 import os
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from analysis_service import build_analysis_transcript, run_full_analysis
 from auth import supabase, require_user_id
 from cross_meeting_service import looks_like_blocker, build_blocker_snippet
-from personas import persona_identity_resolved, persona_greeting_from_preset
+from personas import persona_identity_resolved, persona_greeting_from_preset, DEFAULT_BOT_NAME, PERSONA_NAMES
+
+# Line prefixes that mark a transcript line as the bot's own turn (recorded by
+# realtime_routes._record_bot_line). Covers every persona display name + the
+# default. Used to detect whether the bot participated when assembling the
+# final transcript.
+_BOT_NAME_PREFIXES = tuple(
+    f"{n}:" for n in ({DEFAULT_BOT_NAME, "Prism", "PrismAI"} | set(PERSONA_NAMES.values()))
+)
 
 
 router = APIRouter(tags=["recall"])
@@ -41,6 +50,20 @@ _proactive_respawned: set[str] = set()
 # "processing" — spawning a duplicate full analysis each time and exploding token
 # usage (this is what exhausted the Groq daily limit). One analysis per bot.
 _processing_bots: set[str] = set()
+
+# Stand-in delivery guards (in-memory; the DB pending->delivered flip is the real
+# idempotency, these just avoid redundant work on repeated in_call_recording events).
+_standin_delivered: set[str] = set()
+_standin_intro_sent: set[str] = set()
+
+# Bots with a live server-side lifecycle poller (scheduled stand-in bots — see
+# _poll_standin_lifecycle). Prevents spawning two pollers for the same bot.
+_standin_pollers: set[str] = set()
+
+# Stand-in bots whose analysed meeting we've already promoted into the `meetings`
+# table (see _persist_standin_meeting). The real idempotency is the existing-row
+# check; this just avoids re-querying on repeat calls.
+_standin_persisted: set[str] = set()
 
 
 def _db_save(bot_id: str, fields: dict):
@@ -145,15 +168,20 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
             client.table("meeting_bots")
             .select("bot_id, owner_user_id")
             .eq("meeting_url", normalized_url)
-            .in_("status", ["joining", "recording", "processing"])
+            # Include 'scheduled' so a teammate's not-yet-joined stand-in bot is caught
+            # here too — otherwise an auto-join racing the stand-in's join double-books.
+            .in_("status", ["scheduled", "joining", "recording", "processing"])
             .execute()
         )
         if not active.data:
+            print(f"[recall] dedup: no active meeting_bots for url={normalized_url[:60]}")
             return None
 
         from caches import get_user_workspace_ids
         my_ws_ids = get_user_workspace_ids(client, requesting_user_id)
         if not my_ws_ids:
+            print(f"[recall] dedup: {requesting_user_id} has no workspaces — can't match "
+                  f"{len(active.data)} active bot(s) for this url")
             return None
 
         for bot in active.data:
@@ -169,6 +197,9 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
             )
             if shared.data:
                 return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
+        owners = [b.get("owner_user_id") for b in active.data]
+        print(f"[recall] dedup: {len(active.data)} active bot(s) for this url but none "
+              f"share a workspace with {requesting_user_id} (owners={owners})")
         return None
     except Exception as exc:
         print(f"[recall] dedup lookup skipped (workspace tables likely missing): {exc}")
@@ -233,6 +264,576 @@ def _mb_update_status(bot_id: str, status: str):
         supabase.table("meeting_bots").update({"status": status}).eq("bot_id", bot_id).execute()
     except Exception as exc:
         print(f"[recall] meeting_bots status update failed for {bot_id}: {exc}")
+
+
+def _live_token_for_bot(bot_id: str) -> str | None:
+    """Best-effort lookup of a bot's live_token (in-memory, then DB). Used to hand
+    a dedup'd teammate the shared bot's live token so they can open the live view
+    + private catch-up from their own dashboard."""
+    entry = bot_store.get(bot_id) or _db_load(bot_id) or {}
+    return entry.get("live_token")
+
+
+def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: str,
+                            join_at: str | None = None, bot_name: str = "PrismAI") -> dict:
+    """The Recall bot-create payload, shared by immediate joins and scheduled
+    stand-in bots. A future `join_at` (ISO 8601) makes Recall schedule the join
+    instead of joining now; omit it (None) to join immediately. Callers drop a
+    past/imminent join_at to None so live meetings are covered. `bot_name` is the
+    in-meeting display name —
+    stand-in bots pass the represented person's name so attendees recognise (and
+    admit) it and know whose update it carries."""
+    body = {
+        "meeting_url": meeting_url,
+        "bot_name": bot_name,
+        "webhook_url": webhook_url,
+        "recording_config": {
+            "video_mixed_layout": "speaker_view",
+            "video_mixed_mp4": {},
+            "audio_mixed_mp3": {},
+            "transcript": {
+                "provider": {
+                    "deepgram_streaming": {
+                        "model": "nova-3",
+                        "language": "en",
+                        "smart_format": "true",
+                        "punctuate": "true",
+                        "diarize": "true",
+                        "endpointing": 300,
+                        "utterance_end_ms": 1000,
+                        "interim_results": "true",
+                    }
+                }
+            },
+            "realtime_endpoints": [
+                {
+                    "type": "webhook",
+                    "url": realtime_url,
+                    "events": [
+                        "transcript.data",
+                        "participant_events.chat_message",
+                        "participant_events.join",
+                        "participant_events.leave",
+                    ],
+                }
+            ],
+        },
+    }
+    if join_at:
+        body["join_at"] = join_at
+    return body
+
+
+def _find_existing_bot_for_standin(client, normalized_url: str, user_id: str,
+                                   statuses=("scheduled", "joining", "recording", "processing")) -> dict | None:
+    """Stand-in dedup: is there already a bot for this meeting that we should attach to
+    instead of spawning another? Matches the user's own bot OR a teammate's bot in a
+    shared workspace. Includes 'scheduled' status (unlike the live dedup helpers) since a
+    stand-in bot may not have joined yet. Pass statuses=("scheduled",) to check ONLY
+    not-yet-joined bots (used by /join-meeting so a live-dedup's stale-row check isn't
+    re-run here)."""
+    try:
+        rows = (
+            client.table("meeting_bots")
+            .select("bot_id, owner_user_id")
+            .eq("meeting_url", normalized_url)
+            .in_("status", list(statuses))
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[standin] dedup lookup skipped: {exc}")
+        return None
+    if not rows.data:
+        return None
+    from caches import get_user_workspace_ids
+    my_ws = get_user_workspace_ids(client, user_id) or []
+    for bot in rows.data:
+        if bot["owner_user_id"] == user_id:
+            return bot
+        if my_ws:
+            shared = (
+                client.table("workspace_members")
+                .select("workspace_id")
+                .eq("user_id", bot["owner_user_id"])
+                .in_("workspace_id", my_ws)
+                .limit(1)
+                .execute()
+            )
+            if shared.data:
+                return bot
+    return None
+
+
+async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str | None,
+                               owner_name: str | None, join_at: str) -> dict | None:
+    """Create (or reuse) a Recall bot scheduled to join `meeting_url` at `join_at`
+    to deliver a stand-in. Returns {bot_id, reused}. Skips intro/proactive — those
+    fire when the bot actually joins (A3). Returns None if Recall isn't configured
+    or the create failed."""
+    if not RECALL_API_KEY:
+        return None
+    normalized = _normalize_meeting_url(meeting_url)
+
+    # A meeting that's already started (or about to) can't be "scheduled" for a
+    # future join — Recall needs lead time. If join_at is in the past or imminent,
+    # join now instead so "Can't make it" still works on a live/imminent meeting.
+    effective_join_at = join_at
+    try:
+        if join_at:
+            start = datetime.fromisoformat(join_at.replace("Z", "+00:00"))
+            if start <= datetime.now(timezone.utc) + timedelta(minutes=2):
+                effective_join_at = None
+    except Exception:
+        effective_join_at = join_at
+
+    # Dedup: attach to an existing scheduled/live bot for this meeting if there is one.
+    if supabase:
+        existing = _find_existing_bot_for_standin(supabase, normalized, user_id)
+        if existing:
+            print(f"[standin] reusing existing bot {existing['bot_id']} for stand-in")
+            return {"bot_id": existing["bot_id"], "reused": True}
+
+    realtime_token = secrets.token_urlsafe(32)
+    realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
+    webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
+    # Name the bot after the person it stands in for, so attendees recognise it in
+    # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
+    display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else "PrismAI"
+    body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url,
+                                   join_at=effective_join_at, bot_name=display_name)
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{RECALL_API_BASE}/bot/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}", "Content-Type": "application/json"},
+                json=body,
+                timeout=15,
+            )
+    except Exception as exc:
+        print(f"[standin] recall schedule request failed: {exc}")
+        return None
+    if resp.status_code not in (200, 201):
+        print(f"[standin] recall schedule failed ({resp.status_code}): {resp.text[:200]}")
+        return None
+
+    bot_id = resp.json()["id"]
+    live_token = secrets.token_hex(16)
+    bot_store[bot_id] = {
+        "status": "scheduled", "result": None, "error": None, "commands": [],
+        "user_id": user_id, "live_token": live_token, "owner_name": owner_name,
+        "workspace_id": workspace_id, "realtime_token": realtime_token,
+        "initial_mode": None, "standin": True,
+    }
+    _live_token_index[live_token] = bot_id
+    _db_save(bot_id, {"status": "scheduled", "user_id": user_id, "live_token": live_token})
+
+    from realtime_routes import init_bot_realtime, register_realtime_token
+    register_realtime_token(realtime_token, bot_id)
+    if supabase:
+        try:
+            supabase.table("meeting_bots").insert({
+                "bot_id": bot_id, "meeting_url": normalized,
+                "owner_user_id": user_id, "status": "scheduled",
+            }).execute()
+        except Exception as exc:
+            print(f"[standin] meeting_bots insert failed: {exc}")
+        if workspace_id:
+            try:
+                supabase.table("meeting_bots").update(
+                    {"workspace_id": workspace_id}
+                ).eq("bot_id", bot_id).execute()
+            except Exception:
+                pass
+    init_bot_realtime(bot_id)
+    # Drive this headless bot's lifecycle ourselves — nothing else polls it (no
+    # dashboard, no Recall account webhook). See _poll_standin_lifecycle.
+    asyncio.create_task(_poll_standin_lifecycle(bot_id, effective_join_at))
+    print(f"[standin] bot {bot_id} {'joining now' if not effective_join_at else f'scheduled for {effective_join_at}'}")
+    return {"bot_id": bot_id, "reused": False}
+
+
+async def cancel_standin_bot(bot_id: str, user_id: str, rep_id: str) -> None:
+    """Best-effort teardown of a scheduled stand-in bot when its representation is
+    canceled. Only deletes the Recall bot if WE own it, it hasn't joined yet, and no
+    other live stand-in still needs it — never kills a teammate's or an already-live bot."""
+    if not RECALL_API_KEY:
+        return
+    if supabase:
+        try:
+            others = (
+                supabase.table("proxy_representations").select("id")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled").neq("id", rep_id)
+                .limit(1).execute()
+            )
+            if others.data:
+                return  # another stand-in still relies on this bot
+            mb = (
+                supabase.table("meeting_bots").select("owner_user_id, status")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            if mb and mb.data and (
+                mb.data.get("owner_user_id") != user_id
+                or mb.data.get("status") not in ("scheduled", "joining")
+            ):
+                return  # not ours, or already live — leave it alone
+        except Exception as exc:
+            print(f"[standin] cancel guard check failed: {exc}")
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+    except Exception as exc:
+        print(f"[standin] cancel bot delete failed: {exc}")
+    _mb_update_status(bot_id, "canceled")
+
+
+async def _poll_standin_lifecycle(bot_id: str, join_at: str | None = None) -> None:
+    """Server-side lifecycle driver for a headless scheduled stand-in bot.
+
+    A scheduled stand-in bot has no dashboard polling /bot-status for it, and there is
+    no Recall account webhook hitting /recall-webhook — so nothing would otherwise fire
+    its join/end handlers. This task polls Recall's bot status directly and runs the
+    SAME idempotent handlers the /bot-status poll runs: intro + stand-in delivery on
+    in_call_recording, analysis on call_ended.
+
+    In-memory task: it does NOT survive a process restart (same limitation as
+    bot_store / the live token index). That's acceptable — it makes a single scheduled
+    stand-in work end-to-end without any external webhook config."""
+    if not RECALL_API_KEY or bot_id in _standin_pollers:
+        return
+    _standin_pollers.add(bot_id)
+    try:
+        # Wait until shortly before the scheduled join so we don't burn polls for a
+        # meeting that's an hour out. Capped so a bad/far join_at can't sleep forever.
+        if join_at:
+            try:
+                start = datetime.fromisoformat(join_at.replace("Z", "+00:00"))
+                if start.tzinfo is None:
+                    start = start.replace(tzinfo=timezone.utc)
+                lead = (start - datetime.now(timezone.utc)).total_seconds() - 60
+                if lead > 0:
+                    await asyncio.sleep(min(lead, 6 * 3600))
+            except Exception:
+                pass
+
+        deadline = time.time() + 4 * 3600  # hard safety cap so the task always exits
+        in_meeting = False
+        async with httpx.AsyncClient() as client:
+            while time.time() < deadline:
+                try:
+                    resp = await client.get(
+                        f"{RECALL_API_BASE}/bot/{bot_id}/",
+                        headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                        timeout=10,
+                    )
+                    code = ""
+                    if resp.status_code == 200:
+                        changes = resp.json().get("status_changes") or []
+                        code = changes[-1].get("code", "") if changes else ""
+                except Exception as exc:
+                    print(f"[standin] poll error bot={bot_id[:8]}: {exc}")
+                    await asyncio.sleep(15)
+                    continue
+
+                if code == "in_call_recording" and bot_id not in _standin_delivered:
+                    _standin_delivered.add(bot_id)
+                    # Keep meeting_bots accurate so the live workspace-dedup can see this
+                    # bot is in the room (a stale 'scheduled' row makes a teammate's join
+                    # double-book instead of attaching).
+                    _mb_update_status(bot_id, "recording")
+                    if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
+                        _standin_intro_sent.add(bot_id)
+                        asyncio.create_task(_send_bot_intro(bot_id))
+                    asyncio.create_task(deliver_standins_for_bot(bot_id))
+                    in_meeting = True
+
+                if code in ("call_ended", "done"):
+                    entry = bot_store.setdefault(
+                        bot_id, {"status": "joining", "result": None, "error": None, "commands": []}
+                    )
+                    if entry.get("status") not in ("done", "error") and bot_id not in _processing_bots:
+                        entry["status"] = "processing"
+                        _db_save(bot_id, {"status": "processing"})
+                        asyncio.create_task(_process_bot_transcript(bot_id))
+                    return
+
+                if code in ("fatal", "error"):
+                    print(f"[standin] poll stopping — bot={bot_id[:8]} status={code}")
+                    return
+
+                # Poll briskly while in/approaching the call, lazily while still waiting.
+                await asyncio.sleep(
+                    8 if in_meeting or code in ("in_call_recording", "in_call_not_recording", "joining_call")
+                    else 20
+                )
+        print(f"[standin] poll hit safety cap bot={bot_id[:8]}")
+    finally:
+        _standin_pollers.discard(bot_id)
+
+
+def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
+    """The real email of the bot's owner, so the live bot can email/relay TO them instead
+    of inventing a placeholder. For a stand-in it's the representation's author_email; for
+    any workspace bot, the owner's workspace_members email. Best-effort, returns '' if
+    unknown (the bot then asks for the address rather than guessing)."""
+    if not supabase:
+        return ""
+    try:
+        rep = (
+            supabase.table("proxy_representations").select("author_email")
+            .eq("scheduled_bot_id", bot_id).neq("status", "canceled").limit(1).execute()
+        )
+        if rep.data and (rep.data[0].get("author_email") or "").strip():
+            return rep.data[0]["author_email"].strip()
+    except Exception:
+        pass
+    if user_id:
+        try:
+            wm = (
+                supabase.table("workspace_members").select("user_email")
+                .eq("user_id", user_id).limit(1).execute()
+            )
+            if wm.data and (wm.data[0].get("user_email") or "").strip():
+                return wm.data[0]["user_email"].strip()
+        except Exception:
+            pass
+    return ""
+
+
+def _resolve_owner_name(bot_id: str) -> str:
+    """The name of the person this bot represents/serves. Prefers the in-memory value but
+    falls back to the stand-in representation's author_name — so a server restart that
+    wiped bot_store doesn't leave the analysis (and the follow-up email's sender) without
+    a meeting owner, which makes the email agent guess a participant instead."""
+    entry = bot_store.get(bot_id) or {}
+    if (entry.get("owner_name") or "").strip():
+        return entry["owner_name"].strip()
+    if supabase:
+        try:
+            rep = (
+                supabase.table("proxy_representations").select("author_name")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled").limit(1).execute()
+            )
+            if rep.data and (rep.data[0].get("author_name") or "").strip():
+                return rep.data[0]["author_name"].strip()
+        except Exception:
+            pass
+    return ""
+
+
+async def _resolve_bot_persona_name(bot_id: str) -> str:
+    """The single display name the bot used in this meeting (e.g. 'Glint'). Used to
+    normalise transcript lines so the bot isn't analysed as two speakers — its stand-in
+    delivery records under the default name while its replies use the persona name."""
+    entry = bot_store.get(bot_id) or {}
+    user_id = entry.get("user_id")
+    workspace_id = entry.get("workspace_id")
+    if not user_id and supabase:
+        try:
+            rep = (
+                supabase.table("proxy_representations").select("author_user_id, workspace_id")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled").limit(1).execute()
+            )
+            if rep.data:
+                user_id = rep.data[0].get("author_user_id")
+                workspace_id = workspace_id or rep.data[0].get("workspace_id")
+        except Exception:
+            pass
+    if not user_id or not supabase:
+        return DEFAULT_BOT_NAME
+    try:
+        resp = supabase.table("user_settings").select("*").eq("user_id", user_id).maybe_single().execute()
+        row = (resp.data if resp is not None else None) or {}
+        name, _text, _preset = await persona_identity_resolved(supabase, row, workspace_id)
+        return name or DEFAULT_BOT_NAME
+    except Exception:
+        return DEFAULT_BOT_NAME
+
+
+def _normalize_bot_speaker(lines: list[str], canonical: str) -> list[str]:
+    """Rewrite every bot-attributed line prefix to one canonical name so the bot reads as
+    a single speaker in analysis (sentiment per-speaker, etc.)."""
+    out = []
+    for ln in lines:
+        for pfx in _BOT_NAME_PREFIXES:
+            if ln.startswith(pfx):
+                ln = f"{canonical}:{ln[len(pfx):]}"
+                break
+        out.append(ln)
+    return out
+
+
+async def recover_active_bots() -> None:
+    """Startup recovery: re-spawn lifecycle pollers for any bots left in a live state.
+
+    The lifecycle poller is in-memory and dies with the process — so a server restart
+    (local dev, or a Render cold start) mid-meeting leaves a scheduled stand-in with
+    nothing driving its join/delivery/analysis. Worse, even a finished bot would never
+    get analysed or promoted to the dashboard. On boot we scan meeting_bots for any bot
+    still in a non-terminal state and re-attach a poller; the poller's first Recall
+    status read then drives it the rest of the way (deliver if recording, analyse +
+    auto-promote if already ended). Idempotent via the _standin_pollers / _processing_bots
+    guards, so it's safe alongside the Recall webhook in production."""
+    if not supabase or not RECALL_API_KEY:
+        return
+    # Only recover RECENT bots. A non-terminal row older than this is stale — a bot that
+    # crashed or was abandoned mid-meeting and never reached a terminal status — and
+    # re-spawning its poller just retries a transcript that will never exist (0 recordings
+    # / 400 spam for ~12 min before it errors out). The window comfortably covers the
+    # poller's own 4h safety cap plus a scheduled bot's lead time.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    try:
+        rows = (
+            supabase.table("meeting_bots").select("bot_id")
+            .in_("status", ["scheduled", "joining", "recording", "processing"])
+            .gte("created_at", cutoff)
+            .execute().data or []
+        )
+    except Exception as exc:
+        print(f"[standin] startup recovery query skipped: {exc}")
+        return
+    spawned = 0
+    for row in rows:
+        bid = row.get("bot_id")
+        if bid and bid not in _standin_pollers:
+            asyncio.create_task(_poll_standin_lifecycle(bid))
+            spawned += 1
+    if spawned:
+        print(f"[standin] startup recovery re-spawned {spawned} lifecycle poller(s)")
+
+    # Backfill any bot whose analysis finished but never landed on a dashboard — e.g.
+    # a regular bot whose browser tab crashed/closed before POST /meetings, or a meeting
+    # the delayed fallback missed because the process restarted within its window.
+    # _persist_bot_meeting dedups on recall_bot_id, so already-saved meetings are skipped.
+    backfill_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    try:
+        done_rows = (
+            supabase.table("meeting_bots").select("bot_id")
+            .eq("status", "done").gte("created_at", backfill_cutoff)
+            .execute().data or []
+        )
+    except Exception as exc:
+        print(f"[recall] startup backfill query skipped: {exc}")
+        done_rows = []
+    backfilled = 0
+    for row in done_rows:
+        bid = row.get("bot_id")
+        if bid and bid not in _standin_persisted:
+            await _persist_bot_meeting(bid)
+            backfilled += 1
+    if backfilled:
+        print(f"[recall] startup backfill checked {backfilled} finished bot(s) for missing dashboard rows")
+
+
+def standin_updates_for_bot(bot_id: str) -> list[dict]:
+    """Durable read of the stand-in updates bound to a bot's meeting, straight from
+    Supabase (status pending OR delivered). Used by the spoken-on-request path so it
+    never depends on in-memory bot_store (which a restart or a second worker process
+    wipes) — and so it can NEVER fall through to the LLM and invent people. Returns
+    [{name, body}], approval order."""
+    if not supabase:
+        return []
+    try:
+        mb = (
+            supabase.table("meeting_bots").select("meeting_url")
+            .eq("bot_id", bot_id).maybe_single().execute()
+        )
+        meeting_url = (mb.data or {}).get("meeting_url") if mb else None
+        if not meeting_url:
+            return []
+        reps = (
+            supabase.table("proxy_representations")
+            .select("author_name, approved_body, approved_at")
+            .eq("meeting_url", meeting_url)
+            .in_("status", ["pending", "delivered"])
+            .order("approved_at")
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[standin] updates_for_bot lookup failed: {exc}")
+        return []
+    out = []
+    for rep in (reps.data or []):
+        body = (rep.get("approved_body") or "").strip()
+        if body:
+            out.append({"name": (rep.get("author_name") or "A teammate").strip(), "body": body})
+    return out
+
+
+async def deliver_standins_for_bot(bot_id: str) -> None:
+    """When a bot reaches the meeting, deliver any pending stand-in updates bound to
+    its meeting URL: a consolidated chat post (which announces who couldn't attend) +
+    recorded into the transcript + stashed on bot_store for the live brief and the
+    spoken-on-request path. Each rep is claimed via a conditional pending->delivered
+    update, so it delivers exactly once even across bots / restarts.
+
+    Runs for ANY bot (not just scheduled stand-in bots): when stand-ins were dedup'd
+    onto a teammate's regular bot, that bot delivers them too."""
+    if not supabase:
+        return
+    try:
+        mb = (
+            supabase.table("meeting_bots").select("meeting_url")
+            .eq("bot_id", bot_id).maybe_single().execute()
+        )
+    except Exception:
+        return
+    meeting_url = (mb.data or {}).get("meeting_url") if mb else None
+    if not meeting_url:
+        return
+    try:
+        reps = (
+            supabase.table("proxy_representations").select("*")
+            .eq("meeting_url", meeting_url).eq("status", "pending").execute()
+        )
+    except Exception as exc:
+        print(f"[standin] deliver lookup failed: {exc}")
+        return
+    pending = reps.data or []
+    if not pending:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    delivered = []
+    for rep in pending:
+        try:
+            upd = (
+                supabase.table("proxy_representations")
+                .update({"status": "delivered", "delivered_at": now, "delivered_bot_id": bot_id})
+                .eq("id", rep["id"]).eq("status", "pending").execute()
+            )
+            if upd.data:  # we claimed it
+                delivered.append(rep)
+        except Exception as exc:
+            print(f"[standin] deliver claim failed: {exc}")
+
+    lines, updates = [], []
+    for rep in delivered:
+        name = (rep.get("author_name") or "A teammate").strip()
+        body = (rep.get("approved_body") or "").strip()
+        if not body:
+            continue
+        lines.append(f"• {name} — “{body}”")
+        updates.append({"name": name, "body": body})
+    if not lines:
+        return
+
+    msg = "\U0001F4CB Stand-in updates — from people who couldn't attend:\n" + "\n".join(lines)
+    bot_store.setdefault(bot_id, {})["standin_updates"] = updates
+
+    from realtime_routes import _send_chat_response, _record_bot_line, _get_bot_state
+    import perception_state
+    await _send_chat_response(bot_id, msg)
+    try:
+        state = _get_bot_state(bot_id)
+        async with perception_state.get_memory_lock(state):
+            _record_bot_line(bot_id, state, msg, DEFAULT_BOT_NAME)
+    except Exception as exc:
+        print(f"[standin] transcript record failed: {exc}")
+    print(f"[standin] delivered {len(updates)} stand-in update(s) for bot {bot_id}")
 
 
 class JoinMeetingRequest(BaseModel):
@@ -398,11 +999,17 @@ async def _send_bot_intro(bot_id: str):
         pass
 
 
-async def _fetch_transcript(bot_id: str):
+async def _fetch_transcript(bot_id: str, attempts: int = 12):
     """Fetch transcript — tries media_shortcuts download URL first (async providers),
-    then falls back to /bot/{id}/transcript/ (streaming providers like recallai_streaming)."""
-    for attempt in range(12):
-        print(f"[recall] fetch transcript attempt {attempt + 1}/12 for bot {bot_id}")
+    then falls back to /bot/{id}/transcript/ (streaming providers like recallai_streaming).
+
+    `attempts` is the patience budget. The full 12 (~10 min of backoff) is for audio-only
+    meetings where Recall's transcript trickles in after the call ends. When we already
+    hold a usable live transcript (the bot spoke / chat was captured), the caller passes a
+    small number — Recall is then only needed for the recording segments, not the analysis,
+    so there's no reason to block for minutes."""
+    for attempt in range(attempts):
+        print(f"[recall] fetch transcript attempt {attempt + 1}/{attempts} for bot {bot_id}")
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RECALL_API_BASE}/bot/{bot_id}/",
@@ -539,6 +1146,111 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
     return segments or None
 
 
+def _resolve_owner_workspace(bot_id: str) -> tuple[str | None, str | None]:
+    """Best-effort (owner_user_id, workspace_id) for a bot, durable across a restart.
+    Precedence: a stand-in rep → the live bot_store entry → the meeting_bots row.
+    workspace_id is only durable for stand-ins (rep) or once meeting_bots carries it;
+    a regular bot recovered after a restart that wiped bot_store falls back to personal."""
+    owner_user_id: str | None = None
+    workspace_id: str | None = None
+    if supabase:
+        try:
+            rep = (
+                supabase.table("proxy_representations")
+                .select("author_user_id, workspace_id")
+                .eq("scheduled_bot_id", bot_id).neq("status", "canceled")
+                .limit(1).execute()
+            )
+            if rep.data:
+                owner_user_id = rep.data[0].get("author_user_id")
+                workspace_id = rep.data[0].get("workspace_id")
+        except Exception:
+            pass
+    mem = bot_store.get(bot_id) or {}
+    owner_user_id = owner_user_id or mem.get("user_id")
+    workspace_id = workspace_id or mem.get("workspace_id")
+    if (not owner_user_id or not workspace_id) and supabase:
+        try:
+            mb = (
+                supabase.table("meeting_bots").select("owner_user_id, workspace_id")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            row = (mb.data if mb else None) or {}
+            owner_user_id = owner_user_id or row.get("owner_user_id")
+            workspace_id = workspace_id or row.get("workspace_id")
+        except Exception:
+            pass
+    return owner_user_id, workspace_id
+
+
+async def _persist_bot_meeting(bot_id: str) -> None:
+    """Promote ANY bot's analysis into the `meetings` table, server-side.
+
+    Normally the owner's browser does this (POST /meetings on status=done). But a
+    headless stand-in has no browser, and a regular bot whose dashboard tab crashed or
+    was closed before analysis finished would otherwise live only in bot_sessions —
+    invisible to the user. This saves it ourselves via save_meeting (so workspace
+    fan-out + transcript indexing happen too). Idempotent: in-memory guard + an
+    existing-row check on meetings.recall_bot_id, so it never double-writes alongside a
+    browser save (the browser POST sets recall_bot_id, which this checks first)."""
+    if not supabase or bot_id in _standin_persisted:
+        return
+    try:
+        existing = (
+            supabase.table("meetings").select("id")
+            .eq("recall_bot_id", bot_id).limit(1).execute()
+        )
+        if existing.data:
+            _standin_persisted.add(bot_id)
+            return  # already on a dashboard (browser saved it first)
+        owner_user_id, workspace_id = _resolve_owner_workspace(bot_id)
+        if not owner_user_id:
+            return
+        bs = (
+            supabase.table("bot_sessions").select("result, transcript")
+            .eq("bot_id", bot_id).maybe_single().execute()
+        )
+        data = bs.data if bs else None
+        if not data or not data.get("result"):
+            return
+        result = data["result"]
+        transcript = data.get("transcript") or ""
+        summary = (result.get("summary") or "") if isinstance(result, dict) else ""
+        health = (result.get("health_score") or {}) if isinstance(result, dict) else {}
+        from storage_routes import save_meeting, MeetingEntry
+        entry = MeetingEntry(
+            id=(int(time.time() * 1000) * 1000) + secrets.randbelow(1000),
+            date=datetime.now(timezone.utc).isoformat(),
+            title=(result.get("title") if isinstance(result, dict) else None) or summary[:65] or "Meeting",
+            score=health.get("score"),
+            transcript=transcript,
+            result=result,
+            share_token=secrets.token_hex(8),
+            workspace_id=workspace_id,
+            recall_bot_id=bot_id,
+        )
+        _standin_persisted.add(bot_id)
+        await save_meeting(entry, owner_user_id)
+        print(f"[recall] auto-promoted bot {bot_id} into meetings for {owner_user_id} (workspace={workspace_id})")
+    except Exception as exc:
+        print(f"[recall] auto-promote failed for {bot_id}: {exc}")
+
+
+# Back-compat alias: stand-in bots are headless and persist immediately.
+_persist_standin_meeting = _persist_bot_meeting
+
+
+async def _persist_bot_meeting_delayed(bot_id: str, delay_s: float = 120.0) -> None:
+    """Fallback persist for a regular (browser-driven) bot: wait for the owner's tab to
+    save normally, then promote server-side only if it didn't (crashed/closed tab). The
+    existing-row check in _persist_bot_meeting makes this a no-op when the browser won."""
+    try:
+        await asyncio.sleep(delay_s)
+    except asyncio.CancelledError:
+        return
+    await _persist_bot_meeting(bot_id)
+
+
 async def _process_bot_transcript(bot_id: str):
     # Idempotency: never run two analyses for the same bot concurrently. The
     # /bot-status poll re-triggers this while status=="processing" (to recover
@@ -555,7 +1267,13 @@ async def _process_bot_transcript(bot_id: str):
     bot_store.setdefault(bot_id, {"status": "processing", "result": None, "error": None, "commands": []})
     try:
         print(f"[recall] starting transcript processing for bot {bot_id}")
-        resp = await _fetch_transcript(bot_id)
+        # If we already hold a usable live transcript, we'll analyse from it regardless of
+        # Recall (the bot's chat replies + typed chat aren't in Recall's audio transcript),
+        # so only give Recall a brief window to provide recording segments — don't block
+        # the ~10-min audio-retry budget. Saves up to ~10 min before a meeting lands on the
+        # dashboard whenever the bot was active.
+        _live_lines = [ln for ln in (bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []) if ln.strip()]
+        resp = await _fetch_transcript(bot_id, attempts=2 if len(_live_lines) >= 2 else 12)
 
         transcript = ""
         segments: list[dict] | None = None
@@ -565,14 +1283,24 @@ async def _process_bot_transcript(bot_id: str):
             transcript = _transcript_from_recall_data(raw)
             segments = _segments_from_recall_data(raw)
 
-        # Fallback: use realtime-streamed transcript lines accumulated during the meeting.
-        # Segments stay None here — the live buffer has no global timestamps, so the player
-        # gracefully degrades to a plain transcript view for these meetings.
-        if not transcript.strip():
-            rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
-            if rt_lines:
-                transcript = "\n".join(rt_lines)
-                print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
+        # The realtime buffer interleaves the humans' utterances with the bot's
+        # own turns (recorded via _record_bot_line) in chronological order. When
+        # the bot actually spoke, prefer it as the transcript: Recall's audio
+        # transcript wouldn't contain the bot's chat replies, so it'd read as a
+        # monologue ("talking to myself" in a 1-on-1). Segments still come from
+        # Recall for the recording player. Otherwise it's a plain fallback when
+        # Recall returned nothing.
+        rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
+        bot_spoke = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in rt_lines)
+        if bot_spoke and rt_lines:
+            # Collapse the bot's two names (persona for replies, default for the stand-in
+            # delivery) into one so it isn't analysed as two separate speakers.
+            rt_lines = _normalize_bot_speaker(rt_lines, await _resolve_bot_persona_name(bot_id))
+            transcript = "\n".join(rt_lines)
+            print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
+        elif not transcript.strip() and rt_lines:
+            transcript = "\n".join(rt_lines)
+            print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
 
         if not transcript.strip():
             error_msg = "No transcript content found — the meeting may have been too short or had no speech"
@@ -583,9 +1311,11 @@ async def _process_bot_transcript(bot_id: str):
             return
 
         print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
-        owner_name = (bot_store.get(bot_id) or {}).get("owner_name")
+        # Durable owner lookup (survives a restart that wiped bot_store) so the follow-up
+        # email is written FROM the represented owner, not a guessed participant.
+        owner_name = _resolve_owner_name(bot_id)
         analysis_transcript = build_analysis_transcript(transcript, owner_name=owner_name)
-        result = await run_full_analysis(analysis_transcript)
+        result = await run_full_analysis(analysis_transcript, owner_name=owner_name)
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
@@ -598,6 +1328,14 @@ async def _process_bot_transcript(bot_id: str):
         })
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
+        # Persist to the meetings table server-side so a meeting is never lost to a
+        # crashed/closed dashboard tab. A headless stand-in has no browser → save now;
+        # a regular bot's browser normally saves it → only fall back after a delay if it
+        # didn't. Both dedup on recall_bot_id, so no double-write when the browser wins.
+        if (bot_store.get(bot_id) or {}).get("standin"):
+            await _persist_bot_meeting(bot_id)
+        else:
+            asyncio.create_task(_persist_bot_meeting_delayed(bot_id))
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:
@@ -648,6 +1386,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "existing_bot_id": own["bot_id"],
                 "owner_user_id": user_id,
                 "owner_user_email": "",
+                "live_token": _live_token_for_bot(own["bot_id"]),
             }
 
         # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
@@ -659,6 +1398,24 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "existing_bot_id": existing["bot_id"],
                 "owner_user_id": existing["owner_user_id"],
                 "owner_user_email": existing.get("owner_user_email", ""),
+                "live_token": _live_token_for_bot(existing["bot_id"]),
+            }
+
+        # Scheduled stand-in dedup: a bot may already be SCHEDULED for this meeting
+        # (you set a stand-in because you couldn't attend) but not yet joined, so the
+        # live-dedup checks above miss it. Attach to it instead of spawning a second
+        # bot — this is what prevents auto-join from double-booking a stand-in meeting.
+        scheduled = _find_existing_bot_for_standin(
+            supabase, normalized_url, user_id, statuses=("scheduled",)
+        )
+        if scheduled:
+            print(f"[recall] scheduled-dedup: attaching join to scheduled bot {scheduled['bot_id']}")
+            return {
+                "skip": True,
+                "existing_bot_id": scheduled["bot_id"],
+                "owner_user_id": scheduled["owner_user_id"],
+                "owner_user_email": "",
+                "live_token": _live_token_for_bot(scheduled["bot_id"]),
             }
 
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
@@ -678,57 +1435,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "Authorization": f"Token {RECALL_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={
-                "meeting_url": req.meeting_url,
-                "bot_name": "PrismAI",
-                "webhook_url": webhook_url,
-                "recording_config": {
-                    # Video output — required for post-meeting playback.
-                    # speaker_view composites the active speaker as the main pane;
-                    # gallery_view is the multi-tile alternative.
-                    "video_mixed_layout": "speaker_view",
-                    "video_mixed_mp4": {},
-                    # Always-on audio fallback — used by the player when no video
-                    # is captured (phone bridges, screenshare-disabled meetings).
-                    "audio_mixed_mp3": {},
-                    "transcript": {
-                        "provider": {
-                            # endpointing=500 → wait 500ms of silence before finalizing
-                            #   (default 10ms makes Deepgram emit one "final" per word).
-                            # utterance_end_ms=1000 → bounded fallback in case endpointing under-fires.
-                            # smart_format + punctuate + diarize → better readability, fewer mishears,
-                            #   and Recall already attaches speaker labels separately.
-                            # Note: Recall.ai validates Deepgram params as URL-style strings
-                            # (booleans must be "true"/"false", not JSON true/false). Numeric
-                            # params can stay as integers.
-                            # endpointing=300: 30x longer than the 10ms default (which
-                            #   was causing one-word "finals"), but lower than 500 to
-                            #   reduce TTFB. The same-fragment-completion heuristic +
-                            #   accumulator in realtime_routes handles the rare split case.
-                            "deepgram_streaming": {
-                                "model": "nova-3",
-                                "language": "en",
-                                "smart_format": "true",
-                                "punctuate": "true",
-                                "diarize": "true",
-                                "endpointing": 300,
-                                "utterance_end_ms": 1000,
-                                "interim_results": "true",
-                            }
-                        }
-                    },
-                    "realtime_endpoints": [
-                        {
-                            "type": "webhook",
-                            "url": realtime_url,
-                            "events": [
-                                "transcript.data",
-                                "participant_events.chat_message",
-                            ],
-                        }
-                    ],
-                },
-            },
+            json=_recall_bot_create_json(req.meeting_url, realtime_url, webhook_url),
             timeout=15,
         )
 
@@ -771,6 +1478,16 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
             }).execute()
         except Exception as exc:
             print(f"[recall] meeting_bots insert failed: {exc}")
+        # Stamp workspace durably so a server-side persist (after a restart that wiped
+        # bot_store) can still save the meeting to the right workspace. Best-effort —
+        # the column is absent on schemas before meeting_bots_workspace_migration.
+        if req.workspace_id:
+            try:
+                supabase.table("meeting_bots").update(
+                    {"workspace_id": req.workspace_id}
+                ).eq("bot_id", bot_id).execute()
+            except Exception:
+                pass
 
     init_bot_realtime(bot_id)
 
@@ -835,6 +1552,15 @@ async def bot_status(bot_id: str):
     recall_data = resp.json()
     recall_status = recall_data.get("status_changes", [{}])[-1].get("code", "") if recall_data.get("status_changes") else ""
     our_status = STATUS_MAP.get(recall_status, bot_store.get(bot_id, {}).get("status", "joining"))
+
+    if recall_status == "in_call_recording" and bot_id not in _standin_delivered:
+        # Fallback for the webhook in_call_recording trigger (idempotent via guard +
+        # DB claim) so stand-ins still deliver if the webhook is missed.
+        _standin_delivered.add(bot_id)
+        if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
+            _standin_intro_sent.add(bot_id)
+            asyncio.create_task(_send_bot_intro(bot_id))
+        asyncio.create_task(deliver_standins_for_bot(bot_id))
 
     if recall_status in ("call_ended", "done"):
         # The call has ended → make sure analysis runs, exactly once. Skip if it's
@@ -916,10 +1642,75 @@ async def live_meeting(live_token: str):
         "live_action_items": memory_snapshot.get("live_action_items", []),
         "top_entities": memory_snapshot.get("top_entities", []),
         "idea_history": memory_snapshot.get("idea_history", []),
+        # Stand-in updates delivered into this meeting (Feature A) — for the brief panel.
+        "standin_updates": entry.get("standin_updates", []),
         # Include transcript when done so signed-in viewers can save a copy
         "transcript": entry.get("transcript") if status == "done" else None,
         "counters": op_counters,
     }
+
+
+class LiveAskRequest(BaseModel):
+    question: str = ""
+    mode: str = "qa"  # "catchup" | "qa"
+
+
+@router.post("/live/{live_token}/ask")
+async def live_ask(live_token: str, body: LiveAskRequest, request: Request):
+    """Private live catch-up / Q&A over a meeting's live state. Token-gated like
+    GET /live/{token} (no login required); streams the answer back to the caller
+    only — never into the meeting. A valid Bearer token whose user is a member of
+    the bot's workspace unlocks the knowledge-base fallback (else meeting-only)."""
+    bot_id = _live_token_index.get(live_token)
+    if not bot_id and supabase:
+        try:
+            res = supabase.table("bot_sessions").select("bot_id").eq("live_token", live_token).maybe_single().execute()
+            if res.data:
+                bot_id = res.data["bot_id"]
+                _live_token_index[live_token] = bot_id
+        except Exception:
+            pass
+    if not bot_id:
+        raise HTTPException(status_code=404, detail="Live session not found")
+
+    from realtime_routes import stream_catchup_answer, _catchup_rate_ok
+    if not _catchup_rate_ok(live_token):
+        raise HTTPException(status_code=429, detail="One moment — too many questions in a row.")
+
+    if bot_id not in bot_store:
+        db_entry = _db_load(bot_id)
+        if db_entry:
+            bot_store[bot_id] = db_entry
+
+    # RAG fallback unlock — only for a logged-in member of the bot's workspace
+    # (or the owner of a personal, no-workspace bot). Anonymous => meeting-only.
+    member_user_id = None
+    caller_id = await _optional_user_id(request)
+    if caller_id:
+        entry = bot_store.get(bot_id) or {}
+        ws_id = entry.get("workspace_id")
+        if ws_id and supabase:
+            try:
+                m = (
+                    supabase.table("workspace_members")
+                    .select("user_id")
+                    .eq("workspace_id", ws_id)
+                    .eq("user_id", caller_id)
+                    .maybe_single()
+                    .execute()
+                )
+                if m and m.data:
+                    member_user_id = caller_id
+            except Exception:
+                pass
+        elif not ws_id and entry.get("user_id") == caller_id:
+            member_user_id = caller_id
+
+    mode = body.mode if body.mode in ("catchup", "qa") else "qa"
+    return StreamingResponse(
+        stream_catchup_answer(bot_id, mode, body.question or "", member_user_id),
+        media_type="text/event-stream",
+    )
 
 
 @router.get("/bot-counters/{bot_id}")
@@ -991,6 +1782,15 @@ async def recall_webhook(request: Request):
         bot_store[bot_id]["status"] = "recording"
         _db_save(bot_id, {"status": "recording"})
         _mb_update_status(bot_id, "recording")
+        # A scheduled stand-in bot got no intro at creation — introduce it now that
+        # it's actually in the room (announces it's attending on someone's behalf).
+        if bot_store.get(bot_id, {}).get("standin") and bot_id not in _standin_intro_sent:
+            _standin_intro_sent.add(bot_id)
+            asyncio.create_task(_send_bot_intro(bot_id))
+        # Any bot reaching the room delivers pending stand-ins bound to its meeting.
+        if bot_id not in _standin_delivered:
+            _standin_delivered.add(bot_id)
+            asyncio.create_task(deliver_standins_for_bot(bot_id))
     elif event in ("bot.call_ended", "call_ended", "bot.done", "done"):
         if bot_store[bot_id].get("status") not in ("processing", "done"):
             bot_store[bot_id]["status"] = "processing"

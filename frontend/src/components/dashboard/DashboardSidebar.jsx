@@ -11,6 +11,8 @@ import {
   TrendingUp,
   Trash2,
   UserCircle,
+  UserRoundCheck,
+  CalendarDays,
 } from 'lucide-react'
 import { deriveDisplayTitle } from '../../lib/insights'
 import { formatHistoryDate, IntegrationsIcon } from './chrome'
@@ -68,6 +70,8 @@ export default function DashboardSidebar(props) {
     onGoHome,
     onOpenTrend,
     onOpenKnowledge,
+    onOpenStandin,
+    onOpenCalendar,
     onSelectMeeting,
     onDeleteMeeting,
     currentMeetingId,
@@ -97,6 +101,8 @@ export default function DashboardSidebar(props) {
   const onHome = activeView === 'home'
   const onTrend = activeView === 'intelligence'
   const onKnowledge = activeView === 'knowledge'
+  const onStandin = activeView === 'standin'
+  const onCalendar = activeView === 'calendar'
 
   // Collapsible date groups (Today / This week / Earlier).
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
@@ -125,7 +131,9 @@ export default function DashboardSidebar(props) {
         {[
           { key: 'home', label: 'Home', Icon: Home, active: onHome, onClick: onGoHome },
           { key: 'trend', label: 'Trend', Icon: TrendingUp, active: onTrend, onClick: onOpenTrend },
+          { key: 'calendar', label: 'Calendar', Icon: CalendarDays, active: onCalendar, onClick: onOpenCalendar },
           { key: 'knowledge', label: 'Knowledge', Icon: BookOpen, active: onKnowledge, onClick: onOpenKnowledge },
+          { key: 'standin', label: 'Stand-in', Icon: UserRoundCheck, active: onStandin, onClick: onOpenStandin },
         ].map(({ key, label, Icon, active, onClick }) => (
           <button
             key={key}
@@ -184,9 +192,15 @@ export default function DashboardSidebar(props) {
               side="bottom"
               align="start"
               sideOffset={10}
-              collisionPadding={12}
+              collisionPadding={64}
               modal={false}
-              className="dashboard-island dashboard-body-font max-h-[calc(100dvh_-_25rem)] w-[340px] overflow-auto p-0"
+              className="dashboard-island dashboard-body-font w-[340px] p-0"
+              // Inline style, not a Tailwind class: the base DropdownMenuContent class has
+              // overflow-hidden, and `max-h-[var(...)]` arbitrary values get dropped by
+              // tailwind-merge — so the height cap never applied and the popover ran off
+              // screen. Inline style beats both. The Radix var gives the real space below
+              // the (mid-page) trigger; 80vh is a fallback if it's ever unset.
+              style={{ maxHeight: 'var(--radix-popper-available-height, 80vh)', overflowY: 'auto' }}
               onCloseAutoFocus={(e) => e.preventDefault()}
             >
               {newMeetingPanel}

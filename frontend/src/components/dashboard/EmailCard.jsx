@@ -4,7 +4,7 @@ import { apiFetch } from '../../lib/api'
 import { notifyStatus } from '../../lib/statusNotify'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
-export default function EmailCard({ email, gmailConnected = false, suggestedEmails = [], onSave }) {
+export default function EmailCard({ email, gmailConnected = false, suggestedEmails = [], onSave, viewerName = '', meetingId, transcript = '', result = null }) {
   const [copied, setCopied] = useState(false)
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -19,11 +19,46 @@ export default function EmailCard({ email, gmailConnected = false, suggestedEmai
   const [draftSubject, setDraftSubject] = useState('')
   const [draftBody, setDraftBody] = useState('')
 
-  useEffect(() => { setEditedEmail(null); setEditing(false) }, [email])
+  // Per-viewer authorship: the analysis writes the draft from the meeting owner, but
+  // each person's follow-up should read as written by THEM. On view, regenerate the
+  // draft FROM the current viewer (display-only — never persisted to the shared meeting,
+  // so it doesn't overwrite anyone else's). Cached per session to avoid re-calling.
+  const [personalized, setPersonalized] = useState(null)
+  const [personalizing, setPersonalizing] = useState(false)
+
+  useEffect(() => { setEditedEmail(null); setEditing(false); setPersonalized(null) }, [email])
+
+  useEffect(() => {
+    if (!viewerName || !email || (!email.subject && !email.body)) return
+    const cacheKey = `prism_email_v1_${meetingId || 'x'}_${viewerName}`
+    try {
+      const cached = sessionStorage.getItem(cacheKey)
+      if (cached) { setPersonalized(JSON.parse(cached)); return }
+    } catch { /* ignore */ }
+    let cancelled = false
+    setPersonalizing(true)
+    apiFetch('/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'email_drafter', transcript: transcript || '', result, owner_name: viewerName }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const e = data?.follow_up_email
+        if (e && !cancelled) {
+          setPersonalized(e)
+          try { sessionStorage.setItem(cacheKey, JSON.stringify(e)) } catch { /* ignore */ }
+        }
+      })
+      .catch(() => { /* keep the original draft on failure */ })
+      .finally(() => { if (!cancelled) setPersonalizing(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId, viewerName, email])
 
   if (!email || (!email.subject && !email.body)) return null
 
-  const view = editedEmail || email
+  const view = editedEmail || personalized || email
   const wordCount = `${view.body || ''}`.trim().split(/\s+/).filter(Boolean).length
 
   const handleCopy = () => {
@@ -92,7 +127,11 @@ export default function EmailCard({ email, gmailConnected = false, suggestedEmai
         <div>
           <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Follow-up email</h2>
           <p className="mt-1 text-xs font-medium text-white/45">
-            {editing ? 'Editing draft' : `Ready-to-edit draft · ${wordCount} words`}
+            {editing
+              ? 'Editing draft'
+              : personalizing && !personalized
+                ? 'Personalizing for you…'
+                : `Ready-to-edit draft · ${wordCount} words${personalized ? ' · written as you' : ''}`}
           </p>
         </div>
         {!editing && (

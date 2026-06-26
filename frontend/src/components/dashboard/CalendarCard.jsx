@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarPlus, Check, ExternalLink, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { notifyStatus } from '../../lib/statusNotify'
@@ -26,7 +26,7 @@ function timeFromMeetingDate(value) {
   return `${hh}:${mm}`
 }
 
-export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [], suggestedEmails = [] }) {
+export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [], suggestedEmails = [], meetingId = null }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')
@@ -35,6 +35,20 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState(null) // { link }
   const [error, setError] = useState('')
+  const [conflict, setConflict] = useState(null) // { type: 'duplicate'|'overlap', events: [] }
+
+  // `created` is component state that resets on reload, so the "Event created" view +
+  // the hidden defaulted-time notice would revert after a refresh. Persist it per
+  // meeting (per browser — the event lives in THIS user's calendar) so the card
+  // remembers across reloads.
+  const createdKey = meetingId ? `prism_cal_created_${meetingId}` : null
+  useEffect(() => {
+    if (!createdKey) return
+    try {
+      const saved = localStorage.getItem(createdKey)
+      if (saved) setCreated(JSON.parse(saved))
+    } catch { /* ignore */ }
+  }, [createdKey])
 
   // Resolve a concrete date/time for display + prefill. Prefer the backend's
   // resolved fields; fall back to client-side parsing of the timeframe phrase
@@ -73,10 +87,11 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
     setInvitees((defaultEmails || []).join(', '))
     setError('')
     setCreated(null)
+    setConflict(null)
     setOpen(true)
   }
 
-  async function createEvent() {
+  async function createEvent(confirm = false) {
     setError('')
     if (!date || !time) { setError('Pick a date and time.'); return }
     setBusy(true)
@@ -93,6 +108,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
           description: agenda.length ? agenda.map(a => `• ${a}`).join('\n') : (suggestion.reason || ''),
           attendees: emails,
           timezone: tz,
+          confirm,
         }),
       })
       if (!res.ok) {
@@ -102,7 +118,11 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
         return
       }
       const data = await res.json()
-      setCreated({ link: data.link })
+      if (data.conflict) { setConflict({ type: data.type, events: data.events || [] }); return }
+      setConflict(null)
+      const createdInfo = { link: data.link }
+      setCreated(createdInfo)
+      if (createdKey) { try { localStorage.setItem(createdKey, JSON.stringify(createdInfo)) } catch { /* ignore */ } }
       notifyStatus({ kind: 'calendar', message: 'Added to calendar' })
     } catch {
       setError('Network error — try again.')
@@ -145,6 +165,13 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       )}
       <p className="mt-2 text-sm leading-7 text-white/75">{suggestion.reason}</p>
 
+      {suggestion.time_defaulted && !created && (
+        <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-2.5 py-1.5 text-[11.5px] leading-relaxed text-amber-200/90">
+          <span className="mt-px">⚠</span>
+          <span>No time was set in the meeting. Suggested slot: <span className="font-medium text-amber-100">{resolvedLabel}{effTime ? ` · ${formatTime12(effTime)}` : ''}</span> — confirm or change it before adding.</span>
+        </p>
+      )}
+
       {agenda.length > 0 && (
         <div className="mt-3">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">Proposed agenda</p>
@@ -181,6 +208,13 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
                   Open <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
+              <button
+                type="button"
+                onClick={() => { setCreated(null); if (createdKey) { try { localStorage.removeItem(createdKey) } catch { /* ignore */ } } }}
+                className="ml-1 text-white/45 transition hover:text-white/75"
+              >
+                · Add another
+              </button>
             </div>
           ) : open ? (
             <div className="space-y-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
@@ -190,9 +224,9 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
               />
               <div className="flex gap-2">
                 <div className="min-w-0 flex-1">
-                  <DatePopover value={date} onChange={setDate} />
+                  <DatePopover value={date} onChange={(v) => { setDate(v); setConflict(null) }} />
                 </div>
-                <TimePopover value={time} onChange={setTime} />
+                <TimePopover value={time} onChange={(v) => { setTime(v); setConflict(null) }} />
               </div>
               <input
                 value={invitees} onChange={(e) => setInvitees(e.target.value)}
@@ -215,10 +249,27 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
                 </div>
               )}
               {error && <p className="text-[11px] text-red-400">{error}</p>}
+              {conflict && (
+                <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-200/90">
+                  <p className="font-medium text-amber-100">
+                    {conflict.type === 'duplicate'
+                      ? 'You already have this event at that time.'
+                      : `You have ${conflict.events.length === 1 ? 'an event' : 'events'} that overlap this slot:`}
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {conflict.events.slice(0, 3).map((e, i) => (
+                      <li key={i} className="text-amber-200/80">
+                        • {e.title}{e.start ? ` — ${new Date(e.start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-amber-200/70">Create it anyway, or change the time above.</p>
+                </div>
+              )}
               <div className="flex items-center gap-2">
-                <button type="button" onClick={createEvent} disabled={busy}
+                <button type="button" onClick={() => createEvent(!!conflict)} disabled={busy}
                   className="rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-3.5 py-1.5 text-[12px] font-semibold text-cyan-200 transition hover:bg-cyan-400/[0.18] disabled:opacity-50">
-                  {busy ? 'Creating…' : 'Create event'}
+                  {busy ? 'Creating…' : conflict ? 'Create anyway' : 'Create event'}
                 </button>
                 <button type="button" onClick={() => setOpen(false)} disabled={busy}
                   className="rounded-full border border-white/[0.12] bg-white/[0.04] px-3.5 py-1.5 text-[12px] font-semibold text-white/70 transition hover:bg-white/[0.08]">

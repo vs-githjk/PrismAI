@@ -44,6 +44,10 @@ MIGRATION_ORDER = [
     "chats_unique_migration.sql", # unique constraint on chats(meeting_id, user_id)
     "action_refs_migration.sql",  # action_refs table (needs meetings)
     "memory_migration.sql",       # memory columns on bot_sessions
+    "proxy_representations_migration.sql",      # proxy_profiles + proxy_representations
+    "proxy_workspace_profiles_migration.sql",   # per-workspace profiles + borrow_scopes
+    "proxy_default_standin_migration.sql",       # per-space default stand-in
+    "meeting_bots_workspace_migration.sql",      # meeting_bots.workspace_id (durable server-side persist)
 ]
 
 migrations_dir = Path(__file__).parent

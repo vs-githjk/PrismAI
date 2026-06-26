@@ -3,6 +3,7 @@ import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from './lib/sessionK
 import { deriveDisplayTitle } from './lib/insights'
 import LogoIcon from './components/LogoIcon'
 import LandingNav from './components/LandingNav'
+import LiveCatchup from './components/LiveCatchup'
 import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
 import PricingSection from './components/PricingSection'
@@ -23,6 +24,7 @@ import DashboardPage from './components/DashboardPage'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
 import { notifyStatus } from './lib/statusNotify'
+import { readIntegrationStore, writeIntegrationStore, purgeLegacyGlobalIntegrationKeys } from './lib/integrationStore'
 
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
 const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
@@ -1024,18 +1026,19 @@ export default function App() {
 
   // Integrations
   const [showIntegrations, setShowIntegrations] = useState(false)
-  const [integrations, setIntegrations] = useState(() => ({
-    slack_webhook: localStorage.getItem('prism_slack_webhook') || '',
-    notion_token: localStorage.getItem('prism_notion_token') || '',
-    notion_page_id: localStorage.getItem('prism_notion_page_id') || '',
-    auto_send_slack: localStorage.getItem('prism_auto_send_slack') === '1',
-    auto_send_notion: localStorage.getItem('prism_auto_send_notion') === '1',
-  }))
+  // Integration tokens are loaded PER USER once auth resolves (see the effect below).
+  // Start empty + purge the old global keys so a prior account's tokens can't bleed in.
+  const [integrations, setIntegrations] = useState(() => {
+    purgeLegacyGlobalIntegrationKeys()
+    return { slack_webhook: '', notion_token: '', notion_page_id: '', auto_send_slack: false, auto_send_notion: false }
+  })
   const [personaPreset, setPersonaPreset] = useState('default')
   const [personaCustomPrompt, setPersonaCustomPrompt] = useState('')
   // Load tool settings + persona from backend when signed in
   useEffect(() => {
     if (!user || isTestAccount) return
+    // Browser-local integration tokens, scoped to THIS user (no cross-account bleed).
+    setIntegrations(prev => ({ ...prev, ...readIntegrationStore(user.id) }))
     apiFetch('/user-settings').then(async (res) => {
       if (!res.ok) return
       const data = await res.json()
@@ -1521,6 +1524,12 @@ export default function App() {
         setDedupBotInfo({ botId: data.existing_bot_id, ownerUserId: data.owner_user_id, ownerUserEmail: data.owner_user_email || '', self: !!data.self })
         setActiveBotId(data.existing_bot_id)
         sessionStorage.setItem('prism_active_bot_id', data.existing_bot_id)
+        // The shared bot's live token lets a dedup'd teammate open the live view +
+        // private catch-up straight from their dashboard.
+        if (data.live_token) {
+          setActiveLiveToken(data.live_token)
+          sessionStorage.setItem('prism_active_live_token', data.live_token)
+        }
         startPolling(data.existing_bot_id, data.owner_user_id)
         notifyStatus({ kind: 'bot', message: 'Joined teammate’s bot' })
         return
@@ -2433,6 +2442,8 @@ export default function App() {
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}
           botStatus={botStatus}
+          activeLiveToken={activeLiveToken}
+          accessToken={authSession?.access_token || null}
           botError={botError}
           dedupBotInfo={dedupBotInfo}
           botTranscriptReady={botTranscriptReady}
@@ -2523,6 +2534,7 @@ export default function App() {
           <Suspense fallback={null}>
             <IntegrationsModal
               integrations={integrations}
+              userId={user?.id}
               onSave={setIntegrations}
               onClose={() => setShowIntegrations(false)}
               calendarConnected={calendarConnected}

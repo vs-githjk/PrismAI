@@ -49,6 +49,11 @@ export async function connectSource({ sourceType, sourceId, name, meetingId, wor
   }))
 }
 
+export async function getDoc(docId) {
+  const data = await asJson(await apiFetch(`/knowledge/docs/${docId}`))
+  return data.doc || null
+}
+
 export async function updateDoc(docId, patch) {
   return asJson(await apiFetch(`/knowledge/docs/${docId}`, {
     method: 'PATCH',

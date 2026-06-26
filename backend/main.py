@@ -20,6 +20,7 @@ from realtime_routes import router as realtime_router
 from recall_routes import router as recall_router
 from knowledge_routes import router as knowledge_router
 from storage_routes import router as storage_router
+from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
 
 
@@ -32,6 +33,11 @@ async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(http2=True, timeout=DEFAULT_TIMEOUT)
     app.state.openai = openai_client
     bind_clients(app)
+    # Re-attach lifecycle pollers for any bots left mid-flight by a previous process
+    # (restart / cold start) so headless stand-ins still get delivered, analysed, and
+    # promoted to the dashboard without a browser or webhook. Best-effort, non-blocking.
+    from recall_routes import recover_active_bots
+    asyncio.create_task(recover_active_bots())
     try:
         yield
     finally:
@@ -50,6 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(storage_router)
+app.include_router(proxy_router)
 app.include_router(knowledge_router)
 app.include_router(workspace_router)
 app.include_router(recall_router)

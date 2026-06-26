@@ -1,6 +1,8 @@
-import { FileText, Globe, RefreshCw, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { Eye, FileText, Globe, RefreshCw, Trash2 } from 'lucide-react'
 import { deleteDoc, resyncDoc, updateDoc } from '../lib/knowledge'
 import { glassCard, cardGlowStyle, subtleText } from './dashboard/dashboardStyles'
+import KnowledgeDocViewer from './KnowledgeDocViewer'
 
 const SENSITIVITY_META = {
   public:       { label: 'Public',       cls: 'border-emerald-400/30 bg-emerald-400/[0.10] text-emerald-300' },
@@ -16,6 +18,7 @@ const STATUS_META = {
 }
 
 export default function KnowledgeDocCard({ doc, onChange }) {
+  const [viewing, setViewing] = useState(false)
   const Icon = doc.source_type === 'url' ? Globe : FileText
   const sens = SENSITIVITY_META[doc.sensitivity] || SENSITIVITY_META.internal
   const status = STATUS_META[doc.status] || { label: doc.status, dot: 'bg-white/40' }
@@ -84,6 +87,14 @@ export default function KnowledgeDocCard({ doc, onChange }) {
         </select>
         <div className="ml-auto flex items-center gap-1.5">
           <button
+            onClick={() => setViewing(true)}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/55 transition hover:border-white/[0.2] hover:text-cyan-300"
+            title="View"
+            aria-label="View document"
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={handleResync}
             className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/55 transition hover:border-white/[0.2] hover:text-cyan-300"
             title="Re-sync"
@@ -101,6 +112,8 @@ export default function KnowledgeDocCard({ doc, onChange }) {
           </button>
         </div>
       </div>
+
+      <KnowledgeDocViewer doc={doc} open={viewing} onOpenChange={setViewing} />
     </section>
   )
 }

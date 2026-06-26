@@ -15,6 +15,10 @@ import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
+import LiveCatchup from './LiveCatchup'
+import StandInComposer from './StandInComposer'
+const ProxyProfile = lazy(() => import('./ProxyProfile'))
+const CalendarView = lazy(() => import('./CalendarView'))
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -276,6 +280,8 @@ function NewMeetingPanel(props) {
                   <Suspense fallback={null}>
                     <UpcomingMeetings
                       workspaces={props.workspaces || []}
+                      user={props.user}
+                      onCantMakeIt={props.onCantMakeIt}
                       onJoin={(url, wsId) => {
                         props.setMeetingUrl(url)
                         if (wsId) props.onJoinWithWorkspace?.(wsId)
@@ -363,6 +369,10 @@ function NewMeetingPanel(props) {
                     </button>
                   </div>
                 </div>
+              )}
+
+              {props.botStatus === 'recording' && props.activeLiveToken && (
+                <LiveCatchup liveToken={props.activeLiveToken} accessToken={props.accessToken} />
               )}
 
               {props.liveCommands?.length > 0 && (
@@ -490,6 +500,10 @@ function AnalyzingBanner({ result }) {
 
 export default function DashboardPage(props) {
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
+  // Stand-in composer lives at page level (NOT inside the New Meeting dropdown):
+  // the dropdown closes on outside-click, so a portaled modal inside it would be
+  // torn down the moment you interact with it.
+  const [standIn, setStandIn] = useState(null)
   const [activeView, setActiveView] = useState(() => {
     // A live/share token (deep-link) wins over the persisted view.
     if (props.liveToken) return 'live'
@@ -530,10 +544,15 @@ export default function DashboardPage(props) {
 
   // Persist active view so hard refresh restores the same view. Live/shared are
   // token-driven (not persisted) so they never become the restored default.
+  // Remember where the user was before opening a meeting, so the back arrow returns
+  // there (e.g. Calendar → meeting → back → Calendar) instead of always going Home.
+  const lastNonMeetingViewRef = useRef('home')
   const persistView = (view) => {
+    if (view !== 'meeting') lastNonMeetingViewRef.current = view
     sessionStorage.setItem('prism_active_view', view)
     setActiveView(view)
   }
+  const goBackFromMeeting = () => persistView(lastNonMeetingViewRef.current || 'home')
 
   // Keep activeView in sync with the live/share hash router (App owns the tokens
   // and updates them on deep-link, in-app nav, and browser back/forward). A token
@@ -943,9 +962,13 @@ export default function DashboardPage(props) {
           ? 'Trend'
           : activeView === 'knowledge'
             ? 'Knowledge'
-            : activeView === 'meeting' && (currentMeeting || props.result)
-              ? deriveDisplayTitle(currentMeeting || { result: props.result })
-              : 'Home'
+            : activeView === 'standin'
+              ? 'Stand-in'
+              : activeView === 'calendar'
+                ? 'Calendar'
+                : activeView === 'meeting' && (currentMeeting || props.result)
+                  ? deriveDisplayTitle(currentMeeting || { result: props.result })
+                  : 'Home'
 
   // Status island state — single source of truth, derived per active view:
   //  - live: maps the lifted live status (recording/joining → live, processing →
@@ -1023,6 +1046,7 @@ export default function DashboardPage(props) {
         onSearchChange={handleHistorySearchChange}
         signedOut={signedOut}
         onLockedFeature={requestSignIn}
+        onBack={activeView === 'meeting' ? goBackFromMeeting : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
             <MeetingActionsBar
@@ -1054,6 +1078,8 @@ export default function DashboardPage(props) {
         filteredHistory={filteredHistory}
         activeView={activeView}
         onGoHome={() => persistView('home')}
+        onOpenStandin={() => persistView('standin')}
+        onOpenCalendar={() => persistView('calendar')}
         onOpenTrend={handleOpenTrend}
         onOpenKnowledge={() => persistView('knowledge')}
         onSelectMeeting={handleSelectMeeting}
@@ -1070,7 +1096,13 @@ export default function DashboardPage(props) {
         setNewMeetingOpen={setNewMeetingOpen}
         onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
         newMeetingPanel={
-          <NewMeetingPanel {...props} workspaces={workspaces} onClose={() => setNewMeetingOpen(false)} onOpenMeeting={handleOpenMeetingById} />
+          <NewMeetingPanel
+            {...props}
+            workspaces={workspaces}
+            onClose={() => setNewMeetingOpen(false)}
+            onOpenMeeting={handleOpenMeetingById}
+            onCantMakeIt={(m) => { setNewMeetingOpen(false); setStandIn(m) }}
+          />
         }
         signedOut={signedOut}
         onLockedFeature={requestSignIn}
@@ -1141,11 +1173,12 @@ export default function DashboardPage(props) {
                       gmailConnected={props.calendarConnected}
                       onToggleActionItem={props.toggleActionItem}
                       transcript={props.transcript}
-                      onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); persistView('home') }}
+                      onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); goBackFromMeeting() }}
                       recordedByEmail={recordedByEmail}
                       workspaceId={activeWorkspaceId}
                       suggestedEmails={suggestedAttendeeEmails}
                       onResultUpdate={persistResultPatch}
+                      viewerName={props.user?.user_metadata?.full_name || props.user?.email?.split('@')[0] || ''}
                     />
                   </Suspense>
                 </>
@@ -1203,6 +1236,26 @@ export default function DashboardPage(props) {
                 <p className="text-sm text-white/50">This shared meeting could not be found or has expired.</p>
               </div>
             )
+          )}
+          {activeView === 'standin' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <ProxyProfile
+                user={props.user}
+                workspaceId={activeWorkspaceId}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                onOpenMeeting={handleOpenMeetingById}
+              />
+            </Suspense>
+          )}
+          {activeView === 'calendar' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <CalendarView
+                history={props.history}
+                onOpenMeeting={handleOpenMeetingById}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                calendarConnected={props.calendarConnected}
+              />
+            </Suspense>
           )}
           </div>
         </main>
@@ -1275,6 +1328,10 @@ export default function DashboardPage(props) {
             </button>
           )}
         </>
+      )}
+
+      {standIn && (
+        <StandInComposer meeting={standIn} user={props.user} onClose={() => setStandIn(null)} />
       )}
 
       <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>

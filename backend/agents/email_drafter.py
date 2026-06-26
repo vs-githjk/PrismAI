@@ -4,8 +4,12 @@ from .utils import strip_fences, llm_call
 SYSTEM_PROMPT = (
     "You are an email drafter. Based on the meeting transcript, write a follow-up email "
     "summarizing key decisions and action items. "
-    "If the transcript begins with '[Meeting owner: NAME]', write the email FROM that person's perspective — "
-    "they are the sender, and the email should be addressed TO the other participant(s). "
+    "If a '[Meeting owner: NAME]' line is present, write the email FROM that person's perspective — "
+    "they are the sender (sign off with their name), and the email is addressed TO the OTHER participant(s), "
+    "never to the meeting owner themselves. "
+    "An AI assistant or note-taker — named 'Prism', 'PrismAI', or a persona like 'Flash'/'Glint'/'Echo' — "
+    "is NOT a participant: it may have spoken on the owner's behalf (a stand-in), so treat any of its lines as "
+    "the OWNER's own contributions. Never address the email to the assistant and never sign as the assistant. "
     "If no meeting owner is specified, infer the sender as the attendee (not the advisor or facilitator). "
     "FORMAT the body as a real email, not one run-on paragraph. Use actual newline characters (\\n) to separate parts:\n"
     "  - Greeting on its own line (e.g. 'Hi Nirmal,'), followed by a blank line.\n"
@@ -31,6 +35,11 @@ async def run(transcript: str, context: dict = {}) -> dict:
     # appended) + empty context. Both must work, so build additively.
     parts = []
     if context:
+        # Owner header FIRST so the sender-perspective rule fires even on the
+        # context-only path (Tier-2 agents don't receive the transcript, where this
+        # header normally lives — see analysis_service._tier1_barrier).
+        if context.get("owner_name"):
+            parts.append(f"[Meeting owner: {context['owner_name']}]")
         if context.get("summary"):
             parts.append(f"Meeting summary: {context['summary']}")
         if context.get("decisions"):

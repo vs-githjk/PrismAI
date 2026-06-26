@@ -37,6 +37,7 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
             transcript,
             persona_preset=req.persona_preset,
             persona_custom_prompt=req.persona_custom_prompt,
+            owner_name=req.owner_name,
         )
 
     @router.post("/analyze-stream")
@@ -47,7 +48,8 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
         transcript = build_analysis_transcript(req.transcript, req.speakers, req.owner_name)
 
         async def event_stream():
-            initial: dict = {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {}}
+            initial: dict = {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {},
+                             "owner_name": (req.owner_name or "").strip()}
             if req.persona_preset:
                 initial["persona_preset"] = req.persona_preset
             if req.persona_custom_prompt:

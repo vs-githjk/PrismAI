@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { apiFetch } from '../lib/api'
+import { writeIntegrationStore } from '../lib/integrationStore'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear']
@@ -53,7 +54,7 @@ const AUTO_JOIN_OPTIONS = [
   { value: 'marked', label: 'Auto-join starred',  hint: 'Only auto-join meetings you\'ve starred in the panel.' },
 ]
 
-export default function IntegrationsModal({ integrations, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
+export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
   const [tab, setTab] = useState('Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
@@ -80,11 +81,13 @@ export default function IntegrationsModal({ integrations, onSave, onClose, calen
       linear_api_key: linearApiKey,
       slack_bot_token: slackBotToken,
     }
-    localStorage.setItem('prism_slack_webhook', slackWebhook)
-    localStorage.setItem('prism_notion_token', notionToken)
-    localStorage.setItem('prism_notion_page_id', notionPageId)
-    localStorage.setItem('prism_auto_send_slack', autoSendSlack ? '1' : '0')
-    localStorage.setItem('prism_auto_send_notion', autoSendNotion ? '1' : '0')
+    writeIntegrationStore(userId, {
+      slack_webhook: slackWebhook,
+      notion_token: notionToken,
+      notion_page_id: notionPageId,
+      auto_send_slack: autoSendSlack,
+      auto_send_notion: autoSendNotion,
+    })
 
     // Save tool tokens to backend (Supabase user_settings)
     if (isSignedIn) {
