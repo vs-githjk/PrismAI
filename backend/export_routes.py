@@ -28,6 +28,12 @@ class SlackExportRequest(BaseModel):
     result: dict
 
 
+class TeamsExportRequest(BaseModel):
+    webhook_url: str
+    title: str
+    result: dict
+
+
 def _notion_rich_text(content: str) -> list:
     chunks = []
     for i in range(0, len(content), 2000):
@@ -213,5 +219,79 @@ async def export_to_slack(req: SlackExportRequest):
 
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail="Slack webhook failed")
+
+    return {"ok": True}
+
+
+def _teams_text_block(text: str, **extra) -> dict:
+    block = {"type": "TextBlock", "text": text, "wrap": True}
+    block.update(extra)
+    return block
+
+
+def _build_teams_card(title: str, result: dict) -> dict:
+    """Adaptive Card for the Teams Workflows (Power Automate) webhook. The webhook
+    expects a {type:message, attachments:[adaptive card]} envelope — the same shape
+    accepted by both the new Workflows connector and the legacy Office 365 one."""
+    health = result.get("health_score") or {}
+    items = result.get("action_items") or []
+    decisions = result.get("decisions") or []
+
+    score_str = f"{health['score']}/100" if health.get("score") is not None else "N/A"
+    verdict = health.get("verdict", "")
+
+    body = [
+        _teams_text_block(f"{title} — PrismAI Analysis", size="Large", weight="Bolder"),
+        _teams_text_block(f"**Health Score:** {score_str}{(' — ' + verdict) if verdict else ''}"),
+    ]
+
+    if result.get("summary"):
+        body.append(_teams_text_block("**Summary**", weight="Bolder", spacing="Medium"))
+        body.append(_teams_text_block(result["summary"]))
+
+    if items:
+        body.append(_teams_text_block(f"**Action Items ({len(items)})**", weight="Bolder", spacing="Medium"))
+        for item in items[:8]:
+            owner = f" ({item['owner']})" if item.get("owner") and item["owner"] != "Unassigned" else ""
+            due = f" — due {item['due']}" if item.get("due") and item["due"] != "TBD" else ""
+            body.append(_teams_text_block(f"• {item.get('task', '')}{owner}{due}"))
+
+    if decisions:
+        body.append(_teams_text_block("**Key Decisions**", weight="Bolder", spacing="Medium"))
+        for decision in decisions[:5]:
+            body.append(_teams_text_block(f"• {decision.get('decision', '')}"))
+
+    return {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": body,
+                },
+            }
+        ],
+    }
+
+
+@router.post("/export/teams")
+async def export_to_teams(req: TeamsExportRequest):
+    url = req.webhook_url.strip()
+    # Accept both the new Power Automate Workflows host (logic.azure.com) and the
+    # legacy Office 365 connector host (webhook.office.com).
+    if not (url.startswith("https://") and ("logic.azure.com" in url or "webhook.office.com" in url)):
+        raise HTTPException(status_code=400, detail="Invalid Teams webhook URL (expected a Workflows or Office 365 webhook)")
+
+    payload = _build_teams_card(req.title, req.result)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, json=payload, timeout=10.0)
+
+    # Workflows (Logic Apps) typically returns 202 Accepted; legacy connectors 200.
+    if resp.status_code not in (200, 202):
+        raise HTTPException(status_code=502, detail=f"Teams webhook failed ({resp.status_code})")
 
     return {"ok": True}

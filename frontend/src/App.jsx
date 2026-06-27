@@ -1318,7 +1318,7 @@ export default function App() {
   // Start empty + purge the old global keys so a prior account's tokens can't bleed in.
   const [integrations, setIntegrations] = useState(() => {
     purgeLegacyGlobalIntegrationKeys()
-    return { slack_webhook: '', notion_token: '', notion_page_id: '', auto_send_slack: false, auto_send_notion: false }
+    return { slack_webhook: '', notion_token: '', notion_page_id: '', auto_send_slack: false, auto_send_notion: false, teams_webhook: '', auto_send_teams: false }
   })
   const [personaPreset, setPersonaPreset] = useState('default')
   const [personaCustomPrompt, setPersonaCustomPrompt] = useState('')
@@ -1656,6 +1656,24 @@ export default function App() {
         delivered.push('Slack')
       } catch {
         failed.push('Slack')
+      }
+    }
+
+    if (integrations.auto_send_teams && integrations.teams_webhook) {
+      try {
+        const res = await apiFetch('/export/teams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            webhook_url: integrations.teams_webhook,
+            title: meetingTitle,
+            result: meetingResult,
+          }),
+        })
+        if (!res.ok) throw new Error('Teams failed')
+        delivered.push('Teams')
+      } catch {
+        failed.push('Teams')
       }
     }
 

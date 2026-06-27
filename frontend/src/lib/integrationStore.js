@@ -4,7 +4,7 @@
 // Scoping by user id isolates each account while keeping the "tokens stay in your
 // browser" model (nothing is sent to our server).
 
-const NAMES = ['slack_webhook', 'notion_token', 'notion_page_id', 'auto_send_slack', 'auto_send_notion']
+const NAMES = ['slack_webhook', 'notion_token', 'notion_page_id', 'auto_send_slack', 'auto_send_notion', 'teams_webhook', 'auto_send_teams']
 
 function key(name, userId) {
   return userId ? `prism_${name}__${userId}` : `prism_${name}`
@@ -17,6 +17,8 @@ export function readIntegrationStore(userId) {
     notion_page_id: localStorage.getItem(key('notion_page_id', userId)) || '',
     auto_send_slack: localStorage.getItem(key('auto_send_slack', userId)) === '1',
     auto_send_notion: localStorage.getItem(key('auto_send_notion', userId)) === '1',
+    teams_webhook: localStorage.getItem(key('teams_webhook', userId)) || '',
+    auto_send_teams: localStorage.getItem(key('auto_send_teams', userId)) === '1',
   }
 }
 
@@ -26,6 +28,8 @@ export function writeIntegrationStore(userId, v) {
   localStorage.setItem(key('notion_page_id', userId), v.notion_page_id || '')
   localStorage.setItem(key('auto_send_slack', userId), v.auto_send_slack ? '1' : '0')
   localStorage.setItem(key('auto_send_notion', userId), v.auto_send_notion ? '1' : '0')
+  localStorage.setItem(key('teams_webhook', userId), v.teams_webhook || '')
+  localStorage.setItem(key('auto_send_teams', userId), v.auto_send_teams ? '1' : '0')
 }
 
 // One-time cleanup of the old global (unscoped) keys so a prior account's tokens

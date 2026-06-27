@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api'
 import { writeIntegrationStore } from '../lib/integrationStore'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
-const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear', 'Jira']
+const TABS = ['Slack', 'Teams', 'Notion', 'Calendar', 'Gmail', 'Linear', 'Jira']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint, disabled = false }) {
   return (
@@ -61,8 +61,12 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
   const [notionPageId, setNotionPageId] = useState(integrations.notion_page_id || '')
   const [autoSendSlack, setAutoSendSlack] = useState(Boolean(integrations.auto_send_slack))
   const [autoSendNotion, setAutoSendNotion] = useState(Boolean(integrations.auto_send_notion))
+  const [teamsWebhook, setTeamsWebhook] = useState(integrations.teams_webhook || '')
+  const [autoSendTeams, setAutoSendTeams] = useState(Boolean(integrations.auto_send_teams))
   const [testingSlack, setTestingSlack] = useState(false)
   const [slackTestResult, setSlackTestResult] = useState(null) // 'ok' | 'err'
+  const [testingTeams, setTestingTeams] = useState(false)
+  const [teamsTestResult, setTeamsTestResult] = useState(null) // 'ok' | 'err'
 
   // Agentic tool integrations (stored in Supabase user_settings)
   const [linearApiKey, setLinearApiKey] = useState(integrations.linear_api_key || '')
@@ -82,6 +86,8 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
       notion_page_id: notionPageId,
       auto_send_slack: autoSendSlack,
       auto_send_notion: autoSendNotion,
+      teams_webhook: teamsWebhook,
+      auto_send_teams: autoSendTeams,
       linear_api_key: linearApiKey,
       slack_bot_token: slackBotToken,
       jira_base_url: jiraBaseUrl,
@@ -95,6 +101,8 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
       notion_page_id: notionPageId,
       auto_send_slack: autoSendSlack,
       auto_send_notion: autoSendNotion,
+      teams_webhook: teamsWebhook,
+      auto_send_teams: autoSendTeams,
     })
 
     // Save tool tokens to backend (Supabase user_settings)
@@ -144,6 +152,29 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     }
   }
 
+  async function testTeams() {
+    if (isTestAccount) return
+    if (!teamsWebhook.trim()) return
+    setTestingTeams(true)
+    setTeamsTestResult(null)
+    try {
+      const res = await fetch(`${API}/export/teams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhook_url: teamsWebhook,
+          title: 'PrismAI test',
+          result: { health_score: { score: null }, summary: '✅ PrismAI connected successfully!', action_items: [], decisions: [] },
+        }),
+      })
+      setTeamsTestResult(res.ok ? 'ok' : 'err')
+    } catch {
+      setTeamsTestResult('err')
+    } finally {
+      setTestingTeams(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
@@ -177,6 +208,11 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               {t === 'Slack' && (
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
+                </svg>
+              )}
+              {t === 'Teams' && (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20.625 8.127q.55 0 1.025.205.475.205.83.561.357.357.561.832.205.475.205 1.025v4.682q0 .735-.281 1.383-.281.648-.762 1.13-.48.48-1.129.761-.648.281-1.382.281-.595 0-1.155-.193-.56-.193-1.013-.557-.302.857-.86 1.547-.56.69-1.293 1.178-.732.488-1.59.745-.857.258-1.777.258-1.001 0-1.894-.314-.892-.315-1.629-.875-.736-.56-1.281-1.336-.545-.776-.838-1.703H2.812q-.337 0-.578-.24-.24-.241-.24-.579V7.187q0-.337.24-.578.241-.24.578-.24h6.504q-.176-.493-.176-1.025 0-.61.234-1.149.235-.538.633-.937.398-.398.937-.633.539-.234 1.149-.234.61 0 1.148.234.54.235.938.633.398.399.632.937.235.54.235 1.149 0 .532-.176 1.025h4.553zM12.094 3.516q-.293 0-.55.111-.258.111-.451.305-.193.193-.305.45-.111.258-.111.551t.111.55q.112.258.305.451.193.194.45.305.258.111.551.111.293 0 .55-.111.258-.111.452-.305.193-.193.304-.45.112-.258.112-.551t-.112-.55q-.111-.258-.304-.451-.194-.194-.451-.305-.258-.111-.55-.111zm-.703 16.371q.768 0 1.336-.521.568-.522.65-1.278v-7.265H3.328v6.504q0 .55.205 1.025.205.475.561.832.357.356.832.561.475.205 1.025.205h4.44z"/>
                 </svg>
               )}
               {t === 'Notion' && (
@@ -253,6 +289,43 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 onChange={setAutoSendSlack}
                 disabled={isTestAccount}
                 hint="When enabled, PrismAI will post the meeting recap to Slack automatically after analysis finishes."
+              />
+            </>
+          )}
+
+          {tab === 'Teams' && (
+            <>
+              <Field
+                label="Workflows Webhook URL"
+                placeholder="https://prod-XX.westus.logic.azure.com/..."
+                value={teamsWebhook}
+                onChange={setTeamsWebhook}
+                disabled={isTestAccount}
+                hint="In Teams: channel ⋯ → Workflows → 'Post to a channel when a webhook request is received' → copy the URL. Saved only in your browser."
+              />
+              {teamsWebhook.trim() && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={testTeams}
+                    disabled={testingTeams || isTestAccount}
+                    className="text-xs px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                    style={{ background: 'rgba(14,165,233,0.1)', color: '#7dd3fc', border: '1px solid rgba(14,165,233,0.2)' }}>
+                    {testingTeams ? 'Sending...' : 'Send test message'}
+                  </button>
+                  {teamsTestResult === 'ok' && <span className="text-xs text-emerald-400">✓ Connected</span>}
+                  {teamsTestResult === 'err' && <span className="text-xs text-red-400">Failed — check URL</span>}
+                </div>
+              )}
+              <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                PrismAI posts a formatted recap card (summary, action items, decisions) to your Teams channel. Uses Power Automate Workflows — the current method, since Microsoft is retiring the classic Incoming Webhook connector.
+              </div>
+              <Toggle
+                label="Auto-send recap after every meeting"
+                checked={autoSendTeams}
+                onChange={setAutoSendTeams}
+                disabled={isTestAccount}
+                hint="When enabled, PrismAI will post the meeting recap to Teams automatically after analysis finishes."
               />
             </>
           )}
