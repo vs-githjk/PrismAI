@@ -1334,6 +1334,10 @@ export default function App() {
         ...prev,
         linear_api_key: data.linear_api_key || '',
         slack_bot_token: data.slack_bot_token || '',
+        jira_base_url: data.jira_base_url || '',
+        jira_email: data.jira_email || '',
+        jira_api_token: data.jira_api_token || '',
+        jira_project_key: data.jira_project_key || '',
       }))
       setPersonaPreset(data.persona_preset || 'default')
       setPersonaCustomPrompt(data.persona_custom_prompt || '')

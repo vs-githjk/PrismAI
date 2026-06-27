@@ -51,6 +51,10 @@ def _require_storage():
 class UserToolSettings(BaseModel):
     linear_api_key: str | None = None
     slack_bot_token: str | None = None
+    jira_base_url: str | None = None
+    jira_email: str | None = None
+    jira_api_token: str | None = None
+    jira_project_key: str | None = None
     persona_preset: str | None = None
     persona_custom_prompt: str | None = None
 
@@ -92,6 +96,10 @@ async def get_user_settings(user_id: str = Depends(require_user_id)):
     return {
         "linear_api_key": row.get("linear_api_key") or "",
         "slack_bot_token": row.get("slack_bot_token") or "",
+        "jira_base_url": row.get("jira_base_url") or "",
+        "jira_email": row.get("jira_email") or "",
+        "jira_api_token": row.get("jira_api_token") or "",
+        "jira_project_key": row.get("jira_project_key") or "",
         "calendar_connected": row.get("calendar_connected", False),
         "persona_preset": row.get("persona_preset") or "default",
         "persona_custom_prompt": row.get("persona_custom_prompt") or "",
@@ -106,6 +114,14 @@ async def save_user_settings(settings: UserToolSettings, user_id: str = Depends(
         upsert_data["linear_api_key"] = settings.linear_api_key or None
     if settings.slack_bot_token is not None:
         upsert_data["slack_bot_token"] = settings.slack_bot_token or None
+    if settings.jira_base_url is not None:
+        upsert_data["jira_base_url"] = settings.jira_base_url or None
+    if settings.jira_email is not None:
+        upsert_data["jira_email"] = settings.jira_email or None
+    if settings.jira_api_token is not None:
+        upsert_data["jira_api_token"] = settings.jira_api_token or None
+    if settings.jira_project_key is not None:
+        upsert_data["jira_project_key"] = settings.jira_project_key or None
     persona_touched = False
     if settings.persona_preset is not None:
         upsert_data["persona_preset"] = settings.persona_preset

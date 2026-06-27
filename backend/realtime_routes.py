@@ -1203,6 +1203,9 @@ async def _get_settings_for_bot(bot_id: str) -> dict:
                 settings["slack_bot_token"] = row["slack_bot_token"]
             if row.get("linear_api_key") and not settings.get("linear_api_key"):
                 settings["linear_api_key"] = row["linear_api_key"]
+            for _jk in ("jira_base_url", "jira_email", "jira_api_token", "jira_project_key"):
+                if row.get(_jk) and not settings.get(_jk):
+                    settings[_jk] = row[_jk]
         except Exception as exc:
             print(f"[realtime] failed to load user settings for bot {bot_id}: {exc}")
 

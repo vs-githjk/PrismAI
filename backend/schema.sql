@@ -35,6 +35,11 @@ alter table user_settings add column if not exists google_token_expires_at times
 alter table user_settings add column if not exists calendar_connected      boolean not null default false;
 alter table user_settings add column if not exists linear_api_key          text;
 alter table user_settings add column if not exists slack_bot_token         text;
+-- Jira Cloud (basic auth: email + API token against a site base URL)
+alter table user_settings add column if not exists jira_base_url           text;
+alter table user_settings add column if not exists jira_email              text;
+alter table user_settings add column if not exists jira_api_token          text;
+alter table user_settings add column if not exists jira_project_key        text;
 
 alter table user_settings enable row level security;
 

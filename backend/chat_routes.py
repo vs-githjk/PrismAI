@@ -45,6 +45,7 @@ import tools.gmail  # noqa: F401
 import tools.slack  # noqa: F401
 import tools.calendar  # noqa: F401
 import tools.linear  # noqa: F401
+import tools.jira  # noqa: F401
 from tools.registry import get_available_tools, execute_tool, confirm_and_execute
 
 router = APIRouter(tags=["chat"])

@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api'
 import { writeIntegrationStore } from '../lib/integrationStore'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
-const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear']
+const TABS = ['Slack', 'Notion', 'Calendar', 'Gmail', 'Linear', 'Jira']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint, disabled = false }) {
   return (
@@ -67,6 +67,10 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
   // Agentic tool integrations (stored in Supabase user_settings)
   const [linearApiKey, setLinearApiKey] = useState(integrations.linear_api_key || '')
   const [slackBotToken, setSlackBotToken] = useState(integrations.slack_bot_token || '')
+  const [jiraBaseUrl, setJiraBaseUrl] = useState(integrations.jira_base_url || '')
+  const [jiraEmail, setJiraEmail] = useState(integrations.jira_email || '')
+  const [jiraApiToken, setJiraApiToken] = useState(integrations.jira_api_token || '')
+  const [jiraProjectKey, setJiraProjectKey] = useState(integrations.jira_project_key || '')
   const [savingTools, setSavingTools] = useState(false)
   const [toolSaveResult, setToolSaveResult] = useState(null) // 'ok' | 'err'
 
@@ -80,6 +84,10 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
       auto_send_notion: autoSendNotion,
       linear_api_key: linearApiKey,
       slack_bot_token: slackBotToken,
+      jira_base_url: jiraBaseUrl,
+      jira_email: jiraEmail,
+      jira_api_token: jiraApiToken,
+      jira_project_key: jiraProjectKey,
     }
     writeIntegrationStore(userId, {
       slack_webhook: slackWebhook,
@@ -98,6 +106,10 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
           body: JSON.stringify({
             linear_api_key: linearApiKey || null,
             slack_bot_token: slackBotToken || null,
+            jira_base_url: jiraBaseUrl || null,
+            jira_email: jiraEmail || null,
+            jira_api_token: jiraApiToken || null,
+            jira_project_key: jiraProjectKey || null,
           }),
         })
       } catch (err) {
@@ -188,6 +200,11 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               {t === 'Linear' && (
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M3.357 16.643a.755.755 0 0 1 0-1.069L14.786 4.146c.15-.149.349-.223.548-.223s.399.074.548.223a.755.755 0 0 1 0 1.069L4.454 16.643a.783.783 0 0 1-1.097 0zm-.843 3.572a.755.755 0 0 1 0-1.069L16.643 5.017a.783.783 0 0 1 1.097 0 .755.755 0 0 1 0 1.069L3.611 20.215a.783.783 0 0 1-1.097 0zm3.2.856a.755.755 0 0 1 0-1.069l11.429-11.428a.783.783 0 0 1 1.097 0 .755.755 0 0 1 0 1.069L6.811 21.071a.783.783 0 0 1-1.097 0z"/>
+                </svg>
+              )}
+              {t === 'Jira' && (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0z"/>
                 </svg>
               )}
               {t}
@@ -427,6 +444,48 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 With Linear connected, you can ask PrismAI to create issues directly from the chat. For example: "create a Linear issue for the auth bug we discussed."
+              </div>
+            </>
+          )}
+
+          {tab === 'Jira' && (
+            <>
+              <Field
+                label="Site URL"
+                placeholder="yoursite.atlassian.net"
+                value={jiraBaseUrl}
+                onChange={setJiraBaseUrl}
+                disabled={isTestAccount}
+                hint="Your Jira Cloud site, e.g. yoursite.atlassian.net (with or without https://)."
+              />
+              <Field
+                label="Account Email"
+                placeholder="you@company.com"
+                value={jiraEmail}
+                onChange={setJiraEmail}
+                disabled={isTestAccount}
+                hint="The Atlassian account email that owns the API token."
+              />
+              <Field
+                label="API Token"
+                placeholder="Atlassian API token"
+                value={jiraApiToken}
+                onChange={setJiraApiToken}
+                type="password"
+                disabled={isTestAccount}
+                hint="Create one at id.atlassian.com/manage-profile/security/api-tokens. Stored on your account."
+              />
+              <Field
+                label="Default Project Key"
+                placeholder="e.g. PRISM"
+                value={jiraProjectKey}
+                onChange={setJiraProjectKey}
+                disabled={isTestAccount}
+                hint="The project new issues are created in (you can override per request in chat)."
+              />
+              <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                With Jira connected, ask PrismAI to file issues from chat. For example: "create a Jira ticket for the login bug we discussed."
               </div>
             </>
           )}
