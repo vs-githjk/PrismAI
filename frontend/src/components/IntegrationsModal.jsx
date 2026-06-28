@@ -178,7 +178,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
-      <div className="dashboard-popup w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up">
+      <div className="dashboard-popup w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up">
 
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between"
@@ -195,12 +195,12 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
         </div>
 
         {/* Tabs */}
-        <div className="flex px-5 pt-4 gap-1">
+        <div className="flex flex-wrap px-5 pt-4 gap-1.5">
           {TABS.map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 tab === t ? 'text-white' : 'text-gray-500 hover:text-gray-300'
               }`}
               style={tab === t ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' } : {}}
