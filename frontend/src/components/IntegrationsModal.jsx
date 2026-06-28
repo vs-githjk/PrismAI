@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api'
 import { writeIntegrationStore } from '../lib/integrationStore'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
-const TABS = ['Slack', 'Teams', 'Notion', 'Calendar', 'Gmail', 'Linear', 'Jira']
+const TABS = ['Slack', 'Teams', 'Notion', 'Calendar', 'Outlook', 'Gmail', 'Linear', 'Jira']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint, disabled = false }) {
   return (
@@ -54,7 +54,7 @@ const AUTO_JOIN_OPTIONS = [
   { value: 'marked', label: 'Auto-join starred',  hint: 'Only auto-join meetings you\'ve starred in the panel.' },
 ]
 
-export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
+export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, outlookConnected = false, onConnectOutlook, onDisconnectOutlook, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
   const [tab, setTab] = useState('Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
@@ -226,6 +226,14 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                   <line x1="16" y1="2" x2="16" y2="6"/>
                   <line x1="8" y1="2" x2="8" y2="6"/>
                   <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              )}
+              {t === 'Outlook' && (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.4 11.4H2V2h9.4z"/>
+                  <path d="M22 11.4h-9.4V2H22z" opacity="0.7"/>
+                  <path d="M11.4 22H2v-9.4h9.4z" opacity="0.7"/>
+                  <path d="M22 22h-9.4v-9.4H22z" opacity="0.5"/>
                 </svg>
               )}
               {t === 'Gmail' && (
@@ -444,6 +452,60 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 PrismAI requests read-only access to your primary calendar. It detects Zoom, Google Meet, and Teams links and lets you join with one click — no link pasting required.
+              </div>
+            </div>
+          )}
+
+          {tab === 'Outlook' && (
+            <div className="space-y-4">
+              <div className="rounded-xl p-4 flex items-center gap-3"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
+                  style={{ background: outlookConnected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                  {outlookConnected ? (
+                    <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M11.4 11.4H2V2h9.4z"/><path d="M22 11.4h-9.4V2H22z" opacity="0.7"/>
+                      <path d="M11.4 22H2v-9.4h9.4z" opacity="0.7"/><path d="M22 22h-9.4v-9.4H22z" opacity="0.5"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-200">
+                    {outlookConnected ? 'Outlook Calendar connected' : 'Outlook Calendar'}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {outlookConnected
+                      ? 'Your upcoming Outlook meetings appear in your workspace.'
+                      : 'Connect to see upcoming Outlook meetings (incl. Teams links) and join with one click.'}
+                  </p>
+                </div>
+              </div>
+
+              {outlookConnected ? (
+                <button
+                  onClick={() => { onDisconnectOutlook?.(); onClose() }}
+                  disabled={isTestAccount}
+                  className="w-full text-xs py-2.5 rounded-xl transition-all text-red-400 hover:text-red-300"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)' }}>
+                  Disconnect Outlook Calendar
+                </button>
+              ) : (
+                <button
+                  onClick={() => { onConnectOutlook?.(); onClose() }}
+                  disabled={isTestAccount}
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #0078D4, #0a5ca8)' }}>
+                  Connect Outlook Calendar
+                </button>
+              )}
+
+              <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                PrismAI requests read-only access to your Outlook calendar (Microsoft Graph). It surfaces upcoming meetings and detects Teams/Zoom/Meet links so you can join in one click.
               </div>
             </div>
           )}

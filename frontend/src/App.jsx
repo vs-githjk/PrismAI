@@ -1156,6 +1156,7 @@ export default function App() {
   const [historySearch, setHistorySearch] = useState('')
   const [mdCopied, setMdCopied] = useState(false)
   const [calendarConnected, setCalendarConnected] = useState(false)
+  const [outlookConnected, setOutlookConnected] = useState(false)
   const [nextUpcomingMeeting, setNextUpcomingMeeting] = useState(null)
   const historySearchDebounceRef = useRef(null)
   const previousUserRef = useRef(null)
@@ -1289,6 +1290,14 @@ export default function App() {
     apiFetch('/calendar/status')
       .then(r => r.ok ? r.json() : { connected: false })
       .then(d => setCalendarConnected(Boolean(d.connected)))
+      .catch(() => {})
+  }, [user?.id, isTestAccount])
+
+  useEffect(() => {
+    if (!user || isTestAccount) { setOutlookConnected(false); return }
+    apiFetch('/ms-calendar/status')
+      .then(r => r.ok ? r.json() : { connected: false })
+      .then(d => setOutlookConnected(Boolean(d.connected)))
       .catch(() => {})
   }, [user?.id, isTestAccount])
 
@@ -1449,26 +1458,31 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     const state = params.get('state')
-    if (!code || state !== 'calendar_connect') return
+    const isGoogle = state === 'calendar_connect'
+    const isMicrosoft = state === 'ms_calendar_connect'
+    if (!code || (!isGoogle && !isMicrosoft)) return
 
-    const verifier = sessionStorage.getItem('cal_pkce_verifier')
-    sessionStorage.removeItem('cal_pkce_verifier')
+    const provider = isMicrosoft ? 'microsoft' : 'google'
+    const verifierKey = isMicrosoft ? 'ms_cal_pkce_verifier' : 'cal_pkce_verifier'
+    const verifier = sessionStorage.getItem(verifierKey)
+    sessionStorage.removeItem(verifierKey)
     // Clean URL before doing anything else
     window.history.replaceState({}, '', window.location.pathname)
 
     if (!verifier) {
-      console.warn('[calendar] No PKCE verifier found for calendar callback')
+      console.warn(`[calendar] No PKCE verifier found for ${provider} callback`)
       return
     }
-    pendingCalExchangeRef.current = { code, verifier }
+    pendingCalExchangeRef.current = { code, verifier, provider }
   }, [])
 
   // Fire the deferred calendar exchange once the user/session is available.
   useEffect(() => {
     if (!user || !pendingCalExchangeRef.current) return
-    const { code, verifier } = pendingCalExchangeRef.current
+    const { code, verifier, provider } = pendingCalExchangeRef.current
     pendingCalExchangeRef.current = null
-    apiFetch('/calendar/exchange-code', {
+    const endpoint = provider === 'microsoft' ? '/ms-calendar/exchange-code' : '/calendar/exchange-code'
+    apiFetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1477,9 +1491,11 @@ export default function App() {
         redirect_uri: window.location.origin,
       }),
     }).then(res => {
-      if (res.ok) setCalendarConnected(true)
-      else console.warn('[calendar] exchange-code failed:', res.status)
-    }).catch(err => console.warn('[calendar] exchange-code error:', err))
+      if (res.ok) {
+        if (provider === 'microsoft') setOutlookConnected(true)
+        else setCalendarConnected(true)
+      } else console.warn(`[calendar] ${provider} exchange-code failed:`, res.status)
+    }).catch(err => console.warn(`[calendar] ${provider} exchange-code error:`, err))
   }, [user])
 
   const signInWithGoogle = async () => {
@@ -1559,6 +1575,43 @@ export default function App() {
       await apiFetch('/calendar/disconnect', { method: 'DELETE' })
     } catch {}
     setCalendarConnected(false)
+  }
+
+  // Direct Microsoft OAuth PKCE flow for Outlook calendar (mirrors Google).
+  const connectMicrosoftCalendar = async () => {
+    if (isTestAccount) {
+      setIntegrationToast({ type: 'err', msg: 'Connect a real account to enable Outlook.' })
+      setTimeout(() => setIntegrationToast(null), 3000)
+      return
+    }
+    const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID
+    if (!clientId) {
+      setError('Microsoft Client ID is not configured (VITE_MICROSOFT_CLIENT_ID missing).')
+      return
+    }
+    const verifier = await generateCodeVerifier()
+    const challenge = await generateCodeChallenge(verifier)
+    sessionStorage.setItem('ms_cal_pkce_verifier', verifier)
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: window.location.origin,
+      response_type: 'code',
+      // offline_access → refresh token; Calendars.Read → list events.
+      scope: 'openid email offline_access Calendars.Read',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      response_mode: 'query',
+      prompt: 'consent',
+      state: 'ms_calendar_connect',
+    })
+    window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`
+  }
+
+  const disconnectOutlook = async () => {
+    try {
+      await apiFetch('/ms-calendar/disconnect', { method: 'DELETE' })
+    } catch {}
+    setOutlookConnected(false)
   }
 
   const saveAutoJoinSetting = (val) => {
@@ -2890,6 +2943,9 @@ export default function App() {
               calendarConnected={calendarConnected}
               onConnectCalendar={connectGoogleCalendar}
               onDisconnectCalendar={disconnectCalendar}
+              outlookConnected={outlookConnected}
+              onConnectOutlook={connectMicrosoftCalendar}
+              onDisconnectOutlook={disconnectOutlook}
               autoJoinSetting={autoJoinSetting}
               onAutoJoinChange={saveAutoJoinSetting}
               isSignedIn={!!user}

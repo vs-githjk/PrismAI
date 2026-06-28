@@ -209,14 +209,37 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch('/calendar/events?days_ahead=3')
-      if (res.status === 401) {
-        setError('reconnect')
-        return
+      // Pull Google + Outlook in parallel; merge whatever's connected. A 404
+      // (provider not connected) is simply skipped; a Google 401 means its token
+      // expired (shown as reconnect only when nothing else loaded).
+      const settled = await Promise.allSettled([
+        apiFetch('/calendar/events?days_ahead=3'),
+        apiFetch('/ms-calendar/events?days_ahead=3'),
+      ])
+      let merged = []
+      let googleAuthExpired = false
+      let anyOk = false
+      for (let i = 0; i < settled.length; i++) {
+        if (settled[i].status !== 'fulfilled') continue
+        const r = settled[i].value
+        if (r.status === 401) { if (i === 0) googleAuthExpired = true; continue }
+        if (!r.ok) continue
+        anyOk = true
+        const data = await r.json()
+        merged = merged.concat(data.events || [])
       }
-      if (!res.ok) throw new Error('Failed to load calendar')
-      const data = await res.json()
-      setEvents(data.events || [])
+      // Dedup a meeting that shows up on both calendars (same link, or same
+      // start+title), then sort chronologically.
+      const seen = new Set()
+      merged = merged.filter(ev => {
+        const key = ev.meeting_link || `${ev.start}|${ev.title}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      merged.sort((a, b) => new Date(a.start) - new Date(b.start))
+      if (!anyOk && googleAuthExpired) { setError('reconnect'); return }
+      setEvents(merged)
     } catch {
       setError('load')
     } finally {

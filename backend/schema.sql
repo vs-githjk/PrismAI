@@ -40,6 +40,11 @@ alter table user_settings add column if not exists jira_base_url           text;
 alter table user_settings add column if not exists jira_email              text;
 alter table user_settings add column if not exists jira_api_token          text;
 alter table user_settings add column if not exists jira_project_key        text;
+-- Microsoft / Outlook calendar (MS Graph, own PKCE flow — mirrors Google)
+alter table user_settings add column if not exists ms_access_token         text;
+alter table user_settings add column if not exists ms_refresh_token        text;
+alter table user_settings add column if not exists ms_token_expires_at     timestamptz;
+alter table user_settings add column if not exists outlook_connected       boolean not null default false;
 
 alter table user_settings enable row level security;
 
