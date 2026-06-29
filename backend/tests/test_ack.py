@@ -219,7 +219,7 @@ class AckWiringTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_process_command_finally_suppresses_ack_on_no_voice_exit(self):
         # Review fix #2: a command that exits without producing voice (here the
-        # no-Groq early return) must not leave the ack to fire into silence —
+        # no-API-key early return) must not leave the ack to fire into silence —
         # the _process_command finally cancels the still-pending ack.
         bot_id = "bot-ack-novoice"
         rt._get_bot_state(bot_id)  # reset debounce/processing
@@ -232,7 +232,7 @@ class AckWiringTests(unittest.IsolatedAsyncioTestCase):
         try:
             with mock.patch.dict(__import__("os").environ, {"PRISM_ACK_DELAY_S": "5"}), \
                  mock.patch.object(rt, "RECALL_API_KEY", "k"), \
-                 mock.patch.object(rt, "GROQ_API_KEY", ""), \
+                 mock.patch.object(rt, "OPENAI_API_KEY", ""), \
                  mock.patch.object(rt, "_barge_in_on", return_value=False), \
                  mock.patch.object(rt, "_get_settings_for_bot",
                                    new=mock.AsyncMock(return_value={"persona_text": "", "bot_name": "Prism"})), \
