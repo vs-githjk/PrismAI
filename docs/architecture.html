@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PrismAI — Architecture Map</title>
+<style>
+  :root{
+    --bg:#070b16; --panel:#0d1426; --panel2:#111a31; --border:#1e2a47;
+    --text:#e2e8f0; --muted:#94a3b8; --cyan:#22d3ee; --cyan2:#67e8f9; --sky:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,rgba(7,11,22,.97),rgba(7,11,22,.85));
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:14px 22px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:26px;height:26px;border-radius:7px;
+    background:conic-gradient(from 200deg,#22d3ee,#38bdf8,#818cf8,#22d3ee);box-shadow:0 0 18px rgba(34,211,238,.4)}
+  h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.2px}
+  h1 span{color:var(--muted);font-weight:400}
+  nav{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  nav a{font-size:12.5px;color:var(--muted);text-decoration:none;padding:5px 11px;border-radius:999px;
+    border:1px solid transparent;cursor:pointer;transition:.15s}
+  nav a:hover{color:var(--text);background:var(--panel2)}
+  nav a.active{color:#06121f;background:var(--cyan);font-weight:600;border-color:var(--cyan)}
+  main{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+  .view{display:none;animation:fade .25s ease}
+  .view.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .crumb{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .crumb a{color:var(--cyan);cursor:pointer;text-decoration:none}
+  h2{font-size:24px;margin:2px 0 6px;font-weight:650}
+  .lede{color:var(--muted);font-size:14.5px;line-height:1.65;max-width:820px;margin:0 0 22px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;margin:18px 0;
+    box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+  .card h3{margin:0 0 4px;font-size:15px;color:var(--cyan2);font-weight:600}
+  .card p.sub{margin:0 0 12px;font-size:12.5px;color:var(--muted);line-height:1.55}
+  .mermaid{width:100%;overflow-x:auto;text-align:center}
+  .hint{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+    background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:6px 11px;margin-bottom:18px}
+  .hint b{color:var(--cyan2);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .pill{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12px}
+  .pill b{color:var(--cyan2)}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin-top:10px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:13px;height:13px;border-radius:4px;border:1px solid var(--border)}
+  footer{color:#475569;font-size:11.5px;text-align:center;padding:30px 0 10px}
+  code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px;color:var(--cyan2)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo"></div>
+    <h1>PrismAI <span>· architecture map</span></h1>
+  </div>
+  <nav id="nav">
+    <a data-view="overview">Overview</a>
+    <a data-view="frontend">Frontend</a>
+    <a data-view="analysis">Analysis Pipeline</a>
+    <a data-view="voice">Live Bot &amp; Voice</a>
+    <a data-view="rag">Knowledge / RAG</a>
+    <a data-view="tools">Tools &amp; Integrations</a>
+    <a data-view="workspaces">Workspaces</a>
+    <a data-view="data">Data Layer</a>
+    <a data-view="auth">Auth</a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============ OVERVIEW ============ -->
+  <section class="view" id="view-overview">
+    <h2>The whole system at a glance</h2>
+    <p class="lede">PrismAI is a meeting-intelligence app: a React frontend, a FastAPI backend gateway,
+      and several subsystems that turn meeting input into structured intelligence — offline (paste/upload)
+      and live (an in-meeting voice bot). Each box below is a self-contained area.</p>
+    <div class="hint">🔍 <b>Click any area</b> in the diagram to open its detailed flowchart.</div>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  User(["👤 User / Browser"])
+  FE["🖥️ Frontend ›<br/>React/Vite · App.jsx state hub"]
+  BE["⚙️ Backend gateway ›<br/>FastAPI · routes → services"]
+  Analysis["🧠 Analysis Pipeline ›<br/>LangGraph · 9 agents"]
+  Voice["🎙️ Live Bot &amp; Voice ›<br/>STT · inference · TTS"]
+  RAG["📚 Knowledge / RAG ›<br/>embed · hybrid search"]
+  Tools["🔧 Tools &amp; Integrations ›<br/>calendar · email · slack · jira…"]
+  WSp["👥 Workspaces ›<br/>sharing · dedup · insights"]
+  Data[("🗄️ Supabase ›<br/>data layer")]
+  LLM{{"☁️ LLMs<br/>Groq · OpenAI · Anthropic"}}
+  Ext{{"🌐 External<br/>Recall · Tavily · Google · Slack…"}}
+
+  User <--> FE
+  FE <-->|"REST + SSE · apiFetch()"| BE
+  BE --> Analysis
+  BE --> Voice
+  BE --> RAG
+  BE --> WSp
+  Analysis --> Tools
+  Voice --> Tools
+  Voice -->|"grounding + on-end analysis"| RAG
+  Voice -.->|"meeting end"| Analysis
+  Analysis --> RAG
+  Analysis --> LLM
+  Voice --> LLM
+  RAG --> LLM
+  Tools --> Ext
+  Voice <-->|"transcript / chat webhooks"| Ext
+  BE --> Data
+  Analysis --> Data
+  Voice --> Data
+  RAG --> Data
+  WSp --> Data
+
+  click FE call goTo('frontend')
+  click BE call goTo('overview')
+  click Analysis call goTo('analysis')
+  click Voice call goTo('voice')
+  click RAG call goTo('rag')
+  click Tools call goTo('tools')
+  click WSp call goTo('workspaces')
+  click Data call goTo('data')
+
+  classDef area fill:#0f1c34,stroke:#22d3ee,stroke-width:1.4px,color:#e2e8f0;
+  classDef ext fill:#141d33,stroke:#475569,color:#cbd5e1;
+  classDef store fill:#10243a,stroke:#38bdf8,color:#e2e8f0;
+  class FE,BE,Analysis,Voice,RAG,Tools,WSp area;
+  class LLM,Ext ext;
+  class Data store;
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:#0f1c34;border-color:#22d3ee"></span> Internal subsystem (clickable)</span>
+        <span><span class="sw" style="background:#10243a;border-color:#38bdf8"></span> Persistence</span>
+        <span><span class="sw" style="background:#141d33;border-color:#475569"></span> External / 3rd-party</span>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="pill"><b>Two entry paths</b><br/>Offline analysis (paste/upload) and live voice bot both converge on the same 9-agent pipeline.</div>
+      <div class="pill"><b>One LLM gateway</b><br/>Agents go through <code>llm_call()</code> (Groq → Haiku fallback). The live bot uses gpt-4o-mini for tool-calling.</div>
+      <div class="pill"><b>One data layer</b><br/>Supabase (Postgres + pgvector) holds everything durable; some live-bot state is in-memory.</div>
+    </div>
+  </section>
+
+  <!-- ============ FRONTEND ============ -->
+  <section class="view" id="view-frontend">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Frontend</p>
+    <h2>Frontend — React / Vite</h2>
+    <p class="lede"><code>App.jsx</code> is the state hub: it owns every input mode, the streaming result state,
+      the active workspace, and landing/share routing. The dashboard is the main product surface; the landing
+      is a separate visual experience.</p>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  App["App.jsx — state hub<br/>(input modes · result state · active workspace · routing)"]
+  App --> Inputs["Input modes<br/>paste · upload · record · live bot"]
+  Inputs -->|"POST /analyze-stream (SSE)"| Merge["Incremental result merge<br/>setResult(prev =&gt; …chunk)"]
+  Merge --> Cards["MeetingView cards<br/>summary · decisions · actions · sentiment · health · email · calendar"]
+  App --> Dash["DashboardPage<br/>workspace chips · history · insights"]
+  Dash --> Chat["ChatPanel<br/>3 modes: agent · global · per-meeting"]
+  Dash --> KBv["KnowledgeBase view"]
+  App --> Land["Landing<br/>Prism WebGL · HowItWorks"]
+  App --> Auth["Supabase client<br/>+ Google Calendar PKCE"]
+  Chat -->|"/chat · /agent · /chat/global"| BE["Backend"]
+  Merge -->|"[DONE] → POST /meetings"| BE
+  KBv -->|"/knowledge/*"| BE
+
+  click BE call goTo('overview')
+  click KBv call goTo('rag')
+  click Auth call goTo('auth')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  class App,Dash,Chat,KBv,Land,Auth,Inputs,Merge,Cards a;
+      </div>
+    </div>
+    <div class="grid">
+      <div class="pill"><b>apiFetch()</b><br/>Always used instead of raw <code>fetch</code> — auto-attaches the auth token.</div>
+      <div class="pill"><b>One big App.jsx</b><br/>Intentionally not split — holds all cross-cutting state.</div>
+      <div class="pill"><b>SSE streaming</b><br/>Cards appear one-by-one as each agent finishes, not all at once.</div>
+    </div>
+  </section>
+
+  <!-- ============ ANALYSIS ============ -->
+  <section class="view" id="view-analysis">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Analysis Pipeline</p>
+    <h2>Analysis Pipeline — LangGraph, two tiers</h2>
+    <p class="lede">A compiled StateGraph runs the 9 agents in two parallel tiers. Routing is <b>deterministic</b>
+      (no LLM) — it always runs every agent, gating only sentiment to 2+ speakers. A barrier between the tiers
+      builds a shared context so Tier 2 agents are enriched by Tier 1 results.</p>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  In["POST /analyze-stream (SSE)"] --> Orch["Orchestrator<br/>deterministic routing — no LLM"]
+  Orch --> T1
+  subgraph T1["Tier 1 — parallel (Send fan-out)"]
+    S["Summarizer<br/>+ tldr · topics"]
+    D["Decisions<br/>+ rationale"]
+    A["Action items<br/>+ resolved due_date"]
+    Se["Sentiment<br/>(only if 2+ speakers)"]
+    SC["Speaker coach"]
+  end
+  T1 --> Bar["tier1_barrier<br/>merge results · run decision_linker (Tier 1.5) · build context dict"]
+  Bar --> T2
+  subgraph T2["Tier 2 — parallel, enriched with context"]
+    Em["Email drafter"]
+    H["Health score<br/>+ improvement_tip"]
+    CaS["Calendar suggester<br/>self-decides 'recommended'"]
+  end
+  T2 --> Done["[DONE] event → save to Supabase"]
+  Bar -.->|"decision_links"| Done
+  T1 --> LLM
+  T2 --> LLM
+  LLM{{"llm_call()<br/>Groq llama-3.3-70b → claude-haiku fallback"}}
+
+  click Done call goTo('data')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef llm fill:#141d33,stroke:#475569,color:#cbd5e1;
+  class S,D,A,Se,SC,Em,H,CaS,Orch,Bar,In,Done a;
+  class LLM llm;
+      </div>
+    </div>
+    <div class="grid">
+      <div class="pill"><b>decision_linker</b><br/>"Tier 1.5" — runs inside the barrier because it needs Tier 1 output <i>and</i> feeds Tier 2.</div>
+      <div class="pill"><b>context dict</b><br/><code>{summary, decisions, action_items, sentiment, unactioned_decisions}</code> passed to Tier 2.</div>
+      <div class="pill"><b>Streaming</b><br/>Each node emits its result as it finishes via <code>stream_mode="updates"</code>.</div>
+    </div>
+  </section>
+
+  <!-- ============ VOICE (two diagrams) ============ -->
+  <section class="view" id="view-voice">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Live Bot &amp; Voice</p>
+    <h2>Live Bot &amp; Voice</h2>
+    <p class="lede">The bot joins a real meeting via Recall.ai. Two ways to look at it: (1) the internal
+      <b>voice I/O loop</b> — speech in, reasoning, speech out; and (2) how the voice core <b>wires into the rest</b>
+      of the system. Both are below.</p>
+
+    <div class="card">
+      <h3>1 · Voice I/O loop — STT → inference → TTS</h3>
+      <p class="sub">Recall handles the audio bridge; everything between the transcript webhook and the spoken reply is ours.</p>
+      <div class="mermaid">
+flowchart LR
+  subgraph RC["Recall.ai (audio bridge, in meeting)"]
+    Mic["🎤 Participant audio"] --> STT["STT — Deepgram<br/>transcript chunks"]
+    Spk["🔊 Bot audio out"]
+  end
+  STT -->|"transcript webhook"| Acc["Utterance accumulator<br/>(pause · punctuation · speaker change)"]
+  Acc --> Det{"Wake word?<br/>'Prism…' or persona name"}
+  Det -->|"no"| Amb["Ambient loop<br/>(autonomous interjection?)"]
+  Det -->|"yes"| Inf["Inference<br/>gpt-4o-mini + tool-calling"]
+  Amb -.->|"only if additive"| Inf
+  Inf --> Rep["Reply text"]
+  Rep --> TTS["TTS dispatch<br/>(streamed, sentence-by-sentence)"]
+  TTS --> Spk
+  Rep --> ChatMsg["Post to meeting chat"]
+  Inf <-->|"tool calls"| TL["Tools layer"]
+  Inf <-->|"grounded retrieval"| KB["knowledge_lookup"]
+  TL -.->|"fallback"| Tav["Tavily web search"]
+
+  click TL call goTo('tools')
+  click KB call goTo('rag')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef ext fill:#141d33,stroke:#475569,color:#cbd5e1;
+  class Acc,Det,Amb,Inf,Rep,TTS,ChatMsg,TL,KB a;
+  class RC,STT,Mic,Spk,Tav ext;
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>2 · How the voice core connects to everything else</h3>
+      <p class="sub">The live-bot core (<code>realtime_routes</code>) is stateful — it carries memory, perception/safety, and the capability-block memory, and it hands off to the offline pipeline when the meeting ends.</p>
+      <div class="mermaid">
+flowchart TB
+  RCx["Recall.ai webhooks<br/>(transcript + chat events)"] -->|"events"| Core["🎙️ Live bot core<br/>realtime_routes"]
+  Core --> Mem["3-layer meeting memory<br/>raw window · rolling summary · entity slots"]
+  Core --> Perc["perception_state<br/>event dedup · owner-lock · injection guard"]
+  Core --> Cap["Capability-block memory<br/>(skip a tool that already failed auth)"]
+  Core --> Toolsx["🔧 Tools &amp; Integrations"]
+  Core --> RAGx["📚 Knowledge / RAG<br/>lookup + proactive surfacing (every ~20 lines)"]
+  Core -->|"on meeting end"| Anx["🧠 Analysis Pipeline<br/>full transcript → 9 agents"]
+  Core --> Datax[("🗄️ Supabase<br/>bot_sessions · meeting_bots")]
+  Core -.->|"in-memory, lost on restart"| InMem["bot_store · _bot_state"]
+
+  click Toolsx call goTo('tools')
+  click RAGx call goTo('rag')
+  click Anx call goTo('analysis')
+  click Datax call goTo('data')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef ext fill:#141d33,stroke:#475569,color:#cbd5e1;
+  classDef store fill:#10243a,stroke:#38bdf8,color:#e2e8f0;
+  class Core,Mem,Perc,Cap,Toolsx,RAGx,Anx a;
+  class RCx,InMem ext;
+  class Datax store;
+      </div>
+    </div>
+    <div class="grid">
+      <div class="pill"><b>Personas</b><br/>Each preset renames the bot (Flash, Crystal…) and adds a per-bot wake word.</div>
+      <div class="pill"><b>Capability-block</b><br/>If a tool fails auth, it's dropped for the session so the bot stops re-trying &amp; re-explaining.</div>
+      <div class="pill"><b>Idempotency</b><br/>One analysis per bot — guarded against webhook poll storms.</div>
+    </div>
+  </section>
+
+  <!-- ============ RAG ============ -->
+  <section class="view" id="view-rag">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Knowledge / RAG</p>
+    <h2>Knowledge Base / RAG</h2>
+    <p class="lede">Vector retrieval over user-uploaded docs and meeting transcripts. Two halves: an <b>ingest</b>
+      pipeline that chunks + embeds content, and a <b>retrieve</b> pipeline that blends vector + keyword search,
+      optionally reranks, and returns grounded answers with real citations and conflict flags.</p>
+    <div class="card">
+      <h3>Ingest</h3>
+      <div class="mermaid">
+flowchart LR
+  Up["Upload / URL / Notion / GDrive"] --> Load["Loaders<br/>pdf · docx · txt · url"]
+  Load --> Chunk["Sentence-aware chunker"]
+  Chunk --> Pre["Context preamble<br/>(Groq, 1 sentence/chunk)"]
+  Pre --> Emb["Embeddings<br/>OpenAI text-embedding-3-small"]
+  Emb --> Store[("pgvector<br/>knowledge_docs · knowledge_chunks")]
+  click Store call goTo('data')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef store fill:#10243a,stroke:#38bdf8,color:#e2e8f0;
+  class Up,Load,Chunk,Pre,Emb a; class Store store;
+      </div>
+    </div>
+    <div class="card">
+      <h3>Retrieve (hybrid + grounding)</h3>
+      <div class="mermaid">
+flowchart LR
+  Q["Query"] --> RW["Query rewrite<br/>(Groq · gated)"]
+  RW --> Vec["Vector search"]
+  RW --> BM["BM25 keyword search"]
+  Vec --> RRF["Reciprocal Rank Fusion"]
+  BM --> RRF
+  RRF --> RR["Reranker<br/>(Groq Llama 3.3 · gated)"]
+  RR --> Ans["Grounded answer<br/>+ citations + conflict flag<br/>(NO_GROUNDED_ANSWER fallback)"]
+  Ans --> Lk["knowledge_lookup tool<br/>(chat + live bot)"]
+  Store2[("pgvector")] -.-> Vec
+  Store2 -.-> BM
+  Store2 --> Pr["Proactive surfacing<br/>(every ~20 transcript lines)"]
+  click Lk call goTo('tools')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef store fill:#10243a,stroke:#38bdf8,color:#e2e8f0;
+  class Q,RW,Vec,BM,RRF,RR,Ans,Lk,Pr a; class Store2 store;
+      </div>
+    </div>
+    <div class="grid">
+      <div class="pill"><b>Trust layer</b><br/>Citations come from a structured <code>rag_context</code>, never the model's prose.</div>
+      <div class="pill"><b>Workspace scoping</b><br/>A chunk matches if it's yours OR shared in a workspace you belong to.</div>
+      <div class="pill"><b>Two speeds</b><br/>On-demand lookup turns rerank+rewrite ON; proactive path keeps them OFF (~150ms).</div>
+    </div>
+  </section>
+
+  <!-- ============ TOOLS ============ -->
+  <section class="view" id="view-tools">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Tools &amp; Integrations</p>
+    <h2>Tools &amp; Integrations</h2>
+    <p class="lede">A registry of callable tools. Both the live bot and the chat <code>/agent</code> path dispatch
+      through <code>execute_tool()</code>, which enforces an owner-gate on side-effecting tools and routes to the
+      right integration.</p>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  C1["🎙️ Live bot"] --> Reg
+  C2["💬 /agent · /chat tool loop"] --> Reg
+  Reg["tools/registry<br/>execute_tool() · owner-gate on confirm-tools"]
+  Reg --> Cal["Calendar — Google"]
+  Reg --> Out["Outlook — MS Graph"]
+  Reg --> GM["Gmail — Google"]
+  Reg --> Sl["Slack"]
+  Reg --> Te["Teams recap"]
+  Reg --> Lin["Linear"]
+  Reg --> Ji["Jira"]
+  Reg --> KL["knowledge_lookup"]
+  Reg --> Web["web_search — Tavily"]
+  KL --> RAGx["📚 Knowledge / RAG"]
+  Cal & GM & Out & Sl & Te & Lin & Ji & Web --> Ext["🌐 External APIs"]
+
+  click C1 call goTo('voice')
+  click RAGx call goTo('rag')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef ext fill:#141d33,stroke:#475569,color:#cbd5e1;
+  class Reg,Cal,Out,GM,Sl,Te,Lin,Ji,KL,Web,RAGx,C1,C2 a; class Ext ext;
+      </div>
+    </div>
+    <div class="grid">
+      <div class="pill"><b>Owner-gate</b><br/>Side-effecting tools (send email, post Slack…) only fire for the confirmed bot owner.</div>
+      <div class="pill"><b>Confirmation</b><br/>In a live meeting, the spoken command itself acts as the confirmation.</div>
+      <div class="pill"><b>requires key</b><br/>A tool only appears if its credential (e.g. <code>google_access_token</code>) is present.</div>
+    </div>
+  </section>
+
+  <!-- ============ WORKSPACES ============ -->
+  <section class="view" id="view-workspaces">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Workspaces</p>
+    <h2>Workspaces &amp; Collaboration</h2>
+    <p class="lede">Workspaces let a team share meetings and avoid duplicate bots. Meetings fan out to all members,
+      a Brief panel surfaces open action items, and cross-meeting insights roll per-meeting outputs into themes.</p>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  WS["workspace_routes"] --> Cr["Create / rename / delete"]
+  WS --> Inv["Invites<br/>multi-use, revocable tokens"]
+  WS --> Mem["Members add / remove"]
+  WS --> Dedup["Bot dedup<br/>meeting_bots — skip duplicate joins"]
+  WS --> Fan["Fan-out meetings to all members<br/>(dedup by date[:16])"]
+  WS --> Brief["Brief panel<br/>open action items, last 30 days"]
+  WS --> Ins["Cross-meeting insights<br/>themes · top owners · sentiment &amp; health trends"]
+  Dedup --> Voice["🎙️ Live bot join path"]
+  Fan --> Data[("🗄️ Supabase")]
+  Ins --> Data
+  click Voice call goTo('voice')
+  click Data call goTo('data')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef store fill:#10243a,stroke:#38bdf8,color:#e2e8f0;
+  class WS,Cr,Inv,Mem,Dedup,Fan,Brief,Ins,Voice a; class Data store;
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DATA ============ -->
+  <section class="view" id="view-data">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Data Layer</p>
+    <h2>Data &amp; Persistence</h2>
+    <p class="lede">One Supabase instance (Postgres + pgvector) holds everything durable. A little live-bot state
+      lives only in memory and is lost on restart.</p>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  subgraph SB["Supabase — Postgres + pgvector"]
+    M[("meetings")]
+    CH[("chats / chat_sessions")]
+    WS[("workspaces · workspace_members")]
+    MB[("meeting_bots")]
+    BS[("bot_sessions<br/>memory · live_token · transcript")]
+    KD[("knowledge_docs · knowledge_chunks<br/>(pgvector)")]
+    US[("user_settings<br/>personas · integration tokens")]
+    AR[("action_refs")]
+  end
+  subgraph MEM["In-memory — lost on Render restart ⚠️"]
+    BSt["bot_store"]
+    BState["_bot_state"]
+  end
+  Note["⚠️ Supabase client is synchronous —<br/>wrap .execute() in asyncio.to_thread so it<br/>doesn't block the async event loop"]
+  classDef store fill:#10243a,stroke:#38bdf8,color:#e2e8f0;
+  classDef warn fill:#2a1620,stroke:#f87171,color:#fecaca;
+  classDef mem fill:#141d33,stroke:#475569,color:#cbd5e1;
+  class M,CH,WS,MB,BS,KD,US,AR store; class BSt,BState mem; class Note warn;
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AUTH ============ -->
+  <section class="view" id="view-auth">
+    <p class="crumb"><a onclick="goTo('overview')">Overview</a> › Auth</p>
+    <h2>Auth</h2>
+    <p class="lede">Supabase issues the session token; <code>require_user_id()</code> validates it on gated endpoints.
+      Google Calendar uses a <b>separate</b> PKCE flow because Supabase doesn't persist the provider token.
+      A few demo endpoints are intentionally open.</p>
+    <div class="card">
+      <div class="mermaid">
+flowchart TB
+  U["👤 User"] -->|"Google sign-in"| Sup["Supabase Auth<br/>(Bearer token)"]
+  Sup --> Req["require_user_id()<br/>validate token → user_id"]
+  Req --> Gated["Auth-gated endpoints<br/>/meetings · /workspaces · /insights · /knowledge"]
+  Open["Open endpoints (pre-login demo)<br/>/analyze · /chat · /agent · bot webhooks"]
+  U -->|"PKCE — separate flow"| GCal["Google Calendar OAuth<br/>provider_token in sessionStorage"]
+  GCal --> CalT["calendar / gmail tools"]
+  click CalT call goTo('tools')
+  classDef a fill:#0f1c34,stroke:#22d3ee,color:#e2e8f0;
+  classDef warn fill:#2a1620,stroke:#f87171,color:#fecaca;
+  class U,Sup,Req,Gated,GCal,CalT a; class Open warn;
+      </div>
+    </div>
+  </section>
+
+  <footer>PrismAI architecture map · intuition-first, not exhaustive · generated for navigating the codebase</footer>
+</main>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.esm.min.mjs';
+
+  const VIEWS = ['overview','frontend','analysis','voice','rag','tools','workspaces','data','auth'];
+
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'loose',
+    theme: 'base',
+    themeVariables: {
+      background:'#0d1426', primaryColor:'#0f1c34', primaryBorderColor:'#22d3ee',
+      primaryTextColor:'#e2e8f0', secondaryColor:'#111a31', tertiaryColor:'#0d1426',
+      lineColor:'#3b82f6', fontFamily:'Inter, system-ui, sans-serif', fontSize:'14px',
+      clusterBkg:'#0b1426', clusterBorder:'#1e2a47', titleColor:'#67e8f9'
+    },
+    flowchart:{ htmlLabels:true, curve:'linear', padding:14, nodeSpacing:55, rankSpacing:60 }
+  });
+
+  // Render diagrams LAZILY — only once their view is visible. Mermaid measures
+  // text with getBBox, which returns 0 inside a display:none container and makes
+  // every edge throw "Could not find a suitable point for the given distance".
+  // So we must render after the view is shown, never before.
+  async function renderView(view){
+    for (const el of view.querySelectorAll('.mermaid')){
+      if (el.dataset.done) continue;
+      try {
+        await mermaid.run({ nodes:[el] });
+        el.dataset.done = '1';
+      } catch(e){
+        el.innerHTML = '<pre style="color:#f87171;text-align:left;white-space:pre-wrap">'+
+          'Diagram failed to render:\n'+(e && e.message ? e.message : e)+'</pre>';
+        el.dataset.done = 'error';
+      }
+    }
+  }
+
+  async function showView(id){
+    if(!VIEWS.includes(id)) id = 'overview';
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const el = document.getElementById('view-' + id);
+    document.querySelectorAll('#nav a').forEach(a =>
+      a.classList.toggle('active', a.dataset.view === id));
+    if(el){
+      el.classList.add('active');   // make it visible FIRST...
+      await renderView(el);         // ...then render, so getBBox sees real sizes
+    }
+    window.scrollTo({top:0});
+  }
+  // exposed for Mermaid click callbacks + crumb links
+  window.goTo = (id) => { location.hash = id; };
+
+  document.getElementById('nav').addEventListener('click', (e)=>{
+    const a = e.target.closest('a'); if(!a) return;
+    e.preventDefault(); goTo(a.dataset.view);
+  });
+  window.addEventListener('hashchange', ()=> showView(location.hash.slice(1)));
+  showView(location.hash.slice(1) || 'overview');
+</script>
+</body>
+</html>
