@@ -233,6 +233,84 @@ def _solo_freeflow_eligible(u) -> bool:
 _COMMAND_DEBOUNCE_S = float(os.getenv("PRISM_COMMAND_DEBOUNCE_S", "3"))
 
 
+# ── Capability-block memory ───────────────────────────────────────────────────
+# When a tool's auth/connection check fails (e.g. "schedule a meeting" but Google
+# Calendar isn't connected), we record the capability as blocked for the rest of
+# the bot session. This stops the model from re-attempting the same dead tool —
+# and re-explaining the same failure — every time the user rephrases the ask.
+# Without this the bot loops: "I'm still unable to schedule due to an
+# authentication issue…" on every retry. See _process_command.
+
+# Error-string fingerprints that mean "this needs an auth/connection the user
+# doesn't have", as opposed to a transient 5xx/rate-limit (which we want to retry).
+_CAP_FAIL_PATTERNS = (
+    "not connected", "connect google", "connect ", "reconnect", "not authorized",
+    "unauthor", "invalid_grant", "invalid credentials", "expired", "no refresh token",
+    "permission", "forbidden", " 401", " 403",
+)
+
+# Once a capability is blocked, a rephrased ask that clearly targets it gets a
+# terse one-liner instead of a full LLM round-trip. Phrase regexes are kept
+# specific to avoid misfiring on plain questions ("what did the meeting decide?").
+_CAP_COMMAND_RX = {
+    "calendar": re.compile(
+        r"\b(schedul\w*|reschedul\w*|calendar)\b|"
+        r"\b(set up|book|create|add|put|move)\b.{0,40}\b(meeting|event|invite|appointment|call)\b",
+        re.I,
+    ),
+    "gmail": re.compile(
+        r"\b(send|draft|shoot|fire off|compose)\b.{0,30}\b(e-?mail|gmail)\b|"
+        r"\bemail\s+(him|her|them|it|the team|\w+@)",
+        re.I,
+    ),
+    "slack": re.compile(r"\bslack\b|\b(post|send|message)\b.{0,30}\bchannel\b", re.I),
+    "linear": re.compile(r"\b(create|make|open|file)\b.{0,30}\b(ticket|issue)\b|\blinear\b", re.I),
+}
+
+# Terse spoken/chat reply for a blocked capability.
+_CAP_TERSE = {
+    "calendar": "Calendar still isn't connected here — set the event up directly in your calendar, then ask me again.",
+    "gmail": "Gmail still isn't connected here — please connect Google in your account settings.",
+    "slack": "Slack still isn't connected here — connect it in your account settings.",
+    "linear": "Linear still isn't connected here — connect it in your account settings.",
+}
+
+# Within this window after a terse reply, a re-fire of the same blocked ask stays
+# silent (it's almost certainly a transcript echo, not a real re-ask).
+_CAP_REPEAT_COOLDOWN_S = float(os.getenv("PRISM_CAP_REPEAT_COOLDOWN_S", "8"))
+
+
+def _capability_of(tool_name: str) -> str:
+    """Capability key for a tool, derived from its name prefix
+    (calendar_create_event -> 'calendar', gmail_send -> 'gmail')."""
+    return (tool_name or "").split("_", 1)[0]
+
+
+def _is_auth_failure(result: dict) -> bool:
+    """True if a tool result is an auth/connection failure we should not retry."""
+    if not isinstance(result, dict):
+        return False
+    err = (result.get("error") or "")
+    if not err:
+        return False
+    low = err.lower()
+    return any(p in low for p in _CAP_FAIL_PATTERNS)
+
+
+def _blocked_capability_for_command(command: str, state: dict) -> str | None:
+    """Return the blocked capability this command targets, or None. Only
+    capabilities already recorded in state['blocked_capabilities'] are eligible,
+    so an unblocked tool never short-circuits."""
+    blocked = state.get("blocked_capabilities") or {}
+    if not blocked or not command:
+        return None
+    for cap in blocked:
+        rx = _CAP_COMMAND_RX.get(cap)
+        if rx and rx.search(command):
+            return cap
+    return None
+
+
 def _streamed_tts_on() -> bool:
     """Streamed (sentence-by-sentence) TTS. ON by default; set
     PRISM_STREAMED_TTS=0 to fall back to buffered single-shot TTS."""
@@ -1011,6 +1089,13 @@ def _get_bot_state(bot_id: str) -> dict:
             "last_segment_speaker": "",
             "last_segment_norm": "",
             "last_segment_ts": 0.0,
+            # Capability-block memory: {capability_key: ts_first_blocked}. A tool
+            # whose auth/connection check fails is recorded here and then dropped
+            # from the offered tool set for the rest of the session, so the model
+            # stops re-attempting it. _cap_msg_ts tracks the last terse reply per
+            # capability for the silence cooldown. See _process_command.
+            "blocked_capabilities": {},
+            "_cap_msg_ts": {},
             # Proactive intervention state
             "meeting_start_ts": None,
             "intervention_last_ts": 0,
@@ -2298,6 +2383,31 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         ):
             return
 
+    # Capability-block short-circuit. If this command targets a tool whose auth
+    # already failed this session, don't burn an LLM round-trip re-discovering the
+    # same failure (which is what produced the "I'm still unable to schedule due to
+    # an authentication issue…" loop). Reply tersely; stay silent on rapid re-fires.
+    blocked_cap = _blocked_capability_for_command(command, state)
+    if blocked_cap:
+        last_msg_ts = state.get("_cap_msg_ts", {}).get(blocked_cap, 0)
+        state["last_command_ts"] = now
+        state["last_command_norm"] = cmd_norm
+        if now - last_msg_ts < _CAP_REPEAT_COOLDOWN_S:
+            print(f"[realtime] capability_blocked cap={blocked_cap} — re-fire within cooldown, staying silent")
+            return
+        state.setdefault("_cap_msg_ts", {})[blocked_cap] = now
+        msg = _CAP_TERSE.get(blocked_cap, "That isn't connected here yet.")
+        print(f"[realtime] capability_blocked cap={blocked_cap} — terse reply")
+        await _send_chat_response(bot_id, msg)
+        try:
+            if _streamed_tts_on():
+                await _send_voice_response_streamed(bot_id, _spoken_version(msg), cmd_detected_ts=now)
+            else:
+                await _send_voice_response(bot_id, _spoken_version(msg))
+        except Exception as cap_exc:
+            print(f"[realtime] capability-block voice reply failed: {cap_exc}")
+        return
+
     state["last_command_ts"] = now
     state["last_command_text"] = command
     state["last_command_norm"] = cmd_norm
@@ -2355,6 +2465,14 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         persona_text = user_settings.get("persona_text", "")
         bot_name = user_settings.get("bot_name", DEFAULT_BOT_NAME)
         tools = get_available_tools(user_settings)
+
+        # Drop tools for any capability that already failed auth this session, so
+        # the model can't re-attempt a dead integration and re-surface the same
+        # error. The terse short-circuit above usually handles clearly-targeted
+        # asks; this is the backstop for indirect phrasings the regex misses.
+        blocked_caps = state.get("blocked_capabilities") or {}
+        if blocked_caps:
+            tools = [t for t in tools if _capability_of(t["function"]["name"]) not in blocked_caps]
 
         tool_names = [t["function"]["name"] for t in tools]
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
@@ -2597,6 +2715,18 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                     "tool_call_id": tc_id,
                     "content": json.dumps(result),
                 })
+
+                # Record a capability block on auth/connection failure so the
+                # model stops re-attempting this dead integration on every
+                # rephrased ask (and stops re-explaining the same error).
+                if _is_auth_failure(result):
+                    _cap = _capability_of(tc_name)
+                    if _cap in _CAP_TERSE and _cap not in state.get("blocked_capabilities", {}):
+                        state.setdefault("blocked_capabilities", {})[_cap] = time.time()
+                        print(
+                            f"[realtime] capability_blocked cap={_cap} tool={tc_name} "
+                            f"err={(result.get('error') or '')[:120]!r}"
+                        )
 
         # Streamed-LLM gate: requires both flags; only fires on synthesis turns
         # (when `tools` is no longer in call_kwargs — either because the user has
