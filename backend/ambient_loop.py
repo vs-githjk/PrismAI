@@ -20,7 +20,7 @@ import json
 import os
 import re
 
-from clients import get_groq
+from clients import get_openai
 import meeting_memory
 import perception_state
 from agents.utils import strip_fences
@@ -89,7 +89,7 @@ def ambient_voice_on() -> bool:
     return os.getenv("PRISM_AMBIENT_VOICE", "1") == "1"
 
 def ambient_model() -> str:
-    return os.getenv("PRISM_AMBIENT_MODEL", "llama-3.3-70b-versatile")
+    return os.getenv("PRISM_AMBIENT_MODEL", "gpt-4o-mini")
 
 def voice_min() -> float:
     return float(os.getenv("PRISM_AMBIENT_VOICE_MIN", "8"))
@@ -215,10 +215,10 @@ def _contribution_system(bot_name: str) -> str:
 
 
 async def _call_ambient_model(system: str, user: str) -> str:
-    """The lane's only LLM I/O. Direct Groq (no Haiku fallback — ambient is
+    """The lane's only LLM I/O. Direct OpenAI (no Haiku fallback — ambient is
     optional behavior; on 429/5xx the lane stays silent). Isolated for mocking."""
-    groq = get_groq()
-    resp = await groq.chat.completions.create(
+    client = get_openai()
+    resp = await client.chat.completions.create(
         model=ambient_model(),
         temperature=0.2,
         max_tokens=220,
