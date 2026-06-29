@@ -277,7 +277,12 @@ useEffect(() => {
 
 - [ ] **Step 2: Apply theme to the root element + flip inherited text token**
 
-In `frontend/src/components/DashboardPage.jsx`, change the root `<div>` className (near line 946) from:
+First confirm the swap is safe — `--landing-text` must not be read anywhere in the dashboard except this one root element:
+
+Run: `git grep -n "landing-text" -- frontend/src/components frontend/src/App.jsx`
+Expected: the only dashboard-side match is `DashboardPage.jsx:946` (the line being changed). All other `--landing-text` usage lives in landing-only CSS classes in `index.css`, which we are not touching. If any dashboard component reads `var(--landing-text)` directly, convert it to `var(--db-text)` in the relevant sweep task instead.
+
+Then change the root `<div>` className (near line 946) from:
 
 ```jsx
 className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]"
@@ -320,7 +325,7 @@ In `frontend/src/components/dashboard/DashboardSidebar.jsx`, inside the `<Dropdo
 
 ```jsx
               <DropdownMenuItem
-                onSelect={(e) => { e.preventDefault(); onToggleTheme?.() }}
+                onSelect={() => onToggleTheme?.()}
                 className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]"
               >
                 {theme === 'light'
@@ -330,7 +335,7 @@ In `frontend/src/components/dashboard/DashboardSidebar.jsx`, inside the `<Dropdo
               </DropdownMenuItem>
 ```
 
-(`e.preventDefault()` keeps the menu open so the user sees the switch and can toggle back.)
+(Let the menu close on select — the default Radix `onSelect` behavior — which is the expected affordance after picking a theme.)
 
 - [ ] **Step 6: Build + manual verify**
 
@@ -476,6 +481,8 @@ git commit -m "Sweep App.jsx dashboard branches to theme tokens"
 
 **Files:**
 - Modify: any component/`index.css` rule found to fail contrast in light (status colors, `.card-glow-*`, accent links).
+
+**Done when:** every surface in the Step 1 walkthrough is legible in light mode (no white-on-white text, no invisible borders, status badges readable), the cascade check + build pass (Step 3), and dark mode is visually unchanged from before (Step 4). "Legible" = body/label text reads without strain at normal zoom; it is not a pixel-perfect redesign pass.
 
 - [ ] **Step 1: Run the full app in light mode**
 
