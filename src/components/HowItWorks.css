@@ -1,0 +1,1478 @@
+/* ─────────────────────────────────────────────────────────────────
+ * HowItWorks — scroll-pinned 4-phase product walkthrough.
+ * One big grainy frosted-glass card; left demo crossfades, right text
+ * fades + slides. "prism" stays static; "is ___" suffix animates.
+ * Scoped to .hiw-* to avoid colliding with global landing CSS.
+ * ───────────────────────────────────────────────────────────────── */
+
+.hiw-section {
+  --hiw-radius: 28px;
+  --hiw-cyan: #22d3ee;
+  --hiw-amber: #fbbf24;
+  position: relative;
+  width: 100%;
+  font-family: 'Inter Variable', Inter, sans-serif;
+  /* Pull the section up into the hero's lower region so the top of the card
+     peeks above the fold at rest — a wordless "scroll down" hint. The card's
+     scroll-linked blur (see JSX) keeps that peek soft until it pins. */
+  margin-top: -26vh;
+}
+
+/* ── Pin ──────────────────────────────────────────────────────── */
+
+.hiw-pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Extra top padding clears the floating landing nav (~76px) so the pinned
+     card sits clearly below it rather than tucking under the bar. */
+  padding: clamp(84px, 10vh, 104px) 0 2vh;
+  box-sizing: border-box;
+}
+
+/* ── Card — grainy frosted glass (translucent fill + noise, NO
+ *    backdrop-filter; cheaper over the autoplaying prism video). ── */
+
+.hiw-card {
+  position: relative;
+  width: 90vw;
+  height: 85vh;
+  border-radius: var(--hiw-radius);
+  will-change: filter;
+  background: rgba(13, 13, 16, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.hiw-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.045;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* ── 60 / 40 split ────────────────────────────────────────────── */
+
+.hiw-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 60% 40%;
+  height: 100%;
+}
+
+/* ── Left — demo layers (crossfade only) ──────────────────────── */
+
+.hiw-left {
+  position: relative;
+  height: 100%;
+}
+
+.hiw-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 3vw, 44px);
+  box-sizing: border-box;
+}
+
+/* ── Right — heading + paragraph (fade + slide) ───────────────── */
+
+.hiw-right {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  padding: clamp(24px, 3vw, 48px);
+  padding-right: clamp(48px, 5vw, 80px); /* room for the dots */
+  box-sizing: border-box;
+}
+
+.hiw-h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 0.3em;
+  white-space: nowrap;
+  font-size: clamp(1.9rem, 2.8vw, 2.85rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #ffffff;
+  margin: 0 0 1.5rem; /* hierarchy: padding between heading and paragraph */
+}
+
+.hiw-prism {
+  color: #ffffff;
+}
+
+.hiw-suffix-slot {
+  position: relative;
+  display: inline-grid;
+  vertical-align: baseline;
+  text-align: left;
+  overflow: visible;
+}
+
+/* Off-layout measurers — used only to read each suffix's rendered width so
+   the slot can morph between them as you scroll (keeps the line centered). */
+.hiw-suffix-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.hiw-suffix-measure > span {
+  display: inline-block;
+}
+
+.hiw-suffix {
+  color: var(--hiw-cyan);
+  font-weight: 600;
+}
+
+.hiw-text-layer {
+  display: block;
+}
+
+/* Suffix layers stack in the same grid cell so they overlap for the
+   crossfade while staying in normal flow (establishes the slot baseline). */
+.hiw-suffix-slot .hiw-text-layer {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+.hiw-para-stack {
+  position: relative;
+  width: 100%;
+  max-width: 30rem;
+  min-height: 7.5rem;
+}
+
+.hiw-para {
+  font-size: clamp(0.95rem, 1.1vw, 1.0625rem);
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.66);
+  margin: 0;
+}
+
+.hiw-para-stack .hiw-text-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Progress dots — inside card, right edge, vertically centered ── */
+
+.hiw-dots {
+  position: absolute;
+  z-index: 2;
+  right: clamp(16px, 1.6vw, 26px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hiw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  transition: background 0.35s ease, transform 0.35s ease;
+}
+
+.hiw-dot.is-active {
+  background: #ffffff;
+  transform: scale(1.25);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Phase 1 — Meet-flavored dark-grey call
+ * ───────────────────────────────────────────────────────────────── */
+
+/* Landscape video frame — kept short; the subtitle overlays its lower third
+   rather than living in a band that would stretch the frame's height. */
+.hiw-meet {
+  position: relative;
+  width: 100%;
+  max-width: 660px;
+  aspect-ratio: 16 / 10;
+  display: flex;
+  background: #202124;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  padding: 18px;
+  box-sizing: border-box;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.hiw-meet-stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Symmetric centered row — Alex, Prism (center), Jordan. */
+.hiw-meet-tiles {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* Lower-third caption overlay — sits over the video, flex-centered so
+   Framer's transform (y/scale) stays free for the pop animation. */
+.hiw-cap-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 13%;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.hiw-tile {
+  position: relative;
+  flex: 1 1 0;
+  max-width: 200px;
+  aspect-ratio: 1 / 1;
+  background: #2a2b2e;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.hiw-tile.is-prism {
+  box-shadow: inset 0 0 0 1.5px rgba(34, 211, 238, 0.5);
+}
+
+/* Zoomed (speaking) tile — ring + lift; Prism keeps its cyan glow. */
+.hiw-tile.is-active {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+.hiw-tile.is-prism.is-active {
+  box-shadow: 0 0 0 2px #22d3ee, 0 0 44px rgba(34, 211, 238, 0.5);
+}
+
+.hiw-tile-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: #0b0b0b;
+}
+
+.hiw-tile.is-prism .hiw-tile-avatar {
+  color: #04090a;
+  box-shadow: 0 0 0 2px #22d3ee, 0 0 16px rgba(34, 211, 238, 0.45);
+}
+
+.hiw-tile-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hiw-tile-listening {
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(34, 211, 238, 0.85);
+}
+
+.hiw-meet-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.hiw-meet-ctrl {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hiw-meet-ctrl-end {
+  width: 48px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.7);
+}
+
+/* Caption popup — the zoomed speaker's words, lower-center over the row. */
+
+.hiw-cap {
+  z-index: 6;
+  max-width: min(100%, 440px);
+  padding: 12px 18px 13px;
+  border-radius: 14px;
+  background: rgba(18, 19, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.hiw-cap.is-prism {
+  background: rgba(8, 26, 30, 0.94);
+  border-color: rgba(34, 211, 238, 0.38);
+}
+
+.hiw-cap-label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 5px;
+}
+
+.hiw-cap.is-prism .hiw-cap-label {
+  color: rgba(34, 211, 238, 0.9);
+}
+
+.hiw-cap-text {
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: #ffffff;
+}
+
+.hiw-cap-word {
+  display: inline-block;
+}
+
+/* Whitespace tokens between words — kept static so spacing/punctuation stays
+   correct across highlight boundaries (words animate, spaces don't). */
+.hiw-cap-sp {
+  white-space: pre;
+}
+
+/* Keyword highlight palette — per-phase signature colors. Highlighted words
+   carry extra weight so they pop against the default white caption text. */
+.hiw-cap-word.hl-cyan,
+.hiw-cap-text .hl-cyan { color: #67e8f9; font-weight: 600; }
+.hiw-cap-word.hl-violet,
+.hiw-cap-text .hl-violet { color: #c4b5fd; font-weight: 600; }
+.hiw-cap-word.hl-gmail,
+.hiw-cap-text .hl-gmail { color: #ff7a6f; font-weight: 600; }
+.hiw-cap-word.hl-notion,
+.hiw-cap-text .hl-notion { color: #ffffff; font-weight: 700; }
+.hiw-cap-word.hl-asana,
+.hiw-cap-text .hl-asana { color: #f8a3a3; font-weight: 600; }
+.hl-amber { color: var(--hiw-amber); font-weight: 600; }
+
+/* ─────────────────────────────────────────────────────────────────
+ * Phase 2 — "prism is active" (shares the .hiw-meet* frame)
+ * Prism is the persistent focal tile (scaled via Framer in JSX); the
+ * action chips dock top-right of the frame as a stable overlay layer.
+ * ───────────────────────────────────────────────────────────────── */
+
+/* Slightly wider gaps so the enlarged Prism tile has room beside the
+   shrunken human tiles without colliding. */
+.hiw-meet-active .hiw-meet-tiles {
+  gap: 30px;
+}
+
+/* Brighter glow pulse the moment Prism fires an action — reads as Prism
+   "activating" on each tool call (paired with the JS scale pop). */
+.hiw-tile.is-prism.is-firing {
+  box-shadow: 0 0 0 2px #22d3ee, 0 0 64px rgba(34, 211, 238, 0.7);
+}
+
+/* Action-chip stack — overlay docked just right of Prism's centered tile so
+   the chips read as firing out of it. NOT a child of the scaling Prism tile
+   (a transform there would distort the chips). Sits above the lower-third
+   caption. */
+.hiw-act-stack {
+  position: absolute;
+  top: 17%;
+  left: 56%;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  pointer-events: none;
+}
+
+.hiw-act-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px 7px 8px;
+  border-radius: 11px;
+  background: rgba(18, 19, 22, 0.95);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  /* Gentle cyan breathing so a landed chip stays alive (tied to Prism's
+     accent) rather than freezing the moment it arrives. */
+  animation: hiwChipGlow 2.6s ease-in-out infinite;
+}
+
+@keyframes hiwChipGlow {
+  0%, 100% {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    border-color: rgba(34, 211, 238, 0.18);
+  }
+  50% {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 18px rgba(34, 211, 238, 0.28);
+    border-color: rgba(34, 211, 238, 0.42);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hiw-act-chip { animation: none; }
+}
+
+.hiw-act-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hiw-act-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hiw-act-body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.hiw-act-app {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hiw-act-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.hiw-act-check {
+  width: 13px;
+  height: 13px;
+  color: #34d399;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Phase 3 — "prism is agentic"
+ * A sized frame that crossfades from the Meet call (continuation of
+ * Phase 2) into Prism's desktop "playground": cascaded stylized app
+ * windows + a top-right activity panel (task list + spawned agents).
+ * ───────────────────────────────────────────────────────────────── */
+
+.hiw-p3 {
+  position: relative;
+  width: 100%;
+  max-width: 660px;
+  aspect-ratio: 16 / 10;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  isolation: isolate;
+}
+
+/* Both stages fill the frame and overlap during the crossfade. */
+.hiw-p3-stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* Meet stage — reuses the Phase-1/2 grey call surface so the crossfade from
+   Phase 2's layer reads as one continuous call. */
+.hiw-p3-meet {
+  background: #202124;
+  padding: 18px;
+  box-sizing: border-box;
+  display: flex;
+}
+.hiw-p3-meet .hiw-meet-stage {
+  flex: 1;
+}
+.hiw-p3-meet .hiw-meet-tiles {
+  gap: 30px;
+}
+
+/* Single-Prism opening — one larger, centered tile (not the 3-up grid of
+   Phases 1–2) so Phase 3 reads as its own scene before the desktop dissolve. */
+.hiw-p3-solo .hiw-tile {
+  max-width: 230px;
+}
+
+/* ── Desktop playground ───────────────────────────────────────── */
+
+.hiw-desk {
+  background:
+    radial-gradient(120% 90% at 70% 0%, rgba(34, 211, 238, 0.08), transparent 55%),
+    linear-gradient(160deg, #0e1118 0%, #0a0c11 100%);
+  overflow: hidden;
+}
+
+/* Faux menubar across the top. */
+.hiw-desk-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  z-index: 1;
+}
+.hiw-desk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hiw-cyan);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
+}
+.hiw-desk-menus {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 22%, transparent 22% 26%, rgba(255, 255, 255, 0.1) 26% 40%, transparent 40% 44%, rgba(255, 255, 255, 0.1) 44% 54%);
+  max-width: 160px;
+}
+
+/* Window-cascade layer — centered-left so the activity panel keeps the
+   right lane. */
+.hiw-desk-windows {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Reserve the activity-panel lane — clamp keeps a gap at both the pinned
+     (~660px) and narrower stacked (~470px) frame widths. */
+  padding-right: clamp(150px, 36%, 215px);
+  padding-left: 4%;
+}
+
+.hiw-win {
+  position: absolute;
+  width: min(74%, 360px);
+  height: 72%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #14171e;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.hiw-win.is-front {
+  border-color: rgba(34, 211, 238, 0.4);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(34, 211, 238, 0.25);
+}
+
+.hiw-win-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.hiw-win-lights {
+  display: flex;
+  gap: 5px;
+}
+.hiw-win-lights i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.hiw-win-lights i:nth-child(1) { background: #ff5f57; }
+.hiw-win-lights i:nth-child(2) { background: #febc2e; }
+.hiw-win-lights i:nth-child(3) { background: #28c840; }
+
+.hiw-win-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+.hiw-win-ico {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hiw-win-ico svg { width: 10px; height: 10px; }
+.hiw-win-ico b { font-size: 0.6rem; font-weight: 800; line-height: 1; }
+
+.hiw-win-body {
+  position: relative;
+  height: calc(100% - 26px);
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Slack window */
+.hiw-slack-head {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 12px;
+}
+.hiw-slack-msg {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.hiw-slack-av {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+.hiw-slack-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 2px;
+}
+.hiw-slack-lines i {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.hiw-slack-msg.is-ask .hiw-slack-lines i {
+  background: rgba(34, 211, 238, 0.4);
+}
+
+/* Figma window */
+.hiw-figma {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hiw-figma-frame {
+  position: relative;
+  width: 86%;
+  height: 88%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.hiw-figma-rect {
+  position: absolute;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.13);
+}
+.hiw-figma-rect.is-accent {
+  background: rgba(242, 78, 30, 0.55);
+}
+
+/* Editor window */
+.hiw-editor {
+  display: flex;
+  height: 100%;
+  gap: 10px;
+}
+.hiw-editor-rail {
+  flex-shrink: 0;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 2px;
+}
+.hiw-editor-rail i {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.hiw-editor-rail i.is-on { background: rgba(34, 211, 238, 0.55); }
+.hiw-editor-code {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 2px;
+}
+.hiw-code-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hiw-code-line {
+  opacity: 0;
+  animation: hiwCodeIn 0.3s ease forwards;
+}
+@keyframes hiwCodeIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.hiw-tok {
+  height: 6px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.hiw-tok-kw { background: rgba(167, 139, 250, 0.7); }
+.hiw-tok-fn { background: rgba(34, 211, 238, 0.7); }
+.hiw-tok-var { background: rgba(255, 255, 255, 0.32); }
+.hiw-tok-st { background: rgba(52, 211, 153, 0.6); }
+.hiw-tok-num { background: rgba(244, 114, 182, 0.6); }
+.hiw-tok-pl { background: rgba(255, 255, 255, 0.12); }
+.hiw-code-caret {
+  width: 6px;
+  height: 12px;
+  background: var(--hiw-cyan);
+  border-radius: 1px;
+  animation: hiwCaret 0.9s steps(1) infinite;
+}
+@keyframes hiwCaret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+/* GitHub window */
+.hiw-gh-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.hiw-gh-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+.hiw-gh-num {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+.hiw-gh-pill {
+  margin-left: auto;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: #2da44e;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.hiw-gh-meta { margin-bottom: 12px; }
+.hiw-gh-branch {
+  font-size: 0.62rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: rgba(34, 211, 238, 0.8);
+}
+.hiw-gh-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.hiw-gh-diff span {
+  height: 7px;
+  border-radius: 3px;
+}
+.hiw-gh-add { background: rgba(46, 160, 67, 0.5); }
+.hiw-gh-del { background: rgba(248, 81, 73, 0.45); }
+
+/* ── Activity log — terminal-style feed, reserved top-right lane ── */
+
+.hiw-log {
+  position: absolute;
+  top: 32px;
+  right: 14px;
+  width: 30%;
+  min-width: 150px;
+  max-width: 196px;
+  z-index: 8;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(8, 10, 14, 0.95);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.hiw-log-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.hiw-log-orb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hiw-cyan);
+  box-shadow: 0 0 9px rgba(34, 211, 238, 0.7);
+  animation: hiwOrb 1.4s ease-in-out infinite;
+}
+.hiw-log-orb.is-done {
+  background: #34d399;
+  box-shadow: 0 0 9px rgba(52, 211, 153, 0.6);
+  animation: none;
+}
+@keyframes hiwOrb { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.hiw-log-title {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.55);
+}
+.hiw-log-body {
+  padding: 9px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hiw-log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 0.6rem;
+  line-height: 1.3;
+}
+.hiw-log-glyph {
+  flex-shrink: 0;
+  width: 9px;
+  text-align: center;
+  font-weight: 700;
+}
+.hiw-log-line.is-done .hiw-log-glyph { color: #34d399; }
+.hiw-log-line.is-spawn .hiw-log-glyph { color: #a78bfa; }
+.hiw-log-line.is-run .hiw-log-glyph { color: var(--hiw-cyan); }
+.hiw-log-text { color: rgba(255, 255, 255, 0.74); }
+.hiw-log-line.is-done .hiw-log-text { color: rgba(255, 255, 255, 0.55); }
+.hiw-log-line.is-spawn .hiw-log-text { color: rgba(167, 139, 250, 0.9); }
+.hiw-log-caret {
+  width: 6px;
+  height: 11px;
+  margin-left: 16px;
+  background: var(--hiw-cyan);
+  border-radius: 1px;
+  animation: hiwCaret 0.9s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hiw-code-line { animation: none; opacity: 1; }
+  .hiw-code-caret,
+  .hiw-log-caret,
+  .hiw-log-orb { animation: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Phase 4 — "prism is yours"
+ * One PrismAI app window (mini sidebar + swapping content) with an amber
+ * cursor-tour overlay. App UI is cyan (authentic); the tour layer
+ * (cursor / ripple / section label) is amber, Phase 4's signature color.
+ * Skeletal bars, not real text — same scale strategy as P3's windows.
+ * ───────────────────────────────────────────────────────────────── */
+
+.hiw-p4 {
+  position: relative;
+  width: 100%;
+  max-width: 660px;
+  aspect-ratio: 16 / 10;
+  border-radius: 18px;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(160deg, #0c0d10 0%, #08090a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Window chrome */
+.hiw-p4-bar {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.hiw-p4-bar-dot {
+  margin-left: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hiw-cyan);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.55);
+}
+
+.hiw-p4-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ── Mini sidebar ─────────────────────────────────────────────── */
+
+.hiw-p4-rail {
+  flex-shrink: 0;
+  width: 26%;
+  max-width: 168px;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.018);
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+}
+.hiw-p4-ws {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hiw-p4-ws-sq {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: rgba(34, 211, 238, 0.14);
+  color: #67e8f9;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+.hiw-p4-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hiw-p4-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+.hiw-p4-rail-item svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.hiw-p4-rail-item.is-active {
+  background: rgba(34, 211, 238, 0.12);
+  color: #a5f3fc;
+}
+.hiw-p4-rail-section {
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+}
+.hiw-p4-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 2px 4px;
+}
+.hiw-p4-rail-mtg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.hiw-p4-rail-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── Content area + screen crossfade ──────────────────────────── */
+
+.hiw-p4-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.hiw-p4-screen {
+  position: absolute;
+  inset: 0;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  overflow: hidden;
+}
+
+/* Each screen root fills the frame and lays out as a column: a fixed header
+   row + a hero block that grows (flex:1) to fill — so the reduced screens
+   stay balanced rather than top-weighted with empty space below. */
+.hiw-p4-home,
+.hiw-p4-meeting,
+.hiw-p4-trends,
+.hiw-p4-knowledge,
+.hiw-p4-personas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+/* Shared skeleton primitives */
+.hiw-p4-bar-line {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.hiw-p4-bar-line.is-title { height: 9px; background: rgba(255, 255, 255, 0.34); }
+.hiw-p4-bar-line.is-faint { height: 5px; background: rgba(255, 255, 255, 0.1); }
+.hiw-p4-bar-line.is-verdict { height: 5px; background: rgba(34, 211, 238, 0.4); }
+
+/* Real placeholder copy (replaces the heavier skeleton bars on the primary
+   labels — meeting titles, action items, doc names). */
+.hiw-p4-mtg-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hiw-p4-bk-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+}
+.hiw-p4-action-text {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+}
+.hiw-p4-action-text.is-done {
+  color: rgba(255, 255, 255, 0.4);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+}
+
+.hiw-p4-eyebrow {
+  display: block;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 6px;
+}
+.hiw-p4-eyebrow.is-dim { color: rgba(255, 255, 255, 0.4); margin-bottom: 8px; }
+
+.hiw-p4-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.hiw-p4-head-text { flex: 1; min-width: 0; }
+.hiw-p4-insights {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--hiw-cyan);
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.24);
+}
+.hiw-p4-insights svg { width: 14px; height: 14px; }
+
+/* Home — meeting cards. The stack centers in the content area with breathing
+   room above/below; cards size to their content rather than stretching. */
+.hiw-p4-mtgs { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 11px; }
+.hiw-p4-mtgcard {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+}
+.hiw-p4-band {
+  flex-shrink: 0;
+  width: 4px;
+  border-radius: 3px;
+  align-self: stretch;
+}
+.hiw-p4-band.is-good { background: #34d399; }
+.hiw-p4-band.is-mid { background: #fbbf24; }
+.hiw-p4-mtgcard-body { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+
+/* Meeting — score gauge (hero, grows to fill) + a short verdict, actions below */
+.hiw-p4-meeting-grid {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+}
+.hiw-p4-gauge { position: relative; width: 106px; flex-shrink: 0; }
+.hiw-p4-gauge-arc { width: 100%; display: block; }
+.hiw-p4-gauge-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+.hiw-p4-breakdown { flex-shrink: 0; width: 132px; display: flex; flex-direction: column; gap: 9px; }
+.hiw-p4-meter {
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.hiw-p4-meter-fill { display: block; height: 100%; border-radius: 4px; background: var(--hiw-cyan); }
+.hiw-p4-meter.is-violet .hiw-p4-meter-fill { background: #a78bfa; }
+
+.hiw-p4-actions { flex-shrink: 0; display: flex; flex-direction: column; gap: 11px; }
+.hiw-p4-action { display: flex; align-items: center; gap: 11px; }
+.hiw-p4-check {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+}
+.hiw-p4-check.is-done { background: #34d399; border-color: #34d399; }
+
+/* Trends — sparkline card. Capped height + auto margins so it floats centered
+   between the header and the pattern card with breathing room. padding:0 so the
+   SVG coordinate box and the absolutely-positioned endpoint dot share one
+   origin (the curve's own data inset supplies the visual margin). */
+.hiw-p4-spark {
+  position: relative;
+  flex: 0 0 auto;
+  height: 130px;
+  margin-block: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+}
+.hiw-p4-spark-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 1px 5px rgba(34, 211, 238, 0.4));
+}
+.hiw-p4-spark-dot {
+  position: absolute;
+  left: 97%;
+  top: 11%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #a5f3fc;
+  box-shadow: 0 0 9px rgba(103, 232, 249, 0.95);
+  transform: translate(-50%, -50%);
+}
+.hiw-p4-patterns { flex-shrink: 0; display: flex; gap: 10px; }
+.hiw-p4-pattern {
+  flex: 1;
+  padding: 12px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Knowledge — add pill + doc tiles */
+.hiw-p4-add {
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #04181c;
+  background: var(--hiw-cyan);
+}
+.hiw-p4-docs {
+  flex: 0 0 auto;
+  height: 196px;
+  margin-block: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 11px;
+}
+.hiw-p4-doc {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+}
+.hiw-p4-doc-ico {
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.hiw-p4-doc-ico svg { width: 18px; height: 18px; }
+.hiw-p4-doc-name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hiw-p4-doc-foot { display: flex; align-items: center; gap: 8px; }
+.hiw-p4-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.hiw-p4-dot.is-ready { background: #34d399; box-shadow: 0 0 7px rgba(52, 211, 153, 0.5); }
+.hiw-p4-dot.is-processing { background: #fbbf24; animation: hiwP4Pulse 1.3s ease-in-out infinite; }
+@keyframes hiwP4Pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.hiw-p4-pill {
+  height: 11px;
+  width: 38px;
+  border-radius: 999px;
+}
+.hiw-p4-pill.is-emerald { background: rgba(52, 211, 153, 0.22); border: 1px solid rgba(52, 211, 153, 0.4); }
+.hiw-p4-pill.is-sky { background: rgba(56, 189, 248, 0.22); border: 1px solid rgba(56, 189, 248, 0.4); }
+.hiw-p4-pill.is-rose { background: rgba(251, 113, 133, 0.22); border: 1px solid rgba(251, 113, 133, 0.4); }
+
+/* Personas — Voice pills + persona cards (hero, grows to fill) */
+.hiw-p4-row { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+.hiw-p4-row.is-behavior { flex: 1; min-height: 0; }
+.hiw-p4-row-label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+}
+.hiw-p4-voices { display: flex; align-items: center; gap: 8px; }
+.hiw-p4-voice {
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.hiw-p4-voice.is-on {
+  color: #a5f3fc;
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.1);
+}
+.hiw-p4-persona-grid {
+  flex: 0 0 auto;
+  height: 152px;
+  margin-block: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 10px;
+}
+.hiw-p4-persona {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+}
+.hiw-p4-persona.is-sel {
+  border-color: rgba(34, 211, 238, 0.55);
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35);
+}
+.hiw-p4-persona-av {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.hiw-p4-persona.is-sel .hiw-p4-persona-av { background: rgba(34, 211, 238, 0.6); }
+.hiw-p4-persona-name {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ── Tour layer (amber) — own overlay above content ───────────── */
+
+.hiw-p4-tour {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+}
+.hiw-p4-label {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fde68a;
+  background: rgba(120, 70, 4, 0.42);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+.hiw-p4-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 18px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+  z-index: 11;
+}
+.hiw-p4-cursor svg { width: 100%; height: 100%; display: block; }
+.hiw-p4-ripple-wrap {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 10;
+}
+.hiw-p4-ripple {
+  position: absolute;
+  left: -17px;
+  top: -17px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--hiw-amber);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
+}
+
+/* Reduced-motion kill — placed AFTER the Phase-4 base rules so it wins the
+   source-order tie (the upstream reduced-motion block precedes these). */
+@media (prefers-reduced-motion: reduce) {
+  .hiw-p4-dot.is-processing { animation: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Stacked fallback — narrow viewports + reduced motion
+ * ───────────────────────────────────────────────────────────────── */
+
+.hiw-section-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 4rem 1.25rem;
+  margin-top: 0; /* peek pull-up is pinned-mode only */
+}
+
+.hiw-card-stacked {
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.hiw-stacked-demo {
+  display: flex;
+  justify-content: center;
+}
+
+.hiw-right-stacked {
+  position: static;
+  padding: 0;
+}
+
+.hiw-right-stacked .hiw-h2 {
+  white-space: normal;
+}
+
+.hiw-right-stacked .hiw-para-stack {
+  min-height: 0;
+}
