@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 
 from analysis_routes import create_analysis_router
 from calendar_routes import router as calendar_router
+from ms_calendar_routes import router as ms_calendar_router
 from chat_routes import create_chat_router
 from clients import DEFAULT_TIMEOUT, bind as bind_clients
 from export_routes import router as export_router
@@ -46,7 +47,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Prism", lifespan=lifespan)
 
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,https://agentic-meeting-copilot.vercel.app")
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,https://agentic-meeting-copilot.vercel.app,https://meetprismai.com,https://www.meetprismai.com")
 _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
@@ -62,6 +63,7 @@ app.include_router(workspace_router)
 app.include_router(recall_router)
 app.include_router(export_router)
 app.include_router(calendar_router)
+app.include_router(ms_calendar_router)
 app.include_router(realtime_router)
 
 app.include_router(create_analysis_router(openai_client))
