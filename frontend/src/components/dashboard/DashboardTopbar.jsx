@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { ArrowLeft, Search } from 'lucide-react'
 import StatusIsland from './StatusIsland'
 
 /**
- * Topbar island: page title (left) + global search pill (right).
+ * Topbar island: optional back arrow + page title (left) + global search pill (right).
  * The title shows the focused meeting's name, or the view label
  * (Home / Trend / Knowledge). When the title overflows its track it
  * slowly cycles horizontally; short titles stay static, and
  * prefers-reduced-motion falls back to a plain ellipsis.
- * Navigation back to Home is via the Home item in the sidebar (the topbar back
- * arrow was intentionally dropped).
+ * When `onBack` is provided (i.e. a meeting is focused) a back arrow returns
+ * to the previous non-meeting view; the Home sidebar item still works too.
  */
-export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature }) {
+export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature, onBack = null }) {
   const trackRef = useRef(null)
   const textRef = useRef(null)
   const [shift, setShift] = useState(0) // px the title must travel to reveal its tail; 0 = no marquee
@@ -36,8 +36,18 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
 
   return (
     <header className="dashboard-topbar dashboard-island z-30 flex items-center gap-4 px-6">
-      {/* Left: page title (marquee on overflow) + inline actions */}
+      {/* Left: optional back arrow + page title (marquee on overflow) + inline actions */}
       <div className="flex min-w-0 shrink items-center gap-3">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to dashboard"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/70 transition hover:border-cyan-400/45 hover:bg-white/[0.07] hover:text-white"
+          >
+            <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
+          </button>
+        )}
         <div ref={trackRef} className="dashboard-title-track min-w-0">
           <span
             ref={textRef}
