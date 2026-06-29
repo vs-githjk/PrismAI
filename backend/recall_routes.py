@@ -159,14 +159,21 @@ def _normalize_meeting_url(url: str) -> str:
         return url.strip().lower()
 
 
-def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: str) -> dict | None:
+async def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: str) -> dict | None:
     """Return an active meeting_bots row for this URL where the bot owner shares a workspace
     with the requesting user. Returns None if no such bot exists, or if the workspace tables
-    are missing (local dev without supabase/workspace_migration.sql applied)."""
+    are missing (local dev without supabase/workspace_migration.sql applied).
+
+    For non-scheduled candidates we confirm the bot is genuinely still in the call
+    (Recall API) before treating it as a dedup target. Google Meet reuses meeting
+    codes, so a stale 'recording'/'joining' row left by a crashed or finished bot on
+    a reused URL would otherwise falsely shadow a brand-new meeting ("Prism is already
+    in this meeting via …" + an empty transcript). Stale rows are marked done so they
+    stop matching."""
     try:
         active = (
             client.table("meeting_bots")
-            .select("bot_id, owner_user_id")
+            .select("bot_id, owner_user_id, status")
             .eq("meeting_url", normalized_url)
             # Include 'scheduled' so a teammate's not-yet-joined stand-in bot is caught
             # here too — otherwise an auto-join racing the stand-in's join double-books.
@@ -195,8 +202,18 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
                 .limit(1)
                 .execute()
             )
-            if shared.data:
-                return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
+            if not shared.data:
+                continue
+            # 'scheduled' = a future stand-in bot that hasn't joined yet (correctly
+            # not "live") — trust it. For in-call statuses, verify the bot is actually
+            # still in the meeting; a stale row on a reused Meet code must not shadow
+            # a fresh join.
+            if bot.get("status") != "scheduled" and not await _bot_is_live(bot["bot_id"]):
+                print(f"[recall] dedup: candidate bot {bot['bot_id']} is not live — "
+                      f"marking stale row done, not deduping")
+                _mb_update_status(bot["bot_id"], "done")
+                continue
+            return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
         owners = [b.get("owner_user_id") for b in active.data]
         print(f"[recall] dedup: {len(active.data)} active bot(s) for this url but none "
               f"share a workspace with {requesting_user_id} (owners={owners})")
@@ -1390,7 +1407,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
             }
 
         # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
-        existing = _find_shared_workspace_bot(supabase, normalized_url, user_id)
+        existing = await _find_shared_workspace_bot(supabase, normalized_url, user_id)
         if existing:
             print(f"[recall] dedup: skipping join for {user_id}, existing bot {existing['bot_id']} from {existing['owner_user_id']}")
             return {
