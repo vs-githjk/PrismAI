@@ -26,17 +26,6 @@ class StreamingDefaultTests(unittest.TestCase):
             self.assertFalse(realtime_routes._streamed_llm_on())
 
 
-class AmbientSilentHelperTests(unittest.TestCase):
-    def test_silent_detection(self):
-        self.assertTrue(realtime_routes._is_ambient_silent("SILENT"))
-        self.assertTrue(realtime_routes._is_ambient_silent("  silent.  "))
-        self.assertFalse(realtime_routes._is_ambient_silent("Our Q3 number was 4.2M."))
-        self.assertFalse(realtime_routes._is_ambient_silent(""))
-
-    def test_preamble_nonempty(self):
-        self.assertIn("SILENT", realtime_routes._AMBIENT_PREAMBLE)
-
-
 class FakeUtterance:
     def __init__(self, text, speaker_name="Abhinav"):
         self.text = text
@@ -50,83 +39,74 @@ class FakeUtterance:
 
 
 class AmbientOnUtteranceRoutingTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.state = realtime_routes.meeting_memory.get_initial_memory_state()
-        self.state["transcript_buffer"] = []
-        self.state["meeting_start_ts"] = 1000.0
+    def _auto_state(self):
+        s = realtime_routes.meeting_memory.get_initial_memory_state()
+        s["mode"] = "autonomous"
+        s["meeting_start_ts"] = time.time() - 600
+        s["live_decisions"] = [{"text": "d", "speaker": "A", "ts": 1.0}]  # past_warmup
+        s["transcript_buffer"] = ["A: hello."]
+        return s
 
     async def test_explicit_command_skips_ambient(self):
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "offered"}
-        self.state["mode"] = "autonomous"
-        self.state["mode_since_ts"] = time.time()
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+        state = self._auto_state()
+        with mock.patch.object(realtime_routes, "_detect_command", return_value="summarize"), \
+             mock.patch.object(realtime_routes, "_ambient_speculate",
+                               new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("Prism, send the email")
-            )
-        self.assertEqual(called, [])
+                "bot1", state, FakeUtterance("Prism, summarize?"))
+        spec.assert_not_awaited()
 
     async def test_utterance_mode_skips_ambient(self):
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "offered"}
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+        state = self._auto_state()
+        state["mode"] = "utterance"
+        with mock.patch.object(realtime_routes, "_detect_command", return_value=None), \
+             mock.patch.object(realtime_routes, "_ambient_speculate",
+                               new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("the numbers look fine to me")
-            )
-        self.assertEqual(called, [])
+                "bot1", state, FakeUtterance("What is the SLA, again?"))
+        spec.assert_not_awaited()
 
-    async def test_autonomous_mode_runs_ambient(self):
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "offered"}
-        self.state["mode"] = "autonomous"
-        self.state["mode_entry_reason"] = "handoff"
-        self.state["mode_since_ts"] = time.time()
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
+    async def test_autonomous_mode_arms_question(self):
+        state = self._auto_state()
+        with mock.patch.object(realtime_routes, "_detect_command", return_value=None), \
+             mock.patch.object(realtime_routes, "_ambient_speculate",
+                               new=mock.AsyncMock()) as spec:
             await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("what was our Q3 number")
-            )
-        self.assertEqual(called, ["what was our Q3 number"])
+                "bot1", state, FakeUtterance("What is the SLA, again?"))
+            # Speculation now runs as a background task (latest-wins) — await it.
+            await state["_ambient_spec_task"]
+            spec.assert_awaited()
+        self.assertIsNotNone(state["pending_question"])
 
-    async def test_mute_command_routes_to_interject(self):
-        # "Prism, stay quiet" contains the wake word but must reach the
-        # interjection layer (to set muted), not the generic command path.
-        called = []
-        async def fake_interject(*a, **k):
-            called.append(a[2])
-            return {"action": "muted"}
-        with mock.patch.object(realtime_routes.ambient_loop, "interject", fake_interject):
-            await realtime_routes._ambient_on_utterance(
-                "bot1", self.state, FakeUtterance("Prism, stay quiet")
-            )
-        self.assertEqual(called, ["Prism, stay quiet"])
+    async def test_mute_command_routes_to_lane(self):
+        state = self._auto_state()
+        await realtime_routes._ambient_on_utterance(
+            "bot1", state, FakeUtterance("Prism, stay quiet"))
+        self.assertTrue(state["muted"])
 
 
-class ModeOverrideEndpointTests(unittest.IsolatedAsyncioTestCase):
-    async def test_set_manual_mode(self):
-        bot_id = "bot-override-test"
+class ModeEndpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_mode(self):
+        bot_id = "bot-mode-test"
         state = realtime_routes._get_bot_state(bot_id)
         try:
             res = await realtime_routes.set_bot_mode(bot_id, {"mode": "autonomous"})
-            self.assertEqual(res["mode"], "autonomous")
-            self.assertEqual(state["manual_mode"], "autonomous")
+            self.assertEqual(res, {"mode": "autonomous"})
+            self.assertEqual(state["mode"], "autonomous")
 
-            res = await realtime_routes.set_bot_mode(bot_id, {"mode": None})
-            self.assertIsNone(state["manual_mode"])
+            state["pending_question"] = {"text": "q?"}
+            res = await realtime_routes.set_bot_mode(bot_id, {"mode": "utterance"})
+            self.assertEqual(state["mode"], "utterance")
+            self.assertIsNone(state["pending_question"])  # slot cleared on switch away
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
 
-    async def test_invalid_mode_rejected(self):
-        bot_id = "bot-override-test-2"
+    async def test_invalid_or_null_mode_rejected(self):
+        bot_id = "bot-mode-test-2"
         realtime_routes._get_bot_state(bot_id)
         try:
-            res = await realtime_routes.set_bot_mode(bot_id, {"mode": "bogus"})
-            self.assertIn("error", res)
+            self.assertIn("error", await realtime_routes.set_bot_mode(bot_id, {"mode": "bogus"}))
+            self.assertIn("error", await realtime_routes.set_bot_mode(bot_id, {"mode": None}))
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
 
@@ -136,10 +116,11 @@ class MuteEndpointTests(unittest.IsolatedAsyncioTestCase):
         bot_id = "bot-mute-test"
         state = realtime_routes._get_bot_state(bot_id)
         try:
+            state["pending_question"] = {"text": "q?"}
             res = await realtime_routes.set_bot_mute(bot_id, {"muted": True})
             self.assertTrue(res["muted"])
             self.assertTrue(state["muted"])
-            self.assertIsNone(state["pending_offer"])
+            self.assertIsNone(state["pending_question"])
 
             res = await realtime_routes.set_bot_mute(bot_id, {"muted": False})
             self.assertFalse(state["muted"])
@@ -148,13 +129,13 @@ class MuteEndpointTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PreJoinModeSeedTests(unittest.TestCase):
-    def test_initial_mode_seeds_manual_override(self):
+    def test_initial_mode_seeds_mode(self):
         bot_id = "bot-prejoin-test"
         realtime_routes.bot_store[bot_id] = {"initial_mode": "autonomous"}
         try:
             state = realtime_routes._get_bot_state(bot_id)
-            self.assertEqual(state["manual_mode"], "autonomous")
             self.assertEqual(state["mode"], "autonomous")
+            self.assertNotIn("manual_mode", state)
         finally:
             realtime_routes.cleanup_bot_state(bot_id)
             realtime_routes.bot_store.pop(bot_id, None)
@@ -164,7 +145,6 @@ class PreJoinModeSeedTests(unittest.TestCase):
         realtime_routes.bot_store[bot_id] = {}
         try:
             state = realtime_routes._get_bot_state(bot_id)
-            self.assertIsNone(state["manual_mode"])
             self.assertEqual(state["mode"], "utterance")
         finally:
             realtime_routes.cleanup_bot_state(bot_id)

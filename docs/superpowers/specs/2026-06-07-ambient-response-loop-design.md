@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-07
 **Branch:** `fixed-changes`
-**Status:** Proposed — pending user review of spec
+**Status:** SUPERSEDED by `2026-06-11-ambient-contribution-lane-design.md` — do not build on the funnel/mode machine described here
 **Roadmap phase:** Realtime live-bot — proactive/ambient response (relates to Phase 7, context-aware conversation)
 **Scope of this spec:** backend live-meeting loop only (`realtime_routes.py` + a new `ambient_loop.py`). No frontend beyond a mode indicator + toggle (deferred to the plan).
 

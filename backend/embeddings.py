@@ -68,12 +68,14 @@ def _get_client() -> AsyncOpenAI:
         # keepalive_expiry caps how long an idle pooled connection is reused.
         # Render's upstream silently reaps idle sockets; expiring ours first
         # avoids handing a dead connection to the next request. Retry in
-        # _call_with_retry still covers the race within the window.
+        # _call_with_retry still covers the race within the window. 45s (was
+        # 20s) keeps the socket warm across a typical gap between live-meeting
+        # KB lookups — a cold reconnect measured up to ~9s on 2026-06-12.
         _client = AsyncOpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             http_client=httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0, connect=10.0),
-                limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=20.0),
+                limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=45.0),
             ),
         )
     return _client

@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime
@@ -14,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 
+import ack_phrases
+import ack_audio
 import ambient_loop
 import meeting_memory
 import perception_state
@@ -25,6 +28,7 @@ from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 from tools.tts import text_to_speech
+from warmup import warm_external_connections
 from recall_routes import bot_store, _db_append_command, _db_save_memory, _db_save
 from auth import supabase
 from cross_meeting_service import looks_like_blocker, extract_significant_terms
@@ -36,6 +40,12 @@ RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # live-bot command path runs on gpt-4o-mini
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
+
+# The bot joins Recall under this display name (see recall_routes), so its own
+# injected TTS — if transcribed back into the meeting — is attributed to this
+# speaker. Used to keep the bot's own audio out of the ambient timing-gate +
+# yield signal (last_audio_ts), which would otherwise make it yield to itself.
+_RECALL_BOT_DISPLAY_NAME = "PrismAI"
 
 # In-memory state per bot
 # bot_id -> { transcript_buffer: [], last_command_ts: float, user_settings: dict }
@@ -493,7 +503,9 @@ _STATIC_TOOL_POLICY = (
     "clarifying question — do not refuse. "
     "Use knowledge_lookup ONLY for the user's uploaded documents. Do NOT call any tool "
     "for questions about yourself or your own settings/state, or for simple "
-    "conversational replies."
+    "conversational replies. When you do call a tool, use the native tool-calling "
+    "mechanism only — never write function-call tags such as <function=...> as text "
+    "in a reply."
 )
 
 
@@ -514,6 +526,26 @@ def _owner_email_for_bot(bot_id: str) -> str:
     if bot_id in bot_store:
         bot_store[bot_id]["owner_email"] = email
     return email
+
+
+# ── Internal fallback sentinels ───────────────────────────────────────────────
+# knowledge_lookup / web_search instruct the model to reply with exactly
+# NO_GROUNDED_ANSWER / NO_WEB_ANSWER when their evidence doesn't contain the
+# answer. Those are pipeline signals — they must never reach meeting chat or
+# TTS verbatim (live test 2026-06-11: the bot spoke "NO_WEB_ANSWER" aloud).
+_SENTINEL_REPLIES = frozenset({"NO_WEB_ANSWER", "NO_GROUNDED_ANSWER", "NO_MATCH"})
+_SENTINEL_FALLBACK_TEXT = "I couldn't find a solid answer to that one."
+
+
+def _degrade_sentinel_reply(reply):
+    """Swap a whole-reply sentinel for graceful spoken text. Embedded
+    occurrences inside a real sentence are left alone."""
+    if not reply:
+        return reply
+    norm = re.sub(r"[\s.!`'\"]+", "", reply).upper()
+    if norm in _SENTINEL_REPLIES:
+        return _SENTINEL_FALLBACK_TEXT
+    return reply
 
 
 def _build_static_prefix(
@@ -928,7 +960,7 @@ async def _dispatch_slow_path_command(
     for the 8-second pending-fragment window from the legacy path.
     """
     if ambient_loop.autonomous_enabled() and ambient_loop.detect_mute_command(u.text):
-        return  # mute/unmute is handled by the ambient interjection layer, not as a command
+        return  # mute/unmute is handled by the ambient lane, not as a command
     command = _detect_command(u.text, bot_id)
     if (
         not command
@@ -950,75 +982,330 @@ async def _dispatch_slow_path_command(
     _dispatch_command(state, bot_id, command, u.speaker_name)
 
 
-# ── Ambient response loop wiring (PRISM_AUTONOMOUS) ───────────────────────────
-_AMBIENT_PREAMBLE = (
-    "You are listening silently to a live meeting. No one addressed you by name. "
-    "You have determined you may have a brief, useful contribution. Speak ONLY if "
-    "it is genuinely additive — answer an open question, surface a relevant fact, "
-    "or flag a real risk. If on reflection you have nothing additive to add, reply "
-    "with exactly: SILENT. Keep it to one or two sentences."
-)
-
-
-def _is_ambient_silent(reply: str) -> bool:
-    """True if an ambient-mode generation declined to contribute."""
-    return (reply or "").strip().upper().rstrip(".!") == "SILENT"
+# ── Ambient contribution lane wiring (PRISM_AUTONOMOUS) ───────────────────────
+async def _cancel_ambient_spec(state: dict) -> None:
+    """Cancel any in-flight question speculation and wait for it to fully unwind
+    (its finally releases _ambient_busy) before the next one starts. This is the
+    latest-wins rule: a newer question must supersede an older one's generation,
+    not be dropped as an _ambient_busy collision."""
+    task = state.pop("_ambient_spec_task", None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 async def _ambient_on_utterance(bot_id: str, state: dict, u) -> None:
-    """Ambient (no-wake-word) branch → consent-based interjection (v2).
-    Mute/unmute directives are routed to the interjection layer even though they
-    contain the wake word; otherwise only autonomous mode (and no explicit
-    command) runs the funnel. Explicit commands go to _dispatch_slow_path_command."""
+    """Ambient contribution lane (spec 2026-06-11): per completed utterance,
+    handle mute, then arm/clear the pending-question slot (trigger Q) or fire
+    a blocker/decision trigger (B, chat-capped). Delivery happens from the
+    tick loop (Q, on window expiry) or _ambient_fire (B/K)."""
     now = time.time()
-    if ambient_loop.detect_mute_command(u.text):
-        await _run_interject(bot_id, state, u, now)
+    cmd = ambient_loop.detect_mute_command(u.text)
+    if cmd == "mute":
+        state["muted"] = True
+        state["pending_question"] = None
+        await _cancel_ambient_spec(state)
+        perception_state.bump(state, "mutes")
+        print(f"[ambient] muted bot={bot_id[:8]}")
+        return
+    if cmd == "unmute":
+        state["muted"] = False
+        print(f"[ambient] unmuted bot={bot_id[:8]}")
+        return
+    if state.get("mode") != "autonomous" or state.get("muted"):
         return
     if _solo_mode_active(state):
         return  # solo free-flow owns every utterance; skip the ambient funnel
-    mode = ambient_loop.update_mode(state, u.text, u.speaker_name, now)
     if _detect_command(u.text, bot_id):
-        return  # explicit command path owns this utterance
-    if mode != "autonomous":
+        return  # the explicit wake-word path owns this utterance
+    if not ambient_loop.past_warmup(state):
         return
-    await _run_interject(bot_id, state, u, now)
 
-
-async def _run_interject(bot_id: str, state: dict, u, now: float) -> None:
-    try:
-        await ambient_loop.interject(
-            bot_id, state, u.text, u.speaker_name,
-            speak_offer=_ambient_speak_offer,
-            run_delivery=_ambient_run_delivery,
-            now=now,
+    # Clear rule: a *different* speaker replying substantively (>=4 words, not
+    # itself a question) means the humans handled it. The asker continuing
+    # does not clear — the value scorer prices rhetorical openings low.
+    pq = state.get("pending_question")
+    if pq:
+        same_speaker = (
+            (u.speaker_id and pq.get("speaker_id") == u.speaker_id)
+            or (not u.speaker_id and pq.get("speaker_name") == u.speaker_name)
         )
-    except Exception as e:
-        print(f"[ambient] interject error bot={bot_id[:8]}: {e}")
+        if (not same_speaker and len((u.text or "").split()) >= 4
+                and not ambient_loop.is_question(u.text)):
+            state["pending_question"] = None
+            await _cancel_ambient_spec(state)   # humans handled it — stop generating
+            perception_state.bump(state, "ambient_discarded_answered")
+
+    # Trigger Q: arm. Latest-wins — a newer question supersedes an older one, so
+    # cancel any in-flight speculation (freeing _ambient_busy) before generating
+    # this one; otherwise the newer question is dropped as a busy collision. The
+    # speculation runs as a tracked task so it no longer blocks utterance ingest.
+    if ambient_loop.is_question(u.text):
+        await _cancel_ambient_spec(state)
+        slot = {
+            "text": u.text,
+            "speaker_id": u.speaker_id or "",
+            "speaker_name": u.speaker_name,
+            "ts": now,
+            "window_s": ambient_loop.answer_wait_s(),  # refined by _ambient_speculate
+            "candidate": None,
+            "candidate_done": False,
+            "delivered": False,
+        }
+        state["pending_question"] = slot
+        perception_state.bump(state, "ambient_q_triggers")
+        state["_ambient_spec_task"] = asyncio.create_task(
+            _ambient_speculate(bot_id, state, slot)
+        )
+        return
+
+    # Trigger B: blocker / decision moment — chat-tier capped in v1.
+    if looks_like_blocker(u.text) or meeting_memory.DECISION_PATTERN.search(u.text or ""):
+        perception_state.bump(state, "ambient_b_triggers")
+        await _ambient_fire(bot_id, state, "blocker_or_decision",
+                            f"{u.speaker_name}: {u.text}", max_tier="chat")
 
 
-async def _ambient_speak_offer(bot_id: str, text: str) -> bool:
-    """Speak the brief consent-seeking offer (chat + voice). Returns True if
-    delivered (best-effort; False on failure → treated as talked-over)."""
-    asyncio.create_task(_send_chat_response(bot_id, text))
+def _speaker_names(state: dict) -> list:
+    """Participant names seen recently — 'Name: text' prefixes in the buffer."""
+    names = set()
+    for line in (state.get("transcript_buffer") or [])[-50:]:
+        if ":" in line:
+            head = line.split(":", 1)[0].strip()
+            if head and len(head) <= 40:
+                names.add(head)
+    return list(names)
+
+
+def _ambient_note_audio(state: dict, speaker: str, speaker_id: str, now: float) -> None:
+    """Stamp `last_audio_ts` for HUMAN speech only (it drives the ambient timing
+    gate + yield rule), and learn the bot's own Recall speaker_id from its display
+    name. The bot's injected TTS, if transcribed back, must NOT stamp — otherwise
+    the bot yields to itself and the gate never re-clears. We match the bot by id
+    (once learned) OR by display name, so an empty/unstable speaker_id on the
+    bot's own chunk is still excluded; genuine human chunks always stamp."""
+    is_bot = (
+        bool(speaker_id and state.get("bot_self_speaker_id") == speaker_id)
+        or (speaker or "").strip().lower() == _RECALL_BOT_DISPLAY_NAME.lower()
+    )
+    if is_bot and speaker_id and not state.get("bot_self_speaker_id"):
+        state["bot_self_speaker_id"] = speaker_id  # learn for future chunks
+    if not is_bot:
+        state["last_audio_ts"] = now
+
+
+async def _ambient_kb_search(bot_id: str, query: str) -> list:
+    """KB search for the lane, with the proactive-surfacing sensitivity rule
+    applied (never speak confidential docs into a meeting). Empty list on any
+    failure or for unauthenticated bots."""
+    record = bot_store.get(bot_id) or {}
+    user_id = record.get("user_id")
+    if not user_id:
+        return []
     try:
-        if _streamed_tts_on():
-            await _send_voice_response_streamed(bot_id, text, cmd_detected_ts=time.time())
-        else:
-            await _send_voice_response(bot_id, text)
-        return True
+        from knowledge_service import search_knowledge
+        from knowledge_proactive import _allowed_by_sensitivity
+        matches = await search_knowledge(query, user_id,
+                                         meeting_id=record.get("meeting_id"),
+                                         k=3, min_score=0.6)
+        return [m for m in matches if _allowed_by_sensitivity(m, record.get("meeting_id"))]
     except Exception as e:
-        print(f"[ambient] speak_offer error bot={bot_id[:8]}: {e}")
+        print(f"[ambient] KB search failed bot={bot_id[:8]}: {e}")
+        return []
+
+
+async def _ambient_speculate(bot_id: str, state: dict, pq: dict) -> None:
+    """Speculative generation for a pending question (spec R1): one KB search
+    (evidence + addressee window scaling), then the contribution generator.
+    The candidate lands on the slot; the tick loop delivers it if the window
+    expires unanswered. candidate_done=True with candidate=None means the
+    generation failed — the tick loop just drops the slot."""
+    try:
+        evidence = f"Open question from {pq['speaker_name']}: {pq['text']}"
+        kb_top = None
+        matches = await _ambient_kb_search(bot_id, pq["text"])
+        if matches:
+            kb_top = max(float(m.get("score") or 0.0) for m in matches)
+            chunks = "\n".join(
+                f"- [{m.get('doc_name')}] {(m.get('content') or '')[:400]}" for m in matches
+            )
+            evidence += f"\n\n[KNOWLEDGE BASE EVIDENCE]\n{chunks}"
+        pq["window_s"] = ambient_loop.question_window_s(
+            pq["text"], _speaker_names(state), kb_top
+        )
+        if state.get("_ambient_busy"):
+            return  # collision: leave candidate_done False; slot expires unused
+        state["_ambient_busy"] = True
+        try:
+            bot_name = _BOT_WAKE_ALIAS.get(bot_id, "") or DEFAULT_BOT_NAME
+            pq["candidate"] = await ambient_loop.generate_contribution(
+                state, "unanswered_question", evidence, bot_name
+            )
+        finally:
+            state["_ambient_busy"] = False
+    except Exception as e:
+        print(f"[ambient] speculate error bot={bot_id[:8]}: {e}")
+    finally:
+        pq["candidate_done"] = True
+
+
+async def _ambient_fire(bot_id: str, state: dict, trigger_kind: str, evidence: str,
+                        *, max_tier: str) -> None:
+    """Generate-then-deliver for K and B triggers."""
+    if state.get("_ambient_busy"):
+        return
+    state["_ambient_busy"] = True
+    try:
+        bot_name = _BOT_WAKE_ALIAS.get(bot_id, "") or DEFAULT_BOT_NAME
+        out = await ambient_loop.generate_contribution(state, trigger_kind, evidence, bot_name)
+    finally:
+        state["_ambient_busy"] = False
+    if out:
+        await _ambient_deliver(bot_id, state, out, max_tier=max_tier)
+
+
+async def _ambient_deliver(bot_id: str, state: dict, out: dict, *, max_tier: str) -> None:
+    """Tiered delivery: drop / chat / voice-with-chat-fallback. Never raises."""
+    try:
+        if state.get("muted") or state.get("mode") != "autonomous":
+            return
+        tier = ambient_loop.delivery_tier(out["value"], max_tier=max_tier)
+        if tier == "drop" or out["kind"] == "none":
+            perception_state.bump(state, "ambient_low_value")
+            print(f"[ambient] drop value={out['value']:.1f} subject={out['subject']!r} bot={bot_id[:8]}")
+            return
+        if ambient_loop.subject_already_contributed(state, out["subject"]):
+            print(f"[ambient] dup subject={out['subject']!r} bot={bot_id[:8]}")
+            return
+        if ambient_loop.shadow_mode():
+            print(
+                f"[ambient] SHADOW would {tier}: value={out['value']:.1f} "
+                f"subject={out['subject']!r} text={out['contribution'][:160]!r} bot={bot_id[:8]}"
+            )
+            return
+        demoted = False
+        if tier == "voice" and ambient_loop.voice_cooldown_clear(state, time.time()):
+            if await _ambient_deliver_voice(bot_id, state, out):
+                return
+            # Voice didn't happen. If the bot was muted / switched out of
+            # autonomous during the gate wait, abort entirely — mute blocks BOTH
+            # tiers, so there is no chat fallback. Otherwise it's a no-gap demotion.
+            if state.get("muted") or state.get("mode") != "autonomous":
+                return
+            demoted = True
+        # Organic chat-tier posts respect the chat cooldown; a no-gap voice
+        # demotion bypasses it so the high-value contribution still lands
+        # (spec R2: "nothing is lost" when the room never quiets).
+        if not demoted and not ambient_loop.chat_cooldown_clear(state, time.time()):
+            return
+        await _send_chat_response(bot_id, f"ℹ️ {out['contribution']}")
+        state["ambient_chat_last_ts"] = time.time()
+        ambient_loop.record_contributed_subject(state, out["subject"])
+        state.setdefault("previous_idea_summaries", []).append(f"(ambient) {out['subject']}")
+        state["previous_idea_summaries"] = state["previous_idea_summaries"][-5:]
+        perception_state.bump(state, "ambient_chat_posted")
+        print(f"[ambient] chat value={out['value']:.1f} subject={out['subject']!r} bot={bot_id[:8]}")
+    except Exception as e:
+        print(f"[ambient] deliver error bot={bot_id[:8]}: {e}")
+
+
+async def _ambient_deliver_voice(bot_id: str, state: dict, out: dict) -> bool:
+    """Voice tier: wait for a real gap (spec R2 gate), speak preface +
+    contribution with the yield hook (R4), always mirror to chat. Returns False
+    if no gap appeared within gap_wait_s (caller demotes to chat)."""
+    gate_ok = False
+    deadline = time.time() + ambient_loop.gap_wait_s()
+    while time.time() < deadline:
+        # Mute (or a mode switch) during the wait is the in-meeting kill switch —
+        # bail immediately so the bot never speaks after being silenced. Returns
+        # False like a no-gap, but the caller re-checks mute and skips chat too.
+        if state.get("muted") or state.get("mode") != "autonomous":
+            return False
+        if ambient_loop.gate_clear(state, time.time()):
+            gate_ok = True
+            break
+        await asyncio.sleep(0.2)
+    if not gate_ok:
+        perception_state.bump(state, "ambient_demoted_no_gap")
+        print(f"[ambient] no_gap subject={out['subject']!r} bot={bot_id[:8]}")
         return False
 
+    started = time.time()
+    state["ambient_speaking_since"] = started
+    speak_text = random.choice(ambient_loop.AMBIENT_PREFACES) + out["contribution"]
 
-async def _ambient_run_delivery(bot_id: str, subject: str, speaker: str):
-    """Deliver the offered info after consent — full generator + tools. Strong
-    delivery frame so it doesn't decline something the humans just agreed to."""
-    cmd = (
-        f"You offered to share information about '{subject}' and the team said yes. "
-        f"Share what you have now, concisely and directly. Do not decline."
+    def _talked_over() -> bool:
+        return state.get("last_audio_ts", 0.0) > started
+
+    try:
+        if _streamed_tts_on():
+            await _send_voice_response_streamed(
+                bot_id, speak_text, cmd_detected_ts=started, abort_check=_talked_over
+            )
+        else:
+            await _send_voice_response(bot_id, speak_text)
+    except Exception as e:
+        print(f"[ambient] voice delivery error bot={bot_id[:8]}: {e}")
+    finally:
+        state["ambient_speaking_since"] = 0.0
+
+    if _talked_over():
+        perception_state.bump(state, "ambient_yielded")
+
+    # Mirror the bare contribution to chat so the content survives any yield.
+    await _send_chat_response(bot_id, f"ℹ️ {out['contribution']}")
+    state["ambient_voice_last_ts"] = time.time()
+    state["ambient_chat_last_ts"] = time.time()
+    ambient_loop.record_contributed_subject(state, out["subject"])
+    state.setdefault("previous_idea_summaries", []).append(f"(ambient) {out['subject']}")
+    state["previous_idea_summaries"] = state["previous_idea_summaries"][-5:]
+    perception_state.bump(state, "ambient_spoken")
+    print(f"[ambient] spoke value={out['value']:.1f} subject={out['subject']!r} bot={bot_id[:8]}")
+    return True
+
+
+async def _ambient_kb_route(bot_id: str, match: dict) -> bool:
+    """Trigger K: a proactive-KB hit becomes a generated, cited, value-priced
+    contribution instead of a raw snippet — Automatic mode only. Returns True
+    when the lane owns the hit (suppresses the snippet post). In shadow the
+    lane logs its would-be contribution but the snippet still posts (live
+    behavior unchanged while validating)."""
+    if not ambient_loop.autonomous_enabled():
+        return False
+    state = _bot_state.get(bot_id)
+    if not state or state.get("mode") != "autonomous" or state.get("muted"):
+        return False
+    if not ambient_loop.past_warmup(state):
+        return False
+    perception_state.bump(state, "ambient_kb_triggers")
+    evidence = (
+        f"[KNOWLEDGE BASE MATCH]\n"
+        f"- [{match.get('doc_name')}] {(match.get('content') or '')[:600]}"
     )
-    return await _process_command(bot_id, cmd, speaker, ambient=True)
+    await _ambient_fire(bot_id, state, "knowledge_match", evidence, max_tier="voice")
+    return not ambient_loop.shadow_mode()
+
+
+def _ambient_tick_check(bot_id: str, state: dict, now: float):
+    """Called from the accumulator tick loop. If the pending question's window
+    expired: candidate ready → return the delivery coroutine for the caller to
+    schedule; generation failed → drop the slot. Returns None when nothing to do.
+    (Returning the coroutine instead of create_task makes this unit-testable.)"""
+    pq = state.get("pending_question")
+    if not pq or pq.get("delivered"):
+        return None
+    if (now - pq["ts"]) < pq.get("window_s", ambient_loop.answer_wait_s()):
+        return None
+    if not pq.get("candidate_done"):
+        return None  # generation still in flight; check again next tick
+    pq["delivered"] = True
+    state["pending_question"] = None
+    if pq.get("candidate") is None:
+        return None
+    return _ambient_deliver(bot_id, state, pq["candidate"], max_tier="voice")
 
 
 def _ensure_accumulator_tick_task(bot_id: str, state: dict) -> None:
@@ -1052,8 +1339,9 @@ async def _accumulator_tick_loop(bot_id: str, state: dict) -> None:
                     if acc is not None:
                         acc.tick()
                     if ambient_loop.autonomous_enabled():
-                        if ambient_loop.check_lull(state, time.time()) == "autonomous":
-                            print(f"[ambient] lull -> autonomous bot={bot_id[:8]}")
+                        _coro = _ambient_tick_check(bot_id, state, time.time())
+                        if _coro is not None:
+                            asyncio.create_task(_coro)
             except asyncio.CancelledError:
                 return
             except Exception as e:
@@ -1141,14 +1429,11 @@ def _get_bot_state(bot_id: str) -> dict:
             # Memory system fields (Layers 1-3) — managed by meeting_memory.py
             **meeting_memory.get_initial_memory_state(),
         }
-        # Seed the pre-join response mode (from /join-meeting) as a manual
-        # override so it's a stable choice for the whole meeting (not subject
-        # to the autonomy cap / lull-revert in ambient_loop.update_mode).
+        # Seed the pre-join response mode (from /join-meeting) — a stable
+        # choice for the whole meeting; changeable via POST /bot/{id}/mode.
         _initial_mode = (bot_store.get(bot_id) or {}).get("initial_mode")
         if _initial_mode in ("utterance", "autonomous"):
-            _bot_state[bot_id]["manual_mode"] = _initial_mode
             _bot_state[bot_id]["mode"] = _initial_mode
-            _bot_state[bot_id]["mode_since_ts"] = time.time()
         # Build accumulator AFTER the state dict exists, so the on_flush
         # closure can capture the same state object.
         if _accumulator_on():
@@ -1539,11 +1824,14 @@ _GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
 
 
 async def _wait_for_speech_gap(state: dict) -> None:
-    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't
-    talk over someone mid-sentence. Returns as soon as there's been ~_GAP_SILENCE_S
-    of quiet (tracked via last_segment_ts), or after _GAP_MAX_WAIT_S regardless so it
-    never hangs if the room never goes quiet. Bails early if the speaking session was
-    cancelled (mute / "stop"). Disable with PRISM_GAP_WAIT=0."""
+    """Politeness gate for the wake-word command path: wait for a brief lull before
+    the bot speaks so it doesn't talk over someone. Uses the SAME shared gap check
+    and bot-excluded `last_audio_ts` as the autonomous lane
+    (`ambient_loop.speech_gap_clear`) — quiet + no pending partial + complete
+    thought — so the two paths can't drift (and the bot never waits on its own TTS).
+    Returns as soon as the gap is clear, after _GAP_MAX_WAIT_S regardless so it never
+    hangs, or if the speaking session was cancelled (mute / "stop"). Disable with
+    PRISM_GAP_WAIT=0."""
     if os.getenv("PRISM_GAP_WAIT", "1") == "0":
         return
     deadline = time.time() + _GAP_MAX_WAIT_S
@@ -1551,10 +1839,41 @@ async def _wait_for_speech_gap(state: dict) -> None:
         sess = perception_state.get_session(state)
         if sess is not None and sess.is_cancelled:
             return
-        last = state.get("last_segment_ts", 0.0) or 0.0
-        if time.time() - last >= _GAP_SILENCE_S:
+        if ambient_loop.speech_gap_clear(state, time.time(), quiet_s=_GAP_SILENCE_S,
+                                         require_terminal=False):
             return
         await asyncio.sleep(0.2)
+
+
+def _cancel_ack(state: dict) -> None:
+    """Real audio is about to play (or did) — suppress any pending ack."""
+    task = state.pop("_ack_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        perception_state.bump(state, "ack_cancelled_fast")
+
+
+def _arm_ack(bot_id: str, state: dict, command: str) -> None:
+    """Race timer: if no real audio uploads within ack_delay_s, speak the
+    pre-synthesized category acknowledgment. The first real upload cancels it."""
+    if not ack_phrases.ack_on() or not RECALL_API_KEY:
+        return
+    _cancel_ack(state)  # a newer command supersedes any pending ack
+
+    category = ack_phrases.classify_command(command)
+    phrase = ack_phrases.pick_phrase(category, state)
+
+    async def _fire():
+        await asyncio.sleep(ack_phrases.ack_delay_s())
+        audio = ack_audio.get_ack_audio(phrase)
+        if not audio:
+            return  # synthesis failed/unfinished — stay silent, never block
+        if await _upload_audio_to_recall(bot_id, audio):
+            perception_state.bump(state, "ack_played")
+            print(f"[ack] played category={category} phrase={phrase!r} bot={bot_id[:8]}")
+        state.pop("_ack_task", None)
+
+    state["_ack_task"] = asyncio.create_task(_fire())
 
 
 async def _send_voice_response(bot_id: str, text: str):
@@ -1566,6 +1885,7 @@ async def _send_voice_response(bot_id: str, text: str):
     if not audio_bytes:
         print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
         return
+    _cancel_ack(_get_bot_state(bot_id))
     await _upload_audio_to_recall(bot_id, audio_bytes)
 
 
@@ -1653,6 +1973,8 @@ async def _stream_llm_to_voice(
         for c in new_chunks:
             if _FUNCTION_TAG_MARKER in c:
                 return False
+            # A bare fallback sentinel must be spoken as graceful text.
+            c = _degrade_sentinel_reply(c)
             chunks_dispatched.append(c)
             tts_tasks.append(asyncio.create_task(text_to_speech(c)))
             if sess is not None:
@@ -1743,6 +2065,7 @@ async def _stream_llm_to_voice(
                 if _sess is not None:
                     _sess.chunks_uploaded += 1
                 if not first_upload_logged:
+                    _cancel_ack(_get_bot_state(bot_id))
                     ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                     print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                     first_upload_logged = True
@@ -1803,13 +2126,17 @@ async def _stream_llm_to_voice(
     return full_text
 
 
-async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts: float):
+async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts: float,
+                                        abort_check=None):
     """Streamed TTS variant (Layer 3 A) gated by PRISM_STREAMED_TTS=1.
 
     LLM call has already returned the full reply. We segment it, dispatch each
     chunk to TTS in parallel, and upload sequentially so playback ordering is
     preserved. On a Recall upload failure we salvage once (consolidate remaining
     sentences into one TTS + one upload). Two failures => hard abort.
+
+    abort_check: optional zero-arg callable checked before each chunk upload —
+    the ambient lane's yield rule (a human spoke; stop sending audio).
     """
     if not RECALL_API_KEY:
         return
@@ -1859,12 +2186,21 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
                 t.cancel()
             break
 
+        # Ambient yield rule (spec R4): a human spoke after this ambient
+        # response started — stop sending audio, never re-take the floor.
+        if abort_check is not None and abort_check():
+            print(f"[realtime] ambient_yield bot={bot_id[:8]} at chunk {i}")
+            for t in tts_tasks[i:]:
+                t.cancel()
+            break
+
         if await _upload_audio_to_recall(bot_id, audio):
             uploaded_idx = i + 1
             _sess = perception_state.get_session(state)
             if _sess is not None:
                 _sess.chunks_uploaded += 1
             if not first_upload_logged:
+                _cancel_ack(_get_bot_state(bot_id))
                 ttfw_ms = int((time.time() - cmd_detected_ts) * 1000)
                 print(f"[realtime] time_to_first_word_ms={ttfw_ms} bot={bot_id[:8]}")
                 first_upload_logged = True
@@ -2454,6 +2790,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             return
     state["processing"] = True
 
+    # Instant acknowledgment: arm the race timer now that this command is
+    # committed. If real audio doesn't start within ack_delay_s, a cached
+    # category ack plays; the first real upload cancels it.
+    _arm_ack(bot_id, state, command)
+
     # Phase B: install a fresh speaking session for this command. supersede_session
     # cancels any in-flight session under the session_lock so the cancel-checkers
     # downstream see a consistent cancelled flag before the new session is observable.
@@ -2574,11 +2915,6 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                 messages.insert(-1, _hint)
                 print(f"[realtime] think_loop artifact_injected bot={bot_id[:8]} age_s={int(time.time()-_prior_art['ts'])}")
 
-        # Ambient framing — inject the preamble as a system message right before
-        # the user turn (cache-safe, mirrors the think_loop artifact insert).
-        if ambient:
-            messages.insert(-1, {"role": "system", "content": _AMBIENT_PREAMBLE})
-
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
@@ -2596,6 +2932,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         # Pass bot_id through so tools like knowledge_lookup can scope audit logs.
         tool_settings = dict(user_settings)
         tool_settings["bot_id"] = bot_id
+        # Live voice path: knowledge_lookup skips rerank (70B, up to 4s) and
+        # query rewrite (up to 3s) — spoken replies can't wait for them. The
+        # dashboard chat path keeps both for quality.
+        tool_settings["fast_mode"] = True
 
         async def _run_tool_calls(tc_specs):
             """Execute a list of (id, name, arguments_json_str) and append tool messages.
@@ -2863,6 +3203,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             except Exception:
                 reply = "Done."
 
+        # Internal fallback sentinels must never reach chat or voice verbatim.
+        # (The streamed path already swapped the spoken audio at dispatch time;
+        # this covers the buffered path + the chat post + the command log.)
+        reply = _degrade_sentinel_reply(reply)
+
         # ── Think+Loop post-processing ──────────────────────────────────────
         # Strip any <thinking>...</thinking> block before the reply hits TTS.
         # The hidden thinking is preserved in the log entry for debugging.
@@ -2921,20 +3266,24 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
             pass
-        elif _streamed_tts_on():
-            await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response_streamed(bot_id, _spoken_condense(reply), cmd_detected_ts=state["last_command_ts"] or now)
         else:
             await _wait_for_speech_gap(state)  # wait for a lull before talking
-            await _send_voice_response(bot_id, _spoken_condense(reply))
+            # If a mute / "stop" landed during the gap, the speaking session was
+            # cancelled — honour it before we emit any audio. The streamed send
+            # self-checks mid-pipeline, but the buffered fallback does not, so a
+            # cancel arriving exactly during the gap could otherwise still play
+            # one clip. One re-check here keeps both paths silent on cancel.
+            if _barge_in_on() and _session_cancelled(state, "pre_send"):
+                pass
+            elif _streamed_tts_on():
+                await _send_voice_response_streamed(bot_id, _spoken_condense(reply), cmd_detected_ts=state["last_command_ts"] or now)
+            else:
+                await _send_voice_response(bot_id, _spoken_condense(reply))
         # Make sure the chat post is finished (or its exception surfaces) before returning.
         try:
             await chat_task
         except Exception as chat_exc:
             print(f"[realtime] chat post failed: {chat_exc}")
-
-        if ambient:
-            return reply
 
     except Exception as exc:
         err_str = str(exc)
@@ -2978,6 +3327,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         await _send_chat_response(bot_id, f"Sorry, I ran into an error: {str(exc)[:100]}")
     finally:
         state["processing"] = False
+        # Catch-all for the instant-ack race: if the ack is still pending at
+        # command exit, the command finished before the ack delay (fast answer,
+        # text-only reply, or an early no-voice return) — suppress it. A slow
+        # path that already fired its ack leaves a done task here → no-op.
+        _cancel_ack(state)
         if _barge_in_on():
             await perception_state.clear_session(state, _new_session)
         # FIFO queue drain: if more commands arrived while we were processing,
@@ -3264,6 +3618,10 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         if text.strip():
             print(f"[realtime] extracted speaker={speaker!r} text={text[:120]!r}")
 
+            # Ambient lane: stamp human speech arrival for the speak-time timing
+            # gate + yield rule (excludes the bot's own transcribed TTS).
+            _ambient_note_audio(state, speaker, speaker_id, time.time())
+
             # Owner participant-ID lock attempt. Only runs when the flag is on.
             # No-op until the grace window elapses; then locks on the first
             # name-matching chunk. See perception_state.maybe_lock_owner_id.
@@ -3525,32 +3883,30 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
 
 @router.post("/bot/{bot_id}/mode")
 async def set_bot_mode(bot_id: str, body: dict):
-    """Owner manual override of the live bot's mode. body={"mode": "utterance"
-    |"autonomous"|null}. null clears the override (auto state machine resumes).
+    """Switch the live bot's mode. body={"mode": "utterance"|"autonomous"}.
     Unauthenticated like the other bot endpoints (see CLAUDE.md Known Limitations)."""
     mode = body.get("mode")
-    if mode not in (None, "utterance", "autonomous"):
-        return {"error": "mode must be 'utterance', 'autonomous', or null"}
+    if mode not in ("utterance", "autonomous"):
+        return {"error": "mode must be 'utterance' or 'autonomous'"}
     state = _get_bot_state(bot_id)
-    state["manual_mode"] = mode
-    if mode in ("utterance", "autonomous"):
-        ambient_loop.update_mode(state, "", "", time.time())
-    print(f"[ambient] manual mode override bot={bot_id[:8]} -> {mode!r}")
-    return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
+    state["mode"] = mode
+    if mode == "utterance":
+        state["pending_question"] = None
+    print(f"[ambient] mode set via API bot={bot_id[:8]} -> {mode!r}")
+    return {"mode": state["mode"]}
 
 
 @router.post("/bot/{bot_id}/mute")
 async def set_bot_mute(bot_id: str, body: dict):
-    """Mute / unmute the bot's proactive offers (consent-interjection v2).
-    body={"muted": bool}. Muting also drops any pending offer. Unauthenticated
-    like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    """Mute / unmute the ambient lane. body={"muted": bool}. Wake-word
+    requests still work while muted. Unauthenticated like the other bot
+    endpoints (see CLAUDE.md Known Limitations)."""
     muted = bool(body.get("muted"))
     state = _get_bot_state(bot_id)
     state["muted"] = muted
     if muted:
-        state["interjection_state"] = "idle"
-        state["pending_offer"] = None
-        state["command_queue"] = []  # drop anything waiting to be spoken
+        state["pending_question"] = None     # clear the contribution lane (ours)
+        state["command_queue"] = []          # drop queued wake-word commands (theirs)
         perception_state.bump(state, "mutes")
         # Halt in-flight speech immediately — the streaming loops' cancel-checks
         # honor this (barge-in on by default). Makes mute a true kill-switch.
@@ -3577,6 +3933,11 @@ def init_bot_realtime(bot_id: str):
     _get_bot_state(bot_id)
     try:
         asyncio.create_task(_get_settings_for_bot(bot_id))
+        # Re-warm the slow external connections (OpenAI embeddings, Supabase,
+        # TTS) — keep-alive sockets from startup have long expired by the time
+        # a bot joins, and the first KB lookup / voice reply can't afford the
+        # cold-connection cost (measured ~9s + ~4s + ~2.7s on 2026-06-12).
+        asyncio.create_task(warm_external_connections("bot-join"))
     except RuntimeError:
         # No running event loop (e.g. some sync test paths). Lazy
         # population on the first command remains as a backstop.
@@ -3600,6 +3961,14 @@ def cleanup_bot_state(bot_id: str) -> None:
         task = state.get("_accumulator_tick_task")
         if task is not None and not task.done():
             task.cancel()
+        # Cancel a pending instant-ack so it can't upload to a torn-down bot.
+        ack_task = state.get("_ack_task")
+        if ack_task is not None and not ack_task.done():
+            ack_task.cancel()
+        # Cancel any in-flight ambient question speculation.
+        spec_task = state.get("_ambient_spec_task")
+        if spec_task is not None and not spec_task.done():
+            spec_task.cancel()
         acc = state.get("accumulator")
         if acc is not None:
             try:
