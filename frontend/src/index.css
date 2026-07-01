@@ -1012,6 +1012,41 @@ h1, h2, h3, .font-display {
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    /* ── Dashboard theme tokens (dark defaults; light class overrides below) ── */
+    --db-chrome-bg: #19191a;
+    --db-page-bg: #202021;
+    --db-glass-top: rgba(255, 255, 255, 0.07);
+    --db-glass-bottom: rgba(255, 255, 255, 0.035);
+    --db-shadow: 0 10px 30px rgba(0,0,0,0.32), 0 1px 0 rgba(255,255,255,0.10) inset, 0 -1px 0 rgba(0,0,0,0.20) inset;
+    --db-text: rgba(255, 255, 255, 0.95);
+    --db-text-soft: rgba(255, 255, 255, 0.85);
+    --db-text-muted: rgba(255, 255, 255, 0.70);
+    --db-text-faint: rgba(255, 255, 255, 0.45);
+    --db-fill: rgba(255, 255, 255, 0.05);
+    --db-fill-strong: rgba(255, 255, 255, 0.08);
+    --db-border: rgba(255, 255, 255, 0.09);
+    --db-border-strong: rgba(255, 255, 255, 0.14);
+    --db-accent: #22d3ee;
+    --db-accent-text: #67e8f9;
+    --db-accent-fill: rgba(34, 211, 238, 0.10);
+  }
+  .theme-light {
+    --db-chrome-bg: #e6eaef;
+    --db-page-bg: #eef1f5;
+    --db-glass-top: #ffffff;
+    --db-glass-bottom: #fcfdff;
+    --db-shadow: 0 6px 20px rgba(15,23,42,0.08), 0 1px 0 rgba(255,255,255,0.9) inset;
+    --db-text: #0f172a;
+    --db-text-soft: #334155;
+    --db-text-muted: #475569;
+    --db-text-faint: #94a3b8;
+    --db-fill: rgba(15, 23, 42, 0.04);
+    --db-fill-strong: rgba(15, 23, 42, 0.06);
+    --db-border: rgba(15, 23, 42, 0.08);
+    --db-border-strong: rgba(15, 23, 42, 0.12);
+    --db-accent: #06b6d4;
+    --db-accent-text: #0e7490;
+    --db-accent-fill: rgba(34, 211, 238, 0.14);
   }
   .dark {
     --background: oklch(0.145 0 0);
@@ -1075,8 +1110,8 @@ h1, h2, h3, .font-display {
 }
 
 .dashboard-page {
-  --dashboard-chrome-bg: #19191a;
-  --dashboard-bg: #202021;
+  --dashboard-chrome-bg: var(--db-chrome-bg);
+  --dashboard-bg: var(--db-page-bg);
   --dashboard-topbar-h: 76px;
   --dashboard-sidebar-w: 300px;
   --dashboard-gutter: 16px;
@@ -1090,39 +1125,23 @@ h1, h2, h3, .font-display {
    A faint white translucent film over the dark-gray page reads as glass under
    a heavy, lightly-saturated blur, with a bright top edge for the light catch. */
 .dashboard-island {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.07) 0%,
-      rgba(255, 255, 255, 0.035) 100%
-    );
+  background: linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%);
   backdrop-filter: blur(26px) saturate(115%);
   -webkit-backdrop-filter: blur(26px) saturate(115%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--db-border);
   border-radius: 16px;
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.32),
-    0 1px 0 rgba(255, 255, 255, 0.10) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.20) inset;
+  box-shadow: var(--db-shadow);
 }
 
 /* Popup glass — same neutral film as .dashboard-island but a heavier blur,
    since a popup layers over dense page text and needs more separation.
    No border-radius here: each surface keeps its own (rounded-xl/2xl). */
 .dashboard-popup {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.07) 0%,
-      rgba(255, 255, 255, 0.035) 100%
-    );
+  background: linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%);
   backdrop-filter: blur(40px) saturate(120%);
   -webkit-backdrop-filter: blur(40px) saturate(120%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.32),
-    0 1px 0 rgba(255, 255, 255, 0.10) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.20) inset;
+  border: 1px solid var(--db-border);
+  box-shadow: var(--db-shadow);
 }
 
 .dashboard-page :is(h1, h2, h3, .dashboard-heading) {
