@@ -1,16 +1,15 @@
-// Matches the floating chrome islands (.dashboard-island in index.css): a faint
-// white translucent film over the dark page, heavy blur, bright top-edge catch.
-export const glassCard = 'rounded-2xl border border-white/[0.09]'
+// Matches the floating chrome islands (.dashboard-island in index.css): theme
+// tokens drive both light + dark. See index.css :root / .theme-light.
+export const glassCard = 'rounded-2xl border border-[color:var(--db-border)]'
 export const cardGlowStyle = {
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.035) 100%)',
+  background: 'linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%)',
   backdropFilter: 'blur(26px) saturate(115%)',
   WebkitBackdropFilter: 'blur(26px) saturate(115%)',
-  boxShadow:
-    '0 10px 30px rgba(0,0,0,0.32), 0 1px 0 rgba(255,255,255,0.10) inset, 0 -1px 0 rgba(0,0,0,0.20) inset',
+  boxShadow: 'var(--db-shadow)',
 }
-export const eyebrow = 'text-[10px] font-semibold uppercase tracking-[0.16em] text-white'
-export const cardTitle = 'text-base font-semibold tracking-[-0.01em] text-white'
-export const bodyText = 'text-sm leading-6 text-white/85'
-export const subtleText = 'text-xs leading-5 text-white/80'
-export const divider = 'border-white/[0.08]'
-export const tableRow = 'border-t border-white/[0.07] px-3 py-2'
+export const eyebrow = 'text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text)]'
+export const cardTitle = 'text-base font-semibold tracking-[-0.01em] text-[color:var(--db-text)]'
+export const bodyText = 'text-sm leading-6 text-[color:var(--db-text-soft)]'
+export const subtleText = 'text-xs leading-5 text-[color:var(--db-text-soft)]'
+export const divider = 'border-[color:var(--db-border)]'
+export const tableRow = 'border-t border-[color:var(--db-border)] px-3 py-2'
