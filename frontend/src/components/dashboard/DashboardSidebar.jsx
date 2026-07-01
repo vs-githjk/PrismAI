@@ -11,6 +11,8 @@ import {
   UserCircle,
   UserRoundCheck,
   CalendarDays,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { deriveDisplayTitle } from '../../lib/insights'
 import { formatHistoryDate, IntegrationsIcon } from './chrome'
@@ -54,6 +56,8 @@ export default function DashboardSidebar(props) {
     personaPreset,
     personaCustomPrompt,
     onSavePersonalPersona,
+    theme,
+    onToggleTheme,
     history = [],
     filteredHistory = [],
     activeView,
@@ -353,6 +357,15 @@ export default function DashboardSidebar(props) {
                   variant="menuItem"
                 />
               </div>
+              <DropdownMenuItem
+                onSelect={() => onToggleTheme?.()}
+                className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]"
+              >
+                {theme === 'light'
+                  ? <Moon className="h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]" />
+                  : <Sun className="h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]" />}
+                {theme === 'light' ? 'Dark theme' : 'Light theme'}
+              </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem

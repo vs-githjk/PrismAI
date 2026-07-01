@@ -497,6 +497,17 @@ function AnalyzingBanner({ result }) {
 
 export default function DashboardPage(props) {
   const [newMeetingOpen, setNewMeetingOpen] = useState(false)
+  // Dashboard light/dark theme (dark default). The .theme-light class is applied
+  // to <html> so Radix popovers that portal to <body> get the tokens too; removed
+  // on unmount so it never leaks to the landing page.
+  const [theme, setTheme] = useState(() => localStorage.getItem('prism_dashboard_theme') || 'dark')
+  const toggleTheme = () => setTheme((t) => (t === 'light' ? 'dark' : 'light'))
+  useEffect(() => {
+    localStorage.setItem('prism_dashboard_theme', theme)
+    const root = document.documentElement
+    root.classList.toggle('theme-light', theme === 'light')
+    return () => root.classList.remove('theme-light')
+  }, [theme])
   // Stand-in composer lives at page level (NOT inside the New Meeting dropdown):
   // the dropdown closes on outside-click, so a portaled modal inside it would be
   // torn down the moment you interact with it.
@@ -943,7 +954,7 @@ export default function DashboardPage(props) {
 
   return (
     <div
-      className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]"
+      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--db-text)]${theme === 'light' ? ' theme-light' : ''}`}
     >
       <WorkspaceIsland
         user={props.user}
@@ -1003,6 +1014,8 @@ export default function DashboardPage(props) {
         user={props.user}
         isTestAccount={props.isTestAccount}
         isDemoMode={props.isDemoMode}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         personaPreset={props.personaPreset}
         personaCustomPrompt={props.personaCustomPrompt}
         onSavePersonalPersona={props.onSavePersonalPersona}
