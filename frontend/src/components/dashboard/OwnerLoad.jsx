@@ -21,25 +21,25 @@ export default function OwnerLoad({ insights }) {
       </div>
 
       {owners.length ? (
-        <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+        <div className="overflow-hidden rounded-lg border border-[color:var(--db-border)]">
           {owners.map((owner) => {
             const isFlagged = flagged.has(owner.owner)
             return (
               <div
                 key={owner.owner}
-                className={`border-b border-white/[0.07] px-3 py-2 last:border-b-0 ${isFlagged ? 'bg-amber-300/8' : 'bg-black/18'}`}
+                className={`border-b border-[color:var(--db-border)] px-3 py-2 last:border-b-0 ${isFlagged ? 'bg-amber-300/8' : 'bg-black/18'}`}
               >
                 <div className="mb-1.5 flex items-center gap-3">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full border border-cyan-200/16 bg-cyan-300/10 text-[11px] font-semibold text-cyan-50">
                     {initials(owner.owner)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white">{owner.owner}</p>
+                    <p className="truncate text-sm font-semibold text-[color:var(--db-text)]">{owner.owner}</p>
                     <p className={subtleText}>{owner.count} action item{owner.count === 1 ? '' : 's'}</p>
                   </div>
                   {isFlagged && <span className="rounded-full border border-amber-200/24 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">drift</span>}
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--db-fill-strong)]">
                   <div className="h-full rounded-full bg-cyan-300 animate-bar-grow" style={{ width: `${Math.max((owner.count / max) * 100, 8)}%` }} />
                 </div>
               </div>

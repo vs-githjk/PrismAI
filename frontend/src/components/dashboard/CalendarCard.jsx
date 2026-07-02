@@ -142,12 +142,12 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
   return (
     <section className={`${glassCard} p-5`} style={cardGlowStyle}>
       <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Follow-up meeting</h2>
+        <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Follow-up meeting</h2>
         <span
           className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
             suggestion.recommended
               ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-              : 'border-white/[0.10] bg-white/[0.04] text-white/50'
+              : 'border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-faint)]'
           }`}
         >
           {suggestion.recommended ? 'Recommended' : 'Optional'}
@@ -155,13 +155,13 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       </div>
 
       {suggestion.suggested_timeframe && (
-        <p className="text-[15px] font-semibold leading-snug text-white">
+        <p className="text-[15px] font-semibold leading-snug text-[color:var(--db-text)]">
           {suggestion.suggested_timeframe}
-          {resolvedLabel && <span className="ml-2 text-xs font-medium text-white/45">{resolvedLabel}</span>}
+          {resolvedLabel && <span className="ml-2 text-xs font-medium text-[color:var(--db-text-faint)]">{resolvedLabel}</span>}
           {effTime && <span className="ml-1.5 text-xs font-medium text-cyan-300/80">{formatTime12(effTime)}</span>}
         </p>
       )}
-      <p className="mt-2 text-sm leading-7 text-white/75">{suggestion.reason}</p>
+      <p className="mt-2 text-sm leading-7 text-[color:var(--db-text-soft)]">{suggestion.reason}</p>
 
       {suggestion.time_defaulted && !created && (
         <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-2.5 py-1.5 text-[11.5px] leading-relaxed text-amber-200/90">
@@ -172,10 +172,10 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
 
       {agenda.length > 0 && (
         <div className="mt-3">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">Proposed agenda</p>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--db-text-faint)]">Proposed agenda</p>
           <ul className="space-y-1">
             {agenda.map((item, i) => (
-              <li key={i} className="flex gap-2 text-[13px] leading-6 text-white/80">
+              <li key={i} className="flex gap-2 text-[13px] leading-6 text-[color:var(--db-text-soft)]">
                 <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-cyan-300/70" />
                 {item}
               </li>
@@ -186,9 +186,9 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
 
       {attendees.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-white/35">Attendees</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-[color:var(--db-text-faint)]">Attendees</span>
           {attendees.map((name, i) => (
-            <span key={i} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/70">
+            <span key={i} className="rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-0.5 text-[11px] text-[color:var(--db-text-muted)]">
               {name}
             </span>
           ))}
@@ -209,16 +209,16 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
               <button
                 type="button"
                 onClick={() => { setCreated(null); if (createdKey) { try { localStorage.removeItem(createdKey) } catch { /* ignore */ } } }}
-                className="ml-1 text-white/45 transition hover:text-white/75"
+                className="ml-1 text-[color:var(--db-text-faint)] transition hover:text-[color:var(--db-text-soft)]"
               >
                 · Add another
               </button>
             </div>
           ) : open ? (
-            <div className="space-y-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+            <div className="space-y-2.5 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-3">
               <input
                 value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event title"
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/90 outline-none focus:border-cyan-400/40"
+                className="w-full rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-sm text-[color:var(--db-text)] outline-none focus:border-cyan-400/40"
               />
               <div className="flex gap-2">
                 <div className="min-w-0 flex-1">
@@ -229,17 +229,17 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
               <input
                 value={invitees} onChange={(e) => setInvitees(e.target.value)}
                 placeholder="Invite (emails, comma-separated) — optional"
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40"
+                className="w-full rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-sm text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/40"
               />
               {availableSuggestions.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10.5px] text-white/35">Teammates:</span>
+                  <span className="text-[10.5px] text-[color:var(--db-text-faint)]">Teammates:</span>
                   {availableSuggestions.map((email) => (
                     <button
                       key={email}
                       type="button"
                       onClick={() => addInvitee(email)}
-                      className="inline-flex items-center gap-1 rounded-full border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+                      className="inline-flex items-center gap-1 rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-2 py-0.5 text-[11px] text-[color:var(--db-text-muted)] transition hover:border-cyan-400/40 hover:text-cyan-200"
                     >
                       <Plus className="h-3 w-3" /> {email}
                     </button>
@@ -270,7 +270,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
                   {busy ? 'Creating…' : conflict ? 'Create anyway' : 'Create event'}
                 </button>
                 <button type="button" onClick={() => setOpen(false)} disabled={busy}
-                  className="rounded-full border border-white/[0.12] bg-white/[0.04] px-3.5 py-1.5 text-[12px] font-semibold text-white/70 transition hover:bg-white/[0.08]">
+                  className="rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3.5 py-1.5 text-[12px] font-semibold text-[color:var(--db-text-muted)] transition hover:bg-[var(--db-fill-strong)]">
                   Cancel
                 </button>
               </div>

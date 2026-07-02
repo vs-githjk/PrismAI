@@ -46,9 +46,9 @@ export default function TimePopover({ value, onChange }) {
       <Popover.Trigger asChild>
         <button
           type="button"
-          className="flex w-32 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-left text-sm text-white/90 outline-none transition focus:border-cyan-400/40 hover:border-white/[0.16]"
+          className="flex w-32 items-center gap-2 rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-left text-sm text-[color:var(--db-text)] outline-none transition focus:border-cyan-400/40 hover:border-[color:var(--db-border-strong)]"
         >
-          <Clock className="h-4 w-4 shrink-0 text-white/45" />
+          <Clock className="h-4 w-4 shrink-0 text-[color:var(--db-text-faint)]" />
           <span className="flex-1 truncate">{to12h(value)}</span>
         </button>
       </Popover.Trigger>
@@ -71,7 +71,7 @@ export default function TimePopover({ value, onChange }) {
                   className={`block w-full rounded-md px-3 py-1.5 text-left text-[12.5px] transition ${
                     isSelected
                       ? 'bg-cyan-400/90 font-semibold text-black'
-                      : 'text-white/80 hover:bg-white/[0.08]'
+                      : 'text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]'
                   }`}
                 >
                   {to12h(opt)}

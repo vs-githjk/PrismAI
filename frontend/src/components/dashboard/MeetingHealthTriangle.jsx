@@ -105,7 +105,7 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
         })}
       </svg>
       <div className="mt-1 text-center font-semibold leading-none" style={{ fontSize: '1.5rem' }}>
-        <span className="text-white">Overall: </span>
+        <span className="text-[color:var(--db-text)]">Overall: </span>
         <span style={{ color: overallColor }}>{displayedOverall}</span>
       </div>
     </div>

@@ -114,7 +114,7 @@ export default function DashboardSidebar(props) {
           className={`${navItemBase} ${
             onHome
               ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-white/70 hover:bg-white/[0.06] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
           }`}
         >
           <Home className="h-[18px] w-[18px] shrink-0" />
@@ -126,7 +126,7 @@ export default function DashboardSidebar(props) {
           className={`${navItemBase} ${
             onTrend
               ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-white/70 hover:bg-white/[0.06] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
           }`}
         >
           <TrendingUp className="h-[18px] w-[18px] shrink-0" />
@@ -138,7 +138,7 @@ export default function DashboardSidebar(props) {
           className={`${navItemBase} ${
             onCalendar
               ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-white/70 hover:bg-white/[0.06] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
           }`}
         >
           <CalendarDays className="h-[18px] w-[18px] shrink-0" />
@@ -150,7 +150,7 @@ export default function DashboardSidebar(props) {
           className={`${navItemBase} ${
             onKnowledge
               ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-white/70 hover:bg-white/[0.06] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
           }`}
         >
           <BookOpen className="h-[18px] w-[18px] shrink-0" />
@@ -162,7 +162,7 @@ export default function DashboardSidebar(props) {
           className={`${navItemBase} ${
             onStandin
               ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-white/70 hover:bg-white/[0.06] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
           }`}
         >
           <UserRoundCheck className="h-[18px] w-[18px] shrink-0" />
@@ -172,7 +172,7 @@ export default function DashboardSidebar(props) {
 
       {/* Meetings section — New meeting button sits beside the heading */}
       <div className="mt-4 flex items-center justify-between px-5 pb-1.5">
-        <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-white/40">
+        <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
           Meetings
         </p>
         <DropdownMenu
@@ -214,15 +214,15 @@ export default function DashboardSidebar(props) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
         {!user && !isDemoMode ? (
-          <p className="px-2 py-6 text-center text-[13px] leading-5 text-white/42">
+          <p className="px-2 py-6 text-center text-[13px] leading-5 text-[color:var(--db-text-faint)]">
             Meeting history appears after you sign in.
           </p>
         ) : history.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[13px] leading-5 text-white/42">
+          <p className="px-2 py-6 text-center text-[13px] leading-5 text-[color:var(--db-text-faint)]">
             Saved meetings will appear here.
           </p>
         ) : groups.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[13px] leading-5 text-white/42">
+          <p className="px-2 py-6 text-center text-[13px] leading-5 text-[color:var(--db-text-faint)]">
             No matching meetings.
           </p>
         ) : (
@@ -234,16 +234,16 @@ export default function DashboardSidebar(props) {
                 type="button"
                 onClick={() => toggleGroup(group.label)}
                 aria-expanded={!collapsed}
-                className="group/hdr flex w-full items-center gap-1 rounded-md px-2 pb-1 pt-2.5 text-left transition hover:bg-white/[0.03]"
+                className="group/hdr flex w-full items-center gap-1 rounded-md px-2 pb-1 pt-2.5 text-left transition hover:bg-[var(--db-fill)]"
               >
                 <ChevronRight
-                  className={`h-3 w-3 shrink-0 text-white/30 transition-transform group-hover/hdr:text-white/55 ${collapsed ? '' : 'rotate-90'}`}
+                  className={`h-3 w-3 shrink-0 text-[color:var(--db-text-faint)] transition-transform group-hover/hdr:text-[color:var(--db-text-muted)] ${collapsed ? '' : 'rotate-90'}`}
                   aria-hidden="true"
                 />
-                <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-white/30 group-hover/hdr:text-white/45">
+                <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[color:var(--db-text-faint)] group-hover/hdr:text-[color:var(--db-text-faint)]">
                   {group.label}
                 </span>
-                <span className="ml-1 text-[10px] font-medium text-white/20">{group.items.length}</span>
+                <span className="ml-1 text-[10px] font-medium text-[color:var(--db-text-faint)]">{group.items.length}</span>
               </button>
               {!collapsed && group.items.map((entry) => {
                 const isActive = entry.id === currentMeetingId && activeView === 'meeting'
@@ -255,7 +255,7 @@ export default function DashboardSidebar(props) {
                     className={`group flex items-center rounded-lg pr-1 transition ${
                       isActive
                         ? 'bg-cyan-400/[0.10] shadow-[inset_0_0_0_1px_rgba(34,211,238,0.18)]'
-                        : 'hover:bg-white/[0.06]'
+                        : 'hover:bg-[var(--db-fill-strong)]'
                     }`}
                   >
                     <button
@@ -272,7 +272,7 @@ export default function DashboardSidebar(props) {
                       ) : (
                         <span
                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            isActive ? 'bg-cyan-300' : 'bg-white/20'
+                            isActive ? 'bg-cyan-300' : 'bg-[var(--db-fill-strong)]'
                           }`}
                           aria-hidden="true"
                         />
@@ -280,7 +280,7 @@ export default function DashboardSidebar(props) {
                       <span className="min-w-0 flex-1">
                         <span
                           className={`block truncate text-[14px] font-medium leading-5 ${
-                            isActive ? 'text-cyan-100' : 'text-white/80'
+                            isActive ? 'text-cyan-100' : 'text-[color:var(--db-text-soft)]'
                           }`}
                         >
                           {deriveDisplayTitle(entry)}
@@ -290,7 +290,7 @@ export default function DashboardSidebar(props) {
                             </span>
                           )}
                         </span>
-                        <span className="block truncate text-[11.5px] leading-4 text-white/40">
+                        <span className="block truncate text-[11.5px] leading-4 text-[color:var(--db-text-faint)]">
                           {formatHistoryDate(entry.date)}
                         </span>
                       </span>
@@ -299,7 +299,7 @@ export default function DashboardSidebar(props) {
                       type="button"
                       onClick={() => onDeleteMeeting(entry)}
                       aria-label={`Delete ${deriveDisplayTitle(entry)}`}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center text-white/25 opacity-0 transition hover:text-red-300 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center text-[color:var(--db-text-faint)] opacity-0 transition hover:text-red-300 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -313,25 +313,25 @@ export default function DashboardSidebar(props) {
       </div>
 
       {/* Footer: Discord-style account block */}
-      <div className="border-t border-white/[0.06] p-2.5">
+      <div className="border-t border-[color:var(--db-border)] p-2.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.05]"
+              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[var(--db-fill)]"
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cyan-400/[0.14] text-cyan-200">
                 <UserCircle className="h-6 w-6" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-semibold text-white/88">
+                <span className="block truncate text-[14px] font-semibold text-[color:var(--db-text)]">
                   {accountName}
                 </span>
-                <span className="block truncate text-[12px] text-white/42">
+                <span className="block truncate text-[12px] text-[color:var(--db-text-faint)]">
                   {accountSub}
                 </span>
               </span>
-              <ChevronDown className="h-4 w-4 shrink-0 rotate-180 text-white/35" />
+              <ChevronDown className="h-4 w-4 shrink-0 rotate-180 text-[color:var(--db-text-faint)]" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -343,9 +343,9 @@ export default function DashboardSidebar(props) {
             <DropdownMenuGroup>
               <DropdownMenuItem
                 onSelect={() => setShowIntegrations(true)}
-                className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]"
+                className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]"
               >
-                <IntegrationsIcon className="h-4 w-4 shrink-0 text-white/62" />
+                <IntegrationsIcon className="h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]" />
                 Integrations
               </DropdownMenuItem>
               <div className="px-0 py-0">

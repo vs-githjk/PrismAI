@@ -20,19 +20,19 @@ export default function DecisionMemory({ insights, onSelect }) {
 
       <div className="grid gap-3">
         <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/46">Recent significant decisions</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-faint)]">Recent significant decisions</p>
           {decisions.length ? (
-            <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+            <div className="overflow-hidden rounded-lg border border-[color:var(--db-border)]">
               {decisions.slice(0, 4).map((decision) => (
                 <button
                   type="button"
                   key={decision.id}
                   onClick={() => decision.meeting && onSelect?.(decision.meeting)}
-                  className={`w-full border-b border-white/[0.07] border-l-violet-300 bg-black/18 px-3 py-2 text-left transition last:border-b-0 hover:bg-white/[0.055] ${borderWidth(decision.importance)}`}
+                  className={`w-full border-b border-[color:var(--db-border)] border-l-violet-300 bg-black/18 px-3 py-2 text-left transition last:border-b-0 hover:bg-[var(--db-fill-strong)] ${borderWidth(decision.importance)}`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="line-clamp-1 text-sm font-medium text-white">{decision.title}</p>
-                    <span className="text-[10px] text-white/38">P{decision.importance || 3}</span>
+                    <p className="line-clamp-1 text-sm font-medium text-[color:var(--db-text)]">{decision.title}</p>
+                    <span className="text-[10px] text-[color:var(--db-text-faint)]">P{decision.importance || 3}</span>
                   </div>
                   <p className={subtleText}>{decision.owner || 'No owner recorded'}</p>
                 </button>
@@ -44,7 +44,7 @@ export default function DecisionMemory({ insights, onSelect }) {
         </div>
 
         <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/46">Resurfacing themes</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-faint)]">Resurfacing themes</p>
           <div className="flex flex-wrap gap-1.5">
             {themes.map((theme) => (
               <span key={theme.theme} className="rounded-md border border-amber-200/18 bg-amber-300/8 px-2 py-1 text-xs font-medium text-amber-50">

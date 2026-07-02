@@ -19,22 +19,22 @@ export default function MetricTile({ label, value, suffix = '', tone = 'cyan', i
   const isNegative = numeric < 0
 
   return (
-    <div className={`animate-fade-in-up border-r border-white/[0.08] p-3 last:border-r-0 ${toneClasses(resolvedTone)}`} style={{ animationDelay: `${delay}ms` }} aria-live="off">
+    <div className={`animate-fade-in-up border-r border-[color:var(--db-border)] p-3 last:border-r-0 ${toneClasses(resolvedTone)}`} style={{ animationDelay: `${delay}ms` }} aria-live="off">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/48">{label}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-faint)]">{label}</p>
         {delta && hasValue && (
           <span className={`transition-transform duration-300 ${isNegative ? 'rotate-0 text-amber-200' : 'text-emerald-200'}`}>
             {isNegative ? <TrendingDown className="h-4 w-4" aria-hidden="true" /> : <TrendingUp className="h-4 w-4" aria-hidden="true" />}
           </span>
         )}
       </div>
-      <div className="mt-2 flex items-baseline gap-1 border-b border-white/[0.06] pb-2">
-        <span className="text-2xl font-semibold tracking-[-0.04em] text-white">
+      <div className="mt-2 flex items-baseline gap-1 border-b border-[color:var(--db-border)] pb-2">
+        <span className="text-2xl font-semibold tracking-[-0.04em] text-[color:var(--db-text)]">
           {hasValue ? `${delta && isPositive ? '+' : delta && isNegative ? '-' : ''}${display}` : '—'}
         </span>
-        {suffix && hasValue && <span className="text-sm text-white/52">{suffix}</span>}
+        {suffix && hasValue && <span className="text-sm text-[color:var(--db-text-faint)]">{suffix}</span>}
       </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--db-fill-strong)]">
         <div className="h-full rounded-full" style={{ width: hasValue ? `${Math.min(Math.abs(numeric), 100)}%` : '0%', background: band?.color || 'currentColor' }} />
       </div>
       {band && <p className="mt-1 text-[11px] font-medium" style={{ color: band.color }}>{band.label}</p>}

@@ -23,7 +23,7 @@ function OwnershipDriftCard({ insights }) {
         <div className="space-y-2">
           {drift.map(({ owner, count, meetings }) => (
             <div key={owner} className="rounded-lg border border-sky-200/[0.14] bg-sky-300/[0.06] px-3 py-2.5">
-              <p className="text-sm font-semibold text-white">{owner}</p>
+              <p className="text-sm font-semibold text-[color:var(--db-text)]">{owner}</p>
               <p className={subtleText}>
                 {count} action item{count !== 1 ? 's' : ''} · {meetings} meeting{meetings !== 1 ? 's' : ''}
               </p>
@@ -54,7 +54,7 @@ function ActionHygieneCard({ insights, onSelect }) {
               onClick={() => onSelect?.(meeting)}
               className="w-full rounded-lg border border-amber-200/[0.14] bg-amber-300/[0.06] px-3 py-2.5 text-left transition hover:border-amber-200/[0.28] hover:bg-amber-300/[0.10]"
             >
-              <p className="text-sm font-semibold text-white">{meeting?.title || 'Meeting'}</p>
+              <p className="text-sm font-semibold text-[color:var(--db-text)]">{meeting?.title || 'Meeting'}</p>
               <p className="mt-0.5 text-[11px] leading-4 text-amber-200/70">
                 {missingOwners > 0 ? `${missingOwners} unowned` : '0 unowned'} · {missingDueDates > 0 ? `${missingDueDates} undated` : '0 undated'}
               </p>
@@ -80,7 +80,7 @@ function UnresolvedDecisionsCard({ insights, onSelect }) {
         <div className="space-y-2">
           {unresolved.map((decision) => (
             <div key={decision.key} className="rounded-lg border border-violet-200/[0.14] bg-violet-300/[0.06] p-3">
-              <p className="text-sm font-semibold leading-snug text-white">{decision.latestTitle}</p>
+              <p className="text-sm font-semibold leading-snug text-[color:var(--db-text)]">{decision.latestTitle}</p>
               <p className={`mt-0.5 ${subtleText}`}>
                 Resurfaced in {decision.count} meeting{decision.count !== 1 ? 's' : ''}
                 {decision.latestOwner ? ` · ${decision.latestOwner}` : ''}
@@ -92,7 +92,7 @@ function UnresolvedDecisionsCard({ insights, onSelect }) {
                       type="button"
                       key={meeting.id}
                       onClick={() => onSelect?.(meeting)}
-                      className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10.5px] text-white/56 transition hover:border-cyan-200/24 hover:text-cyan-100"
+                      className="rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-0.5 text-[10.5px] text-[color:var(--db-text-muted)] transition hover:border-cyan-200/24 hover:text-cyan-100"
                     >
                       {meeting.title || formatMeetingDate(meeting.date)}
                     </button>
@@ -120,18 +120,18 @@ function MembersLeaderboard({ insights }) {
       {load.length ? (
         <div className="space-y-2">
           {load.map(({ owner, open, total }) => (
-            <div key={owner} className="rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2.5">
+            <div key={owner} className="rounded-lg border border-[color:var(--db-border)] bg-black/25 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-white">{owner}</p>
+                <p className="text-sm font-semibold text-[color:var(--db-text)]">{owner}</p>
                 <span className="text-[11px] font-semibold text-amber-300/90">{open} open</span>
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--db-fill-strong)]">
                 <div
                   className="h-full rounded-full bg-amber-400/60"
                   style={{ width: total > 0 ? `${Math.round((open / total) * 100)}%` : '0%' }}
                 />
               </div>
-              <p className="mt-1 text-[10px] text-white/38">{total} total assigned</p>
+              <p className="mt-1 text-[10px] text-[color:var(--db-text-faint)]">{total} total assigned</p>
             </div>
           ))}
         </div>
@@ -204,7 +204,7 @@ export default function IntelligenceView({ history, crossMeetingInsights, onSele
       )}
 
       <div>
-        <p className="mb-3 px-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/34">Deep patterns</p>
+        <p className="mb-3 px-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--db-text-faint)]">Deep patterns</p>
         <div className="grid gap-3 lg:grid-cols-3">
           <OwnershipDriftCard insights={insights} />
           <ActionHygieneCard insights={insights} onSelect={onSelectMeeting} />

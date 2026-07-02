@@ -21,12 +21,12 @@ export default function Vitals({ insights, latestMeeting }) {
       </div>
 
       <div className="space-y-2">
-        <div className="rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2">
+        <div className="rounded-lg border border-[color:var(--db-border)] bg-black/25 px-3 py-2">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/42">Sentiment</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-faint)]">Sentiment</p>
             <span className="h-2 w-2 rounded-full bg-cyan-300 animate-glow-pulse" />
           </div>
-          <p className="mt-1 text-lg font-semibold capitalize text-white">{sentiment}</p>
+          <p className="mt-1 text-lg font-semibold capitalize text-[color:var(--db-text)]">{sentiment}</p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border border-amber-200/18 bg-amber-300/8 px-3 py-2">
@@ -44,7 +44,7 @@ export default function Vitals({ insights, latestMeeting }) {
             <p className={subtleText}>hygiene issues</p>
           </div>
         </div>
-        <blockquote className="line-clamp-3 rounded-lg border-l-2 border-violet-300 bg-violet-300/8 px-3 py-2 text-sm leading-5 text-white/78">
+        <blockquote className="line-clamp-3 rounded-lg border-l-2 border-violet-300 bg-violet-300/8 px-3 py-2 text-sm leading-5 text-[color:var(--db-text-soft)]">
           “{verdict}”
         </blockquote>
       </div>

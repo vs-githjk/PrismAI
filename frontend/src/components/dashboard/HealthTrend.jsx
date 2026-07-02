@@ -42,15 +42,15 @@ export default function HealthTrend({ history, onSelect }) {
           <h2 className={cardTitle}>Recent score movement</h2>
         </div>
         {active && (
-          <div className="rounded-lg border border-white/[0.1] bg-black/30 px-3 py-1.5 text-right">
-            <p className="max-w-[220px] truncate text-xs font-semibold text-white">{active.title}</p>
+          <div className="rounded-lg border border-[color:var(--db-border)] bg-black/30 px-3 py-1.5 text-right">
+            <p className="max-w-[220px] truncate text-xs font-semibold text-[color:var(--db-text)]">{active.title}</p>
             <p className="mt-1 text-[11px]" style={{ color: scoreBand(active.score).color }}>{active.score}/100 · {active.date}</p>
           </div>
         )}
       </div>
 
       {data.length < 2 ? (
-        <div className="flex min-h-[150px] items-center justify-center rounded-2xl border border-dashed border-white/[0.14] bg-white/[0.025]">
+        <div className="flex min-h-[150px] items-center justify-center rounded-2xl border border-dashed border-[color:var(--db-border-strong)] bg-[var(--db-fill)]">
           <p className={subtleText}>More meetings unlock a trend line.</p>
         </div>
       ) : (

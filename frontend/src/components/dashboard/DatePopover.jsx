@@ -61,9 +61,9 @@ export default function DatePopover({ value, onChange }) {
       <Popover.Trigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-left text-sm text-white/90 outline-none transition focus:border-cyan-400/40 hover:border-white/[0.16]"
+          className="flex w-full items-center gap-2 rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-left text-sm text-[color:var(--db-text)] outline-none transition focus:border-cyan-400/40 hover:border-[color:var(--db-border-strong)]"
         >
-          <CalendarDays className="h-4 w-4 shrink-0 text-white/45" />
+          <CalendarDays className="h-4 w-4 shrink-0 text-[color:var(--db-text-faint)]" />
           <span className="flex-1 truncate">{formatLabel(value)}</span>
         </button>
       </Popover.Trigger>
@@ -75,14 +75,14 @@ export default function DatePopover({ value, onChange }) {
           className="z-50 w-[268px] rounded-xl border border-[#2f2f2f] bg-[#0b0b0b] p-3 shadow-2xl shadow-black/60"
         >
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-white">{MONTHS[view.m]} {view.y}</span>
+            <span className="text-[13px] font-semibold text-[color:var(--db-text)]">{MONTHS[view.m]} {view.y}</span>
             <div className="flex items-center gap-1">
               <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month"
-                className="grid h-6 w-6 place-items-center rounded-md text-white/60 hover:bg-white/[0.08] hover:text-white">
+                className="grid h-6 w-6 place-items-center rounded-md text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]">
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month"
-                className="grid h-6 w-6 place-items-center rounded-md text-white/60 hover:bg-white/[0.08] hover:text-white">
+                className="grid h-6 w-6 place-items-center rounded-md text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]">
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -90,7 +90,7 @@ export default function DatePopover({ value, onChange }) {
 
           <div className="grid grid-cols-7 gap-0.5">
             {WEEKDAYS.map((w, i) => (
-              <div key={i} className="grid h-7 place-items-center text-[10px] font-semibold text-white/35">{w}</div>
+              <div key={i} className="grid h-7 place-items-center text-[10px] font-semibold text-[color:var(--db-text-faint)]">{w}</div>
             ))}
             {cells.map((d, i) => d === null ? (
               <div key={i} className="h-8" />
@@ -103,8 +103,8 @@ export default function DatePopover({ value, onChange }) {
                   isSelected(d)
                     ? 'bg-cyan-400/90 font-semibold text-black'
                     : isToday(d)
-                      ? 'text-cyan-300 ring-1 ring-inset ring-cyan-400/40 hover:bg-white/[0.08]'
-                      : 'text-white/80 hover:bg-white/[0.08]'
+                      ? 'text-cyan-300 ring-1 ring-inset ring-cyan-400/40 hover:bg-[var(--db-fill-strong)]'
+                      : 'text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]'
                 }`}
               >
                 {d}
@@ -112,7 +112,7 @@ export default function DatePopover({ value, onChange }) {
             ))}
           </div>
 
-          <div className="mt-2 flex items-center justify-end border-t border-white/[0.06] pt-2">
+          <div className="mt-2 flex items-center justify-end border-t border-[color:var(--db-border)] pt-2">
             <button
               type="button"
               onClick={() => { const t = new Date(); onChange?.(toISO(t.getFullYear(), t.getMonth(), t.getDate())); setOpen(false) }}

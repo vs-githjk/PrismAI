@@ -66,13 +66,13 @@ function ScoreBar({ score, color }) {
   const displayed = useCountUp(score ?? 0, 1000)
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-[var(--db-fill-strong)]">
         <div
           className="h-1 rounded-full"
           style={{ width: `${displayed}%`, background: color, transition: 'width 16ms linear', boxShadow: `0 0 6px ${color}60` }}
         />
       </div>
-      <span className="w-9 shrink-0 text-right font-mono text-[10px] text-white/50">{displayed}/100</span>
+      <span className="w-9 shrink-0 text-right font-mono text-[10px] text-[color:var(--db-text-faint)]">{displayed}/100</span>
     </div>
   )
 }
@@ -82,11 +82,11 @@ function SpeakerRow({ speaker, isLast }) {
   const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   const color = TONE_COLOR[tone] || TONE_COLOR.neutral
   return (
-    <div className={`flex items-center gap-3 px-3 py-2 ${isLast ? '' : 'border-b border-white/[0.06]'}`}>
-      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.05] text-[10px] font-bold text-white/70">
+    <div className={`flex items-center gap-3 px-3 py-2 ${isLast ? '' : 'border-b border-[color:var(--db-border)]'}`}>
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[10px] font-bold text-[color:var(--db-text-muted)]">
         {initials}
       </div>
-      <span className="min-w-0 flex-1 truncate text-[13px] text-white/86">{name}</span>
+      <span className="min-w-0 flex-1 truncate text-[13px] text-[color:var(--db-text)]">{name}</span>
       <span
         className="rounded-full border px-2 py-0.5 text-[10.5px] font-medium capitalize"
         style={{ borderColor: `${color}3a`, color, background: `${color}14` }}
@@ -94,7 +94,7 @@ function SpeakerRow({ speaker, isLast }) {
         {tone || 'neutral'}
       </span>
       {typeof score === 'number' && (
-        <span className="w-9 shrink-0 text-right font-mono text-[10px] text-white/40">{score}</span>
+        <span className="w-9 shrink-0 text-right font-mono text-[10px] text-[color:var(--db-text-faint)]">{score}</span>
       )}
     </div>
   )
@@ -128,13 +128,13 @@ export default function SentimentCard({ sentiment }) {
         <ScoreBar score={sentiment.score} color={meta.color} />
       </div>
 
-      <p className="mb-3 text-[13px] leading-5 text-white/68">
+      <p className="mb-3 text-[13px] leading-5 text-[color:var(--db-text-muted)]">
         {sentiment.notes || meta.blurb}
       </p>
 
       {speakers.length > 0 && (
-        <div className="mb-3 overflow-hidden rounded-lg border border-white/[0.07]">
-          <div className="border-b border-white/[0.07] px-3 py-1.5">
+        <div className="mb-3 overflow-hidden rounded-lg border border-[color:var(--db-border)]">
+          <div className="border-b border-[color:var(--db-border)] px-3 py-1.5">
             <span className={subtleText}>Per-speaker tone</span>
           </div>
           {speakers.map((s, i) => (
@@ -159,7 +159,7 @@ export default function SentimentCard({ sentiment }) {
               const carried = status === 'carried_over'
               return (
                 <li key={i} className="px-3 py-2">
-                  <p className="text-[12.5px] leading-5 text-white/82">{text}</p>
+                  <p className="text-[12.5px] leading-5 text-[color:var(--db-text-soft)]">{text}</p>
                   {status && (
                     <span
                       className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${

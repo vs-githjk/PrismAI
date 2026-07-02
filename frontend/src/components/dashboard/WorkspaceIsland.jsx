@@ -73,12 +73,12 @@ export default function WorkspaceIsland(props) {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-full w-full min-w-0 items-center justify-between gap-2.5 rounded-[inherit] px-6 transition hover:bg-white/[0.05]"
+            className="flex h-full w-full min-w-0 items-center justify-between gap-2.5 rounded-[inherit] px-6 transition hover:bg-[var(--db-fill)]"
           >
-            <span className="min-w-0 truncate text-[18px] font-semibold text-white/92">
+            <span className="min-w-0 truncate text-[18px] font-semibold text-[color:var(--db-text)]">
               {scopeLabel}
             </span>
-            <ChevronDown className="h-4 w-4 shrink-0 text-white/45" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-[color:var(--db-text-faint)]" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -88,9 +88,9 @@ export default function WorkspaceIsland(props) {
           <DropdownMenuGroup>
             <DropdownMenuItem
               onSelect={() => { closeWsMenu(); switchWorkspace(null) }}
-              className="cursor-pointer gap-2 px-2.5 py-2 text-[12.5px] font-semibold text-white/84 focus:bg-cyan-300/[0.08]"
+              className="cursor-pointer gap-2 px-2.5 py-2 text-[12.5px] font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]"
             >
-              <span className="grid h-5 w-5 place-items-center rounded bg-white/[0.08] text-[10px] font-bold text-white/70">
+              <span className="grid h-5 w-5 place-items-center rounded bg-[var(--db-fill-strong)] text-[10px] font-bold text-[color:var(--db-text-muted)]">
                 P
               </span>
               <span className="flex-1">Personal</span>
@@ -105,9 +105,9 @@ export default function WorkspaceIsland(props) {
                 <button
                   type="button"
                   onClick={() => { closeWsMenu(); switchWorkspace(ws.id) }}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-[12.5px] font-semibold text-white/84"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-[12.5px] font-semibold text-[color:var(--db-text-soft)]"
                 >
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-white/[0.08] text-[10px] font-bold text-white/70">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-[var(--db-fill-strong)] text-[10px] font-bold text-[color:var(--db-text-muted)]">
                     {ws.name.charAt(0).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{ws.name}</span>
@@ -120,7 +120,7 @@ export default function WorkspaceIsland(props) {
                   onClick={() => shareWorkspace(ws.id)}
                   title={shareErrorId === ws.id ? 'Copy failed — try again' : 'Copy invite link'}
                   aria-label={`Copy invite link for ${ws.name}`}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center text-white/35 transition hover:text-cyan-200 disabled:opacity-50"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center text-[color:var(--db-text-faint)] transition hover:text-cyan-200 disabled:opacity-50"
                 >
                   {shareErrorId === ws.id ? (
                     <X className="h-3.5 w-3.5 text-red-400" />
@@ -135,7 +135,7 @@ export default function WorkspaceIsland(props) {
                   onClick={() => { closeWsMenu(); toggleWsSettings(ws.id) }}
                   title="Workspace settings"
                   aria-label={`Settings for ${ws.name}`}
-                  className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center text-white/35 transition hover:text-white/80"
+                  className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center text-[color:var(--db-text-faint)] transition hover:text-[color:var(--db-text-soft)]"
                 >
                   <Settings2 className="h-3.5 w-3.5" />
                 </button>
@@ -170,7 +170,7 @@ export default function WorkspaceIsland(props) {
                   }
                 }}
                 placeholder="Workspace name…"
-                className="h-7 min-w-0 flex-1 rounded-md border border-cyan-400/40 bg-white/[0.07] px-2 text-[12px] text-white/90 outline-none placeholder:text-white/35 focus:border-cyan-400/70"
+                className="h-7 min-w-0 flex-1 rounded-md border border-cyan-400/40 bg-[var(--db-fill-strong)] px-2 text-[12px] text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/70"
               />
               <button
                 type="button"
@@ -201,25 +201,25 @@ export default function WorkspaceIsland(props) {
 
       {/* Workspace settings modal */}
       <Dialog open={!!wsSettingsId} onOpenChange={(o) => { if (!o) closeWsSettings() }}>
-        <DialogContent className="dashboard-popup dashboard-body-font text-white sm:max-w-md">
+        <DialogContent className="dashboard-popup dashboard-body-font text-[color:var(--db-text)] sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold text-white">
+            <DialogTitle className="text-base font-semibold text-[color:var(--db-text)]">
               Workspace settings
             </DialogTitle>
           </DialogHeader>
           {wsDetailsLoading ? (
-            <p className="text-[12px] text-white/40">Loading…</p>
+            <p className="text-[12px] text-[color:var(--db-text-faint)]">Loading…</p>
           ) : wsDetails ? (
             <div className="space-y-4">
               <div>
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--db-text-faint)]">
                   Invite link
                 </p>
                 <div className="flex items-center gap-1.5">
                   <input
                     readOnly
                     value={`${window.location.origin}/dashboard#invite/${wsDetails.invite_token}`}
-                    className="min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-[11px] text-white/55 outline-none"
+                    className="min-w-0 flex-1 rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1.5 text-[11px] text-[color:var(--db-text-muted)] outline-none"
                   />
                   <button
                     type="button"
@@ -233,7 +233,7 @@ export default function WorkspaceIsland(props) {
                   <button
                     type="button"
                     onClick={regenerateInvite}
-                    className="mt-1.5 text-[10.5px] text-white/35 transition hover:text-white/65"
+                    className="mt-1.5 text-[10.5px] text-[color:var(--db-text-faint)] transition hover:text-[color:var(--db-text-muted)]"
                   >
                     Regenerate link
                   </button>
@@ -242,12 +242,12 @@ export default function WorkspaceIsland(props) {
 
               {wsDetails.your_role === 'owner' && (
                 <div>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--db-text-faint)]">
                     Default persona
                   </p>
                   <div className="flex flex-wrap gap-x-3 gap-y-1.5">
                     {WORKSPACE_PERSONAS.map((p) => (
-                      <label key={p.key} className="flex cursor-pointer items-center gap-1.5 text-[12px] text-white/80">
+                      <label key={p.key} className="flex cursor-pointer items-center gap-1.5 text-[12px] text-[color:var(--db-text-soft)]">
                         <input
                           type="radio"
                           name="workspace-persona"
@@ -259,27 +259,27 @@ export default function WorkspaceIsland(props) {
                       </label>
                     ))}
                   </div>
-                  <p className="mt-1 text-[10px] text-white/35">
+                  <p className="mt-1 text-[10px] text-[color:var(--db-text-faint)]">
                     Members inherit this unless they set their own.
                   </p>
                 </div>
               )}
 
               <div>
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--db-text-faint)]">
                   Members ({wsDetails.members?.length ?? 0})
                 </p>
                 <div className="max-h-48 space-y-2 overflow-y-auto">
                   {wsDetails.members?.map((member) => (
                     <div key={member.user_id} className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-[12px] text-white/70">
+                        <p className="truncate text-[12px] text-[color:var(--db-text-muted)]">
                           {member.user_email || member.user_id.slice(0, 12) + '…'}
                           {member.user_id === user?.id && (
-                            <span className="ml-1 text-white/30">(you)</span>
+                            <span className="ml-1 text-[color:var(--db-text-faint)]">(you)</span>
                           )}
                         </p>
-                        <p className="text-[10px] capitalize text-white/30">{member.role}</p>
+                        <p className="text-[10px] capitalize text-[color:var(--db-text-faint)]">{member.role}</p>
                       </div>
                       {wsDetails.your_role === 'owner' && member.user_id !== user?.id && (
                         <button
@@ -295,7 +295,7 @@ export default function WorkspaceIsland(props) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
+              <div className="flex items-center justify-between border-t border-[color:var(--db-border)] pt-3">
                 {wsDetails.your_role === 'owner' ? (
                   <button
                     type="button"
@@ -316,7 +316,7 @@ export default function WorkspaceIsland(props) {
                 <button
                   type="button"
                   onClick={closeWsSettings}
-                  className="rounded-full border border-white/[0.12] bg-white/[0.06] px-3.5 py-1.5 text-[12px] font-semibold text-white/80 transition hover:bg-white/[0.10]"
+                  className="rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill-strong)] px-3.5 py-1.5 text-[12px] font-semibold text-[color:var(--db-text-soft)] transition hover:bg-[var(--db-fill-strong)]"
                 >
                   Done
                 </button>

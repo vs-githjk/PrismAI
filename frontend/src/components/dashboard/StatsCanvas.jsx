@@ -5,20 +5,20 @@ import { overallHealth } from '../../lib/healthScore'
 const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
 
 const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
-const cardHeading = 'text-[22px] font-semibold tracking-[-0.015em] text-white'
-const emptyCopy = 'text-sm leading-6 text-white/55'
+const cardHeading = 'text-[22px] font-semibold tracking-[-0.015em] text-[color:var(--db-text)]'
+const emptyCopy = 'text-sm leading-6 text-[color:var(--db-text-muted)]'
 
 /** Top-left quadrant: static greeting, or a get-started prompt when history is empty. */
 function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
   if (isEmpty) {
     return (
       <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
-        <h1 className="text-[clamp(2.4rem,4.6vw,4rem)] font-semibold leading-[0.98] text-white">
+        <h1 className="text-[clamp(2.4rem,4.6vw,4rem)] font-semibold leading-[0.98] text-[color:var(--db-text)]">
           Let&rsquo;s get
           <br />
           started.
         </h1>
-        <p className="mt-4 max-w-md text-base leading-7 text-white/58">
+        <p className="mt-4 max-w-md text-base leading-7 text-[color:var(--db-text-muted)]">
           Start a new meeting or upload a transcript with the&nbsp;+ in the sidebar.
         </p>
         {canLoadSample && (
@@ -36,12 +36,12 @@ function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
 
   return (
     <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
-      <h1 className="text-[clamp(3.5rem,6.6vw,6.25rem)] font-bold leading-[0.9] tracking-[-0.02em] text-white">
+      <h1 className="text-[clamp(3.5rem,6.6vw,6.25rem)] font-bold leading-[0.9] tracking-[-0.02em] text-[color:var(--db-text)]">
         Welcome
         <br />
         Back.
       </h1>
-      <p className="mt-5 max-w-md text-base leading-7 text-white/58">
+      <p className="mt-5 max-w-md text-base leading-7 text-[color:var(--db-text-muted)]">
         Pick up where you left off. Your open items and recent meetings are below.
       </p>
     </section>
@@ -52,7 +52,7 @@ function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
 function ActionItemsCard({ actions, onOpen, onToggle }) {
   return (
     <section className={`dashboard-home-actions ${island}`}>
-      <div className="shrink-0 border-b border-white/[0.08] px-4 py-3.5">
+      <div className="shrink-0 border-b border-[color:var(--db-border)] px-4 py-3.5">
         <h2 className={cardHeading}>Open action items</h2>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -61,14 +61,14 @@ function ActionItemsCard({ actions, onOpen, onToggle }) {
             {actions.map(({ item, entry, index }) => (
               <div
                 key={`${entry.id}-${item.task}-${index}`}
-                className="group flex w-full items-start gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03]"
+                className="group flex w-full items-start gap-3 rounded-xl border border-[color:var(--db-border)] bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03]"
               >
                 <button
                   type="button"
                   onClick={() => onToggle?.(entry, index)}
                   aria-pressed={!!item.completed}
                   aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/30 text-transparent transition-all duration-200 hover:border-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/40"
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] text-transparent transition-all duration-200 hover:border-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/40"
                 >
                   <Check className="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -77,15 +77,15 @@ function ActionItemsCard({ actions, onOpen, onToggle }) {
                   onClick={() => onOpen?.(entry)}
                   className="min-w-0 flex-1 text-left focus-visible:outline-none"
                 >
-                  <p className="line-clamp-2 text-[15px] font-medium leading-snug text-white">{item.task}</p>
+                  <p className="line-clamp-2 text-[15px] font-medium leading-snug text-[color:var(--db-text)]">{item.task}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
-                      <UserRound className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--db-text-faint)]">
+                      <UserRound className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
                       <span className="truncate">{item.owner || 'Unowned'}</span>
                     </span>
                     {item.due && (
-                      <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
-                        <Clock className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
+                      <span className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--db-text-faint)]">
+                        <Clock className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
                         <span className="truncate">{item.due}</span>
                       </span>
                     )}
@@ -126,20 +126,20 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                     type="button"
                     key={entry.id}
                     onClick={() => onOpen?.(entry)}
-                    className={`group flex w-full items-stretch gap-4 rounded-2xl border bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/16 ${isSelected ? 'border-cyan-200/45' : 'border-white/[0.08]'}`}
+                    className={`group flex w-full items-stretch gap-4 rounded-2xl border bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/16 ${isSelected ? 'border-cyan-200/45' : 'border-[color:var(--db-border)]'}`}
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="line-clamp-1 text-[19px] font-semibold leading-tight tracking-[-0.01em] text-white">
+                      <p className="line-clamp-1 text-[19px] font-semibold leading-tight tracking-[-0.01em] text-[color:var(--db-text)]">
                         {deriveDisplayTitle(entry)}
                       </p>
-                      <p className="mt-1.5 line-clamp-2 text-[13.5px] leading-6 text-white/55">{summary}</p>
+                      <p className="mt-1.5 line-clamp-2 text-[13.5px] leading-6 text-[color:var(--db-text-muted)]">{summary}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end justify-center pl-1">
                       <span className="font-bold leading-none tracking-tight" style={{ color: band.color }}>
                         <span className="text-[28px]">{hasScore ? score : '—'}</span>
                         {hasScore && <span className="text-[15px]">%</span>}
                       </span>
-                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/35">Health</span>
+                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--db-text-faint)]">Health</span>
                     </div>
                   </button>
                 )

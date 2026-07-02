@@ -9,8 +9,8 @@ const OPEN_DUE_STYLE = {
 
 function Block({ title, children }) {
   return (
-    <div className="min-h-0 rounded-lg border border-white/[0.09] bg-black/20">
-      <p className="border-b border-white/[0.07] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/46">{title}</p>
+    <div className="min-h-0 rounded-lg border border-[color:var(--db-border)] bg-black/20">
+      <p className="border-b border-[color:var(--db-border)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-faint)]">{title}</p>
       <div className="p-2.5">
       {children}
       </div>
@@ -43,9 +43,9 @@ export default function ActionBoard({ result, insights, hideOpen = false }) {
             {openItems.length ? (
               <div className="space-y-1.5">
                 {openItems.map((item, index) => (
-                  <div key={`${item.task}-${index}`} className="rounded-lg border border-white/[0.07] bg-black/20 px-2.5 py-1.5">
+                  <div key={`${item.task}-${index}`} className="rounded-lg border border-[color:var(--db-border)] bg-black/20 px-2.5 py-1.5">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="line-clamp-1 text-sm font-medium text-white">{item.task}</p>
+                      <p className="line-clamp-1 text-sm font-medium text-[color:var(--db-text)]">{item.task}</p>
                       {(item._due?.status === 'overdue' || item._due?.status === 'soon') && (
                         <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8.5px] font-semibold uppercase tracking-wide ${OPEN_DUE_STYLE[item._due.status]}`}>
                           {dueLabel(item._due)}

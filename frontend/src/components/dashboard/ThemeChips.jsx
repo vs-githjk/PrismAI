@@ -22,7 +22,7 @@ export default function ThemeChips({ insights }) {
                 style={{ fontSize: `${size.toFixed(2)}rem`, animationDelay: `${index * 80}ms` }}
               >
                 <span className="truncate">{theme.theme}</span>
-                <span className="text-[10px] text-white/42">{theme.count}</span>
+                <span className="text-[10px] text-[color:var(--db-text-faint)]">{theme.count}</span>
               </span>
             )
           })}

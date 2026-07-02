@@ -103,7 +103,7 @@ export default function RecordingPlayer({
 
   if (state === 'loading') {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/60">
+      <div className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-6 text-sm text-[color:var(--db-text-muted)]">
         Loading recording…
       </div>
     )
@@ -112,12 +112,12 @@ export default function RecordingPlayer({
   if (state === 'processing') {
     if (reason === 'cap_reached') {
       return (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+        <div className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-6 text-sm text-[color:var(--db-text-muted)]">
           <div className="mb-2">Recording is taking longer than expected.</div>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10 transition-colors"
+            className="rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-1.5 text-xs font-medium text-[color:var(--db-text)] hover:bg-[var(--db-fill-strong)] transition-colors"
           >
             Reload page
           </button>
@@ -125,7 +125,7 @@ export default function RecordingPlayer({
       )
     }
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+      <div className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-6 text-sm text-[color:var(--db-text-muted)]">
         Recording is still being prepared by Recall.ai. This usually takes 1–3 minutes after the meeting ends.
       </div>
     )
@@ -133,9 +133,9 @@ export default function RecordingPlayer({
 
   if (state === 'gone') {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
-        <div className="font-medium text-white/90">Recording is no longer available</div>
-        <div className="mt-1 text-white/50">{REASON_COPY[reason] || 'The recording could not be loaded.'}</div>
+      <div className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-6 text-sm text-[color:var(--db-text-muted)]">
+        <div className="font-medium text-[color:var(--db-text)]">Recording is no longer available</div>
+        <div className="mt-1 text-[color:var(--db-text-faint)]">{REASON_COPY[reason] || 'The recording could not be loaded.'}</div>
       </div>
     )
   }
@@ -198,7 +198,7 @@ function SyncedPlayer({ url, kind, segments, transcriptText, onMediaError }) {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-[3fr_2fr] rounded-2xl border border-white/10 bg-black/40 p-4">
+    <div className="grid gap-4 md:grid-cols-[3fr_2fr] rounded-2xl border border-[color:var(--db-border)] bg-black/40 p-4">
       <div>
         {kind === 'audio' ? (
           <audio
@@ -223,7 +223,7 @@ function SyncedPlayer({ url, kind, segments, transcriptText, onMediaError }) {
       <div
         ref={listRef}
         onScroll={noteUserScroll}
-        className="max-h-[420px] overflow-y-auto rounded-lg border border-white/5 bg-white/5 p-3"
+        className="max-h-[420px] overflow-y-auto rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] p-3"
       >
         {hasSegments ? (
           segments.map((seg, i) => {
@@ -240,13 +240,13 @@ function SyncedPlayer({ url, kind, segments, transcriptText, onMediaError }) {
                 className={
                   'flex w-full items-baseline gap-2 text-left text-xs leading-5 px-2 py-1 rounded transition-colors ' +
                   (isActive
-                    ? 'text-sky-400 bg-white/5'
-                    : 'text-white/70 hover:text-white hover:bg-white/5')
+                    ? 'text-sky-400 bg-[var(--db-fill)]'
+                    : 'text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)] hover:bg-[var(--db-fill)]')
                 }
               >
-                <span className="shrink-0 tabular-nums text-[10.5px] text-white/40 font-mono">{ts}</span>
+                <span className="shrink-0 tabular-nums text-[10.5px] text-[color:var(--db-text-faint)] font-mono">{ts}</span>
                 <span>
-                  <span className="font-medium text-white/90">{seg.speaker}: </span>
+                  <span className="font-medium text-[color:var(--db-text)]">{seg.speaker}: </span>
                   {seg.text}
                 </span>
               </button>
@@ -254,10 +254,10 @@ function SyncedPlayer({ url, kind, segments, transcriptText, onMediaError }) {
           })
         ) : (
           <>
-            <p className="mb-2 text-[11px] italic text-white/40">
+            <p className="mb-2 text-[11px] italic text-[color:var(--db-text-faint)]">
               Timestamped transcript not available for this meeting — clicking text won&apos;t seek the recording.
             </p>
-            <pre className="whitespace-pre-wrap text-xs leading-5 text-white/70">
+            <pre className="whitespace-pre-wrap text-xs leading-5 text-[color:var(--db-text-muted)]">
               {transcriptText || ''}
             </pre>
           </>

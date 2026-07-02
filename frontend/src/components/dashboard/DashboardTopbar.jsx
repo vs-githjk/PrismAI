@@ -42,7 +42,7 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
             type="button"
             onClick={onBack}
             aria-label="Back to dashboard"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/70 transition hover:border-cyan-400/45 hover:bg-white/[0.07] hover:text-white"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-cyan-400/45 hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]"
           >
             <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
           </button>
@@ -61,15 +61,15 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
       </div>
 
       {/* Right: global search pill */}
-      <div className="ml-auto flex h-11 w-[clamp(200px,30vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-4 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.06]">
+      <div className="ml-auto flex h-11 w-[clamp(200px,30vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-4 transition focus-within:border-cyan-400/45 focus-within:bg-[var(--db-fill-strong)]">
         <input
           value={searchValue || ''}
           onChange={(e) => onSearchChange?.(e.target.value)}
           placeholder="Search anything..."
           aria-label="Search meetings"
-          className="h-full min-w-0 flex-1 bg-transparent text-[14px] font-medium text-white/85 outline-none placeholder:font-normal placeholder:text-white/35"
+          className="h-full min-w-0 flex-1 bg-transparent text-[14px] font-medium text-[color:var(--db-text-soft)] outline-none placeholder:font-normal placeholder:text-[color:var(--db-text-faint)]"
         />
-        <Search className="h-[18px] w-[18px] shrink-0 text-white/45" aria-hidden="true" />
+        <Search className="h-[18px] w-[18px] shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
       </div>
     </header>
   )

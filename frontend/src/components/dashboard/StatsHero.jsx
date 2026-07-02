@@ -10,17 +10,17 @@ export default function StatsHero({ insights, workspaceName = null }) {
 
   return (
     <section className={`${glassCard} overflow-hidden`} style={cardGlowStyle}>
-      <div className="flex flex-col gap-3 border-b border-white/[0.08] px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-3 border-b border-[color:var(--db-border)] px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200/76">
             {workspaceName ? `Team · ${workspaceName}` : 'Workspace overview'}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-white sm:text-3xl">
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[color:var(--db-text)] sm:text-3xl">
             {workspaceName ? 'Team intelligence' : 'Meeting intelligence'}
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full border border-white/[0.1] bg-white/[0.035] px-2.5 py-1 text-white/64">
+          <span className="rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-1 text-[color:var(--db-text-muted)]">
             {insights.meetingCount || 0} meetings indexed
           </span>
           <span className={`rounded-full border px-2.5 py-1 ${delta < 0 ? 'border-amber-200/24 bg-amber-300/10 text-amber-100' : 'border-cyan-200/24 bg-cyan-300/10 text-cyan-100'}`}>

@@ -113,7 +113,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   if (!result) {
     return (
       <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 text-center">
-        <p className="text-lg font-semibold text-white/54">No meeting loaded</p>
+        <p className="text-lg font-semibold text-[color:var(--db-text-faint)]">No meeting loaded</p>
         <p className={subtleText}>Select a meeting from history or analyze a new one below.</p>
       </div>
     )
@@ -150,7 +150,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const DUE_STYLE = {
     overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
     soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
-    later: 'border-white/[0.12] bg-white/[0.04] text-white/55',
+    later: 'border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)]',
   }
   // Surface the importance the agent assigns: sort critical-first and badge each.
   // Keep each decision's original index so it can be matched to linked actions.
@@ -175,16 +175,16 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Paperclip className="h-4 w-4 text-cyan-300" />
-          <h3 className="text-sm font-semibold text-white">Pinned Documents</h3>
+          <h3 className="text-sm font-semibold text-[color:var(--db-text)]">Pinned Documents</h3>
         </div>
         <button onClick={() => setUploadOpen(true)}
-                className="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 hover:bg-white/10">
+                className="flex items-center gap-1 rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[11px] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]">
           <Plus className="h-3 w-3" /> Add
         </button>
       </div>
       <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
         {pinnedDocs.length === 0 ? (
-          <p className="text-[11px] text-white/40">No documents pinned to this meeting.</p>
+          <p className="text-[11px] text-[color:var(--db-text-faint)]">No documents pinned to this meeting.</p>
         ) : (
           <div className="space-y-2">
             {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
@@ -211,7 +211,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           ) : healthScore?.score !== undefined ? (
             <>
               <SemicircularGauge score={healthScore.score} />
-              <p className="mt-1.5 text-sm font-medium text-white/55">Health score</p>
+              <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">Health score</p>
             </>
           ) : (
             <p className={subtleText}>No health score recorded.</p>
@@ -219,20 +219,20 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
 
         <section className="flex max-h-[30vh] flex-col justify-center p-4">
-          <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-white">Summary</p>
+          <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Summary</p>
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
             {result.tldr && (
-              <p className="mb-3 text-[15px] font-semibold leading-6 text-white">{result.tldr}</p>
+              <p className="mb-3 text-[15px] font-semibold leading-6 text-[color:var(--db-text)]">{result.tldr}</p>
             )}
             {result.summary ? (
-              <p className={`${result.tldr ? 'text-[13.5px] text-white/65' : 'text-[15px] text-white/90'} leading-7`}>{result.summary}</p>
+              <p className={`${result.tldr ? 'text-[13.5px] text-[color:var(--db-text-muted)]' : 'text-[15px] text-[color:var(--db-text)]'} leading-7`}>{result.summary}</p>
             ) : (
               <p className={subtleText}>No summary generated.</p>
             )}
             {result.topics?.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {result.topics.map((topic, i) => (
-                  <span key={i} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-white/70">
+                  <span key={i} className="rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-0.5 text-[11px] font-medium text-[color:var(--db-text-muted)]">
                     {topic}
                   </span>
                 ))}
@@ -249,7 +249,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 >
                   Verdict
                 </figcaption>
-                <blockquote className="mt-1 text-[13px] italic leading-6 text-white/75">
+                <blockquote className="mt-1 text-[13px] italic leading-6 text-[color:var(--db-text-soft)]">
                   {healthScore.verdict}
                 </blockquote>
               </figure>
@@ -259,7 +259,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
                 <div>
                   <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
-                  <p className="mt-0.5 text-[13px] leading-5 text-white/80">{healthScore.improvement_tip}</p>
+                  <p className="mt-0.5 text-[13px] leading-5 text-[color:var(--db-text-soft)]">{healthScore.improvement_tip}</p>
                 </div>
               </div>
             )}
@@ -272,7 +272,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       <div className="grid gap-5 lg:grid-cols-2">
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Action items</h2>
+            <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Action items</h2>
             {actionItems.length > 0 && (
               <span
                 className="text-sm font-semibold"
@@ -292,7 +292,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                     className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
                       item.completed
                         ? 'border-emerald-400 bg-emerald-400'
-                        : `border-white/30${readOnly ? '' : ' group-hover:border-emerald-300'}`
+                        : `border-[color:var(--db-border-strong)]${readOnly ? '' : ' group-hover:border-emerald-300'}`
                     }`}
                   >
                     {item.completed && (
@@ -305,7 +305,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 return (
                   <div
                     key={`${item.task}-${i}`}
-                    className="flex items-start gap-3 border-t border-white/[0.06] py-3 first:border-t-0 first:pt-0"
+                    className="flex items-start gap-3 border-t border-[color:var(--db-border)] py-3 first:border-t-0 first:pt-0"
                   >
                     {readOnly ? (
                       check
@@ -321,11 +321,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                       </button>
                     )}
                     <div className={`min-w-0 flex-1 ${item.completed ? 'opacity-45' : ''}`}>
-                      <p className={`text-[15px] font-medium leading-snug text-white ${item.completed ? 'line-through' : ''}`}>
+                      <p className={`text-[15px] font-medium leading-snug text-[color:var(--db-text)] ${item.completed ? 'line-through' : ''}`}>
                         {item.task}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        <p className="text-xs font-medium text-white/45">
+                        <p className="text-xs font-medium text-[color:var(--db-text-faint)]">
                           {item.owner || 'Unowned'}
                           {item.due && item.due !== 'TBD' ? ` · ${item.due}` : ''}
                         </p>
@@ -359,7 +359,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-[-0.01em] text-white">Decisions</h2>
+            <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Decisions</h2>
             {decisions.length > 0 && (
               <span className="text-sm font-semibold text-violet-300">{decisions.length}</span>
             )}
@@ -372,7 +372,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 return (
                   <div key={i} className="border-l-2 pl-3.5" style={{ borderColor: prio.border }}>
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-[15px] font-medium leading-snug text-white">{d.decision}</p>
+                      <p className="text-[15px] font-medium leading-snug text-[color:var(--db-text)]">{d.decision}</p>
                       <span
                         className="mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
                         style={{ borderColor: prio.border, color: prio.color, background: prio.tint }}
@@ -381,9 +381,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                       </span>
                     </div>
                     {d.rationale && (
-                      <p className="mt-1 text-[12.5px] leading-5 text-white/55">{d.rationale}</p>
+                      <p className="mt-1 text-[12.5px] leading-5 text-[color:var(--db-text-muted)]">{d.rationale}</p>
                     )}
-                    {d.owner && <p className="mt-1 text-xs font-medium text-white/45">{d.owner}</p>}
+                    {d.owner && <p className="mt-1 text-xs font-medium text-[color:var(--db-text-faint)]">{d.owner}</p>}
                     {actionsByDecision[d._i]?.length > 0 && (
                       <div className="mt-1.5 space-y-0.5">
                         {actionsByDecision[d._i].map((ai) => (
@@ -455,16 +455,16 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           >
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 shrink-0 text-cyan-300/80" aria-hidden="true" />
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white">Transcript</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text)]">Transcript</p>
             </div>
             <ChevronDown
-              className={`h-4 w-4 shrink-0 text-white/70 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
+              className={`h-4 w-4 shrink-0 text-[color:var(--db-text-muted)] transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
               aria-hidden="true"
             />
           </button>
           {transcriptOpen && (
-            <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-white/90">
+            <div className="border-t border-[color:var(--db-border)] px-4 pb-4 pt-3">
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-[color:var(--db-text)]">
                 {transcript}
               </pre>
             </div>
