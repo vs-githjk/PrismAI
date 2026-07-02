@@ -150,10 +150,10 @@ export default function StandInComposer({ meeting, user, onClose }) {
         {/* Header */}
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-white">Have Prism represent you</p>
+            <p className="text-sm font-semibold text-[color:var(--db-text)]">Have Prism represent you</p>
             <p className="text-[11px] text-gray-500 truncate">{meeting.label || 'Upcoming meeting'}</p>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none px-1">×</button>
+          <button onClick={onClose} className="text-gray-500 hover:text-[color:var(--db-text)] text-lg leading-none px-1">×</button>
         </div>
 
         {phase === 'approved' ? (
@@ -174,7 +174,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
         ) : phase === 'error' ? (
           <div className="p-6 text-center space-y-3">
             <p className="text-sm text-red-300">Couldn't start the stand-in.</p>
-            <button onClick={start} className="rounded-lg bg-white/[0.06] px-4 py-2 text-[12px] font-semibold text-gray-200 hover:text-white">Retry</button>
+            <button onClick={start} className="rounded-lg bg-[var(--db-fill-strong)] px-4 py-2 text-[12px] font-semibold text-gray-200 hover:text-[color:var(--db-text)]">Retry</button>
           </div>
         ) : (
           <>
@@ -184,7 +184,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
               {thread.map((m, i) => (
                 <div key={i} className={m.role === 'you' ? 'text-right' : ''}>
                   <div className={`inline-block max-w-[88%] rounded-xl px-3 py-1.5 text-left text-[12.5px] leading-relaxed ${
-                    m.role === 'you' ? 'bg-cyan-400/10 text-cyan-100' : 'bg-white/[0.04] text-gray-200'
+                    m.role === 'you' ? 'bg-cyan-400/10 text-cyan-100' : 'bg-[var(--db-fill)] text-gray-200'
                   } ${m.pending ? 'opacity-60' : ''}`}>
                     {m.text}
                   </div>
@@ -216,9 +216,9 @@ export default function StandInComposer({ meeting, user, onClose }) {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Refine your update…"
                 disabled={busy || phase !== 'chatting'}
-                className="flex-1 rounded-lg bg-white/[0.04] px-3 py-1.5 text-[12px] text-gray-100 placeholder:text-gray-600 outline-none focus:bg-white/[0.06] disabled:opacity-50"
+                className="flex-1 rounded-lg bg-[var(--db-fill)] px-3 py-1.5 text-[12px] text-gray-100 placeholder:text-gray-600 outline-none focus:bg-[var(--db-fill-strong)] disabled:opacity-50"
               />
-              <button type="submit" disabled={busy || !input.trim()} className="rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-gray-300 hover:text-white disabled:opacity-40">↑</button>
+              <button type="submit" disabled={busy || !input.trim()} className="rounded-lg bg-[var(--db-fill-strong)] px-2.5 py-1.5 text-[11px] font-semibold text-gray-300 hover:text-[color:var(--db-text)] disabled:opacity-40">↑</button>
             </form>
 
             {/* Editable approve box */}
@@ -237,13 +237,13 @@ export default function StandInComposer({ meeting, user, onClose }) {
                 rows={4}
                 disabled={phase !== 'chatting'}
                 placeholder="Tell Prism above what to share or ask — your update will appear here. You can also type it directly."
-                className="w-full resize-none rounded-lg bg-white/[0.04] px-3 py-2 text-[12.5px] leading-relaxed text-gray-100 outline-none placeholder:text-white/25 focus:bg-white/[0.06]"
+                className="w-full resize-none rounded-lg bg-[var(--db-fill)] px-3 py-2 text-[12.5px] leading-relaxed text-gray-100 outline-none placeholder:text-[color:var(--db-text-faint)] focus:bg-[var(--db-fill-strong)]"
               />
               {isApproved && !isDirty ? (
                 // Already approved and unchanged — no action to take; show state, not a CTA.
-                <div className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                <div className="flex items-center justify-between rounded-lg bg-[var(--db-fill)] px-3 py-2">
                   <span className="text-[12px] font-medium text-cyan-300">✓ Approved — Prism will share this</span>
-                  <button onClick={onClose} className="text-[11px] font-semibold text-gray-400 hover:text-white">Done</button>
+                  <button onClick={onClose} className="text-[11px] font-semibold text-gray-400 hover:text-[color:var(--db-text)]">Done</button>
                 </div>
               ) : (
                 <button

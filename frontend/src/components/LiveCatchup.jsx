@@ -122,14 +122,14 @@ export default function LiveCatchup({ liveToken, accessToken = null }) {
               <div key={i} className={m.role === 'you' ? 'text-right' : ''}>
                 <div
                   className={`inline-block max-w-[88%] rounded-xl px-3 py-1.5 text-left text-[12.5px] leading-relaxed ${
-                    m.role === 'you' ? 'bg-cyan-400/10 text-cyan-100' : 'bg-white/[0.04] text-gray-200'
+                    m.role === 'you' ? 'bg-cyan-400/10 text-cyan-100' : 'bg-[var(--db-fill)] text-gray-200'
                   }`}
                 >
                   {m.text || (m.streaming ? '…' : '')}
                   {m.role === 'prism' && m.sources?.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {m.sources.map((s, j) => (
-                        <span key={j} className="rounded-full bg-white/[0.05] px-2 py-0.5 text-[9.5px] text-gray-400">
+                        <span key={j} className="rounded-full bg-[var(--db-fill)] px-2 py-0.5 text-[9.5px] text-gray-400">
                           {s}
                         </span>
                       ))}
@@ -156,12 +156,12 @@ export default function LiveCatchup({ liveToken, accessToken = null }) {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about the meeting…"
               disabled={busy}
-              className="flex-1 rounded-lg bg-white/[0.04] px-3 py-1.5 text-[12px] text-gray-100 placeholder:text-gray-600 outline-none focus:bg-white/[0.06] disabled:opacity-50"
+              className="flex-1 rounded-lg bg-[var(--db-fill)] px-3 py-1.5 text-[12px] text-gray-100 placeholder:text-gray-600 outline-none focus:bg-[var(--db-fill-strong)] disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="shrink-0 rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-gray-300 transition hover:text-white disabled:opacity-40"
+              className="shrink-0 rounded-lg bg-[var(--db-fill-strong)] px-2.5 py-1.5 text-[11px] font-semibold text-gray-300 transition hover:text-[color:var(--db-text)] disabled:opacity-40"
             >
               ↑
             </button>

@@ -43,13 +43,13 @@ export default function KnowledgeDocViewer({ doc, open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="dashboard-popup dashboard-body-font text-white sm:max-w-2xl" showCloseButton>
+      <DialogContent className="dashboard-popup dashboard-body-font text-[color:var(--db-text)] sm:max-w-2xl" showCloseButton>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 pr-8 text-white">
+          <DialogTitle className="flex items-center gap-2 pr-8 text-[color:var(--db-text)]">
             <Icon className="h-4 w-4 shrink-0 text-cyan-200/80" aria-hidden="true" />
             <span className="min-w-0 truncate">{doc?.name || 'Document'}</span>
           </DialogTitle>
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/55">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[color:var(--db-text-muted)]">
             <span className={`rounded-full border px-2 py-0.5 font-medium ${sens.cls}`}>{sens.label}</span>
             <span>{full?.chunk_count ?? doc?.chunk_count ?? 0} chunks</span>
             {originalUrl && (
@@ -65,9 +65,9 @@ export default function KnowledgeDocViewer({ doc, open, onOpenChange }) {
           </div>
         </DialogHeader>
 
-        <div className="mt-1 max-h-[60vh] overflow-y-auto rounded-lg border border-white/[0.08] bg-black/30 p-3.5">
+        <div className="mt-1 max-h-[60vh] overflow-y-auto rounded-lg border border-[color:var(--db-border)] bg-black/30 p-3.5">
           {loading ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-white/55">
+            <div className="flex items-center gap-2 py-6 text-sm text-[color:var(--db-text-muted)]">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading extracted text…
             </div>
           ) : error ? (
@@ -75,11 +75,11 @@ export default function KnowledgeDocViewer({ doc, open, onOpenChange }) {
           ) : doc?.status === 'processing' ? (
             <p className="py-4 text-sm text-amber-300/90">Still processing — extracted text will appear once indexing finishes.</p>
           ) : full?.content ? (
-            <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-white/80">
+            <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-[color:var(--db-text-soft)]">
               {full.content}
             </pre>
           ) : (
-            <p className="py-4 text-sm text-white/45">No extracted text for this document.</p>
+            <p className="py-4 text-sm text-[color:var(--db-text-faint)]">No extracted text for this document.</p>
           )}
         </div>
       </DialogContent>

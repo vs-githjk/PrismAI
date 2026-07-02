@@ -105,20 +105,20 @@ export default function PersonaChip({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex w-full items-center gap-3 px-3 py-2 text-xs font-semibold text-white/84 hover:bg-cyan-300/[0.08]"
+          className="flex w-full items-center gap-3 px-3 py-2 text-xs font-semibold text-[color:var(--db-text-soft)] hover:bg-cyan-300/[0.08]"
         >
           <ChipIcon className={`h-4 w-4 shrink-0 ${chipIconClass}`} aria-hidden="true" />
           Persona
-          <span className="ml-auto text-[10px] font-medium text-white/40">
-            {chipLabel} · <span className="text-white/70">{chipName}</span>
+          <span className="ml-auto text-[10px] font-medium text-[color:var(--db-text-faint)]">
+            {chipLabel} · <span className="text-[color:var(--db-text-muted)]">{chipName}</span>
           </span>
         </button>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="dashboard-popup dashboard-body-font text-white sm:max-w-md">
+        <DialogContent className="dashboard-popup dashboard-body-font text-[color:var(--db-text)] sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-sm font-semibold text-white">
+            <DialogTitle className="text-sm font-semibold text-[color:var(--db-text)]">
               Pick persona
             </DialogTitle>
           </DialogHeader>
@@ -129,7 +129,7 @@ export default function PersonaChip({
               return (
                 <label
                   key={p.key}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-white/[0.04]"
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-[var(--db-fill)]"
                 >
                   <input
                     type="radio"
@@ -140,13 +140,13 @@ export default function PersonaChip({
                   />
                   <Icon className={`h-3.5 w-3.5 shrink-0 ${p.iconClass}`} aria-hidden="true" />
                   <span>{p.label}</span>
-                  <span className="ml-auto text-[11px] text-white/50">
+                  <span className="ml-auto text-[11px] text-[color:var(--db-text-faint)]">
                     {p.key === 'default' ? 'Prism' : p.name}
                   </span>
                 </label>
               )
             })}
-            <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-white/[0.04]">
+            <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-[var(--db-fill)]">
               <input
                 type="radio"
                 name="persona-preset"
@@ -156,7 +156,7 @@ export default function PersonaChip({
               />
               <Sparkles className="h-3.5 w-3.5 shrink-0 text-cyan-300/90" aria-hidden="true" />
               <span>Custom…</span>
-              <span className="ml-auto text-[11px] text-white/40">Prism</span>
+              <span className="ml-auto text-[11px] text-[color:var(--db-text-faint)]">Prism</span>
             </label>
           </div>
 
@@ -167,9 +167,9 @@ export default function PersonaChip({
                 onChange={(e) => setDraftCustom(e.target.value.slice(0, CUSTOM_MAX))}
                 placeholder="e.g. Talk like a senior engineer. Be direct."
                 rows={3}
-                className="w-full rounded-md border border-white/[0.10] bg-white/[0.04] px-2 py-1.5 text-[12px] text-white/85 outline-none focus:border-cyan-400/40"
+                className="w-full rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1.5 text-[12px] text-[color:var(--db-text-soft)] outline-none focus:border-cyan-400/40"
               />
-              <p className="mt-1 text-right text-[10px] text-white/40">
+              <p className="mt-1 text-right text-[10px] text-[color:var(--db-text-faint)]">
                 {draftCustom.length} / {CUSTOM_MAX}
               </p>
             </div>
@@ -179,13 +179,13 @@ export default function PersonaChip({
             <button
               type="button"
               onClick={() => setDraftPreset('default')}
-              className="mt-2 w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-2 py-1.5 text-left text-[11px] text-white/55 hover:border-white/[0.16]"
+              className="mt-2 w-full rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1.5 text-left text-[11px] text-[color:var(--db-text-muted)] hover:border-[color:var(--db-border-strong)]"
             >
               Use workspace default ({capitalize(workspaceDefault)} · {presetInfo(workspaceDefault).name})
             </button>
           )}
 
-          <p className="mt-3 text-[10px] leading-snug text-white/35">
+          <p className="mt-3 text-[10px] leading-snug text-[color:var(--db-text-faint)]">
             Some agents (action items, decisions, scores) ignore tonal personas to preserve accuracy.
           </p>
 
@@ -193,7 +193,7 @@ export default function PersonaChip({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded-full border border-white/[0.12] bg-white/[0.04] px-3 py-1 text-[11px] font-semibold text-white/70"
+              className="rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-1 text-[11px] font-semibold text-[color:var(--db-text-muted)]"
             >
               Cancel
             </button>

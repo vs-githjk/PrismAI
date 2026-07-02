@@ -318,7 +318,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
 
       {/* Header */}
       <button
-        className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-[var(--db-fill)] transition-colors"
         onClick={() => setCollapsed(v => !v)}
       >
         <div className="flex items-center gap-2">

@@ -45,7 +45,7 @@ const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
 
-const secondaryButtonClass = 'inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/85 transition hover:border-cyan-400/45 hover:bg-white/[0.06] hover:text-white'
+const secondaryButtonClass = 'inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] transition hover:border-cyan-400/45 hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]'
 
 function MeetingActionsBar({
   shareToken,
@@ -70,9 +70,9 @@ function MeetingActionsBar({
     })
   }
 
-  const itemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-white/84 focus:bg-cyan-300/[0.08]'
+  const itemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]'
   const connectItemClass = 'cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-cyan-300 focus:bg-cyan-300/[0.12]'
-  const iconClass = 'h-4 w-4 shrink-0 text-white/62'
+  const iconClass = 'h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]'
   const connectIconClass = 'h-4 w-4 shrink-0 text-cyan-300'
 
   const slackConnected = !!integrations?.slack_webhook
@@ -140,7 +140,7 @@ function MeetingActionsBar({
 function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, transcript }) {
   if (loading) {
     return (
-      <button type="button" onClick={cancelActiveAnalysis} className="w-full rounded-full border border-white/[0.10] py-2.5 text-sm font-semibold text-white/60 transition hover:bg-white/[0.05]">
+      <button type="button" onClick={cancelActiveAnalysis} className="w-full rounded-full border border-[color:var(--db-border)] py-2.5 text-sm font-semibold text-[color:var(--db-text-muted)] transition hover:bg-[var(--db-fill)]">
         Analyzing… (cancel)
       </button>
     )
@@ -164,11 +164,11 @@ function NewMeetingPanel(props) {
   return (
     <div className="dashboard-body-font w-full overflow-hidden rounded-2xl">
       <div className="flex items-center justify-between px-4 pb-3 pt-3.5">
-        <p className="text-[13px] font-semibold text-white/90">New Meeting</p>
+        <p className="text-[13px] font-semibold text-[color:var(--db-text)]">New Meeting</p>
         <button
           type="button"
           onClick={props.onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-white/40 transition hover:bg-white/[0.07] hover:text-white/70"
+          className="flex h-6 w-6 items-center justify-center rounded-full text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text-muted)]"
           aria-label="Close"
         >
           <X className="h-3.5 w-3.5" />
@@ -193,10 +193,10 @@ function NewMeetingPanel(props) {
                 onChange={(e) => props.setTranscriptForTab(e.target.value, 'paste')}
                 placeholder="Paste your meeting transcript here..."
                 rows={7}
-                className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
+                className="w-full resize-none rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2.5 text-sm text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
               />
               {props.transcriptStats?.words > 0 && (
-                <p className="text-[10.5px] text-white/38">
+                <p className="text-[10.5px] text-[color:var(--db-text-faint)]">
                   {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
                 </p>
               )}
@@ -213,7 +213,7 @@ function NewMeetingPanel(props) {
                   className={`w-full rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
                     props.recording
                       ? 'border-red-400/30 bg-red-400/[0.09] text-red-300 hover:bg-red-400/[0.13]'
-                      : 'border-white/[0.10] bg-white/[0.05] text-white/80 hover:bg-white/[0.08]'
+                      : 'border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]'
                   }`}
                 >
                   {props.recording ? '⏹ Stop Recording' : '⏺ Start Recording'}
@@ -223,11 +223,11 @@ function NewMeetingPanel(props) {
                     value={props.transcript}
                     onChange={(e) => props.setTranscriptForTab(e.target.value, 'record')}
                     rows={5}
-                    className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none"
+                    className="w-full resize-none rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2.5 text-sm text-[color:var(--db-text)] outline-none"
                   />
                 )}
                 {props.transcriptStats?.words > 0 && (
-                  <p className="text-[10.5px] text-white/38">{props.transcriptStats.words} words</p>
+                  <p className="text-[10.5px] text-[color:var(--db-text-faint)]">{props.transcriptStats.words} words</p>
                 )}
                 {props.transcript && <AnalyzeButton {...props} />}
               </div>
@@ -247,7 +247,7 @@ function NewMeetingPanel(props) {
                 type="button"
                 onClick={() => props.fileInputRef?.current?.click()}
                 disabled={props.transcribing}
-                className="w-full rounded-xl border border-white/[0.10] bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/[0.08] disabled:opacity-50"
+                className="w-full rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-4 py-2.5 text-sm font-semibold text-[color:var(--db-text-soft)] transition hover:bg-[var(--db-fill-strong)] disabled:opacity-50"
               >
                 {props.transcribing ? '⏳ Transcribing…' : '📎 Choose Audio File'}
               </button>
@@ -257,10 +257,10 @@ function NewMeetingPanel(props) {
                     value={props.transcript}
                     onChange={(e) => props.setTranscriptForTab(e.target.value, 'upload')}
                     rows={5}
-                    className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none"
+                    className="w-full resize-none rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2.5 text-sm text-[color:var(--db-text)] outline-none"
                   />
                   {props.transcriptStats?.words > 0 && (
-                    <p className="text-[10.5px] text-white/38">{props.transcriptStats.words} words</p>
+                    <p className="text-[10.5px] text-[color:var(--db-text-faint)]">{props.transcriptStats.words} words</p>
                   )}
                   <AnalyzeButton {...props} />
                 </>
@@ -294,12 +294,12 @@ function NewMeetingPanel(props) {
                 onChange={(e) => props.setMeetingUrl(e.target.value)}
                 placeholder="Paste Zoom / Meet / Teams link..."
                 disabled={botActive}
-                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 disabled:opacity-50"
+                className="w-full rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2.5 text-sm text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 disabled:opacity-50"
               />
 
               <div className="space-y-1.5">
-                <p className="text-[10.5px] font-medium uppercase tracking-wide text-white/40">Response mode</p>
-                <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
+                <p className="text-[10.5px] font-medium uppercase tracking-wide text-[color:var(--db-text-faint)]">Response mode</p>
+                <div className="flex gap-1 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-1">
                   {[
                     { id: 'utterance', label: 'Utterance', hint: 'Only responds when addressed ("Prism, …")' },
                     { id: 'autonomous', label: 'Automatic', hint: 'Chimes in with relevant info — speaks only for high-value moments' },
@@ -313,14 +313,14 @@ function NewMeetingPanel(props) {
                       className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         (props.joinMode || 'utterance') === m.id
                           ? 'bg-cyan-400/[0.16] text-cyan-200'
-                          : 'text-white/50 hover:text-white/75'
+                          : 'text-[color:var(--db-text-faint)] hover:text-[color:var(--db-text-soft)]'
                       }`}
                     >
                       {m.label}
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-white/30">
+                <p className="text-[10px] text-[color:var(--db-text-faint)]">
                   {(props.joinMode || 'utterance') === 'autonomous'
                     ? 'Prism shares relevant info in chat and speaks up only for high-value moments.'
                     : 'Prism stays silent until you address it by name.'}
@@ -339,9 +339,9 @@ function NewMeetingPanel(props) {
               )}
 
               {botActive && (
-                <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.04] px-3 py-2">
+                <div className="flex items-center gap-2 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
-                  <p className="text-xs text-white/70">
+                  <p className="text-xs text-[color:var(--db-text-muted)]">
                     {props.botStatus === 'joining' ? 'Bot is joining the meeting…' :
                      props.botStatus === 'recording' ? 'Bot is recording…' :
                      'Meeting ended — analyzing…'}
@@ -355,13 +355,13 @@ function NewMeetingPanel(props) {
                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
                           props.botMuted
                             ? 'bg-amber-400/15 text-amber-300 hover:bg-amber-400/25'
-                            : 'bg-white/[0.06] text-white/55 hover:text-white/85'
+                            : 'bg-[var(--db-fill-strong)] text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text-soft)]'
                         }`}
                       >
                         {props.botMuted ? 'Muted' : 'Mute Prism'}
                       </button>
                     )}
-                    <button type="button" onClick={props.cancelBot} className="text-[10px] text-white/36 hover:text-white/60">
+                    <button type="button" onClick={props.cancelBot} className="text-[10px] text-[color:var(--db-text-faint)] hover:text-[color:var(--db-text-muted)]">
                       Cancel
                     </button>
                   </div>
@@ -375,9 +375,9 @@ function NewMeetingPanel(props) {
               {props.liveCommands?.length > 0 && (
                 <div className="max-h-28 space-y-1 overflow-y-auto">
                   {props.liveCommands.slice(-5).map((cmd, i) => (
-                    <div key={i} className="rounded-lg border border-white/[0.05] bg-white/[0.03] px-3 py-1.5">
+                    <div key={i} className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-1.5">
                       <p className="text-[10.5px] font-semibold text-cyan-300/80">{cmd.speaker || 'Prism'}</p>
-                      <p className="text-[11px] text-white/60">{cmd.reply || cmd.command}</p>
+                      <p className="text-[11px] text-[color:var(--db-text-muted)]">{cmd.reply || cmd.command}</p>
                     </div>
                   ))}
                 </div>
@@ -440,9 +440,9 @@ function MeetingViewSkeleton() {
   return (
     <div className="space-y-3">
       <div className="space-y-2 px-0.5">
-        <div className="h-2 w-20 animate-pulse rounded-full bg-white/[0.06]" />
-        <div className="h-7 w-56 animate-pulse rounded-xl bg-white/[0.08]" style={{ animationDelay: '60ms' }} />
-        <div className="h-2 w-28 animate-pulse rounded-full bg-white/[0.05]" style={{ animationDelay: '120ms' }} />
+        <div className="h-2 w-20 animate-pulse rounded-full bg-[var(--db-fill-strong)]" />
+        <div className="h-7 w-56 animate-pulse rounded-xl bg-[var(--db-fill-strong)]" style={{ animationDelay: '60ms' }} />
+        <div className="h-2 w-28 animate-pulse rounded-full bg-[var(--db-fill)]" style={{ animationDelay: '120ms' }} />
       </div>
       <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_minmax(0,2fr)]">
         <SkeletonCard lines={3} />
@@ -470,8 +470,8 @@ function AnalyzingBanner({ result }) {
       <div className="p-4">
         <div className="mb-3 flex items-center gap-2.5">
           <span className="h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-cyan-400" />
-          <p className="text-sm font-semibold text-white">Prism is analyzing your meeting</p>
-          <span className="ml-auto text-[11px] text-white/38">{doneCount} / {ANALYZING_AGENTS.length}</span>
+          <p className="text-sm font-semibold text-[color:var(--db-text)]">Prism is analyzing your meeting</p>
+          <span className="ml-auto text-[11px] text-[color:var(--db-text-faint)]">{doneCount} / {ANALYZING_AGENTS.length}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {ANALYZING_AGENTS.map((agent) => {
@@ -480,12 +480,12 @@ function AnalyzingBanner({ result }) {
               <div
                 key={agent.id}
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-300 ${
-                  isDone ? `${agent.done} agent-pop` : 'animate-pulse border-white/[0.09] bg-white/[0.04] text-white/38'
+                  isDone ? `${agent.done} agent-pop` : 'animate-pulse border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-faint)]'
                 }`}
               >
                 <span className="text-sm leading-none">{agent.icon}</span>
                 {agent.label}
-                <span className={`h-1.5 w-1.5 rounded-full ${isDone ? agent.dot : 'bg-white/20'}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${isDone ? agent.dot : 'bg-[var(--db-fill-strong)]'}`} />
               </div>
             )
           })}
@@ -1053,7 +1053,7 @@ export default function DashboardPage(props) {
             <div className="mx-auto flex max-w-[92rem] items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="text-[12px] font-semibold text-cyan-200/90">Invite your team</p>
-                <p className="mt-0.5 text-[11px] leading-5 text-white/50">
+                <p className="mt-0.5 text-[11px] leading-5 text-[color:var(--db-text-faint)]">
                   Create a workspace to share meeting summaries, action items, and insights with teammates.
                 </p>
               </div>
@@ -1069,7 +1069,7 @@ export default function DashboardPage(props) {
                   type="button"
                   onClick={dismissWorkspaceNudge}
                   aria-label="Dismiss invite prompt"
-                  className="text-white/30 transition hover:text-white/60"
+                  className="text-[color:var(--db-text-faint)] transition hover:text-[color:var(--db-text-muted)]"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -1194,11 +1194,11 @@ export default function DashboardPage(props) {
               type="button"
               onClick={() => setChatOpen(false)}
               aria-label="Close chat"
-              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full text-white/45 transition hover:bg-white/[0.08] hover:text-white/80"
+              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text-soft)]"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
-            <Suspense fallback={<div className="p-4 text-xs text-white/40">Loading chat…</div>}>
+            <Suspense fallback={<div className="p-4 text-xs text-[color:var(--db-text-faint)]">Loading chat…</div>}>
               <ChatPanel
                 key={props.meetingId || 'no-meeting'}
                 meetingId={props.meetingId}
@@ -1240,10 +1240,10 @@ export default function DashboardPage(props) {
       )}
 
       <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
-        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-sm">
+        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-[color:var(--db-text)] sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold text-white">More meetings needed</DialogTitle>
-            <DialogDescription className="mt-2 text-sm leading-5 text-white/58">
+            <DialogTitle className="text-base font-semibold text-[color:var(--db-text)]">More meetings needed</DialogTitle>
+            <DialogDescription className="mt-2 text-sm leading-5 text-[color:var(--db-text-muted)]">
               Cross-meeting intelligence unlocks after you save at least 2 meetings. Analyze another meeting to get started.
             </DialogDescription>
           </DialogHeader>
@@ -1251,7 +1251,7 @@ export default function DashboardPage(props) {
             <button
               type="button"
               onClick={() => setShowGateDialog(false)}
-              className="rounded-full border border-white/[0.12] bg-white/[0.06] px-4 py-1.5 text-sm font-semibold text-white/80 transition hover:border-white/[0.22] hover:bg-white/[0.10]"
+              className="rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill-strong)] px-4 py-1.5 text-sm font-semibold text-[color:var(--db-text-soft)] transition hover:border-[color:var(--db-border-strong)] hover:bg-[var(--db-fill-strong)]"
             >
               Got it
             </button>

@@ -59,11 +59,11 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="dashboard-popup w-full max-w-lg rounded-2xl p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-white">Add to Knowledge Base</h3>
-          <button onClick={close}><X className="h-4 w-4 text-white/60" /></button>
+          <h3 className="text-base font-semibold text-[color:var(--db-text)]">Add to Knowledge Base</h3>
+          <button onClick={close}><X className="h-4 w-4 text-[color:var(--db-text-muted)]" /></button>
         </div>
 
-        <div className="mb-4 flex gap-1 rounded-lg bg-white/5 p-1">
+        <div className="mb-4 flex gap-1 rounded-lg bg-[var(--db-fill)] p-1">
           {[
             { id: 'file', label: 'File', icon: Upload },
             { id: 'url', label: 'URL', icon: LinkIcon },
@@ -72,17 +72,17 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs ${tab === t.id ? 'bg-cyan-400/20 text-cyan-200' : 'text-white/60 hover:text-white'}`}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs ${tab === t.id ? 'bg-cyan-400/20 text-cyan-200' : 'text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)]'}`}
             >
               <t.icon className="h-3 w-3" /> {t.label}
             </button>
           ))}
         </div>
 
-        <div className="mb-3 flex items-center gap-2 text-xs text-white/60">
+        <div className="mb-3 flex items-center gap-2 text-xs text-[color:var(--db-text-muted)]">
           Sensitivity:
           <select value={sensitivity} onChange={e => setSensitivity(e.target.value)}
-                  className="rounded border border-white/10 bg-white/5 px-2 py-1 text-white/80">
+                  className="rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[color:var(--db-text-soft)]">
             <option value="public">Public</option>
             <option value="internal">Internal</option>
             <option value="confidential">Confidential</option>
@@ -91,13 +91,13 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
 
         {tab === 'file' && (
           <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleFile} disabled={busy}
-                 className="block w-full rounded border border-white/10 bg-white/5 p-3 text-sm text-white/80" />
+                 className="block w-full rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] p-3 text-sm text-[color:var(--db-text-soft)]" />
         )}
 
         {tab === 'url' && (
           <div className="space-y-2">
             <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com/article"
-                   className="w-full rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white" />
+                   className="w-full rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-sm text-[color:var(--db-text)]" />
             <button onClick={handleUrl} disabled={busy || !url.trim()}
                     className="w-full rounded bg-cyan-400 px-3 py-2 text-sm font-semibold text-[#07040f] disabled:opacity-40">
               {busy ? 'Ingesting…' : 'Add URL'}
@@ -108,10 +108,10 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
         {tab === 'notion' && (
           <div className="space-y-2">
             <input value={notionName} onChange={e => setNotionName(e.target.value)} placeholder="Display name"
-                   className="w-full rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white" />
+                   className="w-full rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-sm text-[color:var(--db-text)]" />
             <input value={notionId} onChange={e => setNotionId(e.target.value)} placeholder="Notion page ID (UUID)"
-                   className="w-full rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white" />
-            <p className="text-[11px] text-white/40">
+                   className="w-full rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-sm text-[color:var(--db-text)]" />
+            <p className="text-[11px] text-[color:var(--db-text-faint)]">
               Paste the page ID from the Notion URL. Make sure the page is shared with your integration.
             </p>
             <button onClick={handleNotion} disabled={busy || !notionId.trim() || !notionName.trim()}

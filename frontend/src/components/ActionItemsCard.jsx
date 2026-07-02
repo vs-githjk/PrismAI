@@ -29,15 +29,15 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
         <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p className="text-[10px] uppercase tracking-[0.14em] text-gray-600">Total</p>
-            <p className="text-sm font-semibold text-white mt-1">{actionItems.length}</p>
+            <p className="text-sm font-semibold text-[color:var(--db-text)] mt-1">{actionItems.length}</p>
           </div>
           <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p className="text-[10px] uppercase tracking-[0.14em] text-gray-600">Assigned</p>
-            <p className="text-sm font-semibold text-white mt-1">{assignedCount}</p>
+            <p className="text-sm font-semibold text-[color:var(--db-text)] mt-1">{assignedCount}</p>
           </div>
           <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p className="text-[10px] uppercase tracking-[0.14em] text-gray-600">Dated</p>
-            <p className="text-sm font-semibold text-white mt-1">{datedCount}</p>
+            <p className="text-sm font-semibold text-[color:var(--db-text)] mt-1">{datedCount}</p>
           </div>
         </div>
 
@@ -48,7 +48,7 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
               className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
                 item.completed
                   ? 'border-purple-500/15 bg-purple-500/5 opacity-50'
-                  : 'border-white/5 bg-white/2 hover:bg-white/4'
+                  : 'border-[color:var(--db-border)] bg-[var(--db-fill)] hover:bg-[var(--db-fill)]'
               }`}
             >
               <button
@@ -60,7 +60,7 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
                 }`}
               >
                 {item.completed && (
-                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-3 h-3 text-[color:var(--db-text)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
@@ -97,7 +97,7 @@ export default function ActionItemsCard({ actionItems, onToggle }) {
           ))}
         </ul>
 
-        <div className="mt-4 pt-4 border-t border-white/5 flex items-start gap-2">
+        <div className="mt-4 pt-4 border-t border-[color:var(--db-border)] flex items-start gap-2">
           <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>

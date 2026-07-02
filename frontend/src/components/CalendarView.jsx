@@ -165,7 +165,7 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
   }
   const UpChip = ({ e }) => (
     <div title={`Upcoming: ${e.title}`}
-      className="flex items-center gap-1 truncate rounded-md border border-dashed border-white/15 bg-white/[0.02] px-1.5 py-1 text-[10.5px] text-white/45">
+      className="flex items-center gap-1 truncate rounded-md border border-dashed border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-1.5 py-1 text-[10.5px] text-[color:var(--db-text-faint)]">
       <Clock className="h-2.5 w-2.5 shrink-0" />{fmtTime(e.date) && <span className="font-medium">{fmtTime(e.date)}</span>}
       <span className="truncate">{e.title}</span>
     </div>
@@ -188,28 +188,28 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
             <CalendarDays className="h-5 w-5 text-[#06080d]" />
           </span>
           <div>
-            <h1 className="text-xl font-bold tracking-[-0.015em] text-white">{periodLabel}</h1>
-            <p className="text-[11px] text-white/40">{insights.count} meeting{insights.count === 1 ? '' : 's'} this month{workspaceName ? ` · ${workspaceName}` : ''}</p>
+            <h1 className="text-xl font-bold tracking-[-0.015em] text-[color:var(--db-text)]">{periodLabel}</h1>
+            <p className="text-[11px] text-[color:var(--db-text-faint)]">{insights.count} meeting{insights.count === 1 ? '' : 's'} this month{workspaceName ? ` · ${workspaceName}` : ''}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5">
+          <div className="flex rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] p-0.5">
             {['month', 'week', 'day'].map((v) => (
               <button key={v} onClick={() => setView(v)}
-                className={`ps-anim rounded-md px-3 py-1 text-[12px] font-medium capitalize transition ${view === v ? 'bg-cyan-400/15 text-cyan-200' : 'text-white/45 hover:text-white/80'}`}>{v}</button>
+                className={`ps-anim rounded-md px-3 py-1 text-[12px] font-medium capitalize transition ${view === v ? 'bg-cyan-400/15 text-cyan-200' : 'text-[color:var(--db-text-faint)] hover:text-[color:var(--db-text-soft)]'}`}>{v}</button>
             ))}
           </div>
-          <button onClick={goToday} className="ps-anim rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12px] font-medium text-white/70 transition hover:text-white">Today</button>
+          <button onClick={goToday} className="ps-anim rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)]">Today</button>
           <div className="flex items-center gap-1">
-            <button onClick={() => step(-1)} aria-label="Previous" className="ps-anim grid h-8 w-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-white/60 transition hover:text-white"><ChevronLeft className="h-4 w-4" /></button>
-            <button onClick={() => step(1)} aria-label="Next" className="ps-anim grid h-8 w-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-white/60 transition hover:text-white"><ChevronRight className="h-4 w-4" /></button>
+            <button onClick={() => step(-1)} aria-label="Previous" className="ps-anim grid h-8 w-8 place-items-center rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)]"><ChevronLeft className="h-4 w-4" /></button>
+            <button onClick={() => step(1)} aria-label="Next" className="ps-anim grid h-8 w-8 place-items-center rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)]"><ChevronRight className="h-4 w-4" /></button>
           </div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Filter className="h-3.5 w-3.5 text-white/30" />
+        <Filter className="h-3.5 w-3.5 text-[color:var(--db-text-faint)]" />
         {[['healthy', 'Healthy', '#22c55e'], ['mixed', 'Mixed', '#f59e0b'], ['strained', 'Strained', '#ef4444']].map(([k, label, c]) => {
           const on = filters.health.has(k)
           return (
@@ -237,30 +237,30 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
 
         {/* Insights rail */}
         <aside className="space-y-3">
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
-            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">This month</h3>
+          <div className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-4">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--db-text-faint)]">This month</h3>
             <div className="grid grid-cols-3 gap-2">
               <Stat icon={<CalendarDays className="h-3.5 w-3.5" />} value={insights.count} label="Meetings" color="#67e8f9" />
               <Stat icon={<Activity className="h-3.5 w-3.5" />} value={insights.avg ?? '—'} label="Avg health" color={insights.avg != null ? healthColor(insights.avg) : '#94a3b8'} />
               <Stat icon={<ListTodo className="h-3.5 w-3.5" />} value={insights.openCount} label="Open actions" color="#fbbf24" />
             </div>
           </div>
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
-            <div className="mb-3 flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-violet-300" /><h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">Top owners</h3></div>
+          <div className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-4">
+            <div className="mb-3 flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-violet-300" /><h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--db-text-faint)]">Top owners</h3></div>
             {insights.topOwners.length === 0 ? (
-              <p className="text-[11.5px] text-white/35">No open action owners this month.</p>
+              <p className="text-[11.5px] text-[color:var(--db-text-faint)]">No open action owners this month.</p>
             ) : (
               <div className="space-y-2.5">
                 {insights.topOwners.map(([name, n]) => (
                   <div key={name}>
-                    <div className="mb-1 flex items-center justify-between text-[11.5px]"><span className="truncate text-white/75">{name}</span><span className="ml-2 shrink-0 font-semibold text-white/45">{n}</span></div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full rounded-full" style={{ width: `${(n / insights.maxOwner) * 100}%`, background: 'linear-gradient(90deg,#22d3ee,#818cf8)' }} /></div>
+                    <div className="mb-1 flex items-center justify-between text-[11.5px]"><span className="truncate text-[color:var(--db-text-soft)]">{name}</span><span className="ml-2 shrink-0 font-semibold text-[color:var(--db-text-faint)]">{n}</span></div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--db-fill)]"><div className="h-full rounded-full" style={{ width: `${(n / insights.maxOwner) * 100}%`, background: 'linear-gradient(90deg,#22d3ee,#818cf8)' }} /></div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div className="flex items-center gap-3 px-1 text-[10.5px] text-white/35">
+          <div className="flex items-center gap-3 px-1 text-[10.5px] text-[color:var(--db-text-faint)]">
             <span className="font-medium uppercase tracking-wide">Health</span>
             {[['#22c55e', 'Healthy'], ['#f59e0b', 'Mixed'], ['#ef4444', 'Strained']].map(([c, l]) => (
               <span key={l} className="flex items-center gap-1"><CircleDot className="h-2.5 w-2.5" style={{ color: c }} />{l}</span>
@@ -272,23 +272,23 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
       {/* Hover preview — portalled to body so position:fixed escapes the dashboard's
           transformed/animated ancestor (which would otherwise capture it). */}
       {hover && createPortal((
-        <div className="pointer-events-none fixed z-[200] max-h-[240px] w-[300px] overflow-hidden rounded-xl border border-white/[0.12] bg-[#0d111b] p-3 shadow-2xl"
+        <div className="pointer-events-none fixed z-[200] max-h-[240px] w-[300px] overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[#0d111b] p-3 shadow-2xl"
           style={{ left: hover.x, top: hover.y }}>
           <div className="flex items-start justify-between gap-2">
-            <p className="text-[13px] font-semibold leading-snug text-white">{hover.entry.title}</p>
+            <p className="text-[13px] font-semibold leading-snug text-[color:var(--db-text)]">{hover.entry.title}</p>
             {Number.isFinite(Number(hover.entry.health)) && (
               <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ color: healthColor(hover.entry.health), background: `${healthColor(hover.entry.health)}1a` }}>{Math.round(hover.entry.health)}</span>
             )}
           </div>
-          <p className="mt-0.5 text-[10.5px] text-white/40">{hover.entry.date.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+          <p className="mt-0.5 text-[10.5px] text-[color:var(--db-text-faint)]">{hover.entry.date.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
           {(hover.entry.result.tldr || hover.entry.result.summary) && (
-            <p className="mt-2 line-clamp-3 text-[11.5px] leading-relaxed text-white/65">{hover.entry.result.tldr || hover.entry.result.summary}</p>
+            <p className="mt-2 line-clamp-3 text-[11.5px] leading-relaxed text-[color:var(--db-text-muted)]">{hover.entry.result.tldr || hover.entry.result.summary}</p>
           )}
           {(hover.entry.result.decisions || []).slice(0, 2).length > 0 && (
-            <div className="mt-2 border-t border-white/[0.07] pt-2">
-              <p className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-white/30">Decisions</p>
+            <div className="mt-2 border-t border-[color:var(--db-border)] pt-2">
+              <p className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-[color:var(--db-text-faint)]">Decisions</p>
               {(hover.entry.result.decisions || []).slice(0, 2).map((d, i) => (
-                <p key={i} className="line-clamp-1 text-[11px] text-white/55">• {typeof d === 'string' ? d : d.decision}</p>
+                <p key={i} className="line-clamp-1 text-[11px] text-[color:var(--db-text-muted)]">• {typeof d === 'string' ? d : d.decision}</p>
               ))}
             </div>
           )}
@@ -305,10 +305,10 @@ function weekDays(cursor) {
 
 function Stat({ icon, value, label, color }) {
   return (
-    <div className="rounded-xl bg-white/[0.03] px-2 py-2.5 text-center">
+    <div className="rounded-xl bg-[var(--db-fill)] px-2 py-2.5 text-center">
       <div className="flex items-center justify-center" style={{ color }}>{icon}</div>
       <div className="mt-1 text-[18px] font-bold leading-none" style={{ color }}>{value}</div>
-      <div className="mt-1 text-[9px] uppercase tracking-wide text-white/35">{label}</div>
+      <div className="mt-1 text-[9px] uppercase tracking-wide text-[color:var(--db-text-faint)]">{label}</div>
     </div>
   )
 }
@@ -319,9 +319,9 @@ function MonthGrid({ year, month, byDay, upcomingByDay, todayKey, expandedDay, s
   const start = new Date(year, month, 1 - first.getDay())
   const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
-      <div className="grid grid-cols-7 border-b border-white/[0.07]">
-        {WEEKDAYS.map((w) => <div key={w} className="px-2 py-2 text-center text-[10.5px] font-semibold uppercase tracking-[0.1em] text-white/35">{w}</div>)}
+    <div className="overflow-hidden rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)]">
+      <div className="grid grid-cols-7 border-b border-[color:var(--db-border)]">
+        {WEEKDAYS.map((w) => <div key={w} className="px-2 py-2 text-center text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[color:var(--db-text-faint)]">{w}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {days.map((d, i) => {
@@ -334,11 +334,11 @@ function MonthGrid({ year, month, byDay, upcomingByDay, todayKey, expandedDay, s
           const shown = expanded ? meetings : meetings.slice(0, MAX_CHIPS)
           const extra = meetings.length - shown.length
           return (
-            <div key={i} className={`min-h-[110px] border-b border-r border-white/[0.05] p-1.5 ${i % 7 === 6 ? 'border-r-0' : ''} ${inMonth ? '' : 'bg-black/20'}`}
+            <div key={i} className={`min-h-[110px] border-b border-r border-[color:var(--db-border)] p-1.5 ${i % 7 === 6 ? 'border-r-0' : ''} ${inMonth ? '' : 'bg-black/20'}`}
               style={isToday ? { background: 'rgba(34,211,238,0.06)' } : undefined}>
               <div className="mb-1 flex items-center justify-between px-0.5">
-                <span className={`grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-semibold ${isToday ? 'bg-cyan-400 text-[#06080d]' : inMonth ? 'text-white/70' : 'text-white/25'}`}>{d.getDate()}</span>
-                {meetings.length > 0 && <span className="text-[9.5px] font-medium text-white/30">{meetings.length}</span>}
+                <span className={`grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-semibold ${isToday ? 'bg-cyan-400 text-[#06080d]' : inMonth ? 'text-[color:var(--db-text-muted)]' : 'text-[color:var(--db-text-faint)]'}`}>{d.getDate()}</span>
+                {meetings.length > 0 && <span className="text-[9.5px] font-medium text-[color:var(--db-text-faint)]">{meetings.length}</span>}
               </div>
               <div className={`space-y-1 ${expanded ? 'cal-scroll max-h-44 overflow-y-auto' : ''}`}>
                 {shown.map((m) => <Chip key={m.id} m={m} />)}
@@ -396,16 +396,16 @@ function TimeGrid({ days, single = false, byDay, upcomingByDay, todayKey, onOpen
     scrollRef.current.scrollTop = Math.max(0, (earliest - rs) * HOUR_PX - 28)
   }, [days, byDay, rs])
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
+    <div className="overflow-hidden rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)]">
       {/* day headers */}
-      <div className="grid border-b border-white/[0.07]" style={{ gridTemplateColumns: `58px repeat(${days.length}, minmax(0,1fr))` }}>
+      <div className="grid border-b border-[color:var(--db-border)]" style={{ gridTemplateColumns: `58px repeat(${days.length}, minmax(0,1fr))` }}>
         <div />
         {days.map((d, i) => {
           const isToday = ymd(d) === todayKey
           return (
             <div key={i} className={`px-2 py-2 text-center ${isToday ? 'bg-cyan-400/[0.06]' : ''}`}>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-white/35">{d.toLocaleDateString('en-US', { weekday: single ? 'long' : 'short' })}</div>
-              <div className={`text-[15px] font-bold ${isToday ? 'text-cyan-300' : 'text-white/75'}`}>{d.getDate()}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--db-text-faint)]">{d.toLocaleDateString('en-US', { weekday: single ? 'long' : 'short' })}</div>
+              <div className={`text-[15px] font-bold ${isToday ? 'text-cyan-300' : 'text-[color:var(--db-text-soft)]'}`}>{d.getDate()}</div>
             </div>
           )
         })}
@@ -414,16 +414,16 @@ function TimeGrid({ days, single = false, byDay, upcomingByDay, todayKey, onOpen
       <div ref={scrollRef} className="cal-scroll relative max-h-[64vh] overflow-y-auto">
         {days.every((d) => !(byDay[ymd(d)] || []).length && !(upcomingByDay[ymd(d)] || []).length) && (
           <div className="pointer-events-none absolute inset-x-0 top-16 z-10 text-center">
-            <p className="text-[13px] font-medium text-white/45">No meetings {single ? 'on this day' : 'this week'}.</p>
-            <p className="mt-1 text-[11px] text-white/30">Use ‹ › to browse, or switch to Month.</p>
+            <p className="text-[13px] font-medium text-[color:var(--db-text-faint)]">No meetings {single ? 'on this day' : 'this week'}.</p>
+            <p className="mt-1 text-[11px] text-[color:var(--db-text-faint)]">Use ‹ › to browse, or switch to Month.</p>
           </div>
         )}
         <div className="grid" style={{ gridTemplateColumns: `58px repeat(${days.length}, minmax(0,1fr))` }}>
           {/* hour gutter */}
           <div>
             {hours.map((h) => (
-              <div key={h} className="relative border-b border-white/[0.04]" style={{ height: HOUR_PX }}>
-                <span className="absolute -top-1.5 right-2 whitespace-nowrap text-[9.5px] text-white/30">{hourLabel(h)}</span>
+              <div key={h} className="relative border-b border-[color:var(--db-border)]" style={{ height: HOUR_PX }}>
+                <span className="absolute -top-1.5 right-2 whitespace-nowrap text-[9.5px] text-[color:var(--db-text-faint)]">{hourLabel(h)}</span>
               </div>
             ))}
           </div>
@@ -433,8 +433,8 @@ function TimeGrid({ days, single = false, byDay, upcomingByDay, todayKey, onOpen
             const ups = layout(upcomingByDay[ymd(d)] || [], rs)
             const isToday = ymd(d) === todayKey
             return (
-              <div key={ci} className={`relative border-l border-white/[0.05] ${isToday ? 'bg-cyan-400/[0.03]' : ''}`} style={{ height: colHeight }}>
-                {hours.map((h) => <div key={h} className="border-b border-white/[0.04]" style={{ height: HOUR_PX }} />)}
+              <div key={ci} className={`relative border-l border-[color:var(--db-border)] ${isToday ? 'bg-cyan-400/[0.03]' : ''}`} style={{ height: colHeight }}>
+                {hours.map((h) => <div key={h} className="border-b border-[color:var(--db-border)]" style={{ height: HOUR_PX }} />)}
                 {meetings.map((m) => {
                   const c = healthColor(m.health)
                   return (
@@ -448,9 +448,9 @@ function TimeGrid({ days, single = false, byDay, upcomingByDay, todayKey, onOpen
                 })}
                 {ups.map((e) => (
                   <div key={e.id} title={`Upcoming: ${e.title}`}
-                    className="absolute overflow-hidden rounded-md border border-dashed border-white/20 bg-white/[0.03] px-1.5 py-1"
+                    className="absolute overflow-hidden rounded-md border border-dashed border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-1.5 py-1"
                     style={{ top: e.top, height: BLOCK_PX, left: `calc(${e.leftPct}% + 3px)`, width: `calc(${e.widthPct}% - 6px)` }}>
-                    <span className="flex items-center gap-1 truncate text-[10px] text-white/50"><Clock className="h-2.5 w-2.5 shrink-0" />{e.title}</span>
+                    <span className="flex items-center gap-1 truncate text-[10px] text-[color:var(--db-text-faint)]"><Clock className="h-2.5 w-2.5 shrink-0" />{e.title}</span>
                   </div>
                 ))}
               </div>

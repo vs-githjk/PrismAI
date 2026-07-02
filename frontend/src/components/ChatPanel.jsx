@@ -23,12 +23,12 @@ function SourceCard({ source }) {
   const pct = source.score != null ? `${Math.round(source.score * 100)}% match` : null
   const anchor = meta.page != null ? `Page ${meta.page}` : (meta.timestamp || null)
   return (
-    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2">
+    <div className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-2">
       <div className="flex items-center gap-1.5">
         <FileText className="h-3 w-3 shrink-0 text-cyan-300/80" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-white/85">{source.doc_name || 'Source'}</span>
+        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-[color:var(--db-text-soft)]">{source.doc_name || 'Source'}</span>
       </div>
-      <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-white/40">
+      <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-[color:var(--db-text-faint)]">
         <span className="capitalize">{(source.source_type || 'doc').replace('_', ' ')}</span>
         {pct && <><span>·</span><span>{pct}</span></>}
         {anchor && <><span>·</span><span className="inline-flex items-center gap-0.5">
@@ -46,7 +46,7 @@ function SourceCard({ source }) {
         </button>
       )}
       {open && source.snippet && (
-        <p className="mt-1 pl-[18px] text-[10.5px] leading-5 text-white/55">{source.snippet}</p>
+        <p className="mt-1 pl-[18px] text-[10.5px] leading-5 text-[color:var(--db-text-muted)]">{source.snippet}</p>
       )}
     </div>
   )
@@ -419,11 +419,11 @@ export default function ChatPanel({
   const showEmptyState = !viewingSession && messages.length === 0
 
   return (
-    <div className="dashboard-body-font flex h-full min-h-0 flex-col text-white">
+    <div className="dashboard-body-font flex h-full min-h-0 flex-col text-[color:var(--db-text)]">
       {/* Header — two rows so the title and the chip cluster never collide in a
           narrow side panel (previously the "Chat" eyebrow butted into the
           agent-aware pill, rendering as "CHAT…ENT-AWARE"). */}
-      <div className="flex flex-shrink-0 flex-col gap-2 border-b border-white/[0.08] px-4 py-3">
+      <div className="flex flex-shrink-0 flex-col gap-2 border-b border-[color:var(--db-border)] px-4 py-3">
         {/* Row 1 — identity + live model status. pr-9 reserves space for the
             absolute close-X (right-3, ~28px) so the badge isn't obstructed. */}
         <div className="flex items-center gap-2 pr-9">
@@ -432,9 +432,9 @@ export default function ChatPanel({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90">Chat</p>
-            <p className="truncate text-sm font-semibold text-white">Ask about this meeting</p>
+            <p className="truncate text-sm font-semibold text-[color:var(--db-text)]">Ask about this meeting</p>
           </div>
-          <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50">
+          <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-0.5 text-[10px] text-[color:var(--db-text-faint)]">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
             Prism
           </span>
@@ -467,7 +467,7 @@ export default function ChatPanel({
                 setViewingSession(null)
                 setShowHistory(false)
               }}
-              className="flex items-center gap-1 rounded-md border border-white/[0.10] bg-white/[0.04] px-2 py-1 text-[10.5px] font-medium text-white/68 transition hover:border-cyan-400/40 hover:text-cyan-200"
+              className="flex items-center gap-1 rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[10.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/40 hover:text-cyan-200"
               aria-label="Start a new chat for this meeting"
             >
               <MessagesSquare className="h-3 w-3" aria-hidden="true" />
@@ -480,7 +480,7 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={() => setShowHistory((v) => !v)}
-                className="flex items-center gap-1 rounded-md border border-white/[0.10] bg-white/[0.04] px-2 py-1 text-[10.5px] font-medium text-white/68 transition hover:border-white/[0.20] hover:text-white"
+                className="flex items-center gap-1 rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[10.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-[color:var(--db-text)]"
                 aria-label="Show past chats for this meeting"
               >
                 <History className="h-3 w-3" aria-hidden="true" />
@@ -491,10 +491,10 @@ export default function ChatPanel({
               </button>
 
               {showHistory && (
-                <div className="absolute right-0 top-8 z-40 w-72 overflow-hidden rounded-xl border border-white/[0.12] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
-                  <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
-                    <p className="text-[11px] font-semibold text-white/86">Past chats</p>
-                    <p className="text-[10px] text-white/40">{pastSessions.length} of 3</p>
+                <div className="absolute right-0 top-8 z-40 w-72 overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
+                  <div className="flex items-center justify-between border-b border-[color:var(--db-border)] px-3 py-2">
+                    <p className="text-[11px] font-semibold text-[color:var(--db-text)]">Past chats</p>
+                    <p className="text-[10px] text-[color:var(--db-text-faint)]">{pastSessions.length} of 3</p>
                   </div>
                   <div className="max-h-60 overflow-y-auto">
                     {pastSessions.map((session) => {
@@ -503,18 +503,18 @@ export default function ChatPanel({
                       return (
                         <div
                           key={session.id}
-                          className="group flex items-stretch border-b border-white/[0.05] last:border-b-0"
+                          className="group flex items-stretch border-b border-[color:var(--db-border)] last:border-b-0"
                         >
                           <button
                             type="button"
                             onClick={() => { setViewingSession(session); setShowHistory(false) }}
-                            className="min-w-0 flex-1 px-3 py-2.5 text-left transition hover:bg-white/[0.04]"
+                            className="min-w-0 flex-1 px-3 py-2.5 text-left transition hover:bg-[var(--db-fill)]"
                           >
-                            <p className="text-[11px] text-white/40">{formatSessionDate(session.created_at)}</p>
+                            <p className="text-[11px] text-[color:var(--db-text-faint)]">{formatSessionDate(session.created_at)}</p>
                             {firstUser && (
-                              <p className="mt-0.5 truncate text-[12px] text-white/86">{firstUser.content}</p>
+                              <p className="mt-0.5 truncate text-[12px] text-[color:var(--db-text)]">{firstUser.content}</p>
                             )}
-                            <p className="mt-1 text-[10px] text-white/40">
+                            <p className="mt-1 text-[10px] text-[color:var(--db-text-faint)]">
                               {msgs.length} message{msgs.length !== 1 ? 's' : ''}
                             </p>
                           </button>
@@ -522,7 +522,7 @@ export default function ChatPanel({
                             type="button"
                             onClick={() => handleDeletePastSession(session.id)}
                             aria-label="Delete chat session"
-                            className="flex items-center px-3 text-white/30 opacity-0 transition group-hover:opacity-100 hover:text-red-300"
+                            className="flex items-center px-3 text-[color:var(--db-text-faint)] opacity-0 transition group-hover:opacity-100 hover:text-red-300"
                           >
                             <X className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -548,7 +548,7 @@ export default function ChatPanel({
             <X className="h-3 w-3" aria-hidden="true" />
             New chat
           </button>
-          <span className="ml-auto truncate text-[10px] text-white/50">
+          <span className="ml-auto truncate text-[10px] text-[color:var(--db-text-faint)]">
             Viewing past chat · {formatSessionDate(viewingSession.created_at)}
           </span>
         </div>
@@ -562,7 +562,7 @@ export default function ChatPanel({
           <div className="flex h-full flex-col justify-center gap-3">
             <div className="px-1">
               <p className={"text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90"}>Suggested</p>
-              <p className="mt-0.5 text-sm text-white/68">Tap a prompt to start — or ask your own below.</p>
+              <p className="mt-0.5 text-sm text-[color:var(--db-text-muted)]">Tap a prompt to start — or ask your own below.</p>
             </div>
             <div className="flex flex-col gap-2">
               {suggestions.map((prompt, idx) => {
@@ -572,12 +572,12 @@ export default function ChatPanel({
                     key={prompt}
                     type="button"
                     onClick={() => send(prompt)}
-                    className="group flex w-full items-center gap-3 rounded-lg border border-white/[0.08] bg-[#0d0e10] px-3 py-3 text-left transition hover:border-cyan-400/40 hover:bg-[#0f1113]"
+                    className="group flex w-full items-center gap-3 rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-3 text-left transition hover:border-cyan-400/40 hover:bg-[#0f1113]"
                   >
                     <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/[0.10] text-cyan-300 transition group-hover:border-cyan-300/40 group-hover:bg-cyan-400/[0.15]">
                       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                     </span>
-                    <span className="text-sm text-white/85 group-hover:text-white">{prompt}</span>
+                    <span className="text-sm text-[color:var(--db-text-soft)] group-hover:text-[color:var(--db-text)]">{prompt}</span>
                   </button>
                 )
               })}
@@ -595,8 +595,8 @@ export default function ChatPanel({
             <div
               className={`max-w-[78%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                 msg.role === 'user'
-                  ? 'rounded-tr-sm bg-gradient-to-br from-[#0c4a6e] to-[#155e75] text-white'
-                  : 'rounded-tl-sm border border-white/[0.08] bg-[#0d0e10] text-white/85'
+                  ? 'rounded-tr-sm bg-gradient-to-br from-[#0c4a6e] to-[#155e75] text-[color:var(--db-text)]'
+                  : 'rounded-tl-sm border border-[color:var(--db-border)] bg-[#0d0e10] text-[color:var(--db-text-soft)]'
               }`}
             >
               {msg.content}
@@ -620,7 +620,7 @@ export default function ChatPanel({
               )}
               {msg.ragContext?.sources?.length > 0 && (
                 <div className="mt-2">
-                  <p className="mb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                  <p className="mb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
                     Sources ({msg.ragContext.sources.length})
                   </p>
                   <div className="space-y-1.5">
@@ -635,7 +635,7 @@ export default function ChatPanel({
                   {msg.pendingConfirmations.map((pc, ci) => (
                     <div key={ci} className="rounded-lg border border-yellow-400/25 bg-yellow-400/[0.07] p-2.5 text-[11px]">
                       <p className="mb-1 font-medium text-yellow-300">{pc.message || `Confirm: ${pc.tool}`}</p>
-                      <pre className="mb-2 max-h-24 overflow-y-auto whitespace-pre-wrap text-[10px] text-white/55">
+                      <pre className="mb-2 max-h-24 overflow-y-auto whitespace-pre-wrap text-[10px] text-[color:var(--db-text-muted)]">
                         {typeof pc.preview === 'object' ? JSON.stringify(pc.preview, null, 2) : pc.preview}
                       </pre>
                       <div className="flex gap-2">
@@ -667,7 +667,7 @@ export default function ChatPanel({
                             ...m,
                             pendingConfirmations: (m.pendingConfirmations || []).filter((_, idx) => idx !== ci),
                           } : m))}
-                          className="rounded-md border border-white/[0.10] bg-white/[0.04] px-3 py-1 text-[10px] font-medium text-white/68 transition hover:text-white"
+                          className="rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-1 text-[10px] font-medium text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)]"
                         >Cancel</button>
                       </div>
                     </div>
@@ -689,7 +689,7 @@ export default function ChatPanel({
             <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/[0.10]">
               <Sparkles className="h-3 w-3 text-cyan-300" aria-hidden="true" />
             </div>
-            <div className="rounded-xl rounded-tl-sm border border-white/[0.08] bg-[#0d0e10] px-3.5 py-2.5">
+            <div className="rounded-xl rounded-tl-sm border border-[color:var(--db-border)] bg-[#0d0e10] px-3.5 py-2.5">
               {loadingGlobal ? (
                 <span className="text-[11px] text-cyan-300 animate-pulse">Searching all meetings…</span>
               ) : (
@@ -707,7 +707,7 @@ export default function ChatPanel({
       </div>
 
       {/* Composer */}
-      <div className="flex flex-shrink-0 items-center gap-2 border-t border-white/[0.08] px-4 py-3">
+      <div className="flex flex-shrink-0 items-center gap-2 border-t border-[color:var(--db-border)] px-4 py-3">
         {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
             the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
         <textarea
@@ -729,7 +729,7 @@ export default function ChatPanel({
               ? 'Ask or say "redraft email more formally"…'
               : 'Ask a question…'
           }
-          className="flex-1 resize-none rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 resize-none rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button
           type="button"

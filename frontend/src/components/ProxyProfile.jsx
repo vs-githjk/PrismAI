@@ -190,7 +190,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
       `}</style>
 
       {/* Hero */}
-      <header className="relative overflow-hidden rounded-2xl border border-white/[0.08] p-6"
+      <header className="relative overflow-hidden rounded-2xl border border-[color:var(--db-border)] p-6"
         style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.10), rgba(56,189,248,0.05) 40%, rgba(167,139,250,0.10))' }}>
         <div className="absolute -right-10 -top-12 h-44 w-44 rounded-full blur-3xl"
           style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.28), transparent 70%)' }} />
@@ -206,7 +206,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
                 Stand-in
               </h1>
             </div>
-            <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-white/55">
+            <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-[color:var(--db-text-muted)]">
               When you can’t attend, Prism represents you — using your work below and the context you give it. It learns more each time you approve a stand-in.
             </p>
           </div>
@@ -225,15 +225,15 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-400" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold text-white">
+            <p className="truncate text-[13px] font-semibold text-[color:var(--db-text)]">
               Prism is standing in for you{scheduled.meeting_label ? <> at <span className="text-cyan-200">{scheduled.meeting_label}</span></> : ''}
             </p>
             {scheduled.join_at && (
-              <p className="text-[11px] text-white/45">{new Date(scheduled.join_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+              <p className="text-[11px] text-[color:var(--db-text-faint)]">{new Date(scheduled.join_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
             )}
           </div>
           <button onClick={() => cancelRep(scheduled.id)}
-            className="ps-anim shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-medium text-white/55 transition hover:border-red-400/30 hover:text-red-300">
+            className="ps-anim shrink-0 rounded-lg border border-[color:var(--db-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--db-text-muted)] transition hover:border-red-400/30 hover:text-red-300">
             Cancel
           </button>
         </div>
@@ -264,11 +264,11 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
                   return (
                     <li key={i}>
                       <button onClick={() => open(a.meeting_id)} disabled={!a.meeting_id}
-                        className="ps-anim group flex w-full items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-white/[0.08] hover:bg-white/[0.03] disabled:cursor-default">
+                        className="ps-anim group flex w-full items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-[color:var(--db-border)] hover:bg-[var(--db-fill)] disabled:cursor-default">
                         <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-400/70" />
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2">
-                            <span className="truncate text-[13px] font-medium text-white">{a.task}</span>
+                            <span className="truncate text-[13px] font-medium text-[color:var(--db-text)]">{a.task}</span>
                             {dt && (
                               <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
                                 style={{ color: dt.color, background: dt.bg, border: `1px solid ${dt.border}` }}>
@@ -282,9 +282,9 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
                               <span className="line-clamp-1">From decision: {a.from_decision}</span>
                             </span>
                           )}
-                          <span className="mt-0.5 block truncate text-[10.5px] text-white/35">{a.meeting}</span>
+                          <span className="mt-0.5 block truncate text-[10.5px] text-[color:var(--db-text-faint)]">{a.meeting}</span>
                         </span>
-                        {a.meeting_id && <ArrowUpRight className="ps-anim mt-0.5 h-3.5 w-3.5 shrink-0 text-white/0 transition group-hover:text-white/40" />}
+                        {a.meeting_id && <ArrowUpRight className="ps-anim mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)] transition group-hover:text-[color:var(--db-text-faint)]" />}
                       </button>
                     </li>
                   )
@@ -313,18 +313,18 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
                   return (
                     <li key={i}>
                       <button onClick={() => open(d.meeting_id)} disabled={!d.meeting_id}
-                        className="ps-anim group flex w-full items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-white/[0.08] hover:bg-white/[0.03] disabled:cursor-default"
+                        className="ps-anim group flex w-full items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-[color:var(--db-border)] hover:bg-[var(--db-fill)] disabled:cursor-default"
                         style={{ borderLeft: `2px solid ${imp.color}` }}>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2">
-                            <span className="truncate text-[13px] font-medium text-white">{d.decision}</span>
+                            <span className="truncate text-[13px] font-medium text-[color:var(--db-text)]">{d.decision}</span>
                             <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
                               style={{ color: imp.color, background: imp.tint, border: `1px solid ${imp.border}` }}>
                               {imp.label}
                             </span>
                           </span>
-                          {d.rationale && <span className="mt-0.5 line-clamp-2 block text-[11.5px] leading-relaxed text-white/50">{d.rationale}</span>}
-                          <span className="mt-1 flex items-center gap-2 text-[10.5px] text-white/35">
+                          {d.rationale && <span className="mt-0.5 line-clamp-2 block text-[11.5px] leading-relaxed text-[color:var(--db-text-faint)]">{d.rationale}</span>}
+                          <span className="mt-1 flex items-center gap-2 text-[10.5px] text-[color:var(--db-text-faint)]">
                             <span className="truncate">{d.meeting}</span>
                             {!d.has_action && (
                               <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide"
@@ -334,7 +334,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
                             )}
                           </span>
                         </span>
-                        {d.meeting_id && <ArrowUpRight className="ps-anim mt-0.5 h-3.5 w-3.5 shrink-0 text-white/0 transition group-hover:text-white/40" />}
+                        {d.meeting_id && <ArrowUpRight className="ps-anim mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)] transition group-hover:text-[color:var(--db-text-faint)]" />}
                       </button>
                     </li>
                   )
@@ -347,9 +347,9 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
         {/* RIGHT — who you are + where Prism represents you */}
         <aside className="space-y-5">
           {/* Profile */}
-          <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
-            <h2 className="text-[12px] font-semibold uppercase tracking-wide text-white/45">What Prism should know about you</h2>
-            <p className="mt-1 text-[11px] text-white/35">Specific to <span className="text-white/55">{scopeLabel}</span> — each space keeps its own, so team and personal context never mix.</p>
+          <section className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-5">
+            <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[color:var(--db-text-faint)]">What Prism should know about you</h2>
+            <p className="mt-1 text-[11px] text-[color:var(--db-text-faint)]">Specific to <span className="text-[color:var(--db-text-muted)]">{scopeLabel}</span> — each space keeps its own, so team and personal context never mix.</p>
             {profileEmpty && (
               <p className="ps-anim mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-[11.5px] leading-relaxed text-cyan-100/90">
                 <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
@@ -358,21 +358,21 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
             )}
             <div className="mt-4 space-y-4">
               <div>
-                <label className="text-[12px] font-medium text-white/70">Role / focus</label>
+                <label className="text-[12px] font-medium text-[color:var(--db-text-muted)]">Role / focus</label>
                 <input value={roleFocus} onChange={(e) => setRoleFocus(e.target.value)}
                   placeholder="e.g. Backend lead — payments & API" disabled={!loaded}
-                  className={`mt-1.5 w-full rounded-lg border bg-white/[0.04] px-3 py-2 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-cyan-400/40 ${roleOnlyMissing ? 'border-cyan-400/30' : 'border-white/[0.08]'}`} />
+                  className={`mt-1.5 w-full rounded-lg border bg-[var(--db-fill)] px-3 py-2 text-[13px] text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/40 ${roleOnlyMissing ? 'border-cyan-400/30' : 'border-[color:var(--db-border)]'}`} />
                 {roleOnlyMissing && (
                   <p className="mt-1 text-[10.5px] text-cyan-300/70">Add your role so Prism leads with who you are.</p>
                 )}
               </div>
               <div>
-                <label className="text-[12px] font-medium text-white/70">Standing notes</label>
+                <label className="text-[12px] font-medium text-[color:var(--db-text-muted)]">Standing notes</label>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4}
                   placeholder="Ongoing responsibilities, projects you own, anything Prism should mention on your behalf…"
                   disabled={!loaded}
-                  className="ps-scroll mt-1.5 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[13px] leading-relaxed text-white outline-none placeholder:text-white/30 focus:border-cyan-400/40" />
-                <p className="mt-1 text-[10.5px] text-white/35">Auto-updated when you approve a stand-in.</p>
+                  className="ps-scroll mt-1.5 w-full resize-none rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2 text-[13px] leading-relaxed text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/40" />
+                <p className="mt-1 text-[10.5px] text-[color:var(--db-text-faint)]">Auto-updated when you approve a stand-in.</p>
               </div>
               <button onClick={save} disabled={saveState === 'saving' || !loaded}
                 className="ps-anim w-full rounded-lg bg-cyan-400 py-2 text-[12.5px] font-semibold text-[#06080d] transition hover:bg-cyan-300 disabled:opacity-40">
@@ -388,7 +388,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
               <Sparkles className="h-4 w-4 text-violet-300" />
               <h2 className="text-[12px] font-semibold uppercase tracking-wide text-violet-200/80">Your default stand-in</h2>
             </div>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-white/50">
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-[color:var(--db-text-faint)]">
               What Prism leads with if you're pulled into a <span className="font-medium text-violet-200/90">{scopeLabel}</span> meeting with no time to compose. Saved here, it pre-fills your stand-in draft so you're one click from approving.
             </p>
             <textarea
@@ -396,7 +396,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
               onChange={(e) => { setDefaultStandin(e.target.value); setPreviewThin(false) }}
               rows={5}
               placeholder="Generate one from your work, or write your own…"
-              className="ps-scroll mt-3 w-full resize-none rounded-lg border border-white/[0.08] bg-black/30 px-3 py-2.5 text-[12.5px] leading-relaxed text-white/85 outline-none placeholder:text-white/25 focus:border-violet-400/40"
+              className="ps-scroll mt-3 w-full resize-none rounded-lg border border-[color:var(--db-border)] bg-black/30 px-3 py-2.5 text-[12.5px] leading-relaxed text-[color:var(--db-text-soft)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-violet-400/40"
             />
             {previewThin && (
               <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-violet-200/80">
@@ -417,13 +417,13 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
             </div>
           </section>
           {/* Your stand-ins — in the rail, scrollable */}
-          <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+          <section className="rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-5">
         <div className="mb-3 flex items-center gap-2">
           <Calendar className="h-4 w-4 text-cyan-300" />
-          <h2 className="text-[12px] font-semibold uppercase tracking-wide text-white/45">Your stand-ins</h2>
+          <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[color:var(--db-text-faint)]">Your stand-ins</h2>
         </div>
         {!loaded ? (
-          <p className="text-[12px] text-white/40">Loading…</p>
+          <p className="text-[12px] text-[color:var(--db-text-faint)]">Loading…</p>
         ) : active.length === 0 && past.length === 0 ? (
           <Empty text="No stand-ins yet." sub="On an upcoming meeting you can’t attend, hit “Can’t make it”." />
         ) : (
@@ -432,20 +432,20 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
               const es = effStatus(rep)
               const meta = STATUS_META[es] || STATUS_META.draft
               return (
-                <div key={rep.id} className="flex items-start gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+                <div key={rep.id} className="flex items-start gap-3 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-[13px] font-medium text-white">{rep.meeting_label || 'Meeting'}</p>
+                      <p className="truncate text-[13px] font-medium text-[color:var(--db-text)]">{rep.meeting_label || 'Meeting'}</p>
                       <span className="shrink-0 rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
                         style={{ color: meta.color, background: `${meta.color}1a`, border: `1px solid ${meta.color}33` }}>
                         {meta.label}
                       </span>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-white/55">{rep.approved_body || rep.draft_body || '—'}</p>
+                    <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-[color:var(--db-text-muted)]">{rep.approved_body || rep.draft_body || '—'}</p>
                   </div>
                   {['draft', 'pending'].includes(es) && (
                     <button onClick={() => cancelRep(rep.id)}
-                      className="ps-anim shrink-0 text-[11px] font-medium text-white/40 transition hover:text-red-300">
+                      className="ps-anim shrink-0 text-[11px] font-medium text-[color:var(--db-text-faint)] transition hover:text-red-300">
                       Cancel
                     </button>
                   )}
@@ -464,19 +464,19 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
 /* ── Reusable scrollable panel for the work boxes ──────────────────────────── */
 function Panel({ icon, title, hint, count, countColor, accent, loading, onRefresh, children }) {
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
+    <section className="relative overflow-hidden rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-fill)]">
       <div className="h-[3px] w-full" style={{ background: accent, opacity: 0.85 }} />
       <div className="flex items-center justify-between px-5 pt-4">
         <div className="flex items-center gap-2">
           {icon}
           <div className="leading-tight">
-            <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-white">{title}</h2>
-            {hint && count > 0 && <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/30">{hint}</p>}
+            <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-[color:var(--db-text)]">{title}</h2>
+            {hint && count > 0 && <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[color:var(--db-text-faint)]">{hint}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={onRefresh} title="Refresh"
-            className="ps-anim grid h-6 w-6 place-items-center rounded-md text-white/30 transition hover:bg-white/[0.05] hover:text-white/70">
+            className="ps-anim grid h-6 w-6 place-items-center rounded-md text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text-muted)]">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'ps-anim animate-spin' : ''}`} />
           </button>
           <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -486,7 +486,7 @@ function Panel({ icon, title, hint, count, countColor, accent, loading, onRefres
         </div>
       </div>
       <div className="ps-scroll max-h-[380px] overflow-y-auto px-3 pb-3 pt-2">
-        {loading && count === 0 ? <p className="px-2 py-3 text-[12px] text-white/35">Loading…</p> : children}
+        {loading && count === 0 ? <p className="px-2 py-3 text-[12px] text-[color:var(--db-text-faint)]">Loading…</p> : children}
       </div>
     </section>
   )
@@ -494,9 +494,9 @@ function Panel({ icon, title, hint, count, countColor, accent, loading, onRefres
 
 function Empty({ text, sub }) {
   return (
-    <div className="rounded-xl border border-dashed border-white/[0.08] bg-white/[0.01] px-4 py-5 text-center">
-      <p className="text-[12.5px] font-medium text-white/55">{text}</p>
-      {sub && <p className="mt-1 text-[11px] text-white/35">{sub}</p>}
+    <div className="rounded-xl border border-dashed border-[color:var(--db-border)] bg-[var(--db-fill)] px-4 py-5 text-center">
+      <p className="text-[12.5px] font-medium text-[color:var(--db-text-muted)]">{text}</p>
+      {sub && <p className="mt-1 text-[11px] text-[color:var(--db-text-faint)]">{sub}</p>}
     </div>
   )
 }

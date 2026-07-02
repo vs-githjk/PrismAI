@@ -37,7 +37,7 @@ export default function KnowledgeBase({ meetingId, workspaceId, workspaceName } 
       <div className="flex items-end justify-between gap-3 px-0.5">
         <div>
           <p className={eyebrow}>Knowledge base</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--db-text)]">
             {scopeLabel} documents
           </h1>
           <p className={`mt-0.5 ${subtleText}`}>
@@ -61,11 +61,11 @@ export default function KnowledgeBase({ meetingId, workspaceId, workspaceName } 
         </section>
       ) : docs.length === 0 ? (
         <section className={`${glassCard} flex flex-col items-center justify-center gap-3 px-6 py-14 text-center`} style={cardGlowStyle}>
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04]">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] bg-[var(--db-fill)]">
             <BookOpen className="h-5 w-5 text-cyan-200/70" aria-hidden="true" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white/90">No documents in {scopeLabel.toLowerCase()} yet</p>
+            <p className="text-sm font-semibold text-[color:var(--db-text)]">No documents in {scopeLabel.toLowerCase()} yet</p>
             <p className={`mt-1 ${subtleText}`}>
               Add a PDF, doc, URL, or Notion page — Prism cites them when answering questions.
             </p>

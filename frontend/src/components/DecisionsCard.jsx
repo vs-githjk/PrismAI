@@ -30,7 +30,7 @@ export default function DecisionsCard({ decisions }) {
           <span className="text-[11px] px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-200">
             {criticalCount} critical
           </span>
-          <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/8 text-gray-400">
+          <span className="text-[11px] px-2.5 py-1 rounded-full bg-[var(--db-fill)] border border-[color:var(--db-border)] text-gray-400">
             Agreement-focused, not discussion-focused
           </span>
         </div>
@@ -41,7 +41,7 @@ export default function DecisionsCard({ decisions }) {
             return (
               <li
                 key={i}
-                className="flex items-start gap-3 p-3 rounded-xl border border-white/5 bg-white/2 hover:bg-white/4 transition-all"
+                className="flex items-start gap-3 p-3 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] hover:bg-[var(--db-fill)] transition-all"
               >
                 <span className="mt-0.5 text-cyan-500 font-bold text-sm shrink-0 w-5 text-center">{i + 1}</span>
                 <div className="flex-1 min-w-0">
@@ -65,7 +65,7 @@ export default function DecisionsCard({ decisions }) {
           })}
         </ul>
 
-        <div className="mt-4 pt-4 border-t border-white/5 flex items-start gap-2">
+        <div className="mt-4 pt-4 border-t border-[color:var(--db-border)] flex items-start gap-2">
           <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>

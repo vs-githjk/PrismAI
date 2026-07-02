@@ -15,7 +15,7 @@ function Field({ label, placeholder, value, onChange, type = 'text', hint, disab
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className="w-full rounded-xl px-3 py-2.5 text-xs text-gray-200 outline-none border border-white/8 focus:border-sky-500/40 placeholder-gray-600"
+        className="w-full rounded-xl px-3 py-2.5 text-xs text-gray-200 outline-none border border-[color:var(--db-border)] focus:border-sky-500/40 placeholder-gray-600"
         style={{ background: 'rgba(0,0,0,0.35)', opacity: disabled ? 0.55 : 1 }}
       />
       {hint && <p className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">{hint}</p>}
@@ -184,7 +184,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
         <div className="px-5 py-4 flex items-center justify-between"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <div>
-            <h3 className="text-sm font-semibold text-white">Integrations</h3>
+            <h3 className="text-sm font-semibold text-[color:var(--db-text)]">Integrations</h3>
             <p className="text-[11px] text-gray-500 mt-0.5">Connect PrismAI to your tools — tokens stay in your browser.</p>
           </div>
           <button onClick={onClose} className="text-gray-600 hover:text-gray-300 transition-colors p-1">
@@ -201,7 +201,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               key={t}
               onClick={() => setTab(t)}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                tab === t ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                tab === t ? 'text-[color:var(--db-text)]' : 'text-gray-500 hover:text-gray-300'
               }`}
               style={tab === t ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' } : {}}
             >
@@ -416,7 +416,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 <button
                   onClick={() => { onConnectCalendar?.(); onClose() }}
                   disabled={isTestAccount}
-                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-[color:var(--db-text)] transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #4285F4, #34A853)' }}>
                   Connect Google Calendar
                 </button>
@@ -497,7 +497,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 <button
                   onClick={() => { onConnectOutlook?.(); onClose() }}
                   disabled={isTestAccount}
-                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-[color:var(--db-text)] transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #0078D4, #0a5ca8)' }}>
                   Connect Outlook Calendar
                 </button>
@@ -542,7 +542,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 <button
                   onClick={() => { onConnectCalendar?.(); onClose() }}
                   disabled={isTestAccount}
-                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full text-xs py-2.5 rounded-xl font-semibold text-[color:var(--db-text)] transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #4285F4, #34A853)' }}>
                   Connect Google Account
                 </button>
@@ -630,13 +630,13 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
         <div className="px-5 py-3 flex items-center justify-end gap-2"
           style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
           <button onClick={onClose}
-            className="text-xs px-4 py-2 rounded-lg text-gray-400 hover:text-white transition-colors"
+            className="text-xs px-4 py-2 rounded-lg text-gray-400 hover:text-[color:var(--db-text)] transition-colors"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
             Cancel
           </button>
           <button onClick={save}
             disabled={isTestAccount}
-            className="text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-xs px-4 py-2 rounded-lg font-semibold text-[color:var(--db-text)] transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
             Save
           </button>
