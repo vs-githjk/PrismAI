@@ -197,8 +197,21 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
     </section>
   ) : null
 
+  const exitNote = result.exit_note
+  const exitAt = exitNote?.at ? new Date(exitNote.at) : null
+  const exitTime = exitAt && !isNaN(exitAt) ? exitAt.toLocaleString() : null
+
   return (
     <div className="space-y-5">
+      {exitNote?.reason && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3.5 py-2.5 text-[13px] text-amber-100/90">
+          <span className="mt-0.5 shrink-0">⚠️</span>
+          <span>
+            <span className="font-semibold">Bot exit:</span> {exitNote.reason}
+            {exitTime && <span className="text-amber-100/55"> · {exitTime}</span>}
+          </span>
+        </div>
+      )}
       <div
         className={`grid gap-5 ${
           showPinned

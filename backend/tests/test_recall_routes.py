@@ -165,6 +165,30 @@ class LeaveReasonTestCase(unittest.TestCase):
             asyncio.run(recall_routes.recall_webhook(request))
         self.assertIn("removed Prism", recall_routes.bot_store["bot-leave"]["leave_reason"])
 
+    def test_notable_leave_flags_and_stamps(self):
+        recall_routes.bot_store["bot-notable"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-notable", "call_ended", "bot_removed", "")
+        bs = recall_routes.bot_store["bot-notable"]
+        self.assertTrue(bs["leave_notable"])           # removal is notable
+        self.assertEqual(bs["leave_sub_code"], "bot_removed")
+        self.assertTrue(bs["left_at"])                 # timestamp captured
+        recall_routes.bot_store.pop("bot-notable", None)
+
+    def test_normal_ending_not_notable(self):
+        recall_routes.bot_store["bot-clean"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-clean", "call_ended", "meeting_ended", "")
+        self.assertFalse(recall_routes.bot_store["bot-clean"]["leave_notable"])
+        recall_routes.bot_store.pop("bot-clean", None)
+
+    def test_leave_command_subcode_is_notable(self):
+        recall_routes.bot_store["bot-lc"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-lc", "", "bot_received_leave_call", "")
+        self.assertTrue(recall_routes.bot_store["bot-lc"]["leave_notable"])
+        recall_routes.bot_store.pop("bot-lc", None)
+
 
 class KeytermGroundingTestCase(unittest.TestCase):
     """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""

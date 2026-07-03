@@ -192,8 +192,24 @@ _LEAVE_REASON_TEXT = {
     "timeout_exceeded_everyone_left": "Everyone else had left, so Prism left.",
     "timeout_exceeded_only_bots": "Only bots remained, so Prism left.",
     "timeout_exceeded_silence": "The meeting was silent for a long time, so Prism left.",
-    "bot_received_leave_call": "Prism was asked to leave the call.",
+    "bot_received_leave_call": "Prism was asked to leave the call (via /leave).",
     "bot_errored": "Prism hit an internal error and left.",
+}
+
+# Exits worth surfacing IN the meeting analysis (not just logs) — the bot didn't
+# leave for a normal "meeting over" reason, so the notes should carry a trace of
+# why it dropped (removed / denied recording / kicked from waiting room / asked to
+# leave / errored). Normal endings (meeting_ended, everyone_left, call_ended_by_host)
+# are intentionally NOT notable — no need to flag a clean finish.
+_NOTABLE_LEAVE_SUBCODES = {
+    "bot_removed",
+    "bot_kicked_from_waiting_room",
+    "timeout_exceeded_waiting_room",
+    "recording_permission_denied",
+    "recording_permission_allowed_timeout",
+    "call_ended_by_platform_waiting_room_timeout",
+    "bot_received_leave_call",
+    "bot_errored",
 }
 
 
@@ -228,9 +244,14 @@ def _record_leave_reason(bot_id: str, code: str, sub_code: str, message: str) ->
     """Log + persist why the bot left so it's never a silent disconnect. Surfaced
     via /bot-status (and the live payload) for the dashboard."""
     reason = _leave_reason_text(code, sub_code, message)
-    print(f"[recall] bot {bot_id} left — code={code!r} sub_code={sub_code!r} reason={reason!r}")
+    notable = (sub_code in _NOTABLE_LEAVE_SUBCODES) or (code == "fatal_error")
+    print(f"[recall] bot {bot_id} left — code={code!r} sub_code={sub_code!r} "
+          f"notable={notable} reason={reason!r}")
     if bot_id in bot_store:
         bot_store[bot_id]["leave_reason"] = reason
+        bot_store[bot_id]["leave_sub_code"] = sub_code
+        bot_store[bot_id]["leave_notable"] = notable
+        bot_store[bot_id].setdefault("left_at", datetime.now(timezone.utc).isoformat())
     try:
         _db_save(bot_id, {"leave_reason": reason})
     except Exception as exc:
@@ -1208,8 +1229,7 @@ async def _send_bot_intro(bot_id: str):
     message = persona_greeting_from_preset(preset)
     if live_link:
         message += f"\n\nAnyone can follow along live: {live_link}"
-    message += f"\n\n⚠️ If you don't consent to being recorded, please let {owner_name} know or leave the meeting."
-    message += "\n\nType /leave anytime to have me exit the call."
+    message += f"\n\n⚠️ If you don't consent to being recorded, let {owner_name} know or type /leave and I'll exit the call."
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
@@ -1630,6 +1650,19 @@ async def _process_bot_transcript(bot_id: str):
         owner_name = _resolve_owner_name(bot_id)
         analysis_transcript = build_analysis_transcript(transcript, owner_name=owner_name)
         result = await run_full_analysis(analysis_transcript, owner_name=owner_name)
+        # Traceability: if the bot didn't leave for a normal reason (removed / denied
+        # recording / asked to leave / errored), stamp WHY + WHEN onto the meeting so
+        # it's visible in the analysis, not just server logs. Recall's Google-Meet
+        # removal webhook doesn't expose WHO removed the bot, so we surface the reason
+        # + time; `message` carries any extra detail Recall did give.
+        _bs = bot_store.get(bot_id) or {}
+        if _bs.get("leave_notable") and isinstance(result, dict):
+            result["exit_note"] = {
+                "reason": _bs.get("leave_reason"),
+                "sub_code": _bs.get("leave_sub_code") or "",
+                "at": _bs.get("left_at"),
+            }
+            print(f"[recall] stamped exit_note onto meeting {bot_id[:8]}: {result['exit_note']}")
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
