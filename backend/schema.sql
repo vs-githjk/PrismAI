@@ -103,6 +103,9 @@ alter table bot_sessions add column if not exists updated_at     timestamptz not
 alter table bot_sessions add column if not exists memory_summary text;
 alter table bot_sessions add column if not exists live_state     jsonb;
 alter table bot_sessions add column if not exists live_token     text;
+-- Why the bot left the meeting (removed / permission denied / meeting ended / …),
+-- captured from Recall's status sub_code so a disconnect is never a silent mystery.
+alter table bot_sessions add column if not exists leave_reason   text;
 
 create index if not exists bot_sessions_user_id_idx    on bot_sessions(user_id);
 create unique index if not exists bot_sessions_live_token_idx on bot_sessions(live_token);
