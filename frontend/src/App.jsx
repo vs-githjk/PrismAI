@@ -1202,12 +1202,24 @@ export default function App() {
         code_verifier: verifier,
         redirect_uri: window.location.origin,
       }),
-    }).then(res => {
+    }).then(async res => {
       if (res.ok) {
         if (provider === 'microsoft') setOutlookConnected(true)
         else setCalendarConnected(true)
-      } else console.warn(`[calendar] ${provider} exchange-code failed:`, res.status)
-    }).catch(err => console.warn(`[calendar] ${provider} exchange-code error:`, err))
+      } else {
+        // Surface the failure instead of swallowing it — the user clicked Connect
+        // and deserves to know it didn't work (and roughly why).
+        const detail = await res.json().then(d => d.detail).catch(() => '')
+        console.warn(`[calendar] ${provider} exchange-code failed:`, res.status, detail)
+        const name = provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+        setIntegrationToast({ type: 'err', msg: `${name} connection failed${detail ? `: ${String(detail).slice(0, 140)}` : '. Please try again.'}` })
+        setTimeout(() => setIntegrationToast(null), 6000)
+      }
+    }).catch(err => {
+      console.warn(`[calendar] ${provider} exchange-code error:`, err)
+      setIntegrationToast({ type: 'err', msg: `${provider === 'microsoft' ? 'Outlook' : 'Google Calendar'} connection error. Please try again.` })
+      setTimeout(() => setIntegrationToast(null), 6000)
+    })
   }, [user])
 
   const signInWithGoogle = async () => {
@@ -1680,12 +1692,16 @@ export default function App() {
             notifyStatus({ kind: 'bot', message: 'Meeting ended' })
           } else {
             setBotStatus('error')
-            setBotError('Meeting ended but no transcript was returned. Check the Recall.ai dashboard or try again.')
+            // Prefer the real reason Prism left (removed / permission denied / etc.)
+            // over the generic "no transcript" message when Recall told us why.
+            setBotError(data.leave_reason
+              ? `${data.leave_reason} No transcript was captured.`
+              : 'Meeting ended but no transcript was returned. Check the Recall.ai dashboard or try again.')
           }
         } else if (data.status === 'error') {
           clearInterval(pollRef.current)
           sessionStorage.removeItem('prism_active_bot_id')
-          setBotError(data.error || 'Bot encountered an error')
+          setBotError(data.leave_reason || data.error || 'Bot encountered an error')
         }
       } catch (err) {
         console.warn('[poll] network error, will retry:', err?.message)

@@ -65,7 +65,18 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
 
   const effDate = suggestion.resolved_date || fallback.date
   const effDay = suggestion.resolved_day || fallback.day
-  const effTime = suggestion.resolved_time || fallback.time
+  // When the backend had to GUESS the time (time_defaulted → a hardcoded 10:00 because
+  // it can't resolve phrases like "at the same time", which it has no meeting clock for),
+  // prefer THIS meeting's own time — that's what "same time" means, and it's a saner
+  // default than 10:00 for any follow-up. Only fall back to the backend guess when we
+  // don't know this meeting's time (e.g. a pasted transcript).
+  const meetingTime = timeFromMeetingDate(meetingDate)
+  const effTime = suggestion.time_defaulted
+    ? (meetingTime || suggestion.resolved_time || fallback.time)
+    : (suggestion.resolved_time || fallback.time)
+  // True when we filled the time from this meeting rather than the meeting naming one —
+  // used to word the notice correctly (not the contradictory "no time was set").
+  const usedMeetingTime = Boolean(suggestion.time_defaulted && meetingTime)
 
   const formatTime12 = (hhmm) => {
     const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '')
@@ -168,7 +179,11 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
       {suggestion.time_defaulted && !created && (
         <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-2.5 py-1.5 text-[11.5px] leading-relaxed text-amber-200/90">
           <span className="mt-px">⚠</span>
-          <span>No time was set in the meeting. Suggested slot: <span className="font-medium text-amber-100">{resolvedLabel}{effTime ? ` · ${formatTime12(effTime)}` : ''}</span> — confirm or change it before adding.</span>
+          {usedMeetingTime ? (
+            <span>No exact time was set — defaulting to this meeting's time: <span className="font-medium text-amber-100">{resolvedLabel}{effTime ? ` · ${formatTime12(effTime)}` : ''}</span> — confirm or change it before adding.</span>
+          ) : (
+            <span>No time was set in the meeting. Suggested slot: <span className="font-medium text-amber-100">{resolvedLabel}{effTime ? ` · ${formatTime12(effTime)}` : ''}</span> — confirm or change it before adding.</span>
+          )}
         </p>
       )}
 
