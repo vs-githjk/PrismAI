@@ -189,6 +189,18 @@ class LeaveReasonTestCase(unittest.TestCase):
         self.assertTrue(recall_routes.bot_store["bot-lc"]["leave_notable"])
         recall_routes.bot_store.pop("bot-lc", None)
 
+    def test_notable_reason_is_sticky(self):
+        # A specific notable exit (asked to leave) must survive a later generic
+        # call_ended that Recall fires moments after — don't downgrade it.
+        recall_routes.bot_store["bot-sticky"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-sticky", "", "bot_received_leave_call", "")
+            recall_routes._record_leave_reason("bot-sticky", "call_ended", "", "")
+        bs = recall_routes.bot_store["bot-sticky"]
+        self.assertTrue(bs["leave_notable"])
+        self.assertEqual(bs["leave_sub_code"], "bot_received_leave_call")
+        recall_routes.bot_store.pop("bot-sticky", None)
+
 
 class KeytermGroundingTestCase(unittest.TestCase):
     """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""

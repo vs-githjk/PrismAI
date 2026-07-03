@@ -245,6 +245,14 @@ def _record_leave_reason(bot_id: str, code: str, sub_code: str, message: str) ->
     via /bot-status (and the live payload) for the dashboard."""
     reason = _leave_reason_text(code, sub_code, message)
     notable = (sub_code in _NOTABLE_LEAVE_SUBCODES) or (code == "fatal_error")
+    # Stickiness: a specific notable exit (asked to leave / removed / errored) is
+    # more informative than a generic call_ended that Recall may fire moments later.
+    # Once we've recorded a notable reason, don't let a later non-notable call
+    # downgrade it (the webhook call_ended path records unconditionally).
+    if not notable and (bot_store.get(bot_id, {}) or {}).get("leave_notable"):
+        print(f"[recall] bot {bot_id} keeping earlier notable leave reason "
+              f"(ignoring later code={code!r} sub_code={sub_code!r})")
+        return
     print(f"[recall] bot {bot_id} left — code={code!r} sub_code={sub_code!r} "
           f"notable={notable} reason={reason!r}")
     if bot_id in bot_store:

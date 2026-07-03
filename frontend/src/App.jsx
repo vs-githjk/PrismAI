@@ -1659,11 +1659,16 @@ export default function App() {
         if (data.status === 'processing' && !processingStartTime) {
           processingStartTime = Date.now()
         }
-        // If processing has taken more than 3 minutes, show error
-        if (data.status === 'processing' && processingStartTime && Date.now() - processingStartTime > 180_000) {
+        // If processing has taken more than 6 minutes, stop blocking the UI. The
+        // backend holds out for Recall's audio transcript / a more-accurate async
+        // re-transcription (up to ~3.5 min) and auto-saves the meeting to history
+        // regardless — so this is "we stopped waiting," not necessarily a failure.
+        // (Was 3 min, which the async re-transcription hold-out could exceed → a
+        // false "timed out" on meetings that actually finished.)
+        if (data.status === 'processing' && processingStartTime && Date.now() - processingStartTime > 360_000) {
           clearInterval(pollRef.current)
           setBotStatus('error')
-          setBotError('Transcript processing timed out. The server may have restarted. Click Retry to try again.')
+          setBotError('Still finalizing — longer meetings can take a few minutes. It will appear in your history when ready. Click Retry to check again.')
           return
         }
         if (data.status === 'done') {

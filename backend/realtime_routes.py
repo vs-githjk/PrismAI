@@ -3512,13 +3512,15 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         if message_text.strip():
             # Record the human's chat line into the transcript so chat-driven meetings
             # analyse to a real two-sided dialogue (Recall transcribes audio only).
-            asyncio.create_task(_record_human_chat_line(bot_id, sender, message_text))
             # Slash command: "/leave" makes the bot exit the call gracefully. Handled
-            # before command detection so it never routes through the LLM.
+            # FIRST — before recording or command detection — so the command word is
+            # never analysed as meeting content and never routes through the LLM.
             if _LEAVE_CMD_RE.match(message_text) and not _looks_like_bot_participant(sender, {}):
                 print(f"[realtime] /leave command from={sender!r} bot={bot_id[:8]}")
                 asyncio.create_task(_handle_leave_command(bot_id))
                 return {"ok": True}
+            # Record the human's chat line into the transcript (meeting content only).
+            asyncio.create_task(_record_human_chat_line(bot_id, sender, message_text))
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
             # Bare wake-word with no command ("prism" / "Hi prism") — don't ignore
