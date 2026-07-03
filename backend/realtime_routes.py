@@ -2349,12 +2349,19 @@ def _standin_spoken_summary(updates: list[dict]) -> str:
     return "Here are the updates from people who couldn't attend. " + " ".join(parts)
 
 
-async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False):
+async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False,
+                           from_chat: bool = False):
     """Process a detected command: use LLM to pick tools, execute, respond.
 
     ambient=True is the no-wake-word path: a one-line preamble is injected so the
     model speaks only if genuinely additive (else replies SILENT → suppressed),
-    and the finalized reply text is returned (None on decline)."""
+    and the finalized reply text is returned (None on decline).
+
+    from_chat=True means the command was TYPED in the meeting chat — the reply goes
+    to chat ONLY, never spoken aloud. Speaking over a live meeting to answer someone
+    who quietly typed a question is disruptive; if they typed, they want a typed
+    answer. This is a deterministic rule that must survive the voice-arch redo, so it
+    gates voice at every dispatch point rather than relying on prompt behaviour."""
     state = _get_bot_state(bot_id)
 
     # Kill switch: a muted bot ignores commands entirely. The app's mute button
@@ -2403,7 +2410,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         print(f"[realtime] capability_blocked cap={blocked_cap} — terse reply")
         await _send_chat_response(bot_id, msg)
         try:
-            if _streamed_tts_on():
+            if from_chat:
+                pass  # typed command → chat-only reply, never speak
+            elif _streamed_tts_on():
                 await _send_voice_response_streamed(bot_id, _spoken_version(msg), cmd_detected_ts=now)
             else:
                 await _send_voice_response(bot_id, _spoken_version(msg))
@@ -2447,9 +2456,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             )
             print(f"[standin] spoken-on-request: {len(chosen)} update(s) "
                   f"(explicit={explicit}, named={person_shaped and not explicit})")
-            if _barge_in_on():
-                await _wait_for_speech_gap(state)
-            await _send_voice_response(bot_id, _spoken_version(summary))
+            if not from_chat:
+                if _barge_in_on():
+                    await _wait_for_speech_gap(state)
+                await _send_voice_response(bot_id, _spoken_version(summary))
             await _send_chat_response(bot_id, summary)
             return
     state["processing"] = True
@@ -2735,7 +2745,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         # (when `tools` is no longer in call_kwargs — either because the user has
         # no tools available, or PR-1 taint enforcement stripped them, or the
         # tools-format retry stripped them).
-        streamed_voice_active = _streamed_tts_on() and _streamed_llm_on()
+        # from_chat suppresses the straight-to-voice streaming path entirely — a typed
+        # command is answered in chat only (the reply still streams as text below).
+        streamed_voice_active = _streamed_tts_on() and _streamed_llm_on() and not from_chat
         voice_already_streamed = False
 
         # Tool loop (max 3 iterations)
@@ -2917,7 +2929,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         # add a Recall round-trip to TTFB before TTS begins.
         print(f"[realtime] command='{command}' tools={tools_used} reply='{reply}'")
         chat_task = asyncio.create_task(_send_chat_response(bot_id, reply))
-        if voice_already_streamed:
+        if from_chat:
+            # Typed command → chat-only reply. The chat post above carries the full
+            # answer; we deliberately speak nothing into the live meeting.
+            print(f"[realtime] from_chat — chat-only reply, suppressing voice")
+        elif voice_already_streamed:
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
             pass
@@ -2970,7 +2986,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         _record_bot_line(bot_id, state, reply, bot_name)
                     print(f"[realtime] haiku fallback reply={reply!r}")
                     await _send_chat_response(bot_id, reply)
-                    await _send_voice_response(bot_id, _spoken_condense(reply))
+                    if not from_chat:
+                        await _send_voice_response(bot_id, _spoken_condense(reply))
                     return
                 except Exception as haiku_exc:
                     print(f"[realtime] haiku fallback failed: {haiku_exc}")
@@ -3485,8 +3502,9 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             ):
                 command = message_text
             if command:
-                print(f"[realtime] chat command={command!r} from={sender!r}")
-                asyncio.create_task(_process_command(bot_id, command, sender))
+                print(f"[realtime] chat command={command!r} from={sender!r} (chat-only reply)")
+                # Typed in chat → answer in chat only, never speak into the meeting.
+                asyncio.create_task(_process_command(bot_id, command, sender, from_chat=True))
 
     elif event_type in (
         "participant_events.join",
