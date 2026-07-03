@@ -7,6 +7,7 @@ import MeetingHealthTriangle from './MeetingHealthTriangle'
 import RecordingPlayer from './RecordingPlayer'
 import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
+import SuggestedActions from './SuggestedActions'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
 import { useCountUp, overallHealth } from '../../lib/healthScore'
@@ -87,7 +88,7 @@ function SemicircularGauge({ score }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate, viewerName = '' }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate, viewerName = '', actionConnections = {}, teamsWebhook = '' }) {
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -411,6 +412,17 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       </div>
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
+
+      {!readOnly && (result.suggested_actions?.length > 0) && (
+        <SuggestedActions
+          actions={result.suggested_actions}
+          connections={actionConnections}
+          suggestedEmails={suggestedEmails}
+          meetingId={meetingId}
+          teamsWebhook={teamsWebhook}
+          readOnly={readOnly}
+        />
+      )}
 
       {!readOnly && (
         <EmailCard

@@ -535,6 +535,10 @@ export default function DashboardPage(props) {
   const [wsDetailsLoading, setWsDetailsLoading] = useState(false)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [workspaceMemberMap, setWorkspaceMemberMap] = useState({})
+  // Attendee emails harvested from the user's connected calendars (Google + Outlook)
+  // upcoming events — fed into the follow-up CalendarCard + EmailCard suggestion chips
+  // alongside workspace members, so you can one-click the people you actually meet with.
+  const [calendarAttendeeEmails, setCalendarAttendeeEmails] = useState([])
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [workspaceNudgeDismissed, setWorkspaceNudgeDismissed] = useState(
     () => { try { return localStorage.getItem('prismai:workspace-nudge-dismissed') === '1' } catch { return false } }
@@ -936,10 +940,59 @@ export default function DashboardPage(props) {
 
   // Workspace teammates (minus the organizer) — offered as one-click invite
   // suggestions when scheduling a follow-up from a workspace meeting.
+  // Harvest attendee emails from connected calendars (Google + Outlook) so the
+  // follow-up cards can suggest the people you meet with, not just teammates. Both
+  // are pulled in parallel; a provider that isn't connected (404/401) is skipped.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const settled = await Promise.allSettled([
+          apiFetch('/calendar/events?days_ahead=14'),
+          apiFetch('/ms-calendar/events?days_ahead=14'),
+        ])
+        const emails = new Set()
+        for (const s of settled) {
+          if (s.status !== 'fulfilled' || !s.value.ok) continue
+          const data = await s.value.json()
+          for (const ev of (data.events || [])) {
+            for (const e of (ev.attendee_emails || [])) {
+              if (e) emails.add(e.toLowerCase())
+            }
+          }
+        }
+        if (!cancelled) setCalendarAttendeeEmails([...emails])
+      } catch {
+        /* best-effort — suggestions still fall back to workspace members */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   const suggestedAttendeeEmails = useMemo(() => {
-    const own = props.user?.email
-    return Object.values(workspaceMemberMap).filter((e) => e && e !== own)
-  }, [workspaceMemberMap, props.user?.email])
+    const own = (props.user?.email || '').toLowerCase()
+    // Dedup case-insensitively (a teammate may also be a calendar attendee); keep the
+    // first-seen display form, preferring workspace members.
+    const byKey = new Map()
+    for (const e of [...Object.values(workspaceMemberMap), ...calendarAttendeeEmails]) {
+      if (!e) continue
+      const key = e.toLowerCase()
+      if (key !== own && !byKey.has(key)) byKey.set(key, e)
+    }
+    return [...byKey.values()]
+  }, [workspaceMemberMap, calendarAttendeeEmails, props.user?.email])
+
+  // Which integrations the SuggestedActions card can execute against. Gmail + Calendar
+  // ride the Google connection; Jira/Linear/Slack are server-side tokens; Teams is the
+  // browser-local recap webhook. Gates each suggested action's tool resolution.
+  const actionConnections = useMemo(() => ({
+    email: !!props.calendarConnected,
+    calendar: !!props.calendarConnected,
+    jira: !!props.integrations?.jira_api_token,
+    linear: !!props.integrations?.linear_api_key,
+    slack: !!props.integrations?.slack_bot_token,
+    teams: !!props.integrations?.teams_webhook,
+  }), [props.calendarConnected, props.integrations])
 
   // Trend (cross-meeting intelligence) is its own top-level view, gated on
   // having at least two meetings to compare.
@@ -1179,6 +1232,8 @@ export default function DashboardPage(props) {
                       suggestedEmails={suggestedAttendeeEmails}
                       onResultUpdate={persistResultPatch}
                       viewerName={props.user?.user_metadata?.full_name || props.user?.email?.split('@')[0] || ''}
+                      actionConnections={actionConnections}
+                      teamsWebhook={props.integrations?.teams_webhook || ''}
                     />
                   </Suspense>
                 </>
