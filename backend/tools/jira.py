@@ -35,16 +35,46 @@ def _auth_header(email: str, token: str) -> str:
 
 
 def _to_adf(text: str) -> dict:
-    """Jira Cloud REST v3 expects the description as an Atlassian Document Format
-    doc, not a plain string. Wrap the text into a minimal ADF document (one
-    paragraph per line so multi-line action items keep their breaks)."""
+    """Render the description into Atlassian Document Format (what Jira Cloud REST v3
+    expects). Lightweight markdown-ish handling so a Prism-drafted ticket reads like a
+    real Jira ticket, not a wall of text:
+      - a short line ending in ':'  → bold section heading (e.g. 'Acceptance Criteria:')
+      - lines starting '- ', '* ', '• ' → bulleted list
+      - everything else            → a paragraph
+    """
     lines = (text or "").split("\n")
-    content = []
-    for line in lines:
-        para: dict = {"type": "paragraph", "content": []}
-        if line:
-            para["content"].append({"type": "text", "text": line})
-        content.append(para)
+    content: list = []
+    bullets: list = []
+
+    def _flush_bullets():
+        if bullets:
+            content.append({
+                "type": "bulletList",
+                "content": [
+                    {"type": "listItem", "content": [
+                        {"type": "paragraph", "content": [{"type": "text", "text": b}]}
+                    ]} for b in bullets
+                ],
+            })
+            bullets.clear()
+
+    for raw in lines:
+        line = raw.rstrip()
+        stripped = line.strip()
+        if stripped[:2] in ("- ", "* ") or stripped[:2] == "• " or stripped.startswith("•"):
+            bullets.append(stripped.lstrip("-*• ").strip())
+            continue
+        _flush_bullets()
+        if not stripped:
+            content.append({"type": "paragraph", "content": []})
+        elif len(stripped) <= 40 and stripped.endswith(":"):
+            content.append({"type": "paragraph", "content": [
+                {"type": "text", "text": stripped, "marks": [{"type": "strong"}]}
+            ]})
+        else:
+            content.append({"type": "paragraph", "content": [{"type": "text", "text": stripped}]})
+    _flush_bullets()
+
     if not content:
         content = [{"type": "paragraph", "content": []}]
     return {"type": "doc", "version": 1, "content": content}
@@ -61,12 +91,20 @@ async def jira_create_issue(args: dict, user_settings: dict | None = None) -> di
     description = args.get("description", "")
     issue_type = args.get("issue_type") or "Task"
 
+    # Prism identifier so these tickets are never lost in the backlog: a "[Prism]"
+    # title prefix (visible on any board) + a `prism` label (filterable via JQL:
+    # labels = prism) + a provenance footer in the description.
+    if not summary.lstrip().lower().startswith("[prism]"):
+        summary = f"[Prism] {summary}"
+    description = (description or "").rstrip() + "\n\n—\n_Created by PrismAI from a meeting._"
+
     payload = {
         "fields": {
             "project": {"key": project_key.upper()},
             "summary": summary,
             "description": _to_adf(description),
             "issuetype": {"name": issue_type},
+            "labels": ["prism"],
         }
     }
 
