@@ -237,5 +237,68 @@ class KeytermGroundingTestCase(unittest.TestCase):
             self.assertEqual(recall_routes._gather_keyterms("u", "w"), [])
 
 
+class BrandedBotTestCase(unittest.TestCase):
+    """#4 — branded bot join: display name + logo camera tile."""
+
+    def test_default_display_name_is_branded(self):
+        body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertEqual(body["bot_name"], recall_routes.BOT_DISPLAY_NAME)
+        self.assertEqual(recall_routes.BOT_DISPLAY_NAME, "PrismAI Notetaker")
+
+    def test_explicit_bot_name_wins(self):
+        body = recall_routes._recall_bot_create_json(
+            "https://meet/x", "rt", "wh", bot_name="Jane (PrismAI stand-in)")
+        self.assertEqual(body["bot_name"], "Jane (PrismAI stand-in)")
+
+    def test_video_output_present_when_tile_available(self):
+        recall_routes._bot_video_output.cache_clear()
+        with patch.object(recall_routes, "_BOT_TILE_ENABLED", True):
+            tile = {"in_call_recording": {"kind": "jpeg", "b64_data": "abc"}}
+            with patch.object(recall_routes, "_bot_video_output", return_value=tile):
+                body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertEqual(body["automatic_video_output"], tile)
+
+    def test_video_output_omitted_when_disabled(self):
+        recall_routes._bot_video_output.cache_clear()
+        with patch.object(recall_routes, "_BOT_TILE_ENABLED", False):
+            recall_routes._bot_video_output.cache_clear()
+            body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertNotIn("automatic_video_output", body)
+        recall_routes._bot_video_output.cache_clear()
+
+    def test_tile_asset_loads_as_raw_base64(self):
+        recall_routes._bot_video_output.cache_clear()
+        with patch.object(recall_routes, "_BOT_TILE_ENABLED", True):
+            out = recall_routes._bot_video_output()
+        self.assertIsNotNone(out)
+        self.assertEqual(out["in_call_recording"]["kind"], "jpeg")
+        # Raw base64 — no data-URI prefix (Recall requirement).
+        self.assertFalse(out["in_call_recording"]["b64_data"].startswith("data:"))
+        recall_routes._bot_video_output.cache_clear()
+
+
+class LeaveCallTestCase(unittest.TestCase):
+    """#3 — /leave command: graceful leave without tearing down analysis."""
+
+    def test_leave_call_posts_and_keeps_bot_store(self):
+        recall_routes.bot_store["bot-leave-cmd"] = {"status": "recording"}
+
+        class _Resp:
+            status_code = 200
+
+        class _Client:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def post(self, *a, **k): return _Resp()
+
+        with patch.object(recall_routes, "RECALL_API_KEY", "key"), \
+             patch.object(recall_routes.httpx, "AsyncClient", lambda *a, **k: _Client()):
+            ok = asyncio.run(recall_routes.leave_call("bot-leave-cmd"))
+        self.assertTrue(ok)
+        # leave_call must NOT tear down bot_store (analysis still needs to run).
+        self.assertIn("bot-leave-cmd", recall_routes.bot_store)
+        recall_routes.bot_store.pop("bot-leave-cmd", None)
+
+
 if __name__ == "__main__":
     unittest.main()

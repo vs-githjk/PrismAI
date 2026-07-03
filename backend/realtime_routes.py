@@ -181,7 +181,12 @@ def _looks_like_bot_participant(name: str, raw: dict) -> bool:
     """Best-effort: is this participant our recording bot rather than a human?"""
     if isinstance(raw, dict) and (raw.get("is_current_user") is True or raw.get("is_bot") is True):
         return True
-    return (name or "").strip().lower() in _BOT_SELF_NAMES
+    nm = (name or "").strip().lower()
+    if nm in _BOT_SELF_NAMES:
+        return True
+    # Tolerate the branded display name ("PrismAI Notetaker") and stand-in names
+    # ("<owner> (PrismAI stand-in)") — both are our bot, not a human.
+    return nm.startswith("prismai") or "(prismai stand-in)" in nm
 
 
 def _human_participant_count(state: dict) -> int:
@@ -1318,6 +1323,31 @@ async def _send_chat_response(bot_id: str, message: str):
             )
     except Exception as exc:
         print(f"[realtime] failed to send chat response: {exc}")
+
+
+# A typed "/leave" (optionally "/leave Prism") in the meeting chat tells the bot to
+# exit the call. Slash-prefixed so it never collides with a natural-language ask.
+_LEAVE_CMD_RE = re.compile(r"^\s*/leave\b", re.IGNORECASE)
+
+
+async def _handle_leave_command(bot_id: str) -> None:
+    """`/leave` chat command: say a brief goodbye, log the reason, then leave the
+    call. Recording finalizes → normal analysis/save runs, so notes still arrive."""
+    try:
+        await _send_chat_response(
+            bot_id, "Got it — leaving now. I'll finish the notes and send them along. 👋"
+        )
+    except Exception:
+        pass
+    import recall_routes
+    try:
+        recall_routes._record_leave_reason(bot_id, "", "bot_received_leave_call", "")
+    except Exception as exc:
+        print(f"[realtime] /leave record-reason skipped bot={bot_id[:8]}: {exc}")
+    try:
+        await recall_routes.leave_call(bot_id)
+    except Exception as exc:
+        print(f"[realtime] /leave failed bot={bot_id[:8]}: {exc}")
 
 
 # ── Private live catch-up ("Ask Prism, just you") ────────────────────────────
@@ -3483,6 +3513,12 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # Record the human's chat line into the transcript so chat-driven meetings
             # analyse to a real two-sided dialogue (Recall transcribes audio only).
             asyncio.create_task(_record_human_chat_line(bot_id, sender, message_text))
+            # Slash command: "/leave" makes the bot exit the call gracefully. Handled
+            # before command detection so it never routes through the LLM.
+            if _LEAVE_CMD_RE.match(message_text) and not _looks_like_bot_participant(sender, {}):
+                print(f"[realtime] /leave command from={sender!r} bot={bot_id[:8]}")
+                asyncio.create_task(_handle_leave_command(bot_id))
+                return {"ok": True}
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
             # Bare wake-word with no command ("prism" / "Hi prism") — don't ignore

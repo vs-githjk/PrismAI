@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -7,6 +8,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -35,6 +37,31 @@ RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8001")
 RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+
+# Branded bot join (#4): the in-meeting display name + a static logo tile shown as
+# the bot's camera output so it reads as "PrismAI Notetaker" with our mark rather
+# than a bare "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9,
+# <=1.3MB) generated from the app logo (backend/assets/bot_tile.jpg).
+BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI Notetaker")
+_BOT_TILE_ENABLED = os.getenv("PRISM_BOT_LOGO", "1") != "0"
+_BOT_TILE_PATH = os.path.join(os.path.dirname(__file__), "assets", "bot_tile.jpg")
+
+
+@lru_cache(maxsize=1)
+def _bot_video_output() -> dict | None:
+    """Recall `automatic_video_output` payload showing our logo tile as the bot's
+    camera when it's recording. Base64 is read+encoded once (cached). Best-effort:
+    returns None (no tile, unchanged behaviour) if disabled or the asset is missing
+    so a packaging slip can never block a bot from joining."""
+    if not _BOT_TILE_ENABLED:
+        return None
+    try:
+        with open(_BOT_TILE_PATH, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return {"in_call_recording": {"kind": "jpeg", "b64_data": b64}}
+    except Exception as exc:
+        print(f"[recall] bot tile load skipped: {exc}")
+        return None
 
 # In-memory cache (always used for fast access; synced to Supabase when available)
 bot_store: dict = {}
@@ -460,7 +487,7 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
 
 
 def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: str,
-                            join_at: str | None = None, bot_name: str = "PrismAI",
+                            join_at: str | None = None, bot_name: str = BOT_DISPLAY_NAME,
                             keyterms: list[str] | None = None) -> dict:
     """The Recall bot-create payload, shared by immediate joins and scheduled
     stand-in bots. A future `join_at` (ISO 8601) makes Recall schedule the join
@@ -513,6 +540,9 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             ],
         },
     }
+    tile = _bot_video_output()
+    if tile:
+        body["automatic_video_output"] = tile
     if join_at:
         body["join_at"] = join_at
     return body
@@ -592,7 +622,7 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
     # Name the bot after the person it stands in for, so attendees recognise it in
     # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
-    display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else "PrismAI"
+    display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else BOT_DISPLAY_NAME
     body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url,
                                    join_at=effective_join_at, bot_name=display_name,
                                    keyterms=_gather_keyterms(user_id, workspace_id))
@@ -1179,6 +1209,7 @@ async def _send_bot_intro(bot_id: str):
     if live_link:
         message += f"\n\nAnyone can follow along live: {live_link}"
     message += f"\n\n⚠️ If you don't consent to being recorded, please let {owner_name} know or leave the meeting."
+    message += "\n\nType /leave anytime to have me exit the call."
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
@@ -1809,6 +1840,27 @@ async def remove_bot(bot_id: str):
     from realtime_routes import cleanup_bot_state
     cleanup_bot_state(bot_id)
     return {"ok": True}
+
+
+async def leave_call(bot_id: str) -> bool:
+    """Ask the Recall bot to leave the call gracefully (used by the `/leave` chat
+    command). Unlike `remove_bot`, this does NOT tear down bot_store / realtime
+    state — the recording still finalizes, so Recall fires call_ended → the normal
+    analysis + save flow runs and the meeting is notes-complete. Best-effort."""
+    if not RECALL_API_KEY:
+        return False
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{RECALL_API_BASE}/bot/{bot_id}/leave_call/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+            print(f"[recall] /leave -> leave_call bot={bot_id[:8]}: {resp.status_code}")
+            return resp.status_code in (200, 201, 204)
+    except httpx.HTTPError as exc:
+        print(f"[recall] /leave leave_call failed bot={bot_id[:8]}: {exc}")
+        return False
 
 
 @router.get("/bot-status/{bot_id}")
