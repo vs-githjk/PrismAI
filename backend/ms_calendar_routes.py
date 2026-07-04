@@ -165,6 +165,10 @@ async def ms_exchange_code(req: MsExchangeCodeRequest, user_id: str = Depends(re
         raise HTTPException(status_code=503, detail=f"Microsoft token exchange failed: {exc}")
 
     if resp.status_code != 200:
+        # Log the full Microsoft error (incl. AADSTS code) so it's visible in Render
+        # logs — the frontend redirects away after this, discarding the response body.
+        print(f"[ms-exchange] REJECTED status={resp.status_code} "
+              f"redirect_uri={req.redirect_uri!r} body={resp.text[:500]}")
         raise HTTPException(status_code=400, detail=f"Microsoft rejected code exchange: {resp.text[:300]}")
 
     token_data = resp.json()
