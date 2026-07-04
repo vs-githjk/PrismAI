@@ -162,6 +162,24 @@ function BriefPanel({ state, workspaceName, onItemClick }) {
   )
 }
 
+// Which calendar an event came from. Google green vs Outlook blue so the two are
+// distinguishable at a glance (a meeting on both shows both badges).
+const SOURCE_META = {
+  google:  { label: 'Google',  color: '#6ee7a8', bg: 'rgba(52,168,83,0.12)',  border: 'rgba(52,168,83,0.28)' },
+  outlook: { label: 'Outlook', color: '#5aa9ec', bg: 'rgba(0,120,212,0.14)',  border: 'rgba(0,120,212,0.32)' },
+}
+
+function SourceBadge({ source }) {
+  const meta = SOURCE_META[source]
+  if (!meta) return null
+  return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+      style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.border}` }}>
+      {meta.label}
+    </span>
+  )
+}
+
 function matchWorkspace(attendeeEmails, workspaces) {
   if (!attendeeEmails?.length || !workspaces?.length) return null
   const emailSet = new Set(attendeeEmails.map(e => e.toLowerCase()))
@@ -216,7 +234,10 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
         apiFetch('/calendar/events?days_ahead=3'),
         apiFetch('/ms-calendar/events?days_ahead=3'),
       ])
-      let merged = []
+      // Index 0 = Google, index 1 = Outlook — tag each event with its source so
+      // the row can show which calendar it came from.
+      const SOURCES = ['google', 'outlook']
+      let tagged = []
       let googleAuthExpired = false
       let anyOk = false
       for (let i = 0; i < settled.length; i++) {
@@ -226,17 +247,22 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
         if (!r.ok) continue
         anyOk = true
         const data = await r.json()
-        merged = merged.concat(data.events || [])
+        tagged = tagged.concat((data.events || []).map(ev => ({ ...ev, _source: SOURCES[i] })))
       }
       // Dedup a meeting that shows up on both calendars (same link, or same
-      // start+title), then sort chronologically.
-      const seen = new Set()
-      merged = merged.filter(ev => {
+      // start+title) — but KEEP a record of every source it appeared on, so a
+      // meeting on both shows both badges. Then sort chronologically.
+      const byKey = new Map()
+      for (const ev of tagged) {
         const key = ev.meeting_link || `${ev.start}|${ev.title}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
+        const existing = byKey.get(key)
+        if (existing) {
+          if (!existing._sources.includes(ev._source)) existing._sources.push(ev._source)
+        } else {
+          byKey.set(key, { ...ev, _sources: [ev._source] })
+        }
+      }
+      let merged = Array.from(byKey.values())
       merged.sort((a, b) => new Date(a.start) - new Date(b.start))
       if (!anyOk && googleAuthExpired) { setError('reconnect'); return }
       setEvents(merged)
@@ -371,6 +397,9 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
                             Personal
                           </span>
                         )}
+                        {(event._sources || []).map(src => (
+                          <SourceBadge key={src} source={src} />
+                        ))}
                       </div>
                       <p className="text-[10px] text-gray-600 mt-0.5 whitespace-nowrap">
                         {formatEventTime(event.start)}
