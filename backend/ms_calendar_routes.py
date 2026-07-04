@@ -209,11 +209,17 @@ async def ms_status(user_id: str = Depends(require_user_id)):
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
+        # The token IS the connection — a stored access token means we can call Graph
+        # (and refresh when it expires). Deriving `connected` from the presence of the
+        # token, not the separate `outlook_connected` flag, keeps status in sync with
+        # /ms-calendar/events (which only needs the token). Previously the flag could
+        # drift to false (e.g. a transient 401 flipped it) while the token stayed,
+        # showing "not connected" even though the calendar worked.
         resp = supabase.table("user_settings").select(
-            "outlook_connected,ms_access_token"
+            "ms_access_token"
         ).eq("user_id", user_id).maybe_single().execute()
-        row = resp.data or {}
-        connected = bool(row.get("outlook_connected") and row.get("ms_access_token"))
+        row = (resp.data if resp is not None else None) or {}
+        connected = bool(row.get("ms_access_token"))
     except Exception:
         connected = False
     return {"connected": connected}
@@ -248,8 +254,14 @@ async def ms_events(days_ahead: int = 7, user_id: str = Depends(require_user_id)
         raise HTTPException(status_code=503, detail=f"Outlook calendar unavailable: {exc}")
 
     if resp.status_code == 401:
+        # The token is truly dead (and refresh already failed upstream) — clear it so
+        # status reflects reality (token-based) and the user is prompted to reconnect.
+        # Clearing only the flag but keeping the token left status/events inconsistent.
         if supabase:
             supabase.table("user_settings").update({
+                "ms_access_token": None,
+                "ms_refresh_token": None,
+                "ms_token_expires_at": None,
                 "outlook_connected": False,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }).eq("user_id", user_id).execute()
