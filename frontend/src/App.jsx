@@ -551,6 +551,18 @@ const INITIAL_INVITE_TOKEN = (() => {
   return match ? match[1] : null
 })()
 
+// Detect an in-progress calendar OAuth callback synchronously (Google or Microsoft).
+// The provider redirects back to the ROOT (redirect_uri = origin) with ?code=&state=,
+// and the token exchange runs there. If the auth handler redirects root→/dashboard
+// (a full navigation) before the exchange fetch completes, the request is CANCELED
+// and the token is never stored (Outlook showed "not connected" forever). We use this
+// flag to suppress that redirect until the exchange finishes, then navigate ourselves.
+const INITIAL_CAL_OAUTH = (() => {
+  const params = new URLSearchParams(window.location.search)
+  const state = params.get('state')
+  return Boolean(params.get('code') && (state === 'calendar_connect' || state === 'ms_calendar_connect'))
+})()
+
 const HERO_SENTENCES = [
   "Your cleanup always outlasts the meeting itself.",
   "Everyone left the call with different action items.",
@@ -1128,7 +1140,7 @@ export default function App() {
           window.location.replace(`/dashboard#invite/${pendingInvite}`)
           return
         }
-        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN) {
+        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH) {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard')
@@ -1142,6 +1154,10 @@ export default function App() {
   useEffect(() => {
     if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard) return
     if (sessionStorage.getItem(UI_SCREEN_KEY) === 'landing') return
+    // Don't navigate away while a calendar OAuth exchange is in flight on this page —
+    // a full navigation cancels the exchange fetch. The exchange effect navigates to
+    // /dashboard itself once the token is stored.
+    if (INITIAL_CAL_OAUTH) return
     if (user && !isTestAccount) {
       sessionStorage.setItem(VISITED_KEY, '1')
       sessionStorage.setItem(UI_SCREEN_KEY, 'app')
@@ -1219,6 +1235,15 @@ export default function App() {
       console.warn(`[calendar] ${provider} exchange-code error:`, err)
       setIntegrationToast({ type: 'err', msg: `${provider === 'microsoft' ? 'Outlook' : 'Google Calendar'} connection error. Please try again.` })
       setTimeout(() => setIntegrationToast(null), 6000)
+    }).finally(() => {
+      // The OAuth callback lands on the ROOT ('/'); we suppressed the usual
+      // root→/dashboard redirect (INITIAL_CAL_OAUTH) so this exchange fetch wasn't
+      // canceled mid-flight. Now that it's settled, send the user to the dashboard.
+      if (INITIAL_CAL_OAUTH && window.location.pathname !== '/dashboard') {
+        sessionStorage.setItem(VISITED_KEY, '1')
+        sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+        window.location.replace('/dashboard')
+      }
     })
   }, [user])
 
