@@ -1325,7 +1325,13 @@ export default function App() {
       code_challenge: challenge,
       code_challenge_method: 'S256',
       response_mode: 'query',
-      prompt: 'consent',
+      // 'select_account' (NOT 'consent'): the app is an unverified multitenant app,
+      // so forcing a fresh USER consent ('prompt=consent') makes Azure demand
+      // user-consent that the tenant blocks for unverified apps → a false "Need admin
+      // approval" even when admin consent is already granted. select_account lets the
+      // user pick their account and relies on the existing admin grant. offline_access
+      // is admin-consented, so a refresh token is still issued without forcing consent.
+      prompt: 'select_account',
       state: 'ms_calendar_connect',
     })
     window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`
