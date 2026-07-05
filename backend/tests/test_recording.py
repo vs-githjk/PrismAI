@@ -97,9 +97,14 @@ class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
 
         # Mock _fetch_transcript to return a response with structured segments
         fake_response = MagicMock()
+        # Real dialogue (>= _MIN_HUMAN_WORDS) so the no-show guard doesn't short-circuit;
+        # this test exercises the segment-saving path, not the empty-meeting path.
         fake_response.json.return_value = [
             {"speaker": "Alice", "words": [
-                {"text": "hi", "start_time": 0.0, "end_time": 0.3},
+                {"text": w, "start_time": i * 0.3, "end_time": i * 0.3 + 0.3}
+                for i, w in enumerate(
+                    "hi everyone let us walk through the full product roadmap and plan today".split()
+                )
             ]},
         ]
 
@@ -123,16 +128,23 @@ class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
         done_save = next((f for f in saved_fields if f.get("status") == "done"), None)
         self.assertIsNotNone(done_save, "expected a status=done _db_save call")
         self.assertIn("transcript_segments", done_save)
-        self.assertEqual(done_save["transcript_segments"], [
-            {"speaker": "Alice", "start": 0.0, "end": 0.3, "text": "hi"},
-        ])
+        segs = done_save["transcript_segments"]
+        self.assertEqual(len(segs), 1)
+        self.assertEqual(segs[0]["speaker"], "Alice")
+        self.assertEqual(segs[0]["start"], 0.0)
+        self.assertEqual(
+            segs[0]["text"],
+            "hi everyone let us walk through the full product roadmap and plan today",
+        )
 
     def test_segments_null_when_realtime_buffer_fallback_used(self):
         import recall_routes
         recall_routes.bot_store["bot-fb"] = {
             "status": "processing", "result": None, "error": None,
             "commands": [], "user_id": "user-1",
-            "realtime_transcript_lines": ["Alice: from buffer"],
+            "realtime_transcript_lines": [
+                "Alice: let us walk through the full product roadmap and the plan for today",
+            ],
         }
 
         # _fetch_transcript returns None → triggers realtime-buffer fallback

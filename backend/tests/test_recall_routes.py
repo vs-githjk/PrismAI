@@ -383,5 +383,29 @@ class LeaveCallTestCase(unittest.TestCase):
         recall_routes.bot_store.pop("bot-leave-cmd", None)
 
 
+class HumanWordCountTestCase(unittest.TestCase):
+    """No-show guard: only real human dialogue counts toward persisting a meeting."""
+
+    def test_bot_lines_and_leave_command_are_not_substantive(self):
+        transcript = "\n".join([
+            "PrismAI: Hey, Glint here. I'll take notes.",
+            "Glint: I'll send a debrief after.",
+            "SRI KRISHNA ADITHYA K: /leave",
+        ])
+        # Only bot lines + a bare /leave -> zero human words -> no-show.
+        self.assertLess(recall_routes._human_word_count(transcript), recall_routes._MIN_HUMAN_WORDS)
+
+    def test_real_dialogue_is_substantive(self):
+        transcript = "\n".join([
+            "PrismAI: I'll take notes.",
+            "Vidyut Sriram: Let's walk through the product roadmap and the planned changes for next quarter.",
+            "SRI KRISHNA ADITHYA K: Sounds good, I have some thoughts on the image analysis feature.",
+        ])
+        self.assertGreaterEqual(recall_routes._human_word_count(transcript), recall_routes._MIN_HUMAN_WORDS)
+
+    def test_empty_transcript_is_zero(self):
+        self.assertEqual(recall_routes._human_word_count(""), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

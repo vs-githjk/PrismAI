@@ -29,6 +29,28 @@ _BOT_NAME_PREFIXES = tuple(
     f"{n}:" for n in ({DEFAULT_BOT_NAME, "Prism", "PrismAI"} | set(PERSONA_NAMES.values()))
 )
 
+# Minimum human words for a transcript to count as a real meeting. Below this it's a
+# no-show / instant-leave (nobody actually spoke) — analysing + saving it produces a
+# junk "Meeting Transcript Unavailable" row, so we skip persistence entirely.
+_MIN_HUMAN_WORDS = 12
+
+
+def _human_word_count(transcript: str) -> int:
+    """Count words spoken/typed by HUMANS — excludes the bot's own lines and bare
+    slash-commands (e.g. '/leave'), so a meeting where only the bot talked or someone
+    just typed /leave reads as empty."""
+    total = 0
+    for line in (transcript or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith(_BOT_NAME_PREFIXES):
+            continue
+        # Strip a leading "Speaker: " label so the count is words, not the name.
+        text = line.split(":", 1)[1].strip() if ":" in line else line
+        if not text or text.lstrip().startswith("/"):  # bare slash-command line
+            continue
+        total += len(text.split())
+    return total
+
 
 router = APIRouter(tags=["recall"])
 
@@ -1669,6 +1691,27 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["error"] = error_msg
             _db_save(bot_id, {"status": "error", "error": error_msg})
             print(f"[recall] ERROR: empty transcript")
+            return
+
+        # No-show guard: the bot joined but nobody actually spoke (a scheduled meeting
+        # neither party attended, or someone joined and instantly typed /leave). The
+        # transcript is technically non-empty (a leave command, the bot's own intro) but
+        # has no real human dialogue — analysing + SAVING it just litters the dashboard
+        # with a junk "Meeting Transcript Unavailable" row. Mark it done-with-no-content
+        # and return BEFORE analysis/persist so no meeting is created.
+        human_words = _human_word_count(transcript)
+        if human_words < _MIN_HUMAN_WORDS:
+            error_msg = (
+                "Meeting didn't take place — no participants spoke "
+                f"({human_words} human words). Skipped analysis and did not save a meeting."
+            )
+            bot_store[bot_id]["status"] = "error"
+            bot_store[bot_id]["error"] = error_msg
+            _db_save(bot_id, {"status": "error", "error": error_msg})
+            _mb_update_status(bot_id, "no_show")
+            print(f"[recall] no-show: {human_words} human words < {_MIN_HUMAN_WORDS}, skipping persist for bot {bot_id}")
+            from realtime_routes import cleanup_bot_state
+            cleanup_bot_state(bot_id)
             return
 
         print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
