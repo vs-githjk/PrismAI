@@ -331,6 +331,24 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
     entry.__dict__["_resolved_segments"] = transcript_segments
     entry.__dict__["_resolved_provider"] = recording_provider
 
+    # Dedup by recall_bot_id: ONE bot's meeting can be saved by the browser AND by
+    # server-side recovery — and Render free-tier restarts make recover_active_bots
+    # re-process the same bot more than once. The upsert keys on `id`, so each save
+    # with a fresh client-generated id would otherwise insert a DUPLICATE row (the
+    # "5 meetings from 1 join" bug). If a row for this bot already exists for this
+    # user, reuse its id so the upsert updates it in place instead of duplicating.
+    if recall_bot_id:
+        try:
+            prior = (
+                client.table("meetings").select("id")
+                .eq("recall_bot_id", recall_bot_id).eq("user_id", user_id)
+                .order("id").limit(1).execute()
+            )
+            if prior.data:
+                entry.id = prior.data[0]["id"]
+        except Exception as exc:
+            print(f"[storage] recall_bot_id dedup lookup failed for {recall_bot_id}: {exc}")
+
     client.table("meetings").upsert({
         "id": entry.id,
         "user_id": user_id,

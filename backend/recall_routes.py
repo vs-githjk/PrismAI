@@ -43,6 +43,10 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 # than a bare "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9,
 # <=1.3MB) generated from the app logo (backend/assets/bot_tile.jpg).
 BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI Notetaker")
+# Live-streaming keyterm grounding is OFF by default — it broke Deepgram nova-3
+# streaming transcription (no transcript.data events / empty transcript). Grounding
+# still applies in the async batch re-transcription path. Flip to "1" to re-test.
+_LIVE_KEYTERM_ENABLED = os.getenv("PRISM_LIVE_KEYTERM", "0") == "1"
 _BOT_TILE_ENABLED = os.getenv("PRISM_BOT_LOGO", "1") != "0"
 _BOT_TILE_PATH = os.path.join(os.path.dirname(__file__), "assets", "bot_tile.jpg")
 
@@ -448,6 +452,16 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
         low = t.lower()
         if low in _KEYTERM_STOPWORDS or low in seen:
             return
+        # Deepgram nova-3 keyterm prompting expects SHORT proper nouns. Long titles
+        # with dates/parens (e.g. "Prism App Development Sprint Planning (2026-06-26)")
+        # break the streaming transcription connection — reject anything that isn't a
+        # clean name/term: no digits, no punctuation, <=3 words, <=30 chars.
+        if any(c.isdigit() for c in t):
+            return
+        if any(c in t for c in "()[]{}:/\\|@#&+*=<>\"'"):
+            return
+        if len(t) > 30 or len(t.split()) > 3:
+            return
         # Keep proper-cased or multi-word terms; drop short all-lowercase common words.
         if " " not in t and t.islower() and len(t) < 6:
             return
@@ -538,9 +552,14 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
         "utterance_end_ms": 1000,
         "interim_results": "true",
     }
-    if keyterms:
+    if keyterms and _LIVE_KEYTERM_ENABLED:
         # Deepgram caps the keyterm budget at ~500 tokens; _gather_keyterms already
         # bounds the list, but clamp here too so a future caller can't blow it.
+        # DEFAULT OFF (PRISM_LIVE_KEYTERM): passing keyterm to the LIVE deepgram_streaming
+        # config broke spoken transcription entirely (no transcript.data events, empty
+        # transcript) when the term list contained anything malformed. Keyterm grounding
+        # stays ON only in the async batch re-transcription (_request_async_transcript),
+        # where it's well-supported. Re-enable here only after live validation.
         deepgram["keyterm"] = keyterms[:50]
     body = {
         "meeting_url": meeting_url,

@@ -212,13 +212,60 @@ class KeytermGroundingTestCase(unittest.TestCase):
         self.assertNotIn("keyterm", dg)
         self.assertEqual(dg["model"], "nova-3")
 
-    def test_payload_includes_and_clamps_keyterms(self):
-        terms = [f"Term{i}" for i in range(60)]
+    def test_payload_omits_keyterm_by_default(self):
+        # Live-streaming keyterm is OFF by default (it broke Deepgram transcription).
+        terms = [f"Term{i}" for i in range(10)]
         body = recall_routes._recall_bot_create_json(
             "https://meet/x", "rt", "wh", keyterms=terms)
         dg = body["recording_config"]["transcript"]["provider"]["deepgram_streaming"]
+        self.assertNotIn("keyterm", dg)
+
+    def test_payload_includes_and_clamps_keyterms_when_enabled(self):
+        terms = [f"Term{i}" for i in range(60)]
+        with patch.object(recall_routes, "_LIVE_KEYTERM_ENABLED", True):
+            body = recall_routes._recall_bot_create_json(
+                "https://meet/x", "rt", "wh", keyterms=terms)
+        dg = body["recording_config"]["transcript"]["provider"]["deepgram_streaming"]
         self.assertIn("keyterm", dg)
         self.assertEqual(len(dg["keyterm"]), 50)  # clamped to Deepgram's budget
+
+    def test_gather_keyterms_rejects_titles_and_dates(self):
+        # The regression: long titles with dates/parens must NOT become keyterms.
+        class _Resp:
+            def __init__(self, data): self.data = data
+
+        class _Query:
+            def __init__(self, data): self._data = data
+            def select(self, *_): return self
+            def eq(self, *_): return self
+            def in_(self, *_): return self
+            def is_(self, *_): return self
+            def gte(self, *_): return self
+            def order(self, *_, **__): return self
+            def limit(self, *_): return self
+            def execute(self): return _Resp(self._data)
+
+        class _SB:
+            def table(self, name):
+                if name == "workspace_members":
+                    return _Query([{"user_email": "vidyut@galent.com"}])
+                if name == "knowledge_docs":
+                    return _Query([
+                        {"name": "Prism App Development Sprint Planning (2026-06-26)"},
+                        {"name": "Vidyut Sriram Resume"},
+                    ])
+                return _Query([])
+
+        with patch.object(recall_routes, "supabase", _SB()), \
+             patch("caches.get_user_workspace_ids", return_value=["ws1"]):
+            terms = recall_routes._gather_keyterms("user-1", "ws1")
+
+        self.assertIn("Vidyut", terms)  # clean name kept
+        # Title with a date/parens must be dropped.
+        self.assertNotIn("Prism App Development Sprint Planning (2026-06-26)", terms)
+        for t in terms:
+            self.assertFalse(any(c.isdigit() for c in t), f"digit leaked into keyterm: {t!r}")
+            self.assertNotIn("(", t)
 
     def test_name_from_email(self):
         self.assertEqual(recall_routes._name_from_email("jane.doe@acme.com"), "Jane Doe")
