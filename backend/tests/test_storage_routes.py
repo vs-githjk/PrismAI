@@ -385,11 +385,30 @@ class StorageRoutesTestCase(unittest.TestCase):
              "recall_bot_id": "bot-9", "date": "2026-07-05"},  # teammate's fan-out copy
         ]
         self.fake_db.tables["meeting_bots"] = [{"bot_id": "bot-9", "status": "done"}]
-        resp = self.client.delete("/meetings/1")
+        with patch.object(storage_routes, "is_workspace_member", return_value=True):
+            resp = self.client.delete("/meetings/1")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["scope"], "all_copies")
         self.assertEqual(len(self.fake_db.tables["meetings"]), 0)  # both copies gone
         self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "deleted")  # tombstoned
+
+    def test_delete_workspace_owner_cascades_even_when_given_a_teammates_copy_id(self):
+        # THE not_found bug: the dedup fetch can hand the frontend a teammate's copy id.
+        # The owner deleting via that id must still cascade (resolve owner from the row,
+        # delete by recall_bot_id) — not match 0 rows.
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},   # owner's own copy
+            {"id": 2, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},   # teammate's copy — id we delete by
+        ]
+        self.fake_db.tables["meeting_bots"] = [{"bot_id": "bot-9", "status": "done"}]
+        with patch.object(storage_routes, "is_workspace_member", return_value=True):
+            resp = self.client.delete("/meetings/2")  # owner (user-123) deletes via teammate's id
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["scope"], "all_copies")
+        self.assertGreaterEqual(resp.json()["deleted"], 2)
+        self.assertEqual(len(self.fake_db.tables["meetings"]), 0)  # both gone
 
     def test_delete_workspace_non_owner_only_removes_own_copy(self):
         self.fake_db.tables["meetings"] = [
@@ -399,13 +418,24 @@ class StorageRoutesTestCase(unittest.TestCase):
              "recall_bot_id": "bot-9", "date": "2026-07-05"},  # owner's copy — must survive
         ]
         self.fake_db.tables["meeting_bots"] = [{"bot_id": "bot-9", "status": "done"}]
-        resp = self.client.delete("/meetings/5")
+        with patch.object(storage_routes, "is_workspace_member", return_value=True):
+            resp = self.client.delete("/meetings/5")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["scope"], "own_copy")
         remaining = [r["id"] for r in self.fake_db.tables["meetings"]]
         self.assertEqual(remaining, [6])  # only my copy removed; owner's survives
         # A non-owner must NOT tombstone the bot — the owner still has the meeting.
         self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "done")
+
+    def test_delete_workspace_requires_membership(self):
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-999",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},
+        ]
+        with patch.object(storage_routes, "is_workspace_member", return_value=False):
+            resp = self.client.delete("/meetings/1")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(len(self.fake_db.tables["meetings"]), 1)  # untouched
 
     def test_get_insights_returns_user_scoped_recommended_actions(self):
         self.fake_db.tables["meetings"] = [

@@ -506,54 +506,60 @@ def _delete_meeting_transcript_rag(client, meeting_id: int, user_id: str):
 async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
 
-    # Load the caller's own copy first. A plain `delete WHERE id AND user_id` only
-    # removes ONE row — but a workspace meeting is fanned out to every member, and
-    # GET /meetings?workspace_id aggregates + dedups all members' copies, so deleting
-    # just your row lets a teammate's copy resurface on the next fetch (the "delete
-    # doesn't stick" bug). Owner delete must remove ALL copies.
+    # Load the meeting by id ALONE. In workspace mode, GET /meetings dedups all members'
+    # copies and can hand the frontend a TEAMMATE's copy id (when the caller's own copy is
+    # at a different minute or missing) — so requiring `id AND user_id` here matched zero
+    # rows and the delete silently did nothing ('Delete matched 0 rows (not_found)'). We
+    # resolve the owner from the row instead and cascade by recall_bot_id, which works no
+    # matter which member's copy id was passed.
     resp = (client.table("meetings")
             .select("id,user_id,workspace_id,recorded_by_user_id,recall_bot_id,date")
-            .eq("id", meeting_id).eq("user_id", user_id).limit(1).execute())
+            .eq("id", meeting_id).limit(1).execute())
     if not resp.data:
-        # The displayed row isn't under this user_id — e.g. the dedup fetch returned a
-        # teammate's copy, so the DELETE targets an id the caller doesn't own. Surface it.
-        print(f"[delete] meeting {meeting_id} NOT FOUND under user {user_id} — nothing deleted")
+        print(f"[delete] meeting {meeting_id} NOT FOUND (no row with this id)")
         return {"ok": True, "scope": "not_found", "deleted": 0}
     row = resp.data[0]
     ws = row.get("workspace_id") or None
-    recorder = row.get("recorded_by_user_id")
-    is_owner = (not recorder) or recorder == user_id
+    bot_id = row.get("recall_bot_id")
+    # The owner is the recorder; on the owner's OWN row recorded_by is unset, so fall back
+    # to that row's user_id.
+    meeting_owner = row.get("recorded_by_user_id") or row.get("user_id")
+    is_owner = (meeting_owner == user_id)
 
-    # Personal meeting (no fan-out) OR a non-owner removing their own copy: single row.
-    # (A non-owner can only drop their own copy; it may still resurface via the owner's
-    # copy under the dedup fetch — a true per-user hide is deferred.)
-    if not ws or not is_owner:
+    # Personal meeting: single row keyed by id + the caller (can't touch someone else's).
+    if not ws:
         d = client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
         _delete_meeting_transcript_rag(client, meeting_id, user_id)
-        # Tombstone the bot only when YOU own the meeting — a non-owner dropping their
-        # fan-out copy must not stop the owner's recovery.
-        if is_owner and row.get("recall_bot_id"):
-            _mark_bot_deleted(client, row["recall_bot_id"])
+        if row.get("user_id") == user_id and bot_id:
+            _mark_bot_deleted(client, bot_id)
         deleted = len(d.data or [])
-        print(f"[delete] meeting {meeting_id} scope=own_copy deleted={deleted} ws={ws} bot={row.get('recall_bot_id')}")
+        print(f"[delete] meeting {meeting_id} scope=personal deleted={deleted} bot={bot_id}")
+        return {"ok": True, "scope": "personal", "deleted": deleted}
+
+    # Workspace meeting — must be a member.
+    if not is_workspace_member(client, user_id, ws):
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+    # Non-owner: remove ONLY the caller's own copy of this meeting.
+    if not is_owner:
+        q = client.table("meetings").delete().eq("user_id", user_id)
+        q = q.eq("recall_bot_id", bot_id) if bot_id else q.eq("workspace_id", ws).eq("date", row.get("date"))
+        d = q.execute()
+        deleted = len(d.data or [])
+        print(f"[delete] meeting {meeting_id} scope=own_copy deleted={deleted} ws={ws} bot={bot_id}")
         return {"ok": True, "scope": "own_copy", "deleted": deleted}
 
-    # Owner deleting a workspace meeting → remove every fan-out copy so it's gone for
-    # the whole workspace. All copies share recall_bot_id (bot meetings); otherwise they
-    # share (workspace_id, recorded_by_user_id, date).
-    if row.get("recall_bot_id"):
-        d = client.table("meetings").delete() \
-            .eq("recall_bot_id", row["recall_bot_id"]).eq("workspace_id", ws).execute()
+    # Owner → remove EVERY copy so it's gone for the whole workspace. Bot meetings share
+    # recall_bot_id; otherwise all copies share (workspace_id, date).
+    if bot_id:
+        d = client.table("meetings").delete().eq("recall_bot_id", bot_id).eq("workspace_id", ws).execute()
     else:
-        d = client.table("meetings").delete() \
-            .eq("workspace_id", ws).eq("recorded_by_user_id", user_id) \
-            .eq("date", row["date"]).execute()
-
+        d = client.table("meetings").delete().eq("workspace_id", ws).eq("date", row.get("date")).execute()
     _delete_meeting_transcript_rag(client, meeting_id, user_id)
-    if row.get("recall_bot_id"):
-        _mark_bot_deleted(client, row["recall_bot_id"])
+    if bot_id:
+        _mark_bot_deleted(client, bot_id)
     deleted = len(d.data or [])
-    print(f"[delete] meeting {meeting_id} scope=all_copies deleted={deleted} ws={ws} bot={row.get('recall_bot_id')}")
+    print(f"[delete] meeting {meeting_id} scope=all_copies deleted={deleted} ws={ws} bot={bot_id}")
     return {"ok": True, "scope": "all_copies", "deleted": deleted}
 
 
