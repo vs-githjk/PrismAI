@@ -25,6 +25,7 @@ import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
 import { notifyStatus } from './lib/statusNotify'
 import { readIntegrationStore, writeIntegrationStore, purgeLegacyGlobalIntegrationKeys } from './lib/integrationStore'
+import { prepareAudioForTranscription, isProbablyAudio, WHISPER_MAX_BYTES } from './lib/extractAudio'
 
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
 const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
@@ -839,6 +840,8 @@ export default function App() {
   const micSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 
   const [transcribing, setTranscribing] = useState(false)
+  const [transcribeStatus, setTranscribeStatus] = useState('')
+  const [transcribeError, setTranscribeError] = useState('')
   const fileInputRef = useRef(null)
 
   // Join Meeting state
@@ -1955,6 +1958,7 @@ export default function App() {
     cancelActiveAnalysis()
     sessionStorage.removeItem('prism_new_meeting')
     savedMeetingRef.current = entry.id
+    setError(null)  // clear any stale "Analysis failed" banner from a prior meeting/live run
     setTranscript(entry.transcript)
     setTranscriptDrafts((prev) => ({ ...prev, paste: entry.transcript || '' }))
     setResult(entry.result)
@@ -2008,18 +2012,55 @@ export default function App() {
     const file = e.target.files[0]
     if (!file) return
     setTranscribing(true)
-    setError(null)
-    const formData = new FormData()
-    formData.append('file', file)
+    setTranscribeError('')
+    setTranscribeStatus('')
+
+    // Video / oversized audio: extract + compress the audio client-side so we only
+    // ever upload a small file under Whisper's 25MB cap. Small audio passes through.
+    let uploadFile = file
     try {
-      const res = await apiFetch('/transcribe', { method: 'POST', body: formData })
+      if (!isProbablyAudio(file) || file.size > WHISPER_MAX_BYTES) {
+        setTranscribeStatus(isProbablyAudio(file) ? 'Compressing audio…' : 'Extracting audio…')
+        uploadFile = await prepareAudioForTranscription(file, (stage) => {
+          if (stage.phase === 'loading') setTranscribeStatus('Loading converter…')
+          else if (stage.phase === 'converting') {
+            const pct = stage.progress != null ? ` ${Math.round(stage.progress * 100)}%` : ''
+            setTranscribeStatus(`Extracting audio…${pct}`)
+          }
+        })
+      }
+    } catch (err) {
+      console.error('[upload] audio prep failed:', err)
+      const detail = err?.message || err?.name || String(err) || ''
+      setTranscribeError(detail
+        ? `Could not prepare this file: ${detail}`
+        : 'Could not prepare this file for transcription (see browser console for details).')
+      setTranscribing(false)
+      setTranscribeStatus('')
+      e.target.value = ''
+      return
+    }
+
+    setTranscribeStatus('Transcribing…')
+    const formData = new FormData()
+    formData.append('file', uploadFile)
+    // Guard against a silent hang: abort after 3 min instead of spinning forever.
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 180000)
+    try {
+      const res = await apiFetch('/transcribe', { method: 'POST', body: formData, signal: controller.signal })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Transcription failed')
       const data = await res.json()
       setTranscriptForTab(data.transcript, 'upload')
     } catch (e) {
-      setError(e.message)
+      console.error('[upload] transcription failed:', e)
+      setTranscribeError(e.name === 'AbortError'
+        ? 'Transcription timed out. Try a shorter recording.'
+        : (e.message || 'Transcription failed'))
     } finally {
+      clearTimeout(timeout)
       setTranscribing(false)
+      setTranscribeStatus('')
       e.target.value = ''
     }
   }
@@ -2229,6 +2270,14 @@ export default function App() {
   }
 
   const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
+    // Guard: never wipe a good, already-saved result to re-run on an empty transcript.
+    // Bot-recorded meetings transcribe server-side, so the browser holds no transcript —
+    // a Retry here would blank the view. Bail with a clear message instead.
+    const effectiveTranscript = (transcriptOverride ?? transcript) || ''
+    if (!effectiveTranscript.trim()) {
+      setError('No transcript in this view to re-analyze. This meeting was recorded by the bot — its analysis is already saved; reopen it from history to reload the transcript.')
+      return
+    }
     cancelActiveAnalysis()
     setShowSpeakerModal(false)
     setLoading(true)
@@ -2589,6 +2638,8 @@ export default function App() {
           stopRecording={stopRecording}
           micSupported={micSupported}
           transcribing={transcribing}
+          transcribeStatus={transcribeStatus}
+          transcribeError={transcribeError}
           fileInputRef={fileInputRef}
           handleAudioUpload={handleAudioUpload}
           shareToken={shareToken}

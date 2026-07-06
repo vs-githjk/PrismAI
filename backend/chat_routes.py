@@ -60,6 +60,11 @@ class ChatRequest(BaseModel):
     message: str
     transcript: str = ""
     image_urls: list[str] = []
+    # Parsed analysis (summary / action_items / decisions / sentiment). Sent so chat
+    # can answer even when the raw transcript isn't in the browser — e.g. a bot-recorded
+    # meeting viewed live, where the audio was transcribed server-side and the frontend
+    # never held the text. Without this, chat has no meeting context and web-searches.
+    result: dict = {}
 
 
 class GlobalChatRequest(BaseModel):
@@ -116,6 +121,59 @@ def _build_user_turn(message: str, image_urls: list[str] | None) -> dict:
     return {"role": "user", "content": parts}
 
 
+def _result_context(result: dict) -> str:
+    """Render the parsed analysis into a compact grounding block for chat. This is the
+    fallback (and complement) to the raw transcript — the model can cite the actual
+    summary / action items / decisions instead of guessing or web-searching."""
+    if not isinstance(result, dict) or not result:
+        return ""
+    parts: list[str] = []
+    summary = result.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        parts.append(f"Summary:\n{summary.strip()[:2000]}")
+
+    actions = result.get("action_items")
+    if isinstance(actions, list) and actions:
+        lines = []
+        for a in actions[:25]:
+            if not isinstance(a, dict):
+                continue
+            task = str(a.get("task") or "").strip()
+            if not task:
+                continue
+            owner = str(a.get("owner") or "").strip()
+            due = str(a.get("due_date") or a.get("due") or "").strip()
+            suffix = " — ".join(x for x in [f"owner: {owner}" if owner else "", f"due: {due}" if due else ""] if x)
+            lines.append(f"- {task}" + (f" ({suffix})" if suffix else ""))
+        if lines:
+            parts.append("Action items:\n" + "\n".join(lines))
+
+    decisions = result.get("decisions")
+    if isinstance(decisions, list) and decisions:
+        lines = []
+        for d in decisions[:25]:
+            if isinstance(d, dict):
+                text = str(d.get("decision") or "").strip()
+                owner = str(d.get("owner") or "").strip()
+                if text:
+                    lines.append(f"- {text}" + (f" (owner: {owner})" if owner else ""))
+            elif isinstance(d, str) and d.strip():
+                lines.append(f"- {d.strip()}")
+        if lines:
+            parts.append("Decisions:\n" + "\n".join(lines))
+
+    sentiment = result.get("sentiment")
+    if isinstance(sentiment, dict):
+        overall = str(sentiment.get("overall") or "").strip()
+        notes = str(sentiment.get("notes") or "").strip()
+        if overall or notes:
+            parts.append("Sentiment: " + " — ".join(x for x in [overall, notes] if x)[:600])
+
+    if not parts:
+        return ""
+    return "\n\nParsed analysis of this meeting (authoritative — prefer this over external search):\n\n" + "\n\n".join(parts)
+
+
 def _sign_chat_image(path: str, expires: int = 3600) -> str | None:
     """Fresh signed URL for a stored chat image (private bucket)."""
     if not supabase or not path:
@@ -151,9 +209,12 @@ async def upload_chat_image(file: UploadFile = File(...), user_id: str = Depends
         )
     except Exception as exc:
         msg = str(exc)
-        if "Bucket not found" in msg:
+        # Log the full picture so we can see the real cause in Render logs.
+        print(f"[chat-image] upload failed for path={path} type={type(exc).__name__} repr={exc!r}")
+        low = msg.lower()
+        if "bucket not found" in low or ("not found" in low and "object" not in low):
             raise HTTPException(status_code=502,
-                detail="Storage bucket 'chat-images' is missing — create it in Supabase Storage.")
+                detail="Storage bucket 'chat-images' is missing — create it in Supabase Storage (private, image MIME types).")
         raise HTTPException(status_code=502, detail=f"Upload failed: {msg[:200]}")
 
     url = _sign_chat_image(path)
@@ -422,13 +483,29 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         context = ""
         if req.transcript.strip():
             context = f"\n\nMeeting transcript for context:\n{req.transcript[:15000]}"
+        # Always fold in the parsed analysis so chat is grounded even when the raw
+        # transcript isn't available (bot-recorded meetings viewed live).
+        context += _result_context(req.result)
 
         # Get available tools for this user
         tools = get_available_tools(user_settings) if user_id else []
 
-        system_content = (
-            "You are PrismAI, an intelligent meeting assistant. Answer questions about the meeting transcript concisely."
-        )
+        has_images = any(isinstance(u, str) and u.strip() for u in (req.image_urls or []))
+        if has_images:
+            # Image attached — the question is usually ABOUT the image (which may be
+            # unrelated to the meeting), so don't lock the model to meeting-only grounding.
+            system_content = (
+                "You are PrismAI, an intelligent meeting assistant. The user has shared one or more "
+                "images — look at them and answer directly: describe what you see and give the assessment "
+                "the user asks for. Meeting context is provided below for reference if relevant."
+            )
+        else:
+            system_content = (
+                "You are PrismAI, an intelligent meeting assistant. Answer questions about THIS meeting "
+                "using the transcript and parsed analysis provided below. Ground every answer in that "
+                "context — do not web-search or invent facts about the meeting when the answer is present. "
+                "If the meeting context genuinely doesn't cover something, say so plainly."
+            )
         if tools:
             system_content += (
                 "\n\nYou have access to tools that can take real actions — send emails, post to Slack, "

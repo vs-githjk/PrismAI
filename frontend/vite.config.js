@@ -9,6 +9,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // ffmpeg.wasm loads an internal Web Worker via import.meta.url. Vite's dep
+  // pre-bundling rewrites that into a blob URL the worker can't resolve
+  // ("Cannot find module 'blob:...'"), so exclude it and let Vite serve the
+  // package source directly.
+  optimizeDeps: {
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+  },
   build: {
     rollupOptions: {
       output: {

@@ -13,7 +13,7 @@ from openai import AsyncOpenAI
 from analysis_routes import create_analysis_router
 from calendar_routes import router as calendar_router
 from ms_calendar_routes import router as ms_calendar_router
-from chat_routes import create_chat_router
+from chat_routes import create_chat_router, router as chat_router
 from clients import DEFAULT_TIMEOUT, bind as bind_clients
 from export_routes import router as export_router
 from actions_routes import router as actions_router
@@ -70,6 +70,7 @@ app.include_router(realtime_router)
 
 app.include_router(create_analysis_router(openai_client))
 app.include_router(create_chat_router(openai_client))
+app.include_router(chat_router)  # /chat/upload-image + /chat/sign (module-level router)
 
 
 @app.get("/health")

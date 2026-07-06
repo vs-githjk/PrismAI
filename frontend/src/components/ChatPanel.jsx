@@ -13,8 +13,36 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { apiFetch } from '../lib/api'
 import PersonaChip from './PersonaChip'
+
+// Assistant replies come back as markdown (bold, numbered/bulleted lists, paragraphs).
+// Render it with real structure + breathing room instead of a cramped raw-text blob.
+function MarkdownMessage({ children }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ node, ...p }) => <p className="mb-2 last:mb-0 leading-relaxed" {...p} />,
+        ul: ({ node, ...p }) => <ul className="mb-2 last:mb-0 list-disc space-y-1 pl-4" {...p} />,
+        ol: ({ node, ...p }) => <ol className="mb-2 last:mb-0 list-decimal space-y-1 pl-4" {...p} />,
+        li: ({ node, ...p }) => <li className="leading-relaxed" {...p} />,
+        strong: ({ node, ...p }) => <strong className="font-semibold text-white" {...p} />,
+        a: ({ node, ...p }) => <a className="text-cyan-300 underline underline-offset-2" target="_blank" rel="noreferrer" {...p} />,
+        code: ({ node, inline, ...p }) => inline
+          ? <code className="rounded bg-white/10 px-1 py-0.5 text-[12px]" {...p} />
+          : <code className="block overflow-x-auto rounded-md bg-black/40 p-2 text-[12px]" {...p} />,
+        h1: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+        h2: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+        h3: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  )
+}
 
 // One grounding source behind a RAG answer — rendered from structured
 // rag_context (backend), never from the model's prose. Citations stay reliable.
@@ -415,7 +443,9 @@ export default function ChatPanel({
             // for users who only set their default at the workspace level.
             ...(activeWorkspaceId ? { 'x-active-workspace': activeWorkspaceId } : {}),
           },
-          body: JSON.stringify({ message: msg, transcript, image_urls: imageUrls }),
+          // Ship the parsed result too, so chat is grounded even when the browser
+          // has no raw transcript (bot-recorded meetings viewed live).
+          body: JSON.stringify({ message: msg, transcript, result: result || {}, image_urls: imageUrls }),
         })
         if (!res.ok) throw new Error('Chat failed')
         const data = await res.json()
@@ -454,11 +484,14 @@ export default function ChatPanel({
       const fd = new FormData()
       fd.append('file', file)
       const res = await apiFetch('/chat/upload-image', { method: 'POST', body: fd })
-      if (!res.ok) throw new Error('upload failed')
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))).detail
+        throw new Error(detail || `upload failed (${res.status})`)
+      }
       const data = await res.json()
       if (data.url) setPendingImages((prev) => [...prev, { path: data.path, url: data.url }].slice(0, MAX_IMAGES))
-    } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Couldn’t upload that image — try again.' }])
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: `Couldn’t upload that image — ${err.message || 'try again.'}` }])
     } finally {
       setUploadingImage(false)
     }
@@ -680,7 +713,9 @@ export default function ChatPanel({
                   ))}
                 </div>
               )}
-              {msg.content}
+              {msg.role === 'assistant' && typeof msg.content === 'string'
+                ? <MarkdownMessage>{msg.content}</MarkdownMessage>
+                : msg.content}
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {msg.toolsUsed.map((t, ti) => (

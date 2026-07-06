@@ -1,6 +1,13 @@
 import { Check, Clock, UserRound } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
+import { dueInfo, dueLabel } from '../../lib/dueStatus'
+
+// Same due badge styling as MeetingView, so Home and the meeting agree.
+const DUE_STYLE = {
+  overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
+  soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
+}
 
 const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
 
@@ -83,12 +90,25 @@ function ActionItemsCard({ actions, onOpen, onToggle }) {
                       <UserRound className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
                       <span className="truncate">{item.owner || 'Unowned'}</span>
                     </span>
-                    {item.due && (
-                      <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
-                        <Clock className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
-                        <span className="truncate">{item.due}</span>
-                      </span>
-                    )}
+                    {(() => {
+                      // Prefer the resolved status (matches MeetingView's badge); fall
+                      // back to the raw label only when there's no parseable date.
+                      const due = dueInfo(item)
+                      if (due.status === 'overdue' || due.status === 'soon') {
+                        return (
+                          <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${DUE_STYLE[due.status]}`}>
+                            {dueLabel(due)}
+                          </span>
+                        )
+                      }
+                      const label = due.status === 'later' ? dueLabel(due) : (item.due && item.due !== 'TBD' ? item.due : '')
+                      return label ? (
+                        <span className="inline-flex items-center gap-1 text-[11.5px] text-white/50">
+                          <Clock className="h-3 w-3 shrink-0 text-white/35" aria-hidden="true" />
+                          <span className="truncate">{label}</span>
+                        </span>
+                      ) : null
+                    })()}
                     <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-cyan-200/15 bg-cyan-300/[0.06] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200/70">
                       <span className="max-w-[140px] truncate">{deriveDisplayTitle(entry)}</span>
                     </span>

@@ -283,7 +283,7 @@ function NewMeetingPanel(props) {
               <input
                 ref={props.fileInputRef}
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
+                accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.webm,.mp4,.mov,.mkv,.m4v"
                 className="hidden"
                 onChange={props.handleAudioUpload}
               />
@@ -293,8 +293,20 @@ function NewMeetingPanel(props) {
                 disabled={props.transcribing}
                 className="w-full rounded-xl border border-white/[0.10] bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/[0.08] disabled:opacity-50"
               >
-                {props.transcribing ? '⏳ Transcribing…' : '📎 Choose Audio File'}
+                {props.transcribing ? `⏳ ${props.transcribeStatus || 'Working…'}` : '📎 Choose Audio or Video'}
               </button>
+              {!props.transcribing && !props.transcript && !props.transcribeError && (
+                <p className="text-[10.5px] leading-relaxed text-white/38">
+                  Audio or video. Video audio is extracted in your browser — the first
+                  large file loads a converter (~30MB, cached after). Keep recordings
+                  under ~70 min.
+                </p>
+              )}
+              {props.transcribeError && !props.transcribing && (
+                <p className="rounded-lg border border-red-400/25 bg-red-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {props.transcribeError}
+                </p>
+              )}
               {props.transcript && (
                 <>
                   <textarea
