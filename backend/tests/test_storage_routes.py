@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -177,7 +178,8 @@ class FakeQuery:
 
 class FakeSupabase:
     def __init__(self):
-        self.tables = {"meetings": [], "chats": [], "bot_sessions": []}
+        self.tables = {"meetings": [], "chats": [], "bot_sessions": [],
+                       "knowledge_docs": [], "knowledge_chunks": []}
 
     def table(self, table_name):
         return FakeQuery(self, table_name)
@@ -283,6 +285,49 @@ class StorageRoutesTestCase(unittest.TestCase):
         bot_rows = [r for r in self.fake_db.tables["meetings"] if r.get("recall_bot_id") == "bot-xyz"]
         self.assertEqual(len(bot_rows), 1)          # not duplicated
         self.assertEqual(bot_rows[0]["id"], 111)    # reused the existing row's id
+
+    def test_move_meeting_owner_to_personal_moves_only_own_copy(self):
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-123"},
+            {"id": 2, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-123"},  # teammate fan-out
+        ]
+        resp = self.client.post("/meetings/1/move", json={"workspace_id": ""})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.json()["workspace_id"])
+        rows = {r["id"]: r for r in self.fake_db.tables["meetings"]}
+        self.assertIsNone(rows[1]["workspace_id"])     # my copy moved to Personal
+        self.assertEqual(rows[2]["workspace_id"], "ws-a")  # teammate's copy untouched
+
+    def test_move_meeting_to_workspace_requires_membership(self):
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": None, "recorded_by_user_id": "user-123"},
+        ]
+        with patch.object(storage_routes, "is_workspace_member", return_value=False):
+            resp = self.client.post("/meetings/1/move", json={"workspace_id": "ws-x"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertIsNone(self.fake_db.tables["meetings"][0]["workspace_id"])  # unchanged
+
+    def test_move_meeting_to_workspace_when_member(self):
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": None, "recorded_by_user_id": "user-123"},
+        ]
+        with patch.object(storage_routes, "is_workspace_member", return_value=True):
+            resp = self.client.post("/meetings/1/move", json={"workspace_id": "ws-x"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self.fake_db.tables["meetings"][0]["workspace_id"], "ws-x")
+
+    def test_move_meeting_non_owner_forbidden(self):
+        # Caller holds a fan-out copy (recorded_by someone else) → cannot move directly.
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-999"},
+        ]
+        resp = self.client.post("/meetings/1/move", json={"workspace_id": ""})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(self.fake_db.tables["meetings"][0]["workspace_id"], "ws-a")  # unchanged
+
+    def test_move_meeting_not_found(self):
+        resp = self.client.post("/meetings/404/move", json={"workspace_id": ""})
+        self.assertEqual(resp.status_code, 404)
 
     def test_get_insights_returns_user_scoped_recommended_actions(self):
         self.fake_db.tables["meetings"] = [

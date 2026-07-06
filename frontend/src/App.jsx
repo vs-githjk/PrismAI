@@ -846,6 +846,10 @@ export default function App() {
   const [meetingUrl, setMeetingUrl] = useState('')
   const [joinMode, setJoinMode] = useState('utterance')  // pre-join response mode: 'utterance' | 'autonomous'
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
+  // Workspace the live bot was JOINED under — snapshotted at join because the global
+  // activeWorkspaceId can change while a call is in progress. Drives the "Recording
+  // into X" indicator so the live surface shows where notes will actually be saved.
+  const [botWorkspaceId, setBotWorkspaceId] = useState(null)
   const [botError, setBotError] = useState(null)
   const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
   const [dedupBotInfo, setDedupBotInfo] = useState(null) // { botId, ownerUserId, ownerUserEmail }
@@ -1625,6 +1629,7 @@ export default function App() {
     setBotTranscriptReady(false)
     setLiveCommands([])
     setBotStatus('joining')
+    setBotWorkspaceId(activeWorkspaceId || null)  // snapshot: where this bot records
     try {
       const res = await apiFetch('/join-meeting', {
         method: 'POST',
@@ -1813,6 +1818,7 @@ export default function App() {
     setBotError(null)
     setBotTranscriptReady(false)
     setBotStatus('joining')
+    setBotWorkspaceId(activeWorkspaceId || null)  // snapshot: where this bot records
     apiFetch('/join-meeting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2569,6 +2575,7 @@ export default function App() {
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}
           botStatus={botStatus}
+          botWorkspaceId={botWorkspaceId}
           activeLiveToken={activeLiveToken}
           accessToken={authSession?.access_token || null}
           botError={botError}

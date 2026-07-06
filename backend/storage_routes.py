@@ -497,6 +497,71 @@ async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Dep
     return {"ok": True}
 
 
+class MeetingMoveRequest(BaseModel):
+    # Target scope. Empty string / null = move back to Personal.
+    workspace_id: str | None = None
+
+
+def _rescope_meeting_transcript(client, meeting_id: int, user_id: str, workspace_id: str | None):
+    """Follow a moved meeting with its RAG transcript doc + chunks so retrieval stays
+    scoped to the meeting's new workspace. Only the caller's own transcript doc (indexed
+    under their user_id) is touched — mirrors the knowledge doc-move re-scope pattern."""
+    docs = (client.table("knowledge_docs").select("id")
+            .eq("meeting_id", meeting_id).eq("user_id", user_id)
+            .eq("source_type", "meeting_transcript").execute())
+    for d in (docs.data or []):
+        doc_id = d["id"]
+        client.table("knowledge_docs").update({"workspace_id": workspace_id}) \
+            .eq("id", doc_id).eq("user_id", user_id).execute()
+        client.table("knowledge_chunks").update({"workspace_id": workspace_id}) \
+            .eq("doc_id", doc_id).eq("user_id", user_id).execute()
+
+
+@router.post("/meetings/{meeting_id}/move")
+async def move_meeting(meeting_id: int, req: MeetingMoveRequest, user_id: str = Depends(require_user_id)):
+    """Move a meeting between Personal and a workspace. Owner-only; moves ONLY the
+    caller's own copy (other members' fan-out copies are left untouched)."""
+    client = _require_storage()
+    target_ws = (req.workspace_id or "").strip() or None
+
+    # Load the caller's OWN copy — enforces "only your copy moves" + existence.
+    resp = (client.table("meetings")
+            .select("id,user_id,workspace_id,recorded_by_user_id")
+            .eq("id", meeting_id).eq("user_id", user_id).limit(1).execute())
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    row = resp.data[0]
+
+    # Owner-gate: only the meeting owner (recorder) may move it. A fan-out recipient
+    # (recorded_by_user_id points at someone else) must request the owner to move it —
+    # the request flow is deferred; for now they can't move it directly.
+    recorder = row.get("recorded_by_user_id")
+    if recorder and recorder != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the meeting owner can move this meeting. Ask them to move it.",
+        )
+
+    # Target validation: Personal is always allowed; a workspace requires membership.
+    if target_ws and not is_workspace_member(client, user_id, target_ws):
+        raise HTTPException(status_code=403, detail="You are not a member of the target workspace.")
+
+    if (row.get("workspace_id") or None) == target_ws:
+        return {"ok": True, "workspace_id": target_ws, "unchanged": True}
+
+    # Move only this row; other members' fan-out copies stay where they are.
+    client.table("meetings").update({"workspace_id": target_ws}) \
+        .eq("id", meeting_id).eq("user_id", user_id).execute()
+
+    # Re-scope RAG best-effort — the move itself already succeeded.
+    try:
+        _rescope_meeting_transcript(client, meeting_id, user_id, target_ws)
+    except Exception as exc:
+        print(f"[move] transcript re-scope failed for meeting {meeting_id}: {exc}")
+
+    return {"ok": True, "workspace_id": target_ws}
+
+
 @router.post("/meetings/{meeting_id}/claim-email")
 async def claim_email(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()

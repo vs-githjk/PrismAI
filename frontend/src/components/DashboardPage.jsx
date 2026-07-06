@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   FileText,
+  FolderInput,
   MessageSquare,
   MessagesSquare,
   Share2,
@@ -39,7 +40,7 @@ import DashboardSidebar from './dashboard/DashboardSidebar'
 import DashboardTopbar from './dashboard/DashboardTopbar'
 import LiveMeetingView from './dashboard/LiveMeetingView'
 import { deriveStatus } from './dashboard/StatusIsland'
-import { useStatusNotification } from '../lib/statusNotify'
+import { useStatusNotification, notifyStatus } from '../lib/statusNotify'
 import WorkspaceIsland from './dashboard/WorkspaceIsland'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
@@ -63,6 +64,10 @@ function MeetingActionsBar({
   exportingSlack,
   exportingNotion,
   integrations,
+  canMove = false,
+  currentWorkspaceId = null,
+  workspaces = [],
+  onMoveMeeting,
 }) {
   const handleShare = () => {
     if (!shareToken) return
@@ -81,8 +86,44 @@ function MeetingActionsBar({
   const slackConnected = !!integrations?.slack_webhook
   const notionConnected = !!(integrations?.notion_token && integrations?.notion_page_id)
 
+  const curWs = currentWorkspaceId || null
+
   return (
     <div className="flex items-center gap-2">
+      {canMove && (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={secondaryButtonClass} aria-label="Move meeting" title="Move to…">
+              <FolderInput className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/35">Move to</div>
+            <DropdownMenuItem
+              disabled={curWs === null}
+              onSelect={() => onMoveMeeting?.(null)}
+              className={itemClass}
+            >
+              <span className="flex-1">Personal</span>
+              {curWs === null && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
+            </DropdownMenuItem>
+            {workspaces.map((ws) => (
+              <DropdownMenuItem
+                key={ws.id}
+                disabled={curWs === ws.id}
+                onSelect={() => onMoveMeeting?.(ws.id)}
+                className={itemClass}
+              >
+                <span className="min-w-0 flex-1 truncate">{ws.name}</span>
+                {curWs === ws.id && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       {shareToken && (
         <button
           type="button"
@@ -369,6 +410,19 @@ function NewMeetingPanel(props) {
                     </button>
                   </div>
                 </div>
+              )}
+
+              {/* Where this live meeting's notes will be saved — the bot's workspace is
+                  fixed at join, so this stays accurate even if the global chip changes. */}
+              {botActive && (
+                <p className="px-1 text-[10.5px] text-white/40">
+                  Recording into:{' '}
+                  <span className="font-medium text-white/65">
+                    {props.botWorkspaceId
+                      ? (props.workspaces?.find((w) => w.id === props.botWorkspaceId)?.name ?? 'a workspace')
+                      : 'Personal'}
+                  </span>
+                </p>
               )}
 
               {props.botStatus === 'recording' && props.activeLiveToken && (
@@ -938,6 +992,45 @@ export default function DashboardPage(props) {
     return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
   }, [currentMeeting, props.user?.id, workspaceMemberMap])
 
+  // Only the meeting owner (recorder) may move it; a fan-out recipient can't (they'd
+  // request the owner to move it — deferred). A meeting with no recorder set is your own.
+  const canMoveCurrentMeeting = !!currentMeeting && (
+    !currentMeeting.recorded_by_user_id ||
+    currentMeeting.recorded_by_user_id === props.user?.id
+  )
+
+  // Move the current meeting between Personal and a workspace — moves ONLY the caller's
+  // copy (backend enforces owner-gate + membership). Updates the list in place; drops it
+  // from view if it left the currently-active scope.
+  async function moveCurrentMeeting(targetWorkspaceId) {
+    const id = currentMeeting?.id
+    if (!id) return
+    try {
+      const res = await apiFetch(`/meetings/${id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: targetWorkspaceId || '' }),
+      })
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({})))?.detail || 'Could not move meeting'
+        notifyStatus({ kind: 'error', message: detail })
+        return
+      }
+      const data = await res.json()
+      const newWs = data.workspace_id || null
+      const activeWs = activeWorkspaceId || null
+      props.setHistory?.((prev) => prev
+        .map((m) => (m.id === id ? { ...m, workspace_id: newWs } : m))
+        .filter((m) => m.id !== id || (m.workspace_id || null) === activeWs))
+      const label = newWs
+        ? (workspaces.find((w) => w.id === newWs)?.name ?? 'workspace')
+        : 'Personal'
+      notifyStatus({ kind: 'success', message: `Moved to ${label}` })
+    } catch (e) {
+      notifyStatus({ kind: 'error', message: 'Could not move meeting' })
+    }
+  }
+
   // Workspace teammates (minus the organizer) — offered as one-click invite
   // suggestions when scheduling a follow-up from a workspace meeting.
   // Harvest attendee emails from connected calendars (Google + Outlook) so the
@@ -1115,6 +1208,10 @@ export default function DashboardPage(props) {
               exportingSlack={props.exportingSlack}
               exportingNotion={props.exportingNotion}
               integrations={props.integrations}
+              canMove={canMoveCurrentMeeting && !!currentMeeting}
+              currentWorkspaceId={currentMeeting?.workspace_id || null}
+              workspaces={workspaces}
+              onMoveMeeting={moveCurrentMeeting}
             />
           ) : null
         }

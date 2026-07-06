@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus } from 'lucide-react'
+import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus, X } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
@@ -93,6 +93,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [exitNoteDismissed, setExitNoteDismissed] = useState(false)
 
   const refreshDocs = useCallback(async () => {
     if (!meetingId) return
@@ -122,6 +123,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   const healthScore = result.health_score
   const sentiment = result.sentiment
+
+  // A fresh/live analysis has no persisted `meeting` object yet (it's set only once
+  // the row is loaded from history). We use that to flag the health score as a live
+  // estimate — the saved copy is re-scored in a separate pass and is authoritative.
+  const isProvisional = !meeting && !readOnly
 
   // Show the balance triangle only when all three sub-scores are present & finite;
   // otherwise fall back to the single-arc gauge (seed/old meetings, mid-analysis).
@@ -203,13 +209,21 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
   return (
     <div className="space-y-5">
-      {exitNote?.reason && (
+      {exitNote?.reason && !exitNoteDismissed && (
         <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3.5 py-2.5 text-[13px] text-amber-100/90">
           <span className="mt-0.5 shrink-0">⚠️</span>
-          <span>
+          <span className="min-w-0 flex-1">
             <span className="font-semibold">Bot exit:</span> {exitNote.reason}
             {exitTime && <span className="text-amber-100/55"> · {exitTime}</span>}
           </span>
+          <button
+            type="button"
+            onClick={() => setExitNoteDismissed(true)}
+            aria-label="Dismiss bot exit notice"
+            className="mt-0.5 shrink-0 rounded-md p-0.5 text-amber-100/50 transition-colors hover:bg-amber-400/15 hover:text-amber-100"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
       <div
@@ -229,6 +243,17 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </>
           ) : (
             <p className={subtleText}>No health score recorded.</p>
+          )}
+          {/* Live/unsaved analyses run a separate LLM pass from the saved copy, so the
+              score can drift a point or two — flag it as provisional, not authoritative. */}
+          {isProvisional && (healthScore?.score !== undefined || hasBreakdown) && (
+            <span
+              title="This is the live analysis. The saved copy is re-scored and is the authoritative value."
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-400/25 bg-cyan-400/[0.08] px-2.5 py-0.5 text-[10px] font-medium text-cyan-200/80"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+              Provisional · live estimate
+            </span>
           )}
         </section>
 
