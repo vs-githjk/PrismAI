@@ -93,7 +93,19 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
+  // Persist the bot-exit dismissal per meeting so a refresh doesn't bring the banner
+  // back once the user has acknowledged why the bot left.
+  const exitDismissKey = meeting?.id ? `prism:exit-dismiss:${meeting.id}` : null
   const [exitNoteDismissed, setExitNoteDismissed] = useState(false)
+  useEffect(() => {
+    setExitNoteDismissed(exitDismissKey ? localStorage.getItem(exitDismissKey) === '1' : false)
+  }, [exitDismissKey])
+  const dismissExitNote = () => {
+    setExitNoteDismissed(true)
+    if (exitDismissKey) {
+      try { localStorage.setItem(exitDismissKey, '1') } catch { /* storage unavailable */ }
+    }
+  }
 
   const refreshDocs = useCallback(async () => {
     if (!meetingId) return
@@ -218,7 +230,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           </span>
           <button
             type="button"
-            onClick={() => setExitNoteDismissed(true)}
+            onClick={dismissExitNote}
             aria-label="Dismiss bot exit notice"
             className="mt-0.5 shrink-0 rounded-md p-0.5 text-amber-100/50 transition-colors hover:bg-amber-400/15 hover:text-amber-100"
           >
