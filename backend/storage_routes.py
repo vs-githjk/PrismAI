@@ -475,6 +475,22 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     return meeting
 
 
+def _delete_meeting_transcript_rag(client, meeting_id: int, user_id: str):
+    """Drop the meeting's AUTO-INDEXED transcript from RAG so a deleted meeting can't be
+    cited in chat. Keyed by (meeting_id, user_id) + source_type='meeting_transcript' — so
+    it only touches the caller's own transcript doc, and leaves manually-uploaded/pinned
+    docs alone. Best-effort. Runs for every delete path (personal + workspace)."""
+    try:
+        docs = (client.table("knowledge_docs").select("id")
+                .eq("meeting_id", meeting_id).eq("user_id", user_id)
+                .eq("source_type", "meeting_transcript").execute())
+        for d in (docs.data or []):
+            client.table("knowledge_chunks").delete().eq("doc_id", d["id"]).execute()
+            client.table("knowledge_docs").delete().eq("id", d["id"]).execute()
+    except Exception as exc:
+        print(f"[delete] transcript RAG cleanup failed for meeting {meeting_id}: {exc}")
+
+
 @router.delete("/meetings/{meeting_id}")
 async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
@@ -499,6 +515,7 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
     # copy under the dedup fetch — a true per-user hide is deferred.)
     if not ws or not is_owner:
         client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
+        _delete_meeting_transcript_rag(client, meeting_id, user_id)
         return {"ok": True, "scope": "own_copy"}
 
     # Owner deleting a workspace meeting → remove every fan-out copy so it's gone for
@@ -512,18 +529,7 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
             .eq("workspace_id", ws).eq("recorded_by_user_id", user_id) \
             .eq("date", row["date"]).execute()
 
-    # Best-effort: drop the meeting's transcript from RAG so chat can't cite a deleted
-    # meeting. The transcript doc is keyed by the owner's meeting_id.
-    try:
-        docs = (client.table("knowledge_docs").select("id")
-                .eq("meeting_id", meeting_id).eq("user_id", user_id)
-                .eq("source_type", "meeting_transcript").execute())
-        for d in (docs.data or []):
-            client.table("knowledge_chunks").delete().eq("doc_id", d["id"]).execute()
-            client.table("knowledge_docs").delete().eq("id", d["id"]).execute()
-    except Exception as exc:
-        print(f"[delete] transcript RAG cleanup failed for meeting {meeting_id}: {exc}")
-
+    _delete_meeting_transcript_rag(client, meeting_id, user_id)
     return {"ok": True, "scope": "all_copies"}
 
 

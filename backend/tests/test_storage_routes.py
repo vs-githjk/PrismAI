@@ -353,14 +353,26 @@ class StorageRoutesTestCase(unittest.TestCase):
         resp = self.client.post("/meetings/404/move", json={"workspace_id": ""})
         self.assertEqual(resp.status_code, 404)
 
-    def test_delete_personal_meeting_removes_single_row(self):
+    def test_delete_personal_meeting_removes_single_row_and_transcript_rag(self):
         self.fake_db.tables["meetings"] = [
             {"id": 1, "user_id": "user-123", "workspace_id": None, "recorded_by_user_id": None,
              "recall_bot_id": None, "date": "2026-07-05"},
         ]
+        self.fake_db.tables["knowledge_docs"] = [
+            {"id": "d1", "user_id": "user-123", "meeting_id": 1, "source_type": "meeting_transcript"},
+            {"id": "d2", "user_id": "user-123", "meeting_id": 1, "source_type": "pdf"},  # manual upload — keep
+        ]
+        self.fake_db.tables["knowledge_chunks"] = [
+            {"id": "c1", "doc_id": "d1"}, {"id": "c2", "doc_id": "d2"},
+        ]
         resp = self.client.delete("/meetings/1")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(self.fake_db.tables["meetings"]), 0)
+        # Auto-indexed transcript doc + its chunks gone; the manually-uploaded pdf stays.
+        doc_ids = {d["id"] for d in self.fake_db.tables["knowledge_docs"]}
+        self.assertEqual(doc_ids, {"d2"})
+        chunk_ids = {c["id"] for c in self.fake_db.tables["knowledge_chunks"]}
+        self.assertEqual(chunk_ids, {"c2"})
 
     def test_delete_workspace_owner_cascades_all_fanout_copies(self):
         # Owner deletes a bot workspace meeting → every copy (all members) is removed,
