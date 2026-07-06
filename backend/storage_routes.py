@@ -478,8 +478,53 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
 @router.delete("/meetings/{meeting_id}")
 async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
-    client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
-    return {"ok": True}
+
+    # Load the caller's own copy first. A plain `delete WHERE id AND user_id` only
+    # removes ONE row — but a workspace meeting is fanned out to every member, and
+    # GET /meetings?workspace_id aggregates + dedups all members' copies, so deleting
+    # just your row lets a teammate's copy resurface on the next fetch (the "delete
+    # doesn't stick" bug). Owner delete must remove ALL copies.
+    resp = (client.table("meetings")
+            .select("id,user_id,workspace_id,recorded_by_user_id,recall_bot_id,date")
+            .eq("id", meeting_id).eq("user_id", user_id).limit(1).execute())
+    if not resp.data:
+        return {"ok": True}  # not yours / already gone — idempotent
+    row = resp.data[0]
+    ws = row.get("workspace_id") or None
+    recorder = row.get("recorded_by_user_id")
+    is_owner = (not recorder) or recorder == user_id
+
+    # Personal meeting (no fan-out) OR a non-owner removing their own copy: single row.
+    # (A non-owner can only drop their own copy; it may still resurface via the owner's
+    # copy under the dedup fetch — a true per-user hide is deferred.)
+    if not ws or not is_owner:
+        client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
+        return {"ok": True, "scope": "own_copy"}
+
+    # Owner deleting a workspace meeting → remove every fan-out copy so it's gone for
+    # the whole workspace. All copies share recall_bot_id (bot meetings); otherwise they
+    # share (workspace_id, recorded_by_user_id, date).
+    if row.get("recall_bot_id"):
+        client.table("meetings").delete() \
+            .eq("recall_bot_id", row["recall_bot_id"]).eq("workspace_id", ws).execute()
+    else:
+        client.table("meetings").delete() \
+            .eq("workspace_id", ws).eq("recorded_by_user_id", user_id) \
+            .eq("date", row["date"]).execute()
+
+    # Best-effort: drop the meeting's transcript from RAG so chat can't cite a deleted
+    # meeting. The transcript doc is keyed by the owner's meeting_id.
+    try:
+        docs = (client.table("knowledge_docs").select("id")
+                .eq("meeting_id", meeting_id).eq("user_id", user_id)
+                .eq("source_type", "meeting_transcript").execute())
+        for d in (docs.data or []):
+            client.table("knowledge_chunks").delete().eq("doc_id", d["id"]).execute()
+            client.table("knowledge_docs").delete().eq("id", d["id"]).execute()
+    except Exception as exc:
+        print(f"[delete] transcript RAG cleanup failed for meeting {meeting_id}: {exc}")
+
+    return {"ok": True, "scope": "all_copies"}
 
 
 @router.patch("/meetings/{meeting_id}")
@@ -517,16 +562,49 @@ def _rescope_meeting_transcript(client, meeting_id: int, user_id: str, workspace
             .eq("doc_id", doc_id).eq("user_id", user_id).execute()
 
 
+def _entry_from_row(row: dict) -> "MeetingEntry":
+    """Rebuild a MeetingEntry from a stored meetings row for re-fan-out, preserving the
+    recording-player fields (provider + segments) via the same __dict__ channel
+    _fan_out_to_workspace reads."""
+    entry = MeetingEntry(
+        id=row["id"],
+        date=row.get("date") or "",
+        title=row.get("title") or "",
+        score=row.get("score"),
+        transcript=row.get("transcript") or "",
+        result=row.get("result") or {},
+        share_token=row.get("share_token") or "",
+        workspace_id=row.get("workspace_id"),
+        recorded_by_user_id=row.get("recorded_by_user_id"),
+        persona_used=row.get("persona_used"),
+        recall_bot_id=row.get("recall_bot_id"),
+    )
+    entry.__dict__["_resolved_provider"] = row.get("recording_provider")
+    entry.__dict__["_resolved_segments"] = row.get("transcript_segments")
+    return entry
+
+
+def _delete_fanout_copies(client, row: dict, owner_id: str, workspace_id: str):
+    """Remove the teammates' fan-out copies of a meeting from a workspace (they exist
+    only to share it there). Matches by recall_bot_id when present, else recorder+date."""
+    q = client.table("meetings").delete().eq("workspace_id", workspace_id).neq("user_id", owner_id)
+    if row.get("recall_bot_id"):
+        q = q.eq("recall_bot_id", row["recall_bot_id"])
+    else:
+        q = q.eq("recorded_by_user_id", owner_id).eq("date", row.get("date"))
+    q.execute()
+
+
 @router.post("/meetings/{meeting_id}/move")
 async def move_meeting(meeting_id: int, req: MeetingMoveRequest, user_id: str = Depends(require_user_id)):
-    """Move a meeting between Personal and a workspace. Owner-only; moves ONLY the
-    caller's own copy (other members' fan-out copies are left untouched)."""
+    """Move a meeting between Personal and a workspace. Owner-only. Cascades to the whole
+    workspace: leaving a workspace removes teammates' fan-out copies; entering one re-fans
+    it out to that workspace's members. The RAG transcript follows the meeting."""
     client = _require_storage()
     target_ws = (req.workspace_id or "").strip() or None
 
-    # Load the caller's OWN copy — enforces "only your copy moves" + existence.
-    resp = (client.table("meetings")
-            .select("id,user_id,workspace_id,recorded_by_user_id")
+    # Load the caller's OWN full row (needed to re-fan-out) + enforce existence.
+    resp = (client.table("meetings").select("*")
             .eq("id", meeting_id).eq("user_id", user_id).limit(1).execute())
     if not resp.data:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -546,18 +624,34 @@ async def move_meeting(meeting_id: int, req: MeetingMoveRequest, user_id: str = 
     if target_ws and not is_workspace_member(client, user_id, target_ws):
         raise HTTPException(status_code=403, detail="You are not a member of the target workspace.")
 
-    if (row.get("workspace_id") or None) == target_ws:
+    source_ws = row.get("workspace_id") or None
+    if source_ws == target_ws:
         return {"ok": True, "workspace_id": target_ws, "unchanged": True}
 
-    # Move only this row; other members' fan-out copies stay where they are.
+    # 1. Leaving a workspace → drop teammates' fan-out copies (they only shared it there).
+    if source_ws:
+        try:
+            _delete_fanout_copies(client, row, user_id, source_ws)
+        except Exception as exc:
+            print(f"[move] source fan-out cleanup failed for meeting {meeting_id}: {exc}")
+
+    # 2. Move the owner's own copy.
     client.table("meetings").update({"workspace_id": target_ws}) \
         .eq("id", meeting_id).eq("user_id", user_id).execute()
 
-    # Re-scope RAG best-effort — the move itself already succeeded.
+    # 3. Re-scope the RAG transcript so retrieval follows the meeting.
     try:
         _rescope_meeting_transcript(client, meeting_id, user_id, target_ws)
     except Exception as exc:
         print(f"[move] transcript re-scope failed for meeting {meeting_id}: {exc}")
+
+    # 4. Entering a workspace → re-fan-out to that workspace's members so they see it.
+    if target_ws:
+        try:
+            entry = _entry_from_row({**row, "workspace_id": target_ws})
+            await _fan_out_to_workspace(client, entry, user_id, target_ws)
+        except Exception as exc:
+            print(f"[move] fan-out to {target_ws} failed for meeting {meeting_id}: {exc}")
 
     return {"ok": True, "workspace_id": target_ws}
 

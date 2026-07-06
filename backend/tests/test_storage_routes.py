@@ -57,6 +57,10 @@ class FakeQuery:
         self.filters.append((field, value))
         return self
 
+    def neq(self, field, value):
+        self.filters.append((field, ("neq", value)))
+        return self
+
     def is_(self, field, value):
         # Mirrors Supabase's .is_("col", None) → SQL `col IS NULL`.
         # Accepts either the Python None or the string "null" (some callsites use the literal).
@@ -115,6 +119,9 @@ class FakeQuery:
             elif isinstance(value, tuple) and value[0] == "is_":
                 if row.get(field) is not value[1]:
                     return False
+            elif isinstance(value, tuple) and value[0] == "neq":
+                if row.get(field) == value[1]:
+                    return False
             elif row.get(field) != value:
                 return False
         return True
@@ -128,7 +135,7 @@ class FakeQuery:
                 matched.sort(key=lambda row: row.get(self.order_field), reverse=self.order_desc)
             if self.limit_count is not None:
                 matched = matched[: self.limit_count]
-            if self.selected_fields:
+            if self.selected_fields and self.selected_fields != ["*"]:
                 matched = [
                     {field: row.get(field) for field in self.selected_fields}
                     for row in matched
@@ -179,7 +186,8 @@ class FakeQuery:
 class FakeSupabase:
     def __init__(self):
         self.tables = {"meetings": [], "chats": [], "bot_sessions": [],
-                       "knowledge_docs": [], "knowledge_chunks": []}
+                       "knowledge_docs": [], "knowledge_chunks": [],
+                       "workspace_members": []}
 
     def table(self, table_name):
         return FakeQuery(self, table_name)
@@ -286,17 +294,21 @@ class StorageRoutesTestCase(unittest.TestCase):
         self.assertEqual(len(bot_rows), 1)          # not duplicated
         self.assertEqual(bot_rows[0]["id"], 111)    # reused the existing row's id
 
-    def test_move_meeting_owner_to_personal_moves_only_own_copy(self):
+    def test_move_meeting_owner_to_personal_cascades_removes_fanout(self):
+        # Owner moves a workspace meeting to Personal → own copy becomes Personal AND
+        # teammates' fan-out copies are removed (the meeting leaves the workspace).
         self.fake_db.tables["meetings"] = [
-            {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-123"},
-            {"id": 2, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-123"},  # teammate fan-out
+            {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},
+            {"id": 2, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},  # teammate fan-out copy
         ]
         resp = self.client.post("/meetings/1/move", json={"workspace_id": ""})
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(resp.json()["workspace_id"])
         rows = {r["id"]: r for r in self.fake_db.tables["meetings"]}
-        self.assertIsNone(rows[1]["workspace_id"])     # my copy moved to Personal
-        self.assertEqual(rows[2]["workspace_id"], "ws-a")  # teammate's copy untouched
+        self.assertEqual(set(rows), {1})               # teammate copy gone
+        self.assertIsNone(rows[1]["workspace_id"])     # my copy is now Personal
 
     def test_move_meeting_to_workspace_requires_membership(self):
         self.fake_db.tables["meetings"] = [
@@ -307,14 +319,26 @@ class StorageRoutesTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
         self.assertIsNone(self.fake_db.tables["meetings"][0]["workspace_id"])  # unchanged
 
-    def test_move_meeting_to_workspace_when_member(self):
+    def test_move_meeting_to_workspace_fans_out_to_members(self):
+        # Owner moves a Personal meeting into a workspace → own copy scoped to the
+        # workspace AND a fan-out copy is created for each other member.
         self.fake_db.tables["meetings"] = [
-            {"id": 1, "user_id": "user-123", "workspace_id": None, "recorded_by_user_id": "user-123"},
+            {"id": 1, "user_id": "user-123", "workspace_id": None, "recorded_by_user_id": "user-123",
+             "recall_bot_id": None, "date": "2026-07-05", "title": "M", "result": {}, "transcript": "t"},
+        ]
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-x", "user_id": "user-123"},
+            {"workspace_id": "ws-x", "user_id": "user-999"},
         ]
         with patch.object(storage_routes, "is_workspace_member", return_value=True):
             resp = self.client.post("/meetings/1/move", json={"workspace_id": "ws-x"})
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(self.fake_db.tables["meetings"][0]["workspace_id"], "ws-x")
+        rows = self.fake_db.tables["meetings"]
+        owner_row = next(r for r in rows if r["id"] == 1)
+        self.assertEqual(owner_row["workspace_id"], "ws-x")
+        fan = [r for r in rows if r["user_id"] == "user-999"]
+        self.assertEqual(len(fan), 1)                       # teammate got a copy
+        self.assertEqual(fan[0]["workspace_id"], "ws-x")
 
     def test_move_meeting_non_owner_forbidden(self):
         # Caller holds a fan-out copy (recorded_by someone else) → cannot move directly.
@@ -328,6 +352,42 @@ class StorageRoutesTestCase(unittest.TestCase):
     def test_move_meeting_not_found(self):
         resp = self.client.post("/meetings/404/move", json={"workspace_id": ""})
         self.assertEqual(resp.status_code, 404)
+
+    def test_delete_personal_meeting_removes_single_row(self):
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": None, "recorded_by_user_id": None,
+             "recall_bot_id": None, "date": "2026-07-05"},
+        ]
+        resp = self.client.delete("/meetings/1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(self.fake_db.tables["meetings"]), 0)
+
+    def test_delete_workspace_owner_cascades_all_fanout_copies(self):
+        # Owner deletes a bot workspace meeting → every copy (all members) is removed,
+        # so it can't resurface via the dedup fetch. Copies share recall_bot_id.
+        self.fake_db.tables["meetings"] = [
+            {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},
+            {"id": 2, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},  # teammate's fan-out copy
+        ]
+        resp = self.client.delete("/meetings/1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["scope"], "all_copies")
+        self.assertEqual(len(self.fake_db.tables["meetings"]), 0)  # both copies gone
+
+    def test_delete_workspace_non_owner_only_removes_own_copy(self):
+        self.fake_db.tables["meetings"] = [
+            {"id": 5, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-999",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},  # my fan-out copy
+            {"id": 6, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-999",
+             "recall_bot_id": "bot-9", "date": "2026-07-05"},  # owner's copy — must survive
+        ]
+        resp = self.client.delete("/meetings/5")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["scope"], "own_copy")
+        remaining = [r["id"] for r in self.fake_db.tables["meetings"]]
+        self.assertEqual(remaining, [6])  # only my copy removed; owner's survives
 
     def test_get_insights_returns_user_scoped_recommended_actions(self):
         self.fake_db.tables["meetings"] = [
