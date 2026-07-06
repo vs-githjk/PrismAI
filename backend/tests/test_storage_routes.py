@@ -77,6 +77,10 @@ class FakeQuery:
         self.limit_count = count
         return self
 
+    def maybe_single(self):
+        self._maybe_single = True
+        return self
+
     def update(self, payload):
         self.mode = "update"
         self.update_payload = payload
@@ -128,6 +132,8 @@ class FakeQuery:
                     {field: row.get(field) for field in self.selected_fields}
                     for row in matched
                 ]
+            if getattr(self, "_maybe_single", False):
+                return FakeExecuteResult(matched[0] if matched else None)
             return FakeExecuteResult(matched)
 
         if self.mode == "update":
@@ -171,7 +177,7 @@ class FakeQuery:
 
 class FakeSupabase:
     def __init__(self):
-        self.tables = {"meetings": [], "chats": []}
+        self.tables = {"meetings": [], "chats": [], "bot_sessions": []}
 
     def table(self, table_name):
         return FakeQuery(self, table_name)
@@ -255,6 +261,28 @@ class StorageRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.fake_db.tables["meetings"][0]["user_id"], "user-123")
         self.assertEqual(self.fake_db.tables["meetings"][0]["share_token"], "share-123")
+
+    def test_save_meeting_dedups_by_recall_bot_id(self):
+        # The "5 meetings from 1 join" bug: the same bot saved more than once (browser
+        # + server recovery across Render restarts) with different client ids must
+        # converge to ONE row, not duplicate.
+        self.fake_db.tables["bot_sessions"] = [
+            {"bot_id": "bot-xyz", "user_id": "user-123", "transcript_segments": None},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 111, "user_id": "user-123", "date": "2026-07-05", "title": "M",
+             "score": 50, "transcript": "t", "result": {"summary": "x"},
+             "recall_bot_id": "bot-xyz"},
+        ]
+        # Second save for the SAME bot, different client-generated id.
+        response = self.client.post("/meetings", json={
+            "id": 999, "date": "2026-07-05", "title": "M", "score": 50,
+            "transcript": "t", "result": {"summary": "x"}, "recall_bot_id": "bot-xyz",
+        })
+        self.assertEqual(response.status_code, 200)
+        bot_rows = [r for r in self.fake_db.tables["meetings"] if r.get("recall_bot_id") == "bot-xyz"]
+        self.assertEqual(len(bot_rows), 1)          # not duplicated
+        self.assertEqual(bot_rows[0]["id"], 111)    # reused the existing row's id
 
     def test_get_insights_returns_user_scoped_recommended_actions(self):
         self.fake_db.tables["meetings"] = [

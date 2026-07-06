@@ -13,6 +13,7 @@ No LLM call, no JSON-parse failure mode, consistent across short and long meetin
 ALL_AGENTS = [
     "summarizer", "action_items", "decisions", "sentiment",
     "email_drafter", "calendar_suggester", "health_score", "speaker_coach",
+    "action_executor",
 ]
 
 

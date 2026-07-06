@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Upload, Link as LinkIcon, FileText } from 'lucide-react'
 import { uploadFile, uploadUrl, connectSource } from '../lib/knowledge'
+import { notifyStatus } from '../lib/statusNotify'
 
 export default function KnowledgeUploadModal({ open, onClose, meetingId, workspaceId, onUploaded }) {
   const [tab, setTab] = useState('file')
@@ -21,7 +22,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
     setBusy(true); setError(null)
     try {
       await uploadFile(file, { meetingId, workspaceId, sensitivity })
-      onUploaded?.(); close()
+      notifyStatus({ kind: 'doc', message: 'Document indexed' }); onUploaded?.(); close()
     } catch (err) {
       setError(err?.message || 'Upload failed')
     } finally {
@@ -34,7 +35,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
     setBusy(true); setError(null)
     try {
       await uploadUrl(url.trim(), { meetingId, workspaceId, sensitivity })
-      onUploaded?.(); close()
+      notifyStatus({ kind: 'doc', message: 'Document indexed' }); onUploaded?.(); close()
     } catch (err) {
       setError(err?.message || 'Failed to ingest URL')
     } finally {
@@ -47,7 +48,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
     setBusy(true); setError(null)
     try {
       await connectSource({ sourceType: 'notion', sourceId: notionId.trim(), name: notionName.trim(), meetingId, workspaceId, sensitivity })
-      onUploaded?.(); close()
+      notifyStatus({ kind: 'doc', message: 'Document indexed' }); onUploaded?.(); close()
     } catch (err) {
       setError(err?.message || 'Failed to connect Notion page')
     } finally {

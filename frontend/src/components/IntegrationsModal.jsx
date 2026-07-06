@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
 import { writeIntegrationStore } from '../lib/integrationStore'
 
@@ -77,6 +77,22 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
   const [jiraProjectKey, setJiraProjectKey] = useState(integrations.jira_project_key || '')
   const [savingTools, setSavingTools] = useState(false)
   const [toolSaveResult, setToolSaveResult] = useState(null) // 'ok' | 'err'
+
+  // Re-seed the server-side tool tokens when they arrive/change. useState only
+  // captures the initial prop, so a modal opened before /user-settings resolved would
+  // show blank Jira/Linear fields — and then a save would null them out server-side
+  // (the "integration details disappear" bug). This syncs from the parent's loaded
+  // values without clobbering active edits (the deps are props, which only change on
+  // load, never while the user is typing).
+  useEffect(() => {
+    setLinearApiKey(integrations.linear_api_key || '')
+    setSlackBotToken(integrations.slack_bot_token || '')
+    setJiraBaseUrl(integrations.jira_base_url || '')
+    setJiraEmail(integrations.jira_email || '')
+    setJiraApiToken(integrations.jira_api_token || '')
+    setJiraProjectKey(integrations.jira_project_key || '')
+  }, [integrations.linear_api_key, integrations.slack_bot_token, integrations.jira_base_url,
+      integrations.jira_email, integrations.jira_api_token, integrations.jira_project_key])
 
   async function save() {
     if (isTestAccount) return

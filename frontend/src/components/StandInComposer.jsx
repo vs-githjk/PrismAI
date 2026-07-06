@@ -74,7 +74,19 @@ export default function StandInComposer({ meeting, user, onClose }) {
     }
   }, [meeting, authorName, authorEmail])
 
-  useEffect(() => { start() }, [start])
+  // Start ONCE per meeting — not on every parent re-render. The parent passes `meeting`
+  // as a fresh object each render and re-renders on bot/participant polling, which made
+  // `start` (a useCallback over `meeting`) change identity and re-fire the effect — that
+  // re-ran the draft API and wiped whatever the user was typing (the "input vanishes when
+  // a participant joins" bug). Guarding on the stable meeting URL keeps the draft intact.
+  const startedForRef = useRef(null)
+  useEffect(() => {
+    const key = meeting?.url || ''
+    if (startedForRef.current === key) return
+    startedForRef.current = key
+    start()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.url])
 
   // One refine turn. `opts.borrowScopes` is set when the user clicked a "pull from"
   // chip — a borrow pick carries no typed message; the backend drafts from the widened

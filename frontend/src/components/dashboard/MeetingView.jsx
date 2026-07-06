@@ -7,6 +7,7 @@ import MeetingHealthTriangle from './MeetingHealthTriangle'
 import RecordingPlayer from './RecordingPlayer'
 import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
+import SuggestedActions from './SuggestedActions'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
 import { useCountUp, overallHealth } from '../../lib/healthScore'
@@ -87,7 +88,7 @@ function SemicircularGauge({ score }) {
   )
 }
 
-export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate, viewerName = '' }) {
+export default function MeetingView({ result, meeting, gmailConnected = false, onToggleActionItem, readOnly = false, transcript = '', recordedByEmail = null, workspaceId = null, suggestedEmails = [], onResultUpdate, viewerName = '', actionConnections = {}, teamsWebhook = '' }) {
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -196,8 +197,21 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
     </section>
   ) : null
 
+  const exitNote = result.exit_note
+  const exitAt = exitNote?.at ? new Date(exitNote.at) : null
+  const exitTime = exitAt && !isNaN(exitAt) ? exitAt.toLocaleString() : null
+
   return (
     <div className="space-y-5">
+      {exitNote?.reason && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3.5 py-2.5 text-[13px] text-amber-100/90">
+          <span className="mt-0.5 shrink-0">⚠️</span>
+          <span>
+            <span className="font-semibold">Bot exit:</span> {exitNote.reason}
+            {exitTime && <span className="text-amber-100/55"> · {exitTime}</span>}
+          </span>
+        </div>
+      )}
       <div
         className={`grid gap-5 ${
           showPinned
@@ -411,6 +425,17 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       </div>
 
       {!readOnly && <SentimentCard sentiment={sentiment} />}
+
+      {!readOnly && (result.suggested_actions?.length > 0) && (
+        <SuggestedActions
+          actions={result.suggested_actions}
+          connections={actionConnections}
+          suggestedEmails={suggestedEmails}
+          meetingId={meetingId}
+          teamsWebhook={teamsWebhook}
+          readOnly={readOnly}
+        />
+      )}
 
       {!readOnly && (
         <EmailCard

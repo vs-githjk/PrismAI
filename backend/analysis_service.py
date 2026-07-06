@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from agents import (
+    action_executor,
     action_items,
     calendar_suggester,
     decision_linker,
@@ -28,10 +29,11 @@ AGENT_MAP = {
     "calendar_suggester": calendar_suggester.run,
     "health_score": health_score.run,
     "speaker_coach": speaker_coach.run,
+    "action_executor": action_executor.run,
 }
 
 TIER1_AGENTS = frozenset({"summarizer", "decisions", "action_items", "sentiment", "speaker_coach"})
-TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester"})
+TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester", "action_executor"})
 
 # Tier-2 agents that don't need the full transcript — they synthesize from
 # context (summary + decisions + action_items + sentiment) which tier-1 has
@@ -54,6 +56,7 @@ AGENT_PERSONA_WHITELIST: dict[str, set[str]] = {
     "email_drafter":      {"default", "concise", "formal", "cheeky", "socratic", "custom"},
     "health_score":       {"default", "concise", "formal"},
     "calendar_suggester": {"default", "concise", "formal"},
+    "action_executor":    {"default", "concise", "formal", "cheeky", "socratic", "custom"},
 }
 
 
@@ -95,6 +98,7 @@ DEFAULT_RESULT = {
     "health_score": {"score": 0, "verdict": "", "improvement_tip": "", "badges": [], "breakdown": {"clarity": 0, "action_orientation": 0, "engagement": 0}},
     "speaker_coach": {"speakers": [], "balance_score": 100},
     "decision_links": [],
+    "suggested_actions": [],
     "agents_run": [],
 }
 
@@ -108,6 +112,7 @@ AGENT_RESULT_KEY = {
     "health_score": "health_score",
     "speaker_coach": "speaker_coach",
     "decision_linker": "decision_links",
+    "action_executor": "suggested_actions",
 }
 
 
@@ -320,6 +325,12 @@ def _state_to_result(state: AnalysisState) -> dict:
     dlr = raw.get("decision_linker", {})
     if dlr.get("decision_links") is not None:
         result["decision_links"] = dlr["decision_links"]
+
+    aer = raw.get("action_executor", {})
+    if aer.get("suggested_actions") is not None:
+        result["suggested_actions"] = aer["suggested_actions"]
+        if aer["suggested_actions"]:
+            succeeded.append("action_executor")
 
     result["agents_run"] = succeeded
     return result

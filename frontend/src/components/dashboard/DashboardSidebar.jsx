@@ -5,6 +5,8 @@ import {
   ChevronRight,
   DoorOpen,
   Home,
+  Lock,
+  LogIn,
   Plus,
   TrendingUp,
   Trash2,
@@ -46,6 +48,14 @@ function groupMeetings(entries) {
 const navItemBase =
   'group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-medium transition-colors'
 
+// Sub-label for the pinned live row, by polled live status.
+const LIVE_LABELS = {
+  joining: 'Joining…',
+  recording: 'Live now',
+  processing: 'Analysing…',
+  error: 'Connection error',
+}
+
 export default function DashboardSidebar(props) {
   const {
     user,
@@ -70,12 +80,25 @@ export default function DashboardSidebar(props) {
     onDeleteMeeting,
     currentMeetingId,
     botActive,
+    // Live session (token-driven live sub-view). When active, a single row is
+    // pinned to the very top of the meetings list with a blinking red dot. It
+    // collapses (disappears) once the meeting ends + analysis is done — the saved
+    // meeting then shows as a normal history row.
+    hasLiveSession = false,
+    liveStatus = null,
+    liveActive = false,
+    onSelectLive,
     setShowIntegrations,
     signOut,
     newMeetingOpen,
     setNewMeetingOpen,
     onOpenNewMeeting,
     newMeetingPanel,
+    // Unauthenticated shell: a signed-out viewer (e.g. someone who opened a
+    // live/share link) sees the chrome with every feature locked. Clicking a
+    // locked feature calls onLockedFeature, which opens the sign-in gate.
+    signedOut = false,
+    onLockedFeature,
   } = props
 
   const groups = useMemo(() => groupMeetings(filteredHistory), [filteredHistory])
@@ -106,68 +129,34 @@ export default function DashboardSidebar(props) {
 
   return (
     <aside className="dashboard-sidebar dashboard-island flex flex-col" aria-label="Dashboard navigation">
-      {/* Pinned: Home + Trend + Knowledge */}
+      {/* Pinned: Home + Trend + Knowledge. When signed out, each is locked and
+          clicking opens the sign-in gate instead of navigating. */}
       <div className="space-y-1 px-3 pt-4">
-        <button
-          type="button"
-          onClick={onGoHome}
-          className={`${navItemBase} ${
-            onHome
-              ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
-          }`}
-        >
-          <Home className="h-[18px] w-[18px] shrink-0" />
-          Home
-        </button>
-        <button
-          type="button"
-          onClick={onOpenTrend}
-          className={`${navItemBase} ${
-            onTrend
-              ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
-          }`}
-        >
-          <TrendingUp className="h-[18px] w-[18px] shrink-0" />
-          Trend
-        </button>
-        <button
-          type="button"
-          onClick={onOpenCalendar}
-          className={`${navItemBase} ${
-            onCalendar
-              ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
-          }`}
-        >
-          <CalendarDays className="h-[18px] w-[18px] shrink-0" />
-          Calendar
-        </button>
-        <button
-          type="button"
-          onClick={onOpenKnowledge}
-          className={`${navItemBase} ${
-            onKnowledge
-              ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
-          }`}
-        >
-          <BookOpen className="h-[18px] w-[18px] shrink-0" />
-          Knowledge
-        </button>
-        <button
-          type="button"
-          onClick={onOpenStandin}
-          className={`${navItemBase} ${
-            onStandin
-              ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
-              : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
-          }`}
-        >
-          <UserRoundCheck className="h-[18px] w-[18px] shrink-0" />
-          Stand-in
-        </button>
+        {[
+          { key: 'home', label: 'Home', Icon: Home, active: onHome, onClick: onGoHome },
+          { key: 'trend', label: 'Trend', Icon: TrendingUp, active: onTrend, onClick: onOpenTrend },
+          { key: 'calendar', label: 'Calendar', Icon: CalendarDays, active: onCalendar, onClick: onOpenCalendar },
+          { key: 'knowledge', label: 'Knowledge', Icon: BookOpen, active: onKnowledge, onClick: onOpenKnowledge },
+          { key: 'standin', label: 'Stand-in', Icon: UserRoundCheck, active: onStandin, onClick: onOpenStandin },
+        ].map(({ key, label, Icon, active, onClick }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={signedOut ? () => onLockedFeature?.(label) : onClick}
+            aria-disabled={signedOut || undefined}
+            className={`${navItemBase} ${
+              active && !signedOut
+                ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
+                : signedOut
+                  ? 'text-[color:var(--db-text-faint)] hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text-muted)]'
+                  : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+            }`}
+          >
+            <Icon className="h-[18px] w-[18px] shrink-0" />
+            {label}
+            {signedOut && <Lock className="ml-auto h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />}
+          </button>
+        ))}
       </div>
 
       {/* Meetings section — New meeting button sits beside the heading */}
@@ -175,44 +164,81 @@ export default function DashboardSidebar(props) {
         <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
           Meetings
         </p>
-        <DropdownMenu
-          open={newMeetingOpen}
-          onOpenChange={(open) => {
-            setNewMeetingOpen?.(open)
-            if (open) onOpenNewMeeting?.()
-          }}
-        >
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="New meeting"
-              title="New meeting"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-cyan-200/80 transition hover:bg-cyan-400/[0.14] hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/25"
-            >
-              <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="bottom"
-            align="start"
-            sideOffset={10}
-            collisionPadding={64}
-            modal={false}
-            className="dashboard-island dashboard-body-font w-[340px] p-0"
-            // Inline style, not a Tailwind class: the base DropdownMenuContent class has
-            // overflow-hidden, and `max-h-[var(...)]` arbitrary values get dropped by
-            // tailwind-merge — so the height cap never applied and the popover ran off
-            // screen. Inline style beats both. The Radix var gives the real space below
-            // the (mid-page) trigger; 80vh is a fallback if it's ever unset.
-            style={{ maxHeight: 'var(--radix-popper-available-height, 80vh)', overflowY: 'auto' }}
-            onCloseAutoFocus={(e) => e.preventDefault()}
+        {signedOut ? (
+          <button
+            type="button"
+            aria-label="New meeting"
+            title="Sign in to start a meeting"
+            onClick={() => onLockedFeature?.('New meeting')}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/30 transition hover:bg-white/[0.06] hover:text-white/50"
           >
-            {newMeetingPanel}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
+          </button>
+        ) : (
+          <DropdownMenu
+            open={newMeetingOpen}
+            onOpenChange={(open) => {
+              setNewMeetingOpen?.(open)
+              if (open) onOpenNewMeeting?.()
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="New meeting"
+                title="New meeting"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-cyan-200/80 transition hover:bg-cyan-400/[0.14] hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/25"
+              >
+                <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="bottom"
+              align="start"
+              sideOffset={10}
+              collisionPadding={64}
+              modal={false}
+              className="dashboard-island dashboard-body-font w-[340px] p-0"
+              // Inline style, not a Tailwind class: the base DropdownMenuContent class has
+              // overflow-hidden, and `max-h-[var(...)]` arbitrary values get dropped by
+              // tailwind-merge — so the height cap never applied and the popover ran off
+              // screen. Inline style beats both. The Radix var gives the real space below
+              // the (mid-page) trigger; 80vh is a fallback if it's ever unset.
+              style={{ maxHeight: 'var(--radix-popper-available-height, 80vh)', overflowY: 'auto' }}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              {newMeetingPanel}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+        {/* Pinned live session — sits above all history while the meeting is in
+            progress / analysing. Disappears once done (the saved meeting then
+            shows as an ordinary history row below). */}
+        {hasLiveSession && liveStatus !== 'done' && (
+          <button
+            type="button"
+            onClick={() => onSelectLive?.()}
+            aria-current={liveActive ? 'page' : undefined}
+            className={`mb-2 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+              liveActive
+                ? 'bg-rose-400/[0.10] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.22)]'
+                : 'hover:bg-white/[0.06] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)]'
+            }`}
+          >
+            <span className="status-island-livedot relative h-2 w-2 shrink-0 rounded-full bg-rose-500" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className={`block truncate text-[14px] font-semibold leading-5 ${liveActive ? 'text-rose-100' : 'text-white/85'}`}>
+                Live meeting
+              </span>
+              <span className="block truncate text-[11.5px] leading-4 text-rose-300/80">
+                {LIVE_LABELS[liveStatus] || 'Connecting…'}
+              </span>
+            </span>
+          </button>
+        )}
         {!user && !isDemoMode ? (
           <p className="px-2 py-6 text-center text-[13px] leading-5 text-[color:var(--db-text-faint)]">
             Meeting history appears after you sign in.
@@ -312,8 +338,18 @@ export default function DashboardSidebar(props) {
         )}
       </div>
 
-      {/* Footer: Discord-style account block */}
+      {/* Footer: account block — replaced by a Sign in CTA when signed out. */}
       <div className="border-t border-[color:var(--db-border)] p-2.5">
+        {signedOut ? (
+          <button
+            type="button"
+            onClick={() => onLockedFeature?.('Account')}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/[0.10] px-2.5 py-2.5 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
+          >
+            <LogIn className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Sign in
+          </button>
+        ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -378,6 +414,7 @@ export default function DashboardSidebar(props) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
     </aside>
   )

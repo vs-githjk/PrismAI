@@ -239,5 +239,43 @@ class BotIdentityWiringTests(unittest.TestCase):
         self.assertEqual(rr._BOT_WAKE_ALIAS.get("botPrefetch"), "Flash")
 
 
+class ChatOnlyReplyTests(unittest.TestCase):
+    """A command TYPED in the meeting chat is dispatched with from_chat=True so the
+    reply path answers in chat only and never speaks into the live meeting."""
+
+    def setUp(self):
+        self._orig_store = dict(rr.bot_store)
+
+    def tearDown(self):
+        rr.bot_store.clear()
+        rr.bot_store.update(self._orig_store)
+        rr._bot_state.pop("botChat", None)
+
+    def test_chat_command_dispatched_with_from_chat(self):
+        from unittest.mock import AsyncMock, patch
+        payload = {
+            "event": "chat_message",
+            "data": {"data": {
+                "participant": {"name": "Alice"},
+                "data": {"text": "Prism, summarize the meeting"},
+            }},
+        }
+        with patch.object(rr, "_process_command", new=AsyncMock()) as proc, \
+             patch.object(rr, "_record_human_chat_line", new=AsyncMock()), \
+             patch.object(rr, "_detect_command", return_value="summarize the meeting"):
+            asyncio.run(rr._handle_realtime_payload(payload, verified_bot_id="botChat"))
+
+        proc.assert_called_once()
+        self.assertTrue(proc.call_args.kwargs.get("from_chat"),
+                        "chat-typed command must dispatch with from_chat=True")
+
+    def test_process_command_accepts_from_chat_kwarg(self):
+        import inspect
+        sig = inspect.signature(rr._process_command)
+        self.assertIn("from_chat", sig.parameters)
+        self.assertFalse(sig.parameters["from_chat"].default,
+                         "from_chat must default to False so voice paths are unaffected")
+
+
 if __name__ == "__main__":
     unittest.main()

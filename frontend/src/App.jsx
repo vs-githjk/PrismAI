@@ -21,9 +21,9 @@ import SpeakerCoachCard from './components/dashboard/SpeakerCoachCard'
 import SkeletonCard from './components/SkeletonCard'
 import ErrorCard from './components/ErrorCard'
 import DashboardPage from './components/DashboardPage'
-import MeetingView from './components/dashboard/MeetingView'
 import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
+import { notifyStatus } from './lib/statusNotify'
 import { readIntegrationStore, writeIntegrationStore, purgeLegacyGlobalIntegrationKeys } from './lib/integrationStore'
 
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
@@ -531,301 +531,7 @@ function buildPrintHTML(result) {
 
 // ── Empty state for right panel ──────────────────────────────────
 
-// ── Pre-Meeting Brief ────────────────────────────────────────────
-function PreMeetingBrief({ brief }) {
-  const [expanded, setExpanded] = useState(false)
-  if (!brief) return null
-  const totalCount = (brief.open_items?.length || 0) + (brief.recent_decisions?.length || 0) + (brief.blockers?.length || 0)
-  if (totalCount === 0) return null
-  return (
-    <div className="rounded-2xl overflow-hidden cursor-pointer"
-      style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.2)' }}
-      onClick={() => setExpanded(e => !e)}>
-      <div className="px-4 py-3 flex items-center gap-2">
-        <svg className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-        <span className="text-xs font-semibold text-sky-300">Pre-Meeting Brief</span>
-        <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full text-sky-200" style={{ background: 'rgba(14,165,233,0.15)' }}>
-          {totalCount} item{totalCount !== 1 ? 's' : ''}
-        </span>
-        <svg className={`w-3 h-3 text-sky-500 ml-auto transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </div>
-      {expanded && (
-        <div className="px-4 pb-4 space-y-3" style={{ borderTop: '1px solid rgba(14,165,233,0.12)' }}>
-          {brief.open_items?.length > 0 && (
-            <div className="pt-3">
-              <p className="text-[10px] font-semibold text-orange-400 mb-1.5">○ Open Action Items</p>
-              {brief.open_items.map((item, i) => (
-                <div key={i} className="flex items-start gap-1.5 mb-1">
-                  <span className="text-orange-500 text-[10px] mt-0.5 flex-shrink-0">○</span>
-                  <div>
-                    <p className="text-[11px] text-gray-300">{item.task}</p>
-                    {(item.owner || item.due || item.meeting_date) && (
-                      <p className="text-[10px] text-gray-600">{[item.owner, item.due, item.meeting_date].filter(Boolean).join(' · ')}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {brief.recent_decisions?.length > 0 && (
-            <div className={brief.open_items?.length > 0 ? '' : 'pt-3'}>
-              <p className="text-[10px] font-semibold text-yellow-400 mb-1.5">⚖ Recent Decisions</p>
-              {brief.recent_decisions.map((d, i) => (
-                <div key={i} className="flex items-start gap-1.5 mb-1">
-                  <span className="text-yellow-500 text-[10px] mt-0.5 flex-shrink-0">⚖</span>
-                  <div>
-                    <p className="text-[11px] text-gray-300">{d.decision}</p>
-                    {(d.owner || d.meeting_date) && (
-                      <p className="text-[10px] text-gray-600">{[d.owner, d.meeting_date].filter(Boolean).join(' · ')}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {brief.blockers?.length > 0 && (
-            <div className={(!brief.open_items?.length && !brief.recent_decisions?.length) ? 'pt-3' : ''}>
-              <p className="text-[10px] font-semibold text-red-400 mb-1.5">⚠ Recurring Blockers</p>
-              {brief.blockers.map((b, i) => (
-                <div key={i} className="flex items-start gap-1.5 mb-1">
-                  <span className="text-red-500 text-[10px] mt-0.5 flex-shrink-0">⚠</span>
-                  <div>
-                    <p className="text-[11px] text-gray-300">{b.snippet}</p>
-                    {b.meeting_date && <p className="text-[10px] text-gray-600">{b.meeting_date}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Live Meeting View ────────────────────────────────────────────
-function LiveMeetingView({ token }) {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const [session, setSession] = useState(null)
-  const [saveState, setSaveState] = useState('idle')
-  const intervalRef = useRef(null)
-
-  useEffect(() => {
-    supabase?.auth.getSession().then(({ data: s }) => setSession(s?.session ?? null))
-  }, [])
-
-  const handleSave = async () => {
-    if (saveState !== 'idle') return
-    setSaveState('saving')
-    const result = data?.result || {}
-    try {
-      await apiFetch('/meetings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: Date.now(),
-          date: new Date().toISOString().slice(0, 10),
-          title: result.title || result.summary?.slice(0, 80).split('.')[0] || 'Meeting',
-          score: result.health_score?.score || null,
-          transcript: data?.transcript || '',
-          result,
-          share_token: '',
-        }),
-      })
-      setSaveState('saved')
-    } catch {
-      setSaveState('error')
-    }
-  }
-
-  const poll = useCallback(async () => {
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/live/${token}`)
-      if (res.status === 404) { setError('Live session not found or has expired.'); clearInterval(intervalRef.current); return }
-      if (!res.ok) return
-      const json = await res.json()
-      setData(json)
-      if (['done', 'error'].includes(json.status)) clearInterval(intervalRef.current)
-    } catch { /* network blip — keep polling */ }
-  }, [token])
-
-  useEffect(() => {
-    poll()
-    intervalRef.current = setInterval(poll, 3000)
-    return () => clearInterval(intervalRef.current)
-  }, [poll])
-
-  const appUrl = window.location.origin + window.location.pathname
-  const status = data?.status
-  const commands = data?.commands || []
-  const lines = data?.transcript_lines || []
-  const result = data?.result || {}
-  const standinUpdates = data?.standin_updates || []
-
-  if (error) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
-      <p className="text-sm text-gray-500">{error}</p>
-    </div>
-  )
-
-  if (!data) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#07040f' }}>
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center animate-pulse" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-        </div>
-        <p className="text-xs text-gray-500">Connecting to live meeting…</p>
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="min-h-screen" style={{ background: '#07040f' }}>
-      {/* Header */}
-      <div className="sticky top-0 z-10 px-4 py-3 flex items-center justify-between"
-        style={{ background: 'rgba(7,4,15,0.92)', borderBottom: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(16px)' }}>
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)', boxShadow: '0 4px 16px rgba(2,132,199,0.4)' }}>
-            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-          </div>
-          <span className="text-sm font-bold gradient-text">PrismAI</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
-            style={{ background: status === 'recording' ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${status === 'recording' ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`, color: status === 'recording' ? '#fca5a5' : '#6b7280' }}>
-            {status === 'recording' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
-            {status === 'joining' && 'Joining…'}
-            {status === 'recording' && 'Live'}
-            {status === 'processing' && 'Analyzing…'}
-            {status === 'done' && 'Meeting ended'}
-            {status === 'error' && 'Error'}
-          </span>
-        </div>
-        <a href={appUrl} className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all hover:scale-105"
-          style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.2), rgba(13,148,136,0.15))', border: '1px solid rgba(14,165,233,0.3)', color: '#7dd3fc' }}>
-          Analyze your own →
-        </a>
-      </div>
-
-      <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
-        {status === 'recording' && (
-          <LiveCatchup liveToken={token} accessToken={session?.access_token || null} />
-        )}
-        {standinUpdates.length > 0 && (
-          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(34,211,238,0.14)' }}>
-            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <span className="text-xs">📋</span>
-              <span className="text-xs font-semibold text-cyan-200">Stand-in updates</span>
-              <span className="ml-auto text-[10px] text-gray-600">{standinUpdates.length}</span>
-            </div>
-            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-              {standinUpdates.map((u, i) => (
-                <div key={i} className="px-4 py-2.5">
-                  <p className="text-[11px] font-semibold text-cyan-300/80">{u.name} · couldn’t attend</p>
-                  <p className="text-[12px] text-gray-300 mt-0.5 leading-relaxed">{u.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {status !== 'done' && <PreMeetingBrief brief={data?.brief} />}
-        {/* Prism commands log */}
-        {commands.length > 0 && (
-          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
-            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <svg className="w-3.5 h-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-              <span className="text-xs font-semibold text-violet-300">Prism Commands</span>
-              <span className="ml-auto text-[10px] text-gray-600">{commands.length}</span>
-            </div>
-            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-              {commands.map((cmd, i) => (
-                <div key={i} className="px-4 py-3">
-                  <div className="flex items-start gap-2">
-                    <svg className="w-3 h-3 text-emerald-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs text-gray-200">"{cmd.command}"</p>
-                      {cmd.speaker && <p className="text-[10px] text-gray-600 mt-0.5">{cmd.speaker}{cmd.tools?.length ? ` · ${cmd.tools.join(', ')}` : ''}</p>}
-                      {cmd.reply && <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">{cmd.reply}</p>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Live transcript */}
-        {lines.length > 0 && status !== 'done' && (
-          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
-            <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs font-semibold text-gray-400">Live Transcript</span>
-            </div>
-            <div className="px-4 py-3 max-h-64 overflow-y-auto space-y-1">
-              {lines.slice(-30).map((line, i) => (
-                <p key={i} className="text-[11px] text-gray-400 leading-relaxed">{line}</p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Full results when done */}
-        {status === 'done' && result && (
-          <>
-            {result.agents_run?.length > 0 && <AgentTags agents={result.agents_run} />}
-            <HealthScoreCard healthScore={result.health_score} />
-            <SummaryCard summary={result.summary} />
-            <ActionItemsCard actionItems={result.action_items} readOnly />
-            <DecisionsCard decisions={result.decisions} />
-            {result.sentiment && <SentimentCard sentiment={result.sentiment} />}
-            <EmailCard email={result.follow_up_email} readOnly />
-            <CalendarCard suggestion={result.calendar_suggestion} readOnly />
-            <SpeakerCoachCard speakerCoach={result.speaker_coach} />
-            {session && (
-              <button
-                onClick={handleSave}
-                disabled={saveState !== 'idle'}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.25), rgba(13,148,136,0.2))', border: '1px solid rgba(14,165,233,0.35)', color: '#7dd3fc' }}>
-                {saveState === 'idle' && 'Save to my history'}
-                {saveState === 'saving' && 'Saving…'}
-                {saveState === 'saved' && '✓ Saved'}
-                {saveState === 'error' && 'Save failed — try again'}
-              </button>
-            )}
-          </>
-        )}
-
-        {status === 'processing' && (
-          <div className="flex items-center gap-3 px-4 py-4 rounded-2xl" style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}>
-            <svg className="w-4 h-4 text-sky-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            <p className="text-xs text-sky-300">Meeting ended — running analysis across 7 agents…</p>
-          </div>
-        )}
-
-        {status === 'error' && data.error && (
-          <div className="px-4 py-3 rounded-2xl" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
-            <p className="text-xs text-red-400">{data.error}</p>
-          </div>
-        )}
-
-        {!commands.length && !lines.length && ['joining', 'recording'].includes(status) && (
-          <div className="text-center py-12">
-            <div className="w-10 h-10 rounded-2xl mx-auto mb-3 flex items-center justify-center animate-pulse" style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.15)' }}>
-              <svg className="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-            </div>
-            <p className="text-xs text-gray-600">Waiting for conversation…</p>
-            <p className="text-[10px] text-gray-700 mt-1">Commands and transcript will appear here as the meeting progresses.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+// LiveMeetingView + PreMeetingBrief moved to ./components/dashboard/LiveMeetingView.jsx
 
 // Detect share token synchronously so first render already knows we're in share mode
 const INITIAL_SHARE_TOKEN = (() => {
@@ -843,6 +549,18 @@ const INITIAL_LIVE_TOKEN = (() => {
 const INITIAL_INVITE_TOKEN = (() => {
   const match = window.location.hash.match(/^#invite\/([\w-]+)$/)
   return match ? match[1] : null
+})()
+
+// Detect an in-progress calendar OAuth callback synchronously (Google or Microsoft).
+// The provider redirects back to the ROOT (redirect_uri = origin) with ?code=&state=,
+// and the token exchange runs there. If the auth handler redirects root→/dashboard
+// (a full navigation) before the exchange fetch completes, the request is CANCELED
+// and the token is never stored (Outlook showed "not connected" forever). We use this
+// flag to suppress that redirect until the exchange finishes, then navigate ourselves.
+const INITIAL_CAL_OAUTH = (() => {
+  const params = new URLSearchParams(window.location.search)
+  const state = params.get('state')
+  return Boolean(params.get('code') && (state === 'calendar_connect' || state === 'ms_calendar_connect'))
 })()
 
 const HERO_SENTENCES = [
@@ -1170,7 +888,9 @@ export default function App() {
   const isTestAccount = user?.id === 'test-account'
 
   useEffect(() => {
-    if (INITIAL_SHARE_TOKEN || !authReady) return // skip auto-load for shared links
+    if (!authReady) return // share/live now render in the dashboard shell, so an
+    // authenticated viewer still loads their own history for the sidebar; the
+    // !user branch below keeps unauthenticated share/live viewers' history empty.
     const previousUser = previousUserRef.current
     previousUserRef.current = user
 
@@ -1317,6 +1037,10 @@ export default function App() {
   const [speakers, setSpeakers] = useState([])
   const [shareToken, setShareToken] = useState(null)
   const [shareMode, setShareMode] = useState(INITIAL_SHARE_TOKEN ? 'loading' : null)
+  // Live-share token, kept reactive (vs the module-load INITIAL_LIVE_TOKEN) so
+  // hashchange/popstate can route in/out of the live sub-view. URL is the source
+  // of truth — see the hash router effect below.
+  const [liveToken, setLiveToken] = useState(INITIAL_LIVE_TOKEN)
   const [shareCopied, setShareCopied] = useState(false)
   const [inviteStatus, setInviteStatus] = useState(INITIAL_INVITE_TOKEN ? 'loading' : null)
   const [inviteInfo, setInviteInfo] = useState(null)
@@ -1416,7 +1140,7 @@ export default function App() {
           window.location.replace(`/dashboard#invite/${pendingInvite}`)
           return
         }
-        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN) {
+        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH) {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard')
@@ -1430,6 +1154,10 @@ export default function App() {
   useEffect(() => {
     if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard) return
     if (sessionStorage.getItem(UI_SCREEN_KEY) === 'landing') return
+    // Don't navigate away while a calendar OAuth exchange is in flight on this page —
+    // a full navigation cancels the exchange fetch. The exchange effect navigates to
+    // /dashboard itself once the token is stored.
+    if (INITIAL_CAL_OAUTH) return
     if (user && !isTestAccount) {
       sessionStorage.setItem(VISITED_KEY, '1')
       sessionStorage.setItem(UI_SCREEN_KEY, 'app')
@@ -1490,12 +1218,33 @@ export default function App() {
         code_verifier: verifier,
         redirect_uri: window.location.origin,
       }),
-    }).then(res => {
+    }).then(async res => {
       if (res.ok) {
         if (provider === 'microsoft') setOutlookConnected(true)
         else setCalendarConnected(true)
-      } else console.warn(`[calendar] ${provider} exchange-code failed:`, res.status)
-    }).catch(err => console.warn(`[calendar] ${provider} exchange-code error:`, err))
+      } else {
+        // Surface the failure instead of swallowing it — the user clicked Connect
+        // and deserves to know it didn't work (and roughly why).
+        const detail = await res.json().then(d => d.detail).catch(() => '')
+        console.warn(`[calendar] ${provider} exchange-code failed:`, res.status, detail)
+        const name = provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+        setIntegrationToast({ type: 'err', msg: `${name} connection failed${detail ? `: ${String(detail).slice(0, 140)}` : '. Please try again.'}` })
+        setTimeout(() => setIntegrationToast(null), 6000)
+      }
+    }).catch(err => {
+      console.warn(`[calendar] ${provider} exchange-code error:`, err)
+      setIntegrationToast({ type: 'err', msg: `${provider === 'microsoft' ? 'Outlook' : 'Google Calendar'} connection error. Please try again.` })
+      setTimeout(() => setIntegrationToast(null), 6000)
+    }).finally(() => {
+      // The OAuth callback lands on the ROOT ('/'); we suppressed the usual
+      // root→/dashboard redirect (INITIAL_CAL_OAUTH) so this exchange fetch wasn't
+      // canceled mid-flight. Now that it's settled, send the user to the dashboard.
+      if (INITIAL_CAL_OAUTH && window.location.pathname !== '/dashboard') {
+        sessionStorage.setItem(VISITED_KEY, '1')
+        sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+        window.location.replace('/dashboard')
+      }
+    })
   }, [user])
 
   const signInWithGoogle = async () => {
@@ -1601,7 +1350,13 @@ export default function App() {
       code_challenge: challenge,
       code_challenge_method: 'S256',
       response_mode: 'query',
-      prompt: 'consent',
+      // 'select_account' (NOT 'consent'): the app is an unverified multitenant app,
+      // so forcing a fresh USER consent ('prompt=consent') makes Azure demand
+      // user-consent that the tenant blocks for unverified apps → a false "Need admin
+      // approval" even when admin consent is already granted. select_account lets the
+      // user pick their account and relies on the existing admin grant. offline_access
+      // is admin-consented, so a refresh token is still issued without forcing consent.
+      prompt: 'select_account',
       state: 'ms_calendar_connect',
     })
     window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`
@@ -1674,6 +1429,7 @@ export default function App() {
       })
       if (!res.ok) throw new Error('Failed')
       setIntegrationToast({ type: 'ok', msg: 'Sent to Slack!' })
+      notifyStatus({ kind: 'send', message: 'Sent to Slack' })
     } catch {
       setIntegrationToast({ type: 'err', msg: 'Slack export failed' })
     } finally {
@@ -1791,6 +1547,7 @@ export default function App() {
       }
       const data = await res.json()
       setIntegrationToast({ type: 'ok', msg: 'Exported to Notion!', url: data.url })
+      notifyStatus({ kind: 'send', message: 'Exported to Notion' })
     } catch (e) {
       setIntegrationToast({ type: 'err', msg: e.message || 'Notion export failed' })
     } finally {
@@ -1799,10 +1556,10 @@ export default function App() {
     }
   }
 
-  // Handle #share/{token} on load
-  useEffect(() => {
-    if (!INITIAL_SHARE_TOKEN) return
-    apiFetch(`/share/${INITIAL_SHARE_TOKEN}`, { skipAuth: true })
+  // Load shared-meeting data for a #share token + set social/meta tags.
+  const loadShare = useCallback((token) => {
+    setShareMode('loading')
+    apiFetch(`/share/${token}`, { skipAuth: true })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         setShareMode(data || null)
@@ -1828,6 +1585,33 @@ export default function App() {
       })
       .catch(() => { setShareMode(null) })
   }, [])
+
+  // Hash router for the live/share sub-views. URL = source of truth: deep-links,
+  // in-app navigation (which pushes a hash), and browser back/forward all funnel
+  // through here, keeping liveToken + shareMode in sync with location.hash.
+  const lastShareRef = useRef(INITIAL_SHARE_TOKEN)
+  useEffect(() => {
+    if (INITIAL_SHARE_TOKEN) loadShare(INITIAL_SHARE_TOKEN)
+
+    const syncFromHash = () => {
+      const liveMatch = window.location.hash.match(/^#live\/([a-f0-9]+)$/)
+      const shareMatch = window.location.hash.match(/^#share\/([a-f0-9]+)$/)
+      setLiveToken(liveMatch ? liveMatch[1] : null)
+      const nextShare = shareMatch ? shareMatch[1] : null
+      if (nextShare) {
+        if (nextShare !== lastShareRef.current) loadShare(nextShare)
+      } else {
+        setShareMode(null)
+      }
+      lastShareRef.current = nextShare
+    }
+    window.addEventListener('hashchange', syncFromHash)
+    window.addEventListener('popstate', syncFromHash)
+    return () => {
+      window.removeEventListener('hashchange', syncFromHash)
+      window.removeEventListener('popstate', syncFromHash)
+    }
+  }, [loadShare])
 
   const joinMeeting = async () => {
     if (isTestAccount) {
@@ -1865,11 +1649,13 @@ export default function App() {
           sessionStorage.setItem('prism_active_live_token', data.live_token)
         }
         startPolling(data.existing_bot_id, data.owner_user_id)
+        notifyStatus({ kind: 'bot', message: 'Joined teammate’s bot' })
         return
       }
       setBotStatus(data.status)
       setActiveBotId(data.bot_id)
       sessionStorage.setItem('prism_active_bot_id', data.bot_id)
+      notifyStatus({ kind: 'bot', message: 'Bot joining meeting' })
       if (data.live_token) {
         setActiveLiveToken(data.live_token)
         sessionStorage.setItem('prism_active_live_token', data.live_token)
@@ -1904,11 +1690,16 @@ export default function App() {
         if (data.status === 'processing' && !processingStartTime) {
           processingStartTime = Date.now()
         }
-        // If processing has taken more than 3 minutes, show error
-        if (data.status === 'processing' && processingStartTime && Date.now() - processingStartTime > 180_000) {
+        // If processing has taken more than 6 minutes, stop blocking the UI. The
+        // backend holds out for Recall's audio transcript / a more-accurate async
+        // re-transcription (up to ~3.5 min) and auto-saves the meeting to history
+        // regardless — so this is "we stopped waiting," not necessarily a failure.
+        // (Was 3 min, which the async re-transcription hold-out could exceed → a
+        // false "timed out" on meetings that actually finished.)
+        if (data.status === 'processing' && processingStartTime && Date.now() - processingStartTime > 360_000) {
           clearInterval(pollRef.current)
           setBotStatus('error')
-          setBotError('Transcript processing timed out. The server may have restarted. Click Retry to try again.')
+          setBotError('Still finalizing — longer meetings can take a few minutes. It will appear in your history when ready. Click Retry to check again.')
           return
         }
         if (data.status === 'done') {
@@ -1934,14 +1725,19 @@ export default function App() {
             setTranscriptForTab(data.transcript, 'paste')
             setSessionId(s => s + 1)
             setBotTranscriptReady(true)
+            notifyStatus({ kind: 'bot', message: 'Meeting ended' })
           } else {
             setBotStatus('error')
-            setBotError('Meeting ended but no transcript was returned. Check the Recall.ai dashboard or try again.')
+            // Prefer the real reason Prism left (removed / permission denied / etc.)
+            // over the generic "no transcript" message when Recall told us why.
+            setBotError(data.leave_reason
+              ? `${data.leave_reason} No transcript was captured.`
+              : 'Meeting ended but no transcript was returned. Check the Recall.ai dashboard or try again.')
           }
         } else if (data.status === 'error') {
           clearInterval(pollRef.current)
           sessionStorage.removeItem('prism_active_bot_id')
-          setBotError(data.error || 'Bot encountered an error')
+          setBotError(data.leave_reason || data.error || 'Bot encountered an error')
         }
       } catch (err) {
         console.warn('[poll] network error, will retry:', err?.message)
@@ -2134,6 +1930,7 @@ export default function App() {
     setHistory(prev => mergeHistoryEntries([entry, ...prev]))
     setMeetingId(id)
     setShareToken(share_token)
+    notifyStatus({ kind: 'success', message: 'Meeting saved' })
     if (isTestAccount) {
       return entry
     }
@@ -2613,91 +2410,7 @@ export default function App() {
     )
   }
 
-  // Live meeting view — shown when URL is #live/{token}
-  if (INITIAL_LIVE_TOKEN) {
-    return <LiveMeetingView token={INITIAL_LIVE_TOKEN} />
-  }
-
-  // Share mode — loading state (token detected synchronously, waiting for fetch)
-  if (shareMode === 'loading') {
-    return (
-      <div className="dashboard-page min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center animate-pulse" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-            </svg>
-          </div>
-          <p className="text-xs text-white/40">Loading shared meeting…</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Share mode — read-only view, styled to match the dashboard. Sidebar is
-  // omitted because viewers may be unauthenticated; everything else mirrors
-  // the dashboard (topbar chrome, content panel, Inter font, MeetingView).
-  if (shareMode) {
-    const r = shareMode.result || {}
-    const appUrl = window.location.origin + window.location.pathname
-    return (
-      <div className="dashboard-page min-h-screen">
-        <header className="sticky top-0 z-30 flex h-[56px] items-center gap-2 border-b border-white/[0.06] bg-[#0a0a0c] px-3 sm:gap-4">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <a href={appUrl} className="logo-btn flex shrink-0 items-center gap-2" aria-label="Open PrismAI">
-              <LogoIcon className="h-8 w-8" />
-              <span
-                className="prism-logo-text hidden text-[1.3rem] font-light tracking-wider sm:inline"
-                data-text="prism"
-              >
-                prism
-              </span>
-            </a>
-            <span className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-white/85">
-              Shared
-            </span>
-          </div>
-          <a
-            href={appUrl}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-3.5 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
-          >
-            Analyze your own →
-          </a>
-        </header>
-
-        <div
-          className="dashboard-body-font"
-          style={{
-            background: 'var(--dashboard-bg)',
-            borderTopLeftRadius: 14,
-            borderTopRightRadius: 14,
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            minHeight: 'calc(100dvh - var(--dashboard-topbar-h))',
-          }}
-        >
-          <main className="relative z-10 mx-auto max-w-[92rem] px-5 pt-6 pb-28 sm:px-8">
-            <MeetingView
-              result={r}
-              meeting={{ title: shareMode.title, date: shareMode.date }}
-              readOnly
-              transcript={shareMode.transcript || ''}
-            />
-
-            <section className="mt-8 rounded-xl border border-white/[0.08] bg-white/[0.02] px-5 py-6 text-center">
-              <p className="text-sm font-semibold text-white">Analyze your own meetings</p>
-              <p className="mt-1 text-xs text-white/85">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
-              <a
-                href={appUrl}
-                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-4 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
-              >
-                Try PrismAI free →
-              </a>
-            </section>
-          </main>
-        </div>
-      </div>
-    )
-  }
+  // Live (#live/{token}) and Share (#share/{token}) now render as dashboard sub-views (see the isDashboard block + DashboardPage activeView "live"/"shared").
 
   // Invite acceptance screen — intercepts #invite/{token} on any path
   if (INITIAL_INVITE_TOKEN) {
@@ -2783,9 +2496,14 @@ export default function App() {
     )
   }
 
-  if (isDashboard) {
+  // Live + Share render through the dashboard shell as sub-views, so the
+  // dashboard mounts even off /dashboard when a token is present.
+  const hasSubviewToken = !!(liveToken || shareMode)
+  if (isDashboard || hasSubviewToken) {
     const hasPendingOAuthCode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('code')
-    if (authReady && !user && !isTestAccount && !hasPendingOAuthCode) {
+    // Unauthenticated visitors are bounced to the landing page — UNLESS they
+    // arrived via a live/share token, which is the one thing they may view.
+    if (authReady && !user && !isTestAccount && !hasPendingOAuthCode && !hasSubviewToken) {
       sessionStorage.setItem(UI_SCREEN_KEY, 'landing')
       window.location.replace('/')
       return null
@@ -2794,6 +2512,10 @@ export default function App() {
     return (
       <>
         <DashboardPage
+          liveToken={liveToken}
+          shareData={shareMode && shareMode !== 'loading' ? shareMode : null}
+          shareLoading={shareMode === 'loading'}
+          onSignIn={signInWithGoogle}
           authReady={authReady}
           user={user}
           isTestAccount={isTestAccount}
@@ -2814,6 +2536,8 @@ export default function App() {
           result={result}
           setResult={setResult}
           error={error}
+          onRetryAnalysis={() => runAnalysis(speakers)}
+          onDismissError={() => setError(null)}
           analysisTime={analysisTime}
           showTimeSaved={showTimeSaved}
           handleAnalyzeClick={handleAnalyzeClick}

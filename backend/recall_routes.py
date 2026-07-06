@@ -1,11 +1,14 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -26,6 +29,28 @@ _BOT_NAME_PREFIXES = tuple(
     f"{n}:" for n in ({DEFAULT_BOT_NAME, "Prism", "PrismAI"} | set(PERSONA_NAMES.values()))
 )
 
+# Minimum human words for a transcript to count as a real meeting. Below this it's a
+# no-show / instant-leave (nobody actually spoke) — analysing + saving it produces a
+# junk "Meeting Transcript Unavailable" row, so we skip persistence entirely.
+_MIN_HUMAN_WORDS = 12
+
+
+def _human_word_count(transcript: str) -> int:
+    """Count words spoken/typed by HUMANS — excludes the bot's own lines and bare
+    slash-commands (e.g. '/leave'), so a meeting where only the bot talked or someone
+    just typed /leave reads as empty."""
+    total = 0
+    for line in (transcript or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith(_BOT_NAME_PREFIXES):
+            continue
+        # Strip a leading "Speaker: " label so the count is words, not the name.
+        text = line.split(":", 1)[1].strip() if ":" in line else line
+        if not text or text.lstrip().startswith("/"):  # bare slash-command line
+            continue
+        total += len(text.split())
+    return total
+
 
 router = APIRouter(tags=["recall"])
 
@@ -34,6 +59,35 @@ RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8001")
 RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+
+# Branded bot join (#4): the in-meeting display name + a static logo tile shown as
+# the bot's camera output so it reads as "PrismAI Notetaker" with our mark rather
+# than a bare "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9,
+# <=1.3MB) generated from the app logo (backend/assets/bot_tile.jpg).
+BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI Notetaker")
+# Live-streaming keyterm grounding is OFF by default — it broke Deepgram nova-3
+# streaming transcription (no transcript.data events / empty transcript). Grounding
+# still applies in the async batch re-transcription path. Flip to "1" to re-test.
+_LIVE_KEYTERM_ENABLED = os.getenv("PRISM_LIVE_KEYTERM", "0") == "1"
+_BOT_TILE_ENABLED = os.getenv("PRISM_BOT_LOGO", "1") != "0"
+_BOT_TILE_PATH = os.path.join(os.path.dirname(__file__), "assets", "bot_tile.jpg")
+
+
+@lru_cache(maxsize=1)
+def _bot_video_output() -> dict | None:
+    """Recall `automatic_video_output` payload showing our logo tile as the bot's
+    camera when it's recording. Base64 is read+encoded once (cached). Best-effort:
+    returns None (no tile, unchanged behaviour) if disabled or the asset is missing
+    so a packaging slip can never block a bot from joining."""
+    if not _BOT_TILE_ENABLED:
+        return None
+    try:
+        with open(_BOT_TILE_PATH, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return {"in_call_recording": {"kind": "jpeg", "b64_data": b64}}
+    except Exception as exc:
+        print(f"[recall] bot tile load skipped: {exc}")
+        return None
 
 # In-memory cache (always used for fast access; synced to Supabase when available)
 bot_store: dict = {}
@@ -149,6 +203,94 @@ STATUS_MAP = {
     "fatal_error": "error",
 }
 
+# Human-readable explanation per Recall status sub_code, so when the bot drops we can
+# tell the user WHY ("a participant removed Prism") instead of leaving it a mystery.
+_LEAVE_REASON_TEXT = {
+    "bot_removed": "A participant removed Prism from the meeting.",
+    "bot_kicked_from_waiting_room": "Prism was removed from the waiting room before being admitted.",
+    "timeout_exceeded_waiting_room": "Prism was never admitted from the waiting room (timed out).",
+    "recording_permission_denied": "The host denied recording permission, so Prism left.",
+    "recording_permission_allowed_timeout": "Recording was never approved, so Prism left.",
+    "meeting_ended": "The meeting ended.",
+    "call_ended_by_host": "The host ended the meeting.",
+    "call_ended_by_platform_waiting_room_timeout": "Prism timed out in the waiting room.",
+    "everyone_left": "Everyone left, so Prism left too.",
+    "timeout_exceeded_everyone_left": "Everyone else had left, so Prism left.",
+    "timeout_exceeded_only_bots": "Only bots remained, so Prism left.",
+    "timeout_exceeded_silence": "The meeting was silent for a long time, so Prism left.",
+    "bot_received_leave_call": "Prism was asked to leave the call (via /leave).",
+    "bot_errored": "Prism hit an internal error and left.",
+}
+
+# Exits worth surfacing IN the meeting analysis (not just logs) — the bot didn't
+# leave for a normal "meeting over" reason, so the notes should carry a trace of
+# why it dropped (removed / denied recording / kicked from waiting room / asked to
+# leave / errored). Normal endings (meeting_ended, everyone_left, call_ended_by_host)
+# are intentionally NOT notable — no need to flag a clean finish.
+_NOTABLE_LEAVE_SUBCODES = {
+    "bot_removed",
+    "bot_kicked_from_waiting_room",
+    "timeout_exceeded_waiting_room",
+    "recording_permission_denied",
+    "recording_permission_allowed_timeout",
+    "call_ended_by_platform_waiting_room_timeout",
+    "bot_received_leave_call",
+    "bot_errored",
+}
+
+
+def _extract_status_detail(payload: dict) -> tuple[str, str, str]:
+    """Pull (code, sub_code, message) from a Recall status webhook. Recall has
+    shifted the nesting over schema versions (data.status.* vs data.data.*), so
+    check every known location and return '' for whatever is absent."""
+    data = payload.get("data") or {}
+    for node in (data.get("status"), data.get("data"), data):
+        if isinstance(node, dict) and (node.get("code") or node.get("sub_code")):
+            return (
+                str(node.get("code") or ""),
+                str(node.get("sub_code") or ""),
+                str(node.get("message") or ""),
+            )
+    return "", "", ""
+
+
+def _leave_reason_text(code: str, sub_code: str, message: str) -> str:
+    """Friendly one-liner for why the bot left, preferring the known sub_code map,
+    then Recall's own message, then a generic code dump (never empty)."""
+    if sub_code and sub_code in _LEAVE_REASON_TEXT:
+        return _LEAVE_REASON_TEXT[sub_code]
+    if message:
+        return message
+    if sub_code:
+        return f"Prism left ({code or 'call_ended'}: {sub_code})."
+    return f"Prism left ({code or 'call ended'})."
+
+
+def _record_leave_reason(bot_id: str, code: str, sub_code: str, message: str) -> None:
+    """Log + persist why the bot left so it's never a silent disconnect. Surfaced
+    via /bot-status (and the live payload) for the dashboard."""
+    reason = _leave_reason_text(code, sub_code, message)
+    notable = (sub_code in _NOTABLE_LEAVE_SUBCODES) or (code == "fatal_error")
+    # Stickiness: a specific notable exit (asked to leave / removed / errored) is
+    # more informative than a generic call_ended that Recall may fire moments later.
+    # Once we've recorded a notable reason, don't let a later non-notable call
+    # downgrade it (the webhook call_ended path records unconditionally).
+    if not notable and (bot_store.get(bot_id, {}) or {}).get("leave_notable"):
+        print(f"[recall] bot {bot_id} keeping earlier notable leave reason "
+              f"(ignoring later code={code!r} sub_code={sub_code!r})")
+        return
+    print(f"[recall] bot {bot_id} left — code={code!r} sub_code={sub_code!r} "
+          f"notable={notable} reason={reason!r}")
+    if bot_id in bot_store:
+        bot_store[bot_id]["leave_reason"] = reason
+        bot_store[bot_id]["leave_sub_code"] = sub_code
+        bot_store[bot_id]["leave_notable"] = notable
+        bot_store[bot_id].setdefault("left_at", datetime.now(timezone.utc).isoformat())
+    try:
+        _db_save(bot_id, {"leave_reason": reason})
+    except Exception as exc:
+        print(f"[recall] leave_reason persist skipped: {exc}")
+
 
 def _normalize_meeting_url(url: str) -> str:
     """Lowercase + strip query params/fragments so two users with the same meeting link match."""
@@ -159,14 +301,21 @@ def _normalize_meeting_url(url: str) -> str:
         return url.strip().lower()
 
 
-def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: str) -> dict | None:
+async def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: str) -> dict | None:
     """Return an active meeting_bots row for this URL where the bot owner shares a workspace
     with the requesting user. Returns None if no such bot exists, or if the workspace tables
-    are missing (local dev without supabase/workspace_migration.sql applied)."""
+    are missing (local dev without supabase/workspace_migration.sql applied).
+
+    For non-scheduled candidates we confirm the bot is genuinely still in the call
+    (Recall API) before treating it as a dedup target. Google Meet reuses meeting
+    codes, so a stale 'recording'/'joining' row left by a crashed or finished bot on
+    a reused URL would otherwise falsely shadow a brand-new meeting ("Prism is already
+    in this meeting via …" + an empty transcript). Stale rows are marked done so they
+    stop matching."""
     try:
         active = (
             client.table("meeting_bots")
-            .select("bot_id, owner_user_id")
+            .select("bot_id, owner_user_id, status")
             .eq("meeting_url", normalized_url)
             # Include 'scheduled' so a teammate's not-yet-joined stand-in bot is caught
             # here too — otherwise an auto-join racing the stand-in's join double-books.
@@ -195,8 +344,18 @@ def _find_shared_workspace_bot(client, normalized_url: str, requesting_user_id: 
                 .limit(1)
                 .execute()
             )
-            if shared.data:
-                return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
+            if not shared.data:
+                continue
+            # 'scheduled' = a future stand-in bot that hasn't joined yet (correctly
+            # not "live") — trust it. For in-call statuses, verify the bot is actually
+            # still in the meeting; a stale row on a reused Meet code must not shadow
+            # a fresh join.
+            if bot.get("status") != "scheduled" and not await _bot_is_live(bot["bot_id"]):
+                print(f"[recall] dedup: candidate bot {bot['bot_id']} is not live — "
+                      f"marking stale row done, not deduping")
+                _mb_update_status(bot["bot_id"], "done")
+                continue
+            return {**bot, "owner_user_email": shared.data[0].get("user_email", "")}
         owners = [b.get("owner_user_id") for b in active.data]
         print(f"[recall] dedup: {len(active.data)} active bot(s) for this url but none "
               f"share a workspace with {requesting_user_id} (owners={owners})")
@@ -274,15 +433,156 @@ def _live_token_for_bot(bot_id: str) -> str | None:
     return entry.get("live_token")
 
 
+# Generic words / file noise we never want as keyterms — they'd waste Deepgram's
+# ~500-token budget and bias spelling toward nothing useful.
+_KEYTERM_STOPWORDS = {
+    "document", "untitled", "meeting", "transcript", "notes", "note", "draft",
+    "final", "copy", "doc", "pdf", "docx", "txt", "team", "call", "sync", "weekly",
+    "daily", "standup", "agenda", "summary", "unassigned", "tbd", "everyone", "all",
+    "none", "speaker", "guest", "participant", "user", "prism", "prismai",
+}
+
+# A transcript line that opens with a speaker label, e.g. "Jane Doe: hi there".
+_SPEAKER_LINE_RE = re.compile(r"^([A-Z][\w .'’-]{1,38}):", re.MULTILINE)
+
+
+def _name_from_email(email: str) -> str:
+    """Derive a display name from an email local-part: jane.doe@x → 'Jane Doe'."""
+    local = (email or "").split("@", 1)[0]
+    parts = re.split(r"[._\-+0-9]+", local)
+    words = [p.capitalize() for p in parts if len(p) >= 2]
+    return " ".join(words[:3]).strip()
+
+
+def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]:
+    """Best-effort proper-noun list to ground Deepgram nova-3 (keyterm prompting):
+    teammate names + knowledge-doc titles + recent-meeting speaker/owner names.
+    Capitalisation is preserved (Deepgram weights proper nouns by spelling) and the
+    list is bounded to ~40 terms. Returns [] on any failure so the bot-create config
+    stays exactly as before — grounding is a pure add-on, never a blocker."""
+    if not supabase or not (user_id or workspace_id):
+        return []
+
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw: str):
+        t = re.sub(r"\.[a-z0-9]{2,4}$", "", (raw or "").strip())   # strip file ext
+        t = re.sub(r"\s+", " ", t).strip(" -_·•")
+        if len(t) < 2 or len(terms) >= 40:
+            return
+        low = t.lower()
+        if low in _KEYTERM_STOPWORDS or low in seen:
+            return
+        # Deepgram nova-3 keyterm prompting expects SHORT proper nouns. Long titles
+        # with dates/parens (e.g. "Prism App Development Sprint Planning (2026-06-26)")
+        # break the streaming transcription connection — reject anything that isn't a
+        # clean name/term: no digits, no punctuation, <=3 words, <=30 chars.
+        if any(c.isdigit() for c in t):
+            return
+        if any(c in t for c in "()[]{}:/\\|@#&+*=<>\"'"):
+            return
+        if len(t) > 30 or len(t.split()) > 3:
+            return
+        # Keep proper-cased or multi-word terms; drop short all-lowercase common words.
+        if " " not in t and t.islower() and len(t) < 6:
+            return
+        seen.add(low)
+        terms.append(t)
+
+    try:
+        from caches import get_user_workspace_ids
+        ws_ids = list(get_user_workspace_ids(supabase, user_id)) if user_id else []
+    except Exception:
+        ws_ids = []
+    if workspace_id and workspace_id not in ws_ids:
+        ws_ids.append(workspace_id)
+
+    # 1. Teammate names from workspace member emails.
+    try:
+        if ws_ids:
+            rows = (supabase.table("workspace_members").select("user_email")
+                    .in_("workspace_id", ws_ids).limit(50).execute())
+            for r in (rows.data or []):
+                nm = _name_from_email(r.get("user_email") or "")
+                if nm:
+                    _add(nm)
+    except Exception as exc:
+        print(f"[keyterms] member names skipped: {exc}")
+
+    # 2. Knowledge-doc titles (caller's own + workspace-shared docs).
+    try:
+        own = (supabase.table("knowledge_docs").select("name")
+               .eq("user_id", user_id).is_("deleted_at", "null").limit(30).execute()) if user_id else None
+        for r in (own.data if own else []):
+            _add(r.get("name") or "")
+        if ws_ids:
+            shared = (supabase.table("knowledge_docs").select("name")
+                      .in_("workspace_id", ws_ids).is_("deleted_at", "null").limit(30).execute())
+            for r in (shared.data or []):
+                _add(r.get("name") or "")
+    except Exception as exc:
+        print(f"[keyterms] doc titles skipped: {exc}")
+
+    # 3. Recent-meeting speaker + action-item-owner names (structured, from result
+    #    JSON — avoids pulling full transcripts at join time).
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        q = supabase.table("meetings").select("result").gte("date", cutoff)\
+            .order("date", desc=True).limit(15)
+        if user_id:
+            q = q.eq("user_id", user_id)
+        rows = q.execute()
+        for r in (rows.data or []):
+            result = r.get("result") or {}
+            if not isinstance(result, dict):
+                continue
+            for sp in ((result.get("sentiment") or {}).get("speakers") or []):
+                if isinstance(sp, dict):
+                    _add(sp.get("name") or "")
+            for ai in (result.get("action_items") or []):
+                if isinstance(ai, dict):
+                    _add(ai.get("owner") or "")
+    except Exception as exc:
+        print(f"[keyterms] recent meeting names skipped: {exc}")
+
+    if terms:
+        print(f"[keyterms] grounding bot transcription with {len(terms)} terms: {terms[:12]}{'…' if len(terms) > 12 else ''}")
+    return terms
+
+
 def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: str,
-                            join_at: str | None = None, bot_name: str = "PrismAI") -> dict:
+                            join_at: str | None = None, bot_name: str = BOT_DISPLAY_NAME,
+                            keyterms: list[str] | None = None) -> dict:
     """The Recall bot-create payload, shared by immediate joins and scheduled
     stand-in bots. A future `join_at` (ISO 8601) makes Recall schedule the join
     instead of joining now; omit it (None) to join immediately. Callers drop a
     past/imminent join_at to None so live meetings are covered. `bot_name` is the
     in-meeting display name —
     stand-in bots pass the represented person's name so attendees recognise (and
-    admit) it and know whose update it carries."""
+    admit) it and know whose update it carries. `keyterms` is an optional list of
+    proper nouns (teammate names, products, jargon) passed to Deepgram nova-3's
+    keyterm prompting so it spells domain-specific terms correctly at transcribe
+    time — see `_gather_keyterms`. Omitted when empty so behaviour is unchanged."""
+    deepgram: dict = {
+        "model": "nova-3",
+        "language": "en",
+        "smart_format": "true",
+        "punctuate": "true",
+        "diarize": "true",
+        "endpointing": 300,
+        "utterance_end_ms": 1000,
+        "interim_results": "true",
+    }
+    if keyterms and _LIVE_KEYTERM_ENABLED:
+        # Deepgram caps the keyterm budget at ~500 tokens; _gather_keyterms already
+        # bounds the list, but clamp here too so a future caller can't blow it.
+        # DEFAULT OFF (PRISM_LIVE_KEYTERM): passing keyterm to the LIVE deepgram_streaming
+        # config broke spoken transcription entirely (no transcript.data events, empty
+        # transcript) when the term list contained anything malformed. Keyterm grounding
+        # stays ON only in the async batch re-transcription (_request_async_transcript),
+        # where it's well-supported. Re-enable here only after live validation.
+        deepgram["keyterm"] = keyterms[:50]
     body = {
         "meeting_url": meeting_url,
         "bot_name": bot_name,
@@ -293,16 +593,7 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             "audio_mixed_mp3": {},
             "transcript": {
                 "provider": {
-                    "deepgram_streaming": {
-                        "model": "nova-3",
-                        "language": "en",
-                        "smart_format": "true",
-                        "punctuate": "true",
-                        "diarize": "true",
-                        "endpointing": 300,
-                        "utterance_end_ms": 1000,
-                        "interim_results": "true",
-                    }
+                    "deepgram_streaming": deepgram
                 }
             },
             "realtime_endpoints": [
@@ -319,6 +610,9 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             ],
         },
     }
+    tile = _bot_video_output()
+    if tile:
+        body["automatic_video_output"] = tile
     if join_at:
         body["join_at"] = join_at
     return body
@@ -398,9 +692,10 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
     # Name the bot after the person it stands in for, so attendees recognise it in
     # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
-    display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else "PrismAI"
+    display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else BOT_DISPLAY_NAME
     body = _recall_bot_create_json(meeting_url, realtime_url, webhook_url,
-                                   join_at=effective_join_at, bot_name=display_name)
+                                   join_at=effective_join_at, bot_name=display_name,
+                                   keyterms=_gather_keyterms(user_id, workspace_id))
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -983,7 +1278,7 @@ async def _send_bot_intro(bot_id: str):
     message = persona_greeting_from_preset(preset)
     if live_link:
         message += f"\n\nAnyone can follow along live: {live_link}"
-    message += f"\n\n⚠️ If you don't consent to being recorded, please let {owner_name} know or leave the meeting."
+    message += f"\n\n⚠️ If you don't consent to being recorded, let {owner_name} know or type /leave and I'll exit the call."
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
@@ -999,7 +1294,7 @@ async def _send_bot_intro(bot_id: str):
         pass
 
 
-async def _fetch_transcript(bot_id: str, attempts: int = 12):
+async def _fetch_transcript(bot_id: str, attempts: int = 12, prefer_async: bool = False):
     """Fetch transcript — tries media_shortcuts download URL first (async providers),
     then falls back to /bot/{id}/transcript/ (streaming providers like recallai_streaming).
 
@@ -1007,7 +1302,12 @@ async def _fetch_transcript(bot_id: str, attempts: int = 12):
     meetings where Recall's transcript trickles in after the call ends. When we already
     hold a usable live transcript (the bot spoke / chat was captured), the caller passes a
     small number — Recall is then only needed for the recording segments, not the analysis,
-    so there's no reason to block for minutes."""
+    so there's no reason to block for minutes.
+
+    `prefer_async` (Lever B): when we've requested a higher-accuracy async transcript,
+    don't settle for the streaming `/transcript/` fallback while the async one is still
+    landing — keep polling the media_shortcuts download until the last attempt, then allow
+    the streaming fallback as a safety net so we never return empty."""
     for attempt in range(attempts):
         print(f"[recall] fetch transcript attempt {attempt + 1}/{attempts} for bot {bot_id}")
         async with httpx.AsyncClient() as client:
@@ -1055,6 +1355,14 @@ async def _fetch_transcript(bot_id: str, attempts: int = 12):
 
         # Path 2: streaming providers (recallai_streaming, gladia_v2_streaming, etc.)
         # Transcript is stored directly on the bot via /bot/{id}/transcript/
+        # When we're holding out for a more-accurate async transcript, don't accept the
+        # streaming transcript yet — wait for the async download to appear (Lever B).
+        # On the final attempt we fall through so a meeting is never left transcript-less.
+        if prefer_async and attempt < attempts - 1:
+            wait = min(10 * (attempt + 1), 60)
+            print(f"[recall] async transcript not ready yet, waiting {wait}s (prefer_async)...")
+            await asyncio.sleep(wait)
+            continue
         print(f"[recall] no download URL, trying /bot/{bot_id}/transcript/ (streaming provider)")
         async with httpx.AsyncClient() as client:
             t_resp = await client.get(
@@ -1077,6 +1385,65 @@ async def _fetch_transcript(bot_id: str, attempts: int = 12):
         await asyncio.sleep(wait)
 
     return None
+
+
+# Lever B: re-transcribe the recording with Deepgram's async nova-3 model for the
+# durable transcript (more accurate than the live streaming pass). Killable via env.
+_ASYNC_TRANSCRIPT_ENABLED = os.getenv("PRISM_ASYNC_TRANSCRIPT", "1") != "0"
+
+
+async def _request_async_transcript(bot_id: str) -> bool:
+    """Ask Recall to (re)transcribe this bot's recording with Deepgram async nova-3 +
+    our keyterms. Batch transcription is materially more accurate than the live
+    streaming transcript, and the durable transcript is what gets analysed / displayed
+    / indexed for RAG — so for bot-silent meetings we prefer it. Best-effort: returns
+    True if a job was created (or already exists) so the caller waits for it, False on
+    any failure so the caller keeps the streaming path. Costs one extra transcription,
+    so callers only fire it when the bot didn't speak."""
+    if not RECALL_API_KEY:
+        return False
+    entry = bot_store.get(bot_id) or {}
+    keyterms = _gather_keyterms(entry.get("user_id"), entry.get("workspace_id"))
+    provider: dict = {"model": "nova-3", "smart_format": "true", "punctuate": "true", "diarize": "true"}
+    if keyterms:
+        provider["keyterm"] = keyterms[:50]
+    body = {"provider": {"deepgram_async": provider}}
+
+    for attempt in range(4):
+        try:
+            async with httpx.AsyncClient() as client:
+                bot_resp = await client.get(
+                    f"{RECALL_API_BASE}/bot/{bot_id}/",
+                    headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                    timeout=30,
+                )
+            recordings = bot_resp.json().get("recordings") or [] if bot_resp.status_code == 200 else []
+            rec_id = recordings[0].get("id") if recordings else None
+            if not rec_id:
+                # Recording may still be finalising right after call end — wait + retry.
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{RECALL_API_BASE}/recording/{rec_id}/create_transcript/",
+                    headers={"Authorization": f"Token {RECALL_API_KEY}", "Content-Type": "application/json"},
+                    json=body,
+                    timeout=20,
+                )
+            if resp.status_code in (200, 201):
+                print(f"[recall] async transcript requested (deepgram_async nova-3, {len(keyterms)} keyterms) for bot {bot_id}")
+                return True
+            # A transcript may already exist for this recording — fine, fetch will get it.
+            txt = (resp.text or "")[:200]
+            if resp.status_code in (400, 409) and ("already" in txt.lower() or "exist" in txt.lower()):
+                print(f"[recall] async transcript already exists for bot {bot_id}")
+                return True
+            print(f"[recall] async transcript create failed status={resp.status_code} {txt}")
+            await asyncio.sleep(5 * (attempt + 1))
+        except Exception as exc:
+            print(f"[recall] async transcript request error: {exc}")
+            await asyncio.sleep(5 * (attempt + 1))
+    return False
 
 
 def _transcript_from_recall_data(raw) -> str:
@@ -1273,7 +1640,23 @@ async def _process_bot_transcript(bot_id: str):
         # the ~10-min audio-retry budget. Saves up to ~10 min before a meeting lands on the
         # dashboard whenever the bot was active.
         _live_lines = [ln for ln in (bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []) if ln.strip()]
-        resp = await _fetch_transcript(bot_id, attempts=2 if len(_live_lines) >= 2 else 12)
+        _bot_spoke_live = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in _live_lines)
+
+        # Lever B: when the bot was SILENT, the durable transcript is Recall's audio
+        # transcript — so re-transcribe it with Deepgram's more-accurate async nova-3
+        # (+ keyterms) and hold out for that instead of the live streaming pass. We skip
+        # this when the bot spoke: there we must use the bot-inclusive live transcript
+        # (Recall's audio wouldn't contain the bot's chat replies), so a second
+        # transcription would be wasted spend.
+        prefer_async = False
+        if _ASYNC_TRANSCRIPT_ENABLED and not _bot_spoke_live:
+            prefer_async = await _request_async_transcript(bot_id)
+
+        if prefer_async:
+            attempts = 6          # ~3.5 min for the async transcript to land, then fall back
+        else:
+            attempts = 2 if len(_live_lines) >= 2 else 12
+        resp = await _fetch_transcript(bot_id, attempts=attempts, prefer_async=prefer_async)
 
         transcript = ""
         segments: list[dict] | None = None
@@ -1310,12 +1693,46 @@ async def _process_bot_transcript(bot_id: str):
             print(f"[recall] ERROR: empty transcript")
             return
 
+        # No-show guard: the bot joined but nobody actually spoke (a scheduled meeting
+        # neither party attended, or someone joined and instantly typed /leave). The
+        # transcript is technically non-empty (a leave command, the bot's own intro) but
+        # has no real human dialogue — analysing + SAVING it just litters the dashboard
+        # with a junk "Meeting Transcript Unavailable" row. Mark it done-with-no-content
+        # and return BEFORE analysis/persist so no meeting is created.
+        human_words = _human_word_count(transcript)
+        if human_words < _MIN_HUMAN_WORDS:
+            error_msg = (
+                "Meeting didn't take place — no participants spoke "
+                f"({human_words} human words). Skipped analysis and did not save a meeting."
+            )
+            bot_store[bot_id]["status"] = "error"
+            bot_store[bot_id]["error"] = error_msg
+            _db_save(bot_id, {"status": "error", "error": error_msg})
+            _mb_update_status(bot_id, "no_show")
+            print(f"[recall] no-show: {human_words} human words < {_MIN_HUMAN_WORDS}, skipping persist for bot {bot_id}")
+            from realtime_routes import cleanup_bot_state
+            cleanup_bot_state(bot_id)
+            return
+
         print(f"[recall] transcript OK, {len(transcript)} chars. Running analysis...")
         # Durable owner lookup (survives a restart that wiped bot_store) so the follow-up
         # email is written FROM the represented owner, not a guessed participant.
         owner_name = _resolve_owner_name(bot_id)
         analysis_transcript = build_analysis_transcript(transcript, owner_name=owner_name)
         result = await run_full_analysis(analysis_transcript, owner_name=owner_name)
+        # Traceability: if the bot didn't leave for a normal reason (removed / denied
+        # recording / asked to leave / errored), stamp WHY + WHEN onto the meeting so
+        # it's visible in the analysis, not just server logs. Recall's Google-Meet
+        # removal webhook doesn't expose WHO removed the bot, so we surface the reason
+        # + time; `message` carries any extra detail Recall did give.
+        _bs = bot_store.get(bot_id) or {}
+        if _bs.get("leave_notable") and isinstance(result, dict):
+            result["exit_note"] = {
+                "reason": _bs.get("leave_reason"),
+                "sub_code": _bs.get("leave_sub_code") or "",
+                "at": _bs.get("left_at"),
+            }
+            print(f"[recall] stamped exit_note onto meeting {bot_id[:8]}: {result['exit_note']}")
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
         bot_store[bot_id]["status"] = "done"
@@ -1390,7 +1807,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
             }
 
         # Workspace dedup: if a teammate's bot is already in this meeting, skip joining
-        existing = _find_shared_workspace_bot(supabase, normalized_url, user_id)
+        existing = await _find_shared_workspace_bot(supabase, normalized_url, user_id)
         if existing:
             print(f"[recall] dedup: skipping join for {user_id}, existing bot {existing['bot_id']} from {existing['owner_user_id']}")
             return {
@@ -1435,7 +1852,10 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
                 "Authorization": f"Token {RECALL_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json=_recall_bot_create_json(req.meeting_url, realtime_url, webhook_url),
+            json=_recall_bot_create_json(
+                req.meeting_url, realtime_url, webhook_url,
+                keyterms=_gather_keyterms(user_id, req.workspace_id),
+            ),
             timeout=15,
         )
 
@@ -1525,6 +1945,27 @@ async def remove_bot(bot_id: str):
     return {"ok": True}
 
 
+async def leave_call(bot_id: str) -> bool:
+    """Ask the Recall bot to leave the call gracefully (used by the `/leave` chat
+    command). Unlike `remove_bot`, this does NOT tear down bot_store / realtime
+    state — the recording still finalizes, so Recall fires call_ended → the normal
+    analysis + save flow runs and the meeting is notes-complete. Best-effort."""
+    if not RECALL_API_KEY:
+        return False
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{RECALL_API_BASE}/bot/{bot_id}/leave_call/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=10,
+            )
+            print(f"[recall] /leave -> leave_call bot={bot_id[:8]}: {resp.status_code}")
+            return resp.status_code in (200, 201, 204)
+    except httpx.HTTPError as exc:
+        print(f"[recall] /leave leave_call failed bot={bot_id[:8]}: {exc}")
+        return False
+
+
 @router.get("/bot-status/{bot_id}")
 async def bot_status(bot_id: str):
     if not RECALL_API_KEY:
@@ -1572,6 +2013,12 @@ async def bot_status(bot_id: str):
         entry = bot_store.setdefault(
             bot_id, {"status": "joining", "result": None, "error": None, "commands": []}
         )
+        # Capture the leave reason once (webhook may have been missed). The last
+        # status_change carries Recall's code/sub_code/message.
+        if not entry.get("leave_reason"):
+            last = (recall_data.get("status_changes") or [{}])[-1]
+            _record_leave_reason(bot_id, last.get("code") or recall_status,
+                                 last.get("sub_code") or "", last.get("message") or "")
         if entry.get("status") not in ("done", "error") and bot_id not in _processing_bots:
             entry["status"] = "processing"
             _db_save(bot_id, {"status": "processing"})
@@ -1792,15 +2239,24 @@ async def recall_webhook(request: Request):
             _standin_delivered.add(bot_id)
             asyncio.create_task(deliver_standins_for_bot(bot_id))
     elif event in ("bot.call_ended", "call_ended", "bot.done", "done"):
+        # Capture WHY the bot left (removed / permission denied / meeting ended / …)
+        # before kicking off analysis, so a disconnect is never an unexplained drop.
+        code, sub_code, message = _extract_status_detail(payload)
+        _record_leave_reason(bot_id, code or event, sub_code, message)
         if bot_store[bot_id].get("status") not in ("processing", "done"):
             bot_store[bot_id]["status"] = "processing"
             _db_save(bot_id, {"status": "processing"})
             _mb_update_status(bot_id, "processing")
             asyncio.create_task(_process_bot_transcript(bot_id))
     elif event in ("bot.fatal_error", "fatal_error"):
+        code, sub_code, message = _extract_status_detail(payload)
+        _record_leave_reason(bot_id, code or "fatal_error", sub_code, message)
+        # Enrich the user-facing error only when Recall actually told us why;
+        # otherwise keep the generic message.
+        err = _leave_reason_text(code or "fatal_error", sub_code, message) if (sub_code or message) else "Bot encountered a fatal error"
         bot_store[bot_id]["status"] = "error"
-        bot_store[bot_id]["error"] = "Bot encountered a fatal error"
-        _db_save(bot_id, {"status": "error", "error": "Bot encountered a fatal error"})
+        bot_store[bot_id]["error"] = err
+        _db_save(bot_id, {"status": "error", "error": err})
         _mb_update_status(bot_id, "error")
 
     return {"ok": True}

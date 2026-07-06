@@ -32,7 +32,18 @@ def test_bot_names_excluded_from_human_count():
     assert rr._looks_like_bot_participant("Prism", {}) is True
     assert rr._looks_like_bot_participant("Flash", {}) is True
     assert rr._looks_like_bot_participant("PrismAI", {}) is True
+    # Branded display name + stand-in display name are still our bot, not a human.
+    assert rr._looks_like_bot_participant("PrismAI Notetaker", {}) is True
+    assert rr._looks_like_bot_participant("Jane Doe (PrismAI stand-in)", {}) is True
     assert rr._looks_like_bot_participant("Alice", {}) is False
+
+
+def test_leave_command_regex():
+    assert rr._LEAVE_CMD_RE.match("/leave")
+    assert rr._LEAVE_CMD_RE.match("/leave Prism")
+    assert rr._LEAVE_CMD_RE.match("  /LEAVE  ")
+    assert not rr._LEAVE_CMD_RE.match("please leave")
+    assert not rr._LEAVE_CMD_RE.match("leave a note")
 
 
 def test_is_current_user_flag_excludes_bot():

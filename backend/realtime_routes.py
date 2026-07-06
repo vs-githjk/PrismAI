@@ -191,7 +191,12 @@ def _looks_like_bot_participant(name: str, raw: dict) -> bool:
     """Best-effort: is this participant our recording bot rather than a human?"""
     if isinstance(raw, dict) and (raw.get("is_current_user") is True or raw.get("is_bot") is True):
         return True
-    return (name or "").strip().lower() in _BOT_SELF_NAMES
+    nm = (name or "").strip().lower()
+    if nm in _BOT_SELF_NAMES:
+        return True
+    # Tolerate the branded display name ("PrismAI Notetaker") and stand-in names
+    # ("<owner> (PrismAI stand-in)") — both are our bot, not a human.
+    return nm.startswith("prismai") or "(prismai stand-in)" in nm
 
 
 def _human_participant_count(state: dict) -> int:
@@ -241,6 +246,84 @@ def _solo_freeflow_eligible(u) -> bool:
 # re-fires of the SAME command (prefix-dedup + event-id dedup do the real work);
 # kept short so a second person asking right after the first isn't dropped.
 _COMMAND_DEBOUNCE_S = float(os.getenv("PRISM_COMMAND_DEBOUNCE_S", "3"))
+
+
+# ── Capability-block memory ───────────────────────────────────────────────────
+# When a tool's auth/connection check fails (e.g. "schedule a meeting" but Google
+# Calendar isn't connected), we record the capability as blocked for the rest of
+# the bot session. This stops the model from re-attempting the same dead tool —
+# and re-explaining the same failure — every time the user rephrases the ask.
+# Without this the bot loops: "I'm still unable to schedule due to an
+# authentication issue…" on every retry. See _process_command.
+
+# Error-string fingerprints that mean "this needs an auth/connection the user
+# doesn't have", as opposed to a transient 5xx/rate-limit (which we want to retry).
+_CAP_FAIL_PATTERNS = (
+    "not connected", "connect google", "connect ", "reconnect", "not authorized",
+    "unauthor", "invalid_grant", "invalid credentials", "expired", "no refresh token",
+    "permission", "forbidden", " 401", " 403",
+)
+
+# Once a capability is blocked, a rephrased ask that clearly targets it gets a
+# terse one-liner instead of a full LLM round-trip. Phrase regexes are kept
+# specific to avoid misfiring on plain questions ("what did the meeting decide?").
+_CAP_COMMAND_RX = {
+    "calendar": re.compile(
+        r"\b(schedul\w*|reschedul\w*|calendar)\b|"
+        r"\b(set up|book|create|add|put|move)\b.{0,40}\b(meeting|event|invite|appointment|call)\b",
+        re.I,
+    ),
+    "gmail": re.compile(
+        r"\b(send|draft|shoot|fire off|compose)\b.{0,30}\b(e-?mail|gmail)\b|"
+        r"\bemail\s+(him|her|them|it|the team|\w+@)",
+        re.I,
+    ),
+    "slack": re.compile(r"\bslack\b|\b(post|send|message)\b.{0,30}\bchannel\b", re.I),
+    "linear": re.compile(r"\b(create|make|open|file)\b.{0,30}\b(ticket|issue)\b|\blinear\b", re.I),
+}
+
+# Terse spoken/chat reply for a blocked capability.
+_CAP_TERSE = {
+    "calendar": "Calendar still isn't connected here — set the event up directly in your calendar, then ask me again.",
+    "gmail": "Gmail still isn't connected here — please connect Google in your account settings.",
+    "slack": "Slack still isn't connected here — connect it in your account settings.",
+    "linear": "Linear still isn't connected here — connect it in your account settings.",
+}
+
+# Within this window after a terse reply, a re-fire of the same blocked ask stays
+# silent (it's almost certainly a transcript echo, not a real re-ask).
+_CAP_REPEAT_COOLDOWN_S = float(os.getenv("PRISM_CAP_REPEAT_COOLDOWN_S", "8"))
+
+
+def _capability_of(tool_name: str) -> str:
+    """Capability key for a tool, derived from its name prefix
+    (calendar_create_event -> 'calendar', gmail_send -> 'gmail')."""
+    return (tool_name or "").split("_", 1)[0]
+
+
+def _is_auth_failure(result: dict) -> bool:
+    """True if a tool result is an auth/connection failure we should not retry."""
+    if not isinstance(result, dict):
+        return False
+    err = (result.get("error") or "")
+    if not err:
+        return False
+    low = err.lower()
+    return any(p in low for p in _CAP_FAIL_PATTERNS)
+
+
+def _blocked_capability_for_command(command: str, state: dict) -> str | None:
+    """Return the blocked capability this command targets, or None. Only
+    capabilities already recorded in state['blocked_capabilities'] are eligible,
+    so an unblocked tool never short-circuits."""
+    blocked = state.get("blocked_capabilities") or {}
+    if not blocked or not command:
+        return None
+    for cap in blocked:
+        rx = _CAP_COMMAND_RX.get(cap)
+        if rx and rx.search(command):
+            return cap
+    return None
 
 
 def _streamed_tts_on() -> bool:
@@ -1299,6 +1382,13 @@ def _get_bot_state(bot_id: str) -> dict:
             "last_segment_speaker": "",
             "last_segment_norm": "",
             "last_segment_ts": 0.0,
+            # Capability-block memory: {capability_key: ts_first_blocked}. A tool
+            # whose auth/connection check fails is recorded here and then dropped
+            # from the offered tool set for the rest of the session, so the model
+            # stops re-attempting it. _cap_msg_ts tracks the last terse reply per
+            # capability for the silence cooldown. See _process_command.
+            "blocked_capabilities": {},
+            "_cap_msg_ts": {},
             # Proactive intervention state
             "meeting_start_ts": None,
             "intervention_last_ts": 0,
@@ -1518,6 +1608,31 @@ async def _send_chat_response(bot_id: str, message: str):
             )
     except Exception as exc:
         print(f"[realtime] failed to send chat response: {exc}")
+
+
+# A typed "/leave" (optionally "/leave Prism") in the meeting chat tells the bot to
+# exit the call. Slash-prefixed so it never collides with a natural-language ask.
+_LEAVE_CMD_RE = re.compile(r"^\s*/leave\b", re.IGNORECASE)
+
+
+async def _handle_leave_command(bot_id: str) -> None:
+    """`/leave` chat command: say a brief goodbye, log the reason, then leave the
+    call. Recording finalizes → normal analysis/save runs, so notes still arrive."""
+    try:
+        await _send_chat_response(
+            bot_id, "Got it — leaving now. I'll finish the notes and send them along. 👋"
+        )
+    except Exception:
+        pass
+    import recall_routes
+    try:
+        recall_routes._record_leave_reason(bot_id, "", "bot_received_leave_call", "")
+    except Exception as exc:
+        print(f"[realtime] /leave record-reason skipped bot={bot_id[:8]}: {exc}")
+    try:
+        await recall_routes.leave_call(bot_id)
+    except Exception as exc:
+        print(f"[realtime] /leave failed bot={bot_id[:8]}: {exc}")
 
 
 # ── Private live catch-up ("Ask Prism, just you") ────────────────────────────
@@ -2600,12 +2715,19 @@ def _standin_spoken_summary(updates: list[dict]) -> str:
     return "Here are the updates from people who couldn't attend. " + " ".join(parts)
 
 
-async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False):
+async def _process_command(bot_id: str, command: str, speaker: str = "", ambient: bool = False,
+                           from_chat: bool = False):
     """Process a detected command: use LLM to pick tools, execute, respond.
 
     ambient=True is the no-wake-word path: a one-line preamble is injected so the
     model speaks only if genuinely additive (else replies SILENT → suppressed),
-    and the finalized reply text is returned (None on decline)."""
+    and the finalized reply text is returned (None on decline).
+
+    from_chat=True means the command was TYPED in the meeting chat — the reply goes
+    to chat ONLY, never spoken aloud. Speaking over a live meeting to answer someone
+    who quietly typed a question is disruptive; if they typed, they want a typed
+    answer. This is a deterministic rule that must survive the voice-arch redo, so it
+    gates voice at every dispatch point rather than relying on prompt behaviour."""
     state = _get_bot_state(bot_id)
 
     # Kill switch: a muted bot ignores commands entirely. The app's mute button
@@ -2636,6 +2758,33 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             cmd_norm.startswith(last_norm) or last_norm.startswith(cmd_norm)
         ):
             return
+
+    # Capability-block short-circuit. If this command targets a tool whose auth
+    # already failed this session, don't burn an LLM round-trip re-discovering the
+    # same failure (which is what produced the "I'm still unable to schedule due to
+    # an authentication issue…" loop). Reply tersely; stay silent on rapid re-fires.
+    blocked_cap = _blocked_capability_for_command(command, state)
+    if blocked_cap:
+        last_msg_ts = state.get("_cap_msg_ts", {}).get(blocked_cap, 0)
+        state["last_command_ts"] = now
+        state["last_command_norm"] = cmd_norm
+        if now - last_msg_ts < _CAP_REPEAT_COOLDOWN_S:
+            print(f"[realtime] capability_blocked cap={blocked_cap} — re-fire within cooldown, staying silent")
+            return
+        state.setdefault("_cap_msg_ts", {})[blocked_cap] = now
+        msg = _CAP_TERSE.get(blocked_cap, "That isn't connected here yet.")
+        print(f"[realtime] capability_blocked cap={blocked_cap} — terse reply")
+        await _send_chat_response(bot_id, msg)
+        try:
+            if from_chat:
+                pass  # typed command → chat-only reply, never speak
+            elif _streamed_tts_on():
+                await _send_voice_response_streamed(bot_id, _spoken_version(msg), cmd_detected_ts=now)
+            else:
+                await _send_voice_response(bot_id, _spoken_version(msg))
+        except Exception as cap_exc:
+            print(f"[realtime] capability-block voice reply failed: {cap_exc}")
+        return
 
     state["last_command_ts"] = now
     state["last_command_text"] = command
@@ -2673,9 +2822,10 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             )
             print(f"[standin] spoken-on-request: {len(chosen)} update(s) "
                   f"(explicit={explicit}, named={person_shaped and not explicit})")
-            if _barge_in_on():
-                await _wait_for_speech_gap(state)
-            await _send_voice_response(bot_id, _spoken_version(summary))
+            if not from_chat:
+                if _barge_in_on():
+                    await _wait_for_speech_gap(state)
+                await _send_voice_response(bot_id, _spoken_version(summary))
             await _send_chat_response(bot_id, summary)
             return
     state["processing"] = True
@@ -2699,6 +2849,14 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         persona_text = user_settings.get("persona_text", "")
         bot_name = user_settings.get("bot_name", DEFAULT_BOT_NAME)
         tools = get_available_tools(user_settings)
+
+        # Drop tools for any capability that already failed auth this session, so
+        # the model can't re-attempt a dead integration and re-surface the same
+        # error. The terse short-circuit above usually handles clearly-targeted
+        # asks; this is the backstop for indirect phrasings the regex misses.
+        blocked_caps = state.get("blocked_capabilities") or {}
+        if blocked_caps:
+            tools = [t for t in tools if _capability_of(t["function"]["name"]) not in blocked_caps]
 
         tool_names = [t["function"]["name"] for t in tools]
         print(f"[realtime] available tools for bot {bot_id[:8]}: {tool_names}")
@@ -2941,11 +3099,25 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                     "content": json.dumps(result),
                 })
 
+                # Record a capability block on auth/connection failure so the
+                # model stops re-attempting this dead integration on every
+                # rephrased ask (and stops re-explaining the same error).
+                if _is_auth_failure(result):
+                    _cap = _capability_of(tc_name)
+                    if _cap in _CAP_TERSE and _cap not in state.get("blocked_capabilities", {}):
+                        state.setdefault("blocked_capabilities", {})[_cap] = time.time()
+                        print(
+                            f"[realtime] capability_blocked cap={_cap} tool={tc_name} "
+                            f"err={(result.get('error') or '')[:120]!r}"
+                        )
+
         # Streamed-LLM gate: requires both flags; only fires on synthesis turns
         # (when `tools` is no longer in call_kwargs — either because the user has
         # no tools available, or PR-1 taint enforcement stripped them, or the
         # tools-format retry stripped them).
-        streamed_voice_active = _streamed_tts_on() and _streamed_llm_on()
+        # from_chat suppresses the straight-to-voice streaming path entirely — a typed
+        # command is answered in chat only (the reply still streams as text below).
+        streamed_voice_active = _streamed_tts_on() and _streamed_llm_on() and not from_chat
         voice_already_streamed = False
 
         # Tool loop (max 3 iterations)
@@ -3132,7 +3304,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         # add a Recall round-trip to TTFB before TTS begins.
         print(f"[realtime] command='{command}' tools={tools_used} reply='{reply}'")
         chat_task = asyncio.create_task(_send_chat_response(bot_id, reply))
-        if voice_already_streamed:
+        if from_chat:
+            # Typed command → chat-only reply. The chat post above carries the full
+            # answer; we deliberately speak nothing into the live meeting.
+            print(f"[realtime] from_chat — chat-only reply, suppressing voice")
+        elif voice_already_streamed:
             # PR-5 streamed-LLM path already produced and uploaded audio in parallel
             # with token generation. Nothing more to do for voice.
             pass
@@ -3189,7 +3365,8 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         _record_bot_line(bot_id, state, reply, bot_name)
                     print(f"[realtime] haiku fallback reply={reply!r}")
                     await _send_chat_response(bot_id, reply)
-                    await _send_voice_response(bot_id, _spoken_condense(reply))
+                    if not from_chat:
+                        await _send_voice_response(bot_id, _spoken_condense(reply))
                     return
                 except Exception as haiku_exc:
                     print(f"[realtime] haiku fallback failed: {haiku_exc}")
@@ -3693,6 +3870,14 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         if message_text.strip():
             # Record the human's chat line into the transcript so chat-driven meetings
             # analyse to a real two-sided dialogue (Recall transcribes audio only).
+            # Slash command: "/leave" makes the bot exit the call gracefully. Handled
+            # FIRST — before recording or command detection — so the command word is
+            # never analysed as meeting content and never routes through the LLM.
+            if _LEAVE_CMD_RE.match(message_text) and not _looks_like_bot_participant(sender, {}):
+                print(f"[realtime] /leave command from={sender!r} bot={bot_id[:8]}")
+                asyncio.create_task(_handle_leave_command(bot_id))
+                return {"ok": True}
+            # Record the human's chat line into the transcript (meeting content only).
             asyncio.create_task(_record_human_chat_line(bot_id, sender, message_text))
             # Check for command trigger in chat
             command = _detect_command(message_text, bot_id)
@@ -3713,8 +3898,9 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             ):
                 command = message_text
             if command:
-                print(f"[realtime] chat command={command!r} from={sender!r}")
-                asyncio.create_task(_process_command(bot_id, command, sender))
+                print(f"[realtime] chat command={command!r} from={sender!r} (chat-only reply)")
+                # Typed in chat → answer in chat only, never speak into the meeting.
+                asyncio.create_task(_process_command(bot_id, command, sender, from_chat=True))
 
     elif event_type in (
         "participant_events.join",

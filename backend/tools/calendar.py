@@ -8,6 +8,26 @@ from .registry import register_tool
 
 GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
 
+# Placeholder domains the live bot invents when asked to invite someone whose real
+# address it doesn't know (e.g. "schedule with adithya" -> adithya@example.com). We
+# strip these so the event is still created but no bogus invite is sent.
+_PLACEHOLDER_DOMAINS = {"example.com", "example.org", "example.net", "email.com",
+                        "test.com", "domain.com", "company.com", "yourcompany.com"}
+
+
+def _split_attendees(attendees: list[str]) -> tuple[list[str], list[str]]:
+    """Return (valid_emails, rejected) — rejected = malformed or placeholder addresses."""
+    valid, rejected = [], []
+    for e in attendees:
+        e = (e or "").strip()
+        if not e:
+            continue
+        if "@" not in e or e.split("@")[-1].lower() in _PLACEHOLDER_DOMAINS:
+            rejected.append(e)
+        else:
+            valid.append(e)
+    return valid, rejected
+
 
 async def _get_google_token(user_settings: dict) -> str:
     token = user_settings.get("google_access_token")
@@ -28,14 +48,14 @@ async def calendar_create_event(args: dict, user_settings: dict | None = None) -
     if args.get("description"):
         event_body["description"] = args["description"]
 
-    if args.get("attendees"):
-        event_body["attendees"] = [{"email": e} for e in args["attendees"]]
+    valid_attendees, rejected_attendees = _split_attendees(args.get("attendees") or [])
+
+    params = {}
+    if valid_attendees:
+        event_body["attendees"] = [{"email": e} for e in valid_attendees]
         event_body["conferenceData"] = {
             "createRequest": {"requestId": f"prism-{int(datetime.now().timestamp())}"}
         }
-
-    params = {}
-    if args.get("attendees"):
         params["conferenceDataVersion"] = 1
         params["sendUpdates"] = "all"
 
@@ -50,12 +70,22 @@ async def calendar_create_event(args: dict, user_settings: dict | None = None) -
 
     if resp.status_code in (200, 201):
         data = resp.json()
-        return {
+        result = {
             "success": True,
             "event_id": data.get("id"),
             "link": data.get("htmlLink"),
             "summary": f"Created event '{args.get('title')}' — {args['start']}",
         }
+        if rejected_attendees:
+            # We refused to invite these because the address was a guess/placeholder.
+            # Tell the bot so it asks the user for the real email and adds them after.
+            result["attendees_skipped"] = rejected_attendees
+            result["note"] = (
+                f"Event created, but I did NOT invite {', '.join(rejected_attendees)} because "
+                "that address looks made up. Do NOT invent an email — ask the user for the real "
+                "address, then update the event to add them."
+            )
+        return result
     else:
         return {"error": f"Calendar API error {resp.status_code}: {resp.text[:200]}"}
 
@@ -194,7 +224,7 @@ register_tool(
             "title": {"type": "string", "description": "Event title"},
             "start": {"type": "string", "description": "Start time in LOCAL time ISO 8601 format — do NOT convert to UTC (e.g. 2025-01-15T14:00:00 for 2pm)"},
             "end": {"type": "string", "description": "End time in LOCAL time ISO 8601 format — do NOT convert to UTC"},
-            "attendees": {"type": "array", "items": {"type": "string"}, "description": "Attendee email addresses"},
+            "attendees": {"type": "array", "items": {"type": "string"}, "description": "Attendee email addresses. ONLY include an address the user actually gave you. NEVER invent or guess an email from a name (no example.com / placeholder addresses) — if you don't have someone's real email, omit them and ask the user for it."},
             "description": {"type": "string", "description": "Event description"},
             "timezone": {"type": "string", "description": "IANA timezone identifier (e.g. 'Asia/Kolkata' for IST UTC+5:30, 'America/New_York' for ET, 'Europe/London' for GMT/BST). IMPORTANT: IST = Asia/Kolkata = UTC+5:30, NOT UTC+5."},
         },

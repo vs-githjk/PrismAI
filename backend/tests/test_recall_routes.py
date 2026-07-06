@@ -128,5 +128,284 @@ class RecallRoutesTestCase(unittest.TestCase):
         self.assertEqual(recall_routes.bot_store["bot-3"]["result"], {"summary": "done"})
 
 
+class LeaveReasonTestCase(unittest.TestCase):
+    """The bot's disconnect reason is captured from Recall's status sub_code."""
+
+    def test_extract_detail_from_status_node(self):
+        payload = {"data": {"status": {"code": "call_ended", "sub_code": "bot_removed", "message": "m"}}}
+        self.assertEqual(recall_routes._extract_status_detail(payload),
+                         ("call_ended", "bot_removed", "m"))
+
+    def test_extract_detail_from_data_node(self):
+        payload = {"data": {"data": {"code": "call_ended", "sub_code": "recording_permission_denied"}}}
+        code, sub, _ = recall_routes._extract_status_detail(payload)
+        self.assertEqual((code, sub), ("call_ended", "recording_permission_denied"))
+
+    def test_extract_detail_absent(self):
+        self.assertEqual(recall_routes._extract_status_detail({"data": {}}), ("", "", ""))
+
+    def test_reason_text_known_subcode(self):
+        self.assertIn("removed Prism",
+                      recall_routes._leave_reason_text("call_ended", "bot_removed", ""))
+
+    def test_reason_text_falls_back_to_message_then_code(self):
+        self.assertEqual(recall_routes._leave_reason_text("call_ended", "weird_code", "Custom msg"),
+                         "Custom msg")
+        self.assertIn("weird_code",
+                      recall_routes._leave_reason_text("call_ended", "weird_code", ""))
+        self.assertTrue(recall_routes._leave_reason_text("call_ended", "", ""))  # never empty
+
+    def test_webhook_records_leave_reason(self):
+        recall_routes.bot_store["bot-leave"] = {"status": "recording", "result": None, "error": None, "commands": []}
+        payload_bytes = b'{"bot_id": "bot-leave", "event": "call_ended", "data": {"status": {"code": "call_ended", "sub_code": "bot_removed"}}}'
+        request = types.SimpleNamespace(body=AsyncMock(return_value=payload_bytes), headers={})
+        with patch.object(recall_routes, "_db_save"), \
+             patch.object(recall_routes, "_mb_update_status"), \
+             patch.object(recall_routes, "_process_bot_transcript", new=AsyncMock()):
+            asyncio.run(recall_routes.recall_webhook(request))
+        self.assertIn("removed Prism", recall_routes.bot_store["bot-leave"]["leave_reason"])
+
+    def test_notable_leave_flags_and_stamps(self):
+        recall_routes.bot_store["bot-notable"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-notable", "call_ended", "bot_removed", "")
+        bs = recall_routes.bot_store["bot-notable"]
+        self.assertTrue(bs["leave_notable"])           # removal is notable
+        self.assertEqual(bs["leave_sub_code"], "bot_removed")
+        self.assertTrue(bs["left_at"])                 # timestamp captured
+        recall_routes.bot_store.pop("bot-notable", None)
+
+    def test_normal_ending_not_notable(self):
+        recall_routes.bot_store["bot-clean"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-clean", "call_ended", "meeting_ended", "")
+        self.assertFalse(recall_routes.bot_store["bot-clean"]["leave_notable"])
+        recall_routes.bot_store.pop("bot-clean", None)
+
+    def test_leave_command_subcode_is_notable(self):
+        recall_routes.bot_store["bot-lc"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-lc", "", "bot_received_leave_call", "")
+        self.assertTrue(recall_routes.bot_store["bot-lc"]["leave_notable"])
+        recall_routes.bot_store.pop("bot-lc", None)
+
+    def test_notable_reason_is_sticky(self):
+        # A specific notable exit (asked to leave) must survive a later generic
+        # call_ended that Recall fires moments after — don't downgrade it.
+        recall_routes.bot_store["bot-sticky"] = {"status": "recording"}
+        with patch.object(recall_routes, "_db_save"):
+            recall_routes._record_leave_reason("bot-sticky", "", "bot_received_leave_call", "")
+            recall_routes._record_leave_reason("bot-sticky", "call_ended", "", "")
+        bs = recall_routes.bot_store["bot-sticky"]
+        self.assertTrue(bs["leave_notable"])
+        self.assertEqual(bs["leave_sub_code"], "bot_received_leave_call")
+        recall_routes.bot_store.pop("bot-sticky", None)
+
+
+class KeytermGroundingTestCase(unittest.TestCase):
+    """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""
+
+    def test_payload_omits_keyterm_when_empty(self):
+        body = recall_routes._recall_bot_create_json(
+            "https://meet/x", "rt", "wh", keyterms=[])
+        dg = body["recording_config"]["transcript"]["provider"]["deepgram_streaming"]
+        self.assertNotIn("keyterm", dg)
+        self.assertEqual(dg["model"], "nova-3")
+
+    def test_payload_omits_keyterm_by_default(self):
+        # Live-streaming keyterm is OFF by default (it broke Deepgram transcription).
+        terms = [f"Term{i}" for i in range(10)]
+        body = recall_routes._recall_bot_create_json(
+            "https://meet/x", "rt", "wh", keyterms=terms)
+        dg = body["recording_config"]["transcript"]["provider"]["deepgram_streaming"]
+        self.assertNotIn("keyterm", dg)
+
+    def test_payload_includes_and_clamps_keyterms_when_enabled(self):
+        terms = [f"Term{i}" for i in range(60)]
+        with patch.object(recall_routes, "_LIVE_KEYTERM_ENABLED", True):
+            body = recall_routes._recall_bot_create_json(
+                "https://meet/x", "rt", "wh", keyterms=terms)
+        dg = body["recording_config"]["transcript"]["provider"]["deepgram_streaming"]
+        self.assertIn("keyterm", dg)
+        self.assertEqual(len(dg["keyterm"]), 50)  # clamped to Deepgram's budget
+
+    def test_gather_keyterms_rejects_titles_and_dates(self):
+        # The regression: long titles with dates/parens must NOT become keyterms.
+        class _Resp:
+            def __init__(self, data): self.data = data
+
+        class _Query:
+            def __init__(self, data): self._data = data
+            def select(self, *_): return self
+            def eq(self, *_): return self
+            def in_(self, *_): return self
+            def is_(self, *_): return self
+            def gte(self, *_): return self
+            def order(self, *_, **__): return self
+            def limit(self, *_): return self
+            def execute(self): return _Resp(self._data)
+
+        class _SB:
+            def table(self, name):
+                if name == "workspace_members":
+                    return _Query([{"user_email": "vidyut@galent.com"}])
+                if name == "knowledge_docs":
+                    return _Query([
+                        {"name": "Prism App Development Sprint Planning (2026-06-26)"},
+                        {"name": "Vidyut Sriram Resume"},
+                    ])
+                return _Query([])
+
+        with patch.object(recall_routes, "supabase", _SB()), \
+             patch("caches.get_user_workspace_ids", return_value=["ws1"]):
+            terms = recall_routes._gather_keyterms("user-1", "ws1")
+
+        self.assertIn("Vidyut", terms)  # clean name kept
+        # Title with a date/parens must be dropped.
+        self.assertNotIn("Prism App Development Sprint Planning (2026-06-26)", terms)
+        for t in terms:
+            self.assertFalse(any(c.isdigit() for c in t), f"digit leaked into keyterm: {t!r}")
+            self.assertNotIn("(", t)
+
+    def test_name_from_email(self):
+        self.assertEqual(recall_routes._name_from_email("jane.doe@acme.com"), "Jane Doe")
+        self.assertEqual(recall_routes._name_from_email("vidyut0712@gmail.com"), "Vidyut")
+        self.assertEqual(recall_routes._name_from_email("ravi_kumar@x.io"), "Ravi Kumar")
+
+    def test_gather_keyterms_dedups_filters_and_caps(self):
+        class _Resp:
+            def __init__(self, data): self.data = data
+
+        class _Query:
+            def __init__(self, data): self._data = data
+            def select(self, *_): return self
+            def eq(self, *_): return self
+            def in_(self, *_): return self
+            def is_(self, *_): return self
+            def gte(self, *_): return self
+            def order(self, *_, **__): return self
+            def limit(self, *_): return self
+            def execute(self): return _Resp(self._data)
+
+        class _SB:
+            def table(self, name):
+                if name == "workspace_members":
+                    return _Query([{"user_email": "jane.doe@acme.com"},
+                                   {"user_email": "jane.doe@acme.com"}])  # dup
+                if name == "knowledge_docs":
+                    return _Query([{"name": "Acme Roadmap.pdf"}, {"name": "document"}])
+                if name == "meetings":
+                    return _Query([{"result": {
+                        "sentiment": {"speakers": [{"name": "Kanishq"}]},
+                        "action_items": [{"owner": "Unassigned"}, {"owner": "Devajsinh"}],
+                    }}])
+                return _Query([])
+
+        with patch.object(recall_routes, "supabase", _SB()), \
+             patch("caches.get_user_workspace_ids", return_value=["ws1"]):
+            terms = recall_routes._gather_keyterms("user-1", "ws1")
+
+        # Jane Doe (deduped to one), Acme Roadmap (ext stripped), Kanishq, Devajsinh.
+        self.assertIn("Jane Doe", terms)
+        self.assertIn("Acme Roadmap", terms)
+        self.assertIn("Kanishq", terms)
+        self.assertIn("Devajsinh", terms)
+        # Stopwords / "Unassigned" dropped; no duplicates.
+        self.assertNotIn("document", terms)
+        self.assertNotIn("Unassigned", terms)
+        self.assertEqual(len(terms), len(set(t.lower() for t in terms)))
+
+    def test_gather_keyterms_returns_empty_without_supabase(self):
+        with patch.object(recall_routes, "supabase", None):
+            self.assertEqual(recall_routes._gather_keyterms("u", "w"), [])
+
+
+class BrandedBotTestCase(unittest.TestCase):
+    """#4 — branded bot join: display name + logo camera tile."""
+
+    def test_default_display_name_is_branded(self):
+        body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertEqual(body["bot_name"], recall_routes.BOT_DISPLAY_NAME)
+        self.assertEqual(recall_routes.BOT_DISPLAY_NAME, "PrismAI Notetaker")
+
+    def test_explicit_bot_name_wins(self):
+        body = recall_routes._recall_bot_create_json(
+            "https://meet/x", "rt", "wh", bot_name="Jane (PrismAI stand-in)")
+        self.assertEqual(body["bot_name"], "Jane (PrismAI stand-in)")
+
+    def test_video_output_present_when_tile_available(self):
+        recall_routes._bot_video_output.cache_clear()
+        with patch.object(recall_routes, "_BOT_TILE_ENABLED", True):
+            tile = {"in_call_recording": {"kind": "jpeg", "b64_data": "abc"}}
+            with patch.object(recall_routes, "_bot_video_output", return_value=tile):
+                body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertEqual(body["automatic_video_output"], tile)
+
+    def test_video_output_omitted_when_disabled(self):
+        recall_routes._bot_video_output.cache_clear()
+        with patch.object(recall_routes, "_BOT_TILE_ENABLED", False):
+            recall_routes._bot_video_output.cache_clear()
+            body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertNotIn("automatic_video_output", body)
+        recall_routes._bot_video_output.cache_clear()
+
+    def test_tile_asset_loads_as_raw_base64(self):
+        recall_routes._bot_video_output.cache_clear()
+        with patch.object(recall_routes, "_BOT_TILE_ENABLED", True):
+            out = recall_routes._bot_video_output()
+        self.assertIsNotNone(out)
+        self.assertEqual(out["in_call_recording"]["kind"], "jpeg")
+        # Raw base64 — no data-URI prefix (Recall requirement).
+        self.assertFalse(out["in_call_recording"]["b64_data"].startswith("data:"))
+        recall_routes._bot_video_output.cache_clear()
+
+
+class LeaveCallTestCase(unittest.TestCase):
+    """#3 — /leave command: graceful leave without tearing down analysis."""
+
+    def test_leave_call_posts_and_keeps_bot_store(self):
+        recall_routes.bot_store["bot-leave-cmd"] = {"status": "recording"}
+
+        class _Resp:
+            status_code = 200
+
+        class _Client:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def post(self, *a, **k): return _Resp()
+
+        with patch.object(recall_routes, "RECALL_API_KEY", "key"), \
+             patch.object(recall_routes.httpx, "AsyncClient", lambda *a, **k: _Client()):
+            ok = asyncio.run(recall_routes.leave_call("bot-leave-cmd"))
+        self.assertTrue(ok)
+        # leave_call must NOT tear down bot_store (analysis still needs to run).
+        self.assertIn("bot-leave-cmd", recall_routes.bot_store)
+        recall_routes.bot_store.pop("bot-leave-cmd", None)
+
+
+class HumanWordCountTestCase(unittest.TestCase):
+    """No-show guard: only real human dialogue counts toward persisting a meeting."""
+
+    def test_bot_lines_and_leave_command_are_not_substantive(self):
+        transcript = "\n".join([
+            "PrismAI: Hey, Glint here. I'll take notes.",
+            "Glint: I'll send a debrief after.",
+            "SRI KRISHNA ADITHYA K: /leave",
+        ])
+        # Only bot lines + a bare /leave -> zero human words -> no-show.
+        self.assertLess(recall_routes._human_word_count(transcript), recall_routes._MIN_HUMAN_WORDS)
+
+    def test_real_dialogue_is_substantive(self):
+        transcript = "\n".join([
+            "PrismAI: I'll take notes.",
+            "Vidyut Sriram: Let's walk through the product roadmap and the planned changes for next quarter.",
+            "SRI KRISHNA ADITHYA K: Sounds good, I have some thoughts on the image analysis feature.",
+        ])
+        self.assertGreaterEqual(recall_routes._human_word_count(transcript), recall_routes._MIN_HUMAN_WORDS)
+
+    def test_empty_transcript_is_zero(self):
+        self.assertEqual(recall_routes._human_word_count(""), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
