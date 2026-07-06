@@ -376,17 +376,20 @@ class StorageRoutesTestCase(unittest.TestCase):
 
     def test_delete_workspace_owner_cascades_all_fanout_copies(self):
         # Owner deletes a bot workspace meeting → every copy (all members) is removed,
-        # so it can't resurface via the dedup fetch. Copies share recall_bot_id.
+        # so it can't resurface via the dedup fetch. Copies share recall_bot_id. The bot
+        # is tombstoned so startup recovery can't re-create it.
         self.fake_db.tables["meetings"] = [
             {"id": 1, "user_id": "user-123", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
              "recall_bot_id": "bot-9", "date": "2026-07-05"},
             {"id": 2, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-123",
              "recall_bot_id": "bot-9", "date": "2026-07-05"},  # teammate's fan-out copy
         ]
+        self.fake_db.tables["meeting_bots"] = [{"bot_id": "bot-9", "status": "done"}]
         resp = self.client.delete("/meetings/1")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["scope"], "all_copies")
         self.assertEqual(len(self.fake_db.tables["meetings"]), 0)  # both copies gone
+        self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "deleted")  # tombstoned
 
     def test_delete_workspace_non_owner_only_removes_own_copy(self):
         self.fake_db.tables["meetings"] = [
@@ -395,11 +398,14 @@ class StorageRoutesTestCase(unittest.TestCase):
             {"id": 6, "user_id": "user-999", "workspace_id": "ws-a", "recorded_by_user_id": "user-999",
              "recall_bot_id": "bot-9", "date": "2026-07-05"},  # owner's copy — must survive
         ]
+        self.fake_db.tables["meeting_bots"] = [{"bot_id": "bot-9", "status": "done"}]
         resp = self.client.delete("/meetings/5")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["scope"], "own_copy")
         remaining = [r["id"] for r in self.fake_db.tables["meetings"]]
         self.assertEqual(remaining, [6])  # only my copy removed; owner's survives
+        # A non-owner must NOT tombstone the bot — the owner still has the meeting.
+        self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "done")
 
     def test_get_insights_returns_user_scoped_recommended_actions(self):
         self.fake_db.tables["meetings"] = [

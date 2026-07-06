@@ -475,6 +475,17 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     return meeting
 
 
+def _mark_bot_deleted(client, recall_bot_id: str):
+    """Tombstone the bot so startup recovery can't resurrect the meeting. Both
+    recover_active_bots paths (backfill: status='done'; poller re-spawn: live states)
+    filter on meeting_bots.status, so 'deleted' makes them skip it. Best-effort."""
+    try:
+        client.table("meeting_bots").update({"status": "deleted"}) \
+            .eq("bot_id", recall_bot_id).execute()
+    except Exception as exc:
+        print(f"[delete] meeting_bots tombstone failed for {recall_bot_id}: {exc}")
+
+
 def _delete_meeting_transcript_rag(client, meeting_id: int, user_id: str):
     """Drop the meeting's AUTO-INDEXED transcript from RAG so a deleted meeting can't be
     cited in chat. Keyed by (meeting_id, user_id) + source_type='meeting_transcript' — so
@@ -516,6 +527,10 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
     if not ws or not is_owner:
         client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
         _delete_meeting_transcript_rag(client, meeting_id, user_id)
+        # Tombstone the bot only when YOU own the meeting — a non-owner dropping their
+        # fan-out copy must not stop the owner's recovery.
+        if is_owner and row.get("recall_bot_id"):
+            _mark_bot_deleted(client, row["recall_bot_id"])
         return {"ok": True, "scope": "own_copy"}
 
     # Owner deleting a workspace meeting → remove every fan-out copy so it's gone for
@@ -530,6 +545,8 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
             .eq("date", row["date"]).execute()
 
     _delete_meeting_transcript_rag(client, meeting_id, user_id)
+    if row.get("recall_bot_id"):
+        _mark_bot_deleted(client, row["recall_bot_id"])
     return {"ok": True, "scope": "all_copies"}
 
 

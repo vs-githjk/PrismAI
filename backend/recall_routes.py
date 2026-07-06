@@ -1570,6 +1570,18 @@ async def _persist_bot_meeting(bot_id: str) -> None:
         if existing.data:
             _standin_persisted.add(bot_id)
             return  # already on a dashboard (browser saved it first)
+        # If the user explicitly deleted this meeting, don't resurrect it. Startup
+        # recovery / a stray poller would otherwise re-persist a bot the user removed.
+        try:
+            mb = (
+                supabase.table("meeting_bots").select("status")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            if mb and (mb.data or {}).get("status") == "deleted":
+                _standin_persisted.add(bot_id)
+                return
+        except Exception:
+            pass
         owner_user_id, workspace_id = _resolve_owner_workspace(bot_id)
         if not owner_user_id:
             return
