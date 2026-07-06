@@ -940,15 +940,37 @@ export default function DashboardPage(props) {
     props.setHistorySearch?.(value)
   }
 
-  function handleDeleteHistoryEntry(entry) {
-    props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
-    if (!props.isTestAccount) {
-      props.apiFetch?.(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+  async function handleDeleteHistoryEntry(entry) {
+    const clearIfOpen = () => {
+      if (entry.id === props.meetingId) {
+        sessionStorage.setItem('prism_new_meeting', '1')
+        props.clearWorkspaceState?.()
+        persistView('home')
+      }
     }
-    if (entry.id === props.meetingId) {
-      sessionStorage.setItem('prism_new_meeting', '1')
-      props.clearWorkspaceState?.()
-      persistView('home')
+    if (props.isTestAccount) {
+      props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
+      clearIfOpen()
+      return
+    }
+    // Confirm the server actually removed it before hiding it — a silent failure used to
+    // vanish from the list then reappear on refresh. Report what happened instead.
+    try {
+      const res = await apiFetch(`/meetings/${entry.id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        notifyStatus({ kind: 'error', message: `Delete failed (HTTP ${res.status})` })
+        return
+      }
+      if (!data.deleted) {
+        notifyStatus({ kind: 'error', message: `Delete matched 0 rows (${data.scope || 'unknown'})` })
+        return
+      }
+      props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
+      notifyStatus({ kind: 'success', message: 'Meeting deleted' })
+      clearIfOpen()
+    } catch {
+      notifyStatus({ kind: 'error', message: 'Delete failed (network)' })
     }
   }
 

@@ -515,7 +515,10 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
             .select("id,user_id,workspace_id,recorded_by_user_id,recall_bot_id,date")
             .eq("id", meeting_id).eq("user_id", user_id).limit(1).execute())
     if not resp.data:
-        return {"ok": True}  # not yours / already gone — idempotent
+        # The displayed row isn't under this user_id — e.g. the dedup fetch returned a
+        # teammate's copy, so the DELETE targets an id the caller doesn't own. Surface it.
+        print(f"[delete] meeting {meeting_id} NOT FOUND under user {user_id} — nothing deleted")
+        return {"ok": True, "scope": "not_found", "deleted": 0}
     row = resp.data[0]
     ws = row.get("workspace_id") or None
     recorder = row.get("recorded_by_user_id")
@@ -525,29 +528,33 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
     # (A non-owner can only drop their own copy; it may still resurface via the owner's
     # copy under the dedup fetch — a true per-user hide is deferred.)
     if not ws or not is_owner:
-        client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
+        d = client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
         _delete_meeting_transcript_rag(client, meeting_id, user_id)
         # Tombstone the bot only when YOU own the meeting — a non-owner dropping their
         # fan-out copy must not stop the owner's recovery.
         if is_owner and row.get("recall_bot_id"):
             _mark_bot_deleted(client, row["recall_bot_id"])
-        return {"ok": True, "scope": "own_copy"}
+        deleted = len(d.data or [])
+        print(f"[delete] meeting {meeting_id} scope=own_copy deleted={deleted} ws={ws} bot={row.get('recall_bot_id')}")
+        return {"ok": True, "scope": "own_copy", "deleted": deleted}
 
     # Owner deleting a workspace meeting → remove every fan-out copy so it's gone for
     # the whole workspace. All copies share recall_bot_id (bot meetings); otherwise they
     # share (workspace_id, recorded_by_user_id, date).
     if row.get("recall_bot_id"):
-        client.table("meetings").delete() \
+        d = client.table("meetings").delete() \
             .eq("recall_bot_id", row["recall_bot_id"]).eq("workspace_id", ws).execute()
     else:
-        client.table("meetings").delete() \
+        d = client.table("meetings").delete() \
             .eq("workspace_id", ws).eq("recorded_by_user_id", user_id) \
             .eq("date", row["date"]).execute()
 
     _delete_meeting_transcript_rag(client, meeting_id, user_id)
     if row.get("recall_bot_id"):
         _mark_bot_deleted(client, row["recall_bot_id"])
-    return {"ok": True, "scope": "all_copies"}
+    deleted = len(d.data or [])
+    print(f"[delete] meeting {meeting_id} scope=all_copies deleted={deleted} ws={ws} bot={row.get('recall_bot_id')}")
+    return {"ok": True, "scope": "all_copies", "deleted": deleted}
 
 
 @router.patch("/meetings/{meeting_id}")
