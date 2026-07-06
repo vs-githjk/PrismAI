@@ -41,6 +41,7 @@ sys.modules.setdefault("groq", fake_groq_module)
 
 fake_analysis_service = types.ModuleType("analysis_service")
 fake_analysis_service.AGENT_MAP = {}
+fake_analysis_service.TIER2_AGENTS = {}
 fake_analysis_service._persona_text_for_agent = lambda *_a, **_k: ""
 sys.modules.setdefault("analysis_service", fake_analysis_service)
 
@@ -313,6 +314,34 @@ class ChatGroqResilienceTestCase(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertIn("response", resp.json())
+
+
+class ChatImageTurnTestCase(unittest.TestCase):
+    """Image analysis: the user turn switches to OpenAI vision format when images are present."""
+
+    def test_plain_text_turn_without_images(self):
+        turn = chat_routes._build_user_turn("hello", [])
+        self.assertEqual(turn, {"role": "user", "content": "hello"})
+
+    def test_vision_turn_with_images(self):
+        turn = chat_routes._build_user_turn("what is this?", ["https://x/img.png"])
+        self.assertEqual(turn["role"], "user")
+        self.assertIsInstance(turn["content"], list)
+        self.assertEqual(turn["content"][0], {"type": "text", "text": "what is this?"})
+        self.assertEqual(turn["content"][1], {"type": "image_url", "image_url": {"url": "https://x/img.png"}})
+
+    def test_images_capped_at_three(self):
+        turn = chat_routes._build_user_turn("x", [f"u{i}" for i in range(10)])
+        image_parts = [p for p in turn["content"] if p.get("type") == "image_url"]
+        self.assertEqual(len(image_parts), 3)
+
+    def test_empty_message_with_image_gets_default_prompt(self):
+        turn = chat_routes._build_user_turn("", ["u1"])
+        self.assertEqual(turn["content"][0]["text"], "What's in this image?")
+
+    def test_blank_urls_ignored(self):
+        turn = chat_routes._build_user_turn("hi", ["", "  ", None])
+        self.assertEqual(turn, {"role": "user", "content": "hi"})
 
 
 if __name__ == "__main__":

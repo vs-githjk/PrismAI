@@ -615,6 +615,34 @@ def _recent_turn_messages(recent_turns: list | None) -> list[dict]:
     return out
 
 
+# Live-bot vision (Part B): an image posted in the meeting chat (a pasted image URL,
+# or a Teams/Meet chat attachment) is captured so the bot can "see" it when answering.
+_IMG_URL_RE = re.compile(r'https?://\S+?\.(?:png|jpe?g|webp|gif)(?:\?\S*)?', re.IGNORECASE)
+
+
+def _extract_image_urls(text: str) -> list[str]:
+    return _IMG_URL_RE.findall(text or "")
+
+
+def _remember_chat_images(bot_id: str, urls: list[str]) -> None:
+    """Stash recent chat-image URLs on bot state (last 3, timestamped) so a following
+    command can be answered with the image in view."""
+    urls = [u for u in (urls or []) if u]
+    if not urls:
+        return
+    st = _get_bot_state(bot_id)
+    now = time.time()
+    recent = st.get("recent_image_urls") or []
+    recent.extend({"url": u, "ts": now} for u in urls)
+    st["recent_image_urls"] = recent[-3:]
+
+
+def _fresh_image_urls(state: dict, max_age: float = 300.0) -> list[str]:
+    """Image URLs from the meeting chat within the last few minutes (freshest first-capped)."""
+    now = time.time()
+    return [e["url"] for e in (state.get("recent_image_urls") or []) if now - e.get("ts", 0) <= max_age][-3:]
+
+
 def _build_command_messages(
     *,
     has_gmail: bool,
@@ -631,6 +659,7 @@ def _build_command_messages(
     owner_name: str = "",
     owner_email: str = "",
     recent_turns: list | None = None,
+    image_urls: list | None = None,
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
@@ -648,7 +677,16 @@ def _build_command_messages(
         user_content = _wrap_participant_utterance(speaker, command, is_owner)
     else:
         user_content = f"{speaker}: {command}" if speaker else command
-    user_msg = {"role": "user", "content": user_content}
+    # If an image was shared in the meeting chat, attach it (OpenAI vision format) so the
+    # bot can actually see it. gpt-4o-mini is vision-capable — same shaping as app chat.
+    _imgs = [u for u in (image_urls or []) if u][:3]
+    if _imgs:
+        user_msg = {"role": "user", "content": (
+            [{"type": "text", "text": user_content}]
+            + [{"type": "image_url", "image_url": {"url": u}} for u in _imgs]
+        )}
+    else:
+        user_msg = {"role": "user", "content": user_content}
     history = _recent_turn_messages(recent_turns)
     if prompt_cache_on:
         return [
@@ -2595,6 +2633,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             owner_name=_owner_full,
             owner_email=_owner_email,
             recent_turns=state.get("recent_turns", []),
+            image_urls=_fresh_image_urls(state),
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
@@ -3508,6 +3547,25 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         sender = sender_obj.get("name") or action_obj.get("name") or "Someone"
 
         print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
+
+        # Live-bot vision (Part B): capture images shared in the meeting chat so the bot
+        # can see them when answering. Confident path = image URLs pasted in the text.
+        # Best-effort = an `attachments` array if the platform/Recall relays file uploads
+        # (Teams). We log the attachment shape so its real format can be verified live.
+        if not _looks_like_bot_participant(sender, {}):
+            _img_urls = _extract_image_urls(message_text)
+            _atts = chat_data.get("attachments") or action_obj.get("attachments") or []
+            if _atts:
+                print(f"[realtime] chat attachments present bot={bot_id[:8]}: {str(_atts)[:300]}")
+                for _a in _atts:
+                    if isinstance(_a, dict):
+                        _u = _a.get("url") or _a.get("file_url") or _a.get("src")
+                        _ct = (_a.get("content_type") or _a.get("type") or "")
+                        if _u and ("image" in _ct.lower() or _IMG_URL_RE.search(_u)):
+                            _img_urls.append(_u)
+            if _img_urls:
+                _remember_chat_images(bot_id, _img_urls)
+                print(f"[realtime] captured {len(_img_urls)} chat image(s) for bot {bot_id[:8]}")
 
         if message_text.strip():
             # Record the human's chat line into the transcript so chat-driven meetings

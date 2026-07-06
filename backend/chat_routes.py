@@ -1,9 +1,11 @@
+import asyncio
 import json
 import os
 import secrets
 import time
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
@@ -57,11 +59,13 @@ LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 class ChatRequest(BaseModel):
     message: str
     transcript: str = ""
+    image_urls: list[str] = []
 
 
 class GlobalChatRequest(BaseModel):
     message: str
     limit: int = 10
+    image_urls: list[str] = []
 
 
 class AgentRequest(BaseModel):
@@ -86,6 +90,87 @@ class AgentRequest(BaseModel):
 
 class ConfirmToolRequest(BaseModel):
     pending_id: str
+
+
+class SignImagesRequest(BaseModel):
+    paths: list[str]
+
+
+# --- Image analysis (chat) --------------------------------------------------
+CHAT_IMAGE_BUCKET = "chat-images"
+_MAX_IMAGES_PER_MESSAGE = 3
+_IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+_IMAGE_MAX_BYTES = 5 * 1024 * 1024  # 5MB, mirrors the bucket limit
+
+
+def _build_user_turn(message: str, image_urls: list[str] | None) -> dict:
+    """Build the user chat turn. With images, use OpenAI's vision content array
+    (text + image_url parts) so gpt-4o-mini can see them; otherwise a plain string.
+    Capped at _MAX_IMAGES_PER_MESSAGE."""
+    urls = [u for u in (image_urls or []) if isinstance(u, str) and u.strip()][:_MAX_IMAGES_PER_MESSAGE]
+    if not urls:
+        return {"role": "user", "content": message}
+    parts: list[dict] = [{"type": "text", "text": message or "What's in this image?"}]
+    for u in urls:
+        parts.append({"type": "image_url", "image_url": {"url": u}})
+    return {"role": "user", "content": parts}
+
+
+def _sign_chat_image(path: str, expires: int = 3600) -> str | None:
+    """Fresh signed URL for a stored chat image (private bucket)."""
+    if not supabase or not path:
+        return None
+    try:
+        res = supabase.storage.from_(CHAT_IMAGE_BUCKET).create_signed_url(path, expires)
+        return res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
+    except Exception as exc:
+        print(f"[chat-image] sign failed for {path}: {exc}")
+        return None
+
+
+@router.post("/chat/upload-image")
+async def upload_chat_image(file: UploadFile = File(...), user_id: str = Depends(require_user_id)):
+    """Store one chat image in the private chat-images bucket and return a signed URL.
+    Validated to png/jpg/webp + <=5MB (mirrors the bucket config)."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    if ext not in _IMAGE_MIME:
+        raise HTTPException(status_code=400, detail="Only PNG, JPG, or WebP images are allowed")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > _IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Image exceeds the 5MB limit")
+
+    path = f"{user_id}/{uuid.uuid4().hex}.{ext}"
+    try:
+        await asyncio.to_thread(
+            supabase.storage.from_(CHAT_IMAGE_BUCKET).upload,
+            path, content, {"content-type": _IMAGE_MIME[ext]},
+        )
+    except Exception as exc:
+        msg = str(exc)
+        if "Bucket not found" in msg:
+            raise HTTPException(status_code=502,
+                detail="Storage bucket 'chat-images' is missing — create it in Supabase Storage.")
+        raise HTTPException(status_code=502, detail=f"Upload failed: {msg[:200]}")
+
+    url = _sign_chat_image(path)
+    return {"path": path, "url": url}
+
+
+@router.post("/chat/sign")
+async def sign_chat_images(req: SignImagesRequest, user_id: str = Depends(require_user_id)):
+    """Re-mint signed URLs for stored chat-image paths (on chat-session restore, since the
+    signed URLs expire). Only signs the caller's own paths (path is prefixed by user_id)."""
+    out: dict[str, str] = {}
+    for p in (req.paths or []):
+        if isinstance(p, str) and p.startswith(f"{user_id}/"):
+            signed = _sign_chat_image(p)
+            if signed:
+                out[p] = signed
+    return {"urls": out}
 
 
 async def _get_user_settings(user_id: str) -> dict:
@@ -358,7 +443,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
 
         messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": req.message},
+            _build_user_turn(req.message, req.image_urls),
         ]
 
         if tools:
@@ -467,7 +552,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
 
         messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": req.message},
+            _build_user_turn(req.message, req.image_urls),
         ]
 
         if tools:

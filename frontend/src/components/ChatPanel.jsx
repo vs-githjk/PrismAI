@@ -6,6 +6,7 @@ import {
   Clock,
   FileText,
   History,
+  ImagePlus,
   ListChecks,
   MessagesSquare,
   Send,
@@ -181,6 +182,10 @@ export default function ChatPanel({
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingGlobal, setLoadingGlobal] = useState(false)
+  const [pendingImages, setPendingImages] = useState([])  // [{path, url}] staged before send
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [lightbox, setLightbox] = useState(null)  // url of image opened full-size
+  const fileInputRef = useRef(null)
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
   const prevResultRef = useRef(null)
@@ -199,13 +204,33 @@ export default function ChatPanel({
   // activeSession is usually null at mount). Only if the user hasn't started
   // typing into a fresh thread yet.
   const restoredRef = useRef(false)
+
+  // Restored chat images carry expired signed URLs — re-mint fresh ones from the
+  // stored paths so they display again.
+  const resignImages = async (msgs) => {
+    const paths = []
+    for (const m of msgs) for (const im of (m.images || [])) if (im.path) paths.push(im.path)
+    if (!paths.length) return msgs
+    try {
+      const res = await apiFetch('/chat/sign', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      })
+      if (!res.ok) return msgs
+      const { urls } = await res.json()
+      return msgs.map((m) => m.images
+        ? { ...m, images: m.images.map((im) => (im.path && urls[im.path]) ? { ...im, url: urls[im.path] } : im) }
+        : m)
+    } catch { return msgs }
+  }
+
   useEffect(() => {
     if (restoredRef.current) return
     if (activeSession?.id && activeSession.messages?.length && messagesRef.current.length === 0) {
       restoredRef.current = true
       sessionIdRef.current = activeSession.id
       skipNextSaveRef.current = true // don't re-save the restored thread
-      setMessages(activeSession.messages)
+      resignImages(activeSession.messages).then(setMessages)
     }
   }, [activeSession])
 
@@ -272,10 +297,12 @@ export default function ChatPanel({
   const send = async (text) => {
     if (viewingSession) return
     const msg = (text || input).trim()
-    if (!msg || loading) return
+    const imgs = pendingImages
+    if ((!msg && imgs.length === 0) || loading) return
 
-    setMessages((prev) => [...prev, { role: 'user', content: msg }])
+    setMessages((prev) => [...prev, { role: 'user', content: msg, images: imgs.length ? imgs : undefined }])
     setInput('')
+    setPendingImages([])
     setLoading(true)
 
     // Gate on `result` only — NOT transcript. Tier-2 agents (email, calendar, health)
@@ -283,8 +310,11 @@ export default function ChatPanel({
     // existing_items, so the raw transcript is optional. Requiring it meant a recovered
     // or reopened meeting (which often has no transcript in chat context) could never
     // run an agent — every "draft an email" fell through to ungrounded generic chat.
-    const rename = result ? detectRenameIntent(msg) : null
-    const agentIntent = !rename && result ? detectAgentIntent(msg) : null
+    // With images attached, skip the deterministic rename/agent intents (they don't
+    // handle images) and route to a vision-capable chat surface (/chat or /chat/global).
+    const imageUrls = imgs.map((i) => i.url).filter(Boolean)
+    const rename = (imgs.length === 0 && result) ? detectRenameIntent(msg) : null
+    const agentIntent = (imgs.length === 0 && !rename && result) ? detectAgentIntent(msg) : null
     const globalIntent = !rename && !agentIntent && detectGlobalIntent(msg)
 
     try {
@@ -362,7 +392,7 @@ export default function ChatPanel({
         const res = await apiFetch('/chat/global', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg }),
+          body: JSON.stringify({ message: msg, image_urls: imageUrls }),
         })
         setLoadingGlobal(false)
         if (!res.ok) throw new Error('Global chat failed')
@@ -385,7 +415,7 @@ export default function ChatPanel({
             // for users who only set their default at the workspace level.
             ...(activeWorkspaceId ? { 'x-active-workspace': activeWorkspaceId } : {}),
           },
-          body: JSON.stringify({ message: msg, transcript }),
+          body: JSON.stringify({ message: msg, transcript, image_urls: imageUrls }),
         })
         if (!res.ok) throw new Error('Chat failed')
         const data = await res.json()
@@ -407,6 +437,44 @@ export default function ChatPanel({
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+  }
+
+  // --- Image attach / paste / drop ---
+  const MAX_IMAGES = 3
+  const uploadImageFile = async (file) => {
+    if (!isSignedIn || viewingSession) return
+    if (!file || !file.type?.startsWith('image/')) return
+    if (pendingImages.length >= MAX_IMAGES) return
+    if (file.size > 5 * 1024 * 1024) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'That image is over the 5MB limit.' }])
+      return
+    }
+    setUploadingImage(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await apiFetch('/chat/upload-image', { method: 'POST', body: fd })
+      if (!res.ok) throw new Error('upload failed')
+      const data = await res.json()
+      if (data.url) setPendingImages((prev) => [...prev, { path: data.path, url: data.url }].slice(0, MAX_IMAGES))
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Couldn’t upload that image — try again.' }])
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+  const handlePickImages = (e) => {
+    const files = Array.from(e.target.files || [])
+    files.slice(0, MAX_IMAGES).forEach(uploadImageFile)
+    e.target.value = ''
+  }
+  const handlePaste = (e) => {
+    const imageItem = Array.from(e.clipboardData?.items || []).find((it) => it.type.startsWith('image/'))
+    if (imageItem) { const f = imageItem.getAsFile(); if (f) { e.preventDefault(); uploadImageFile(f) } }
+  }
+  const handleDrop = (e) => {
+    const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'))
+    if (files.length) { e.preventDefault(); files.slice(0, MAX_IMAGES).forEach(uploadImageFile) }
   }
 
   const handleDeletePastSession = (sessionId) => {
@@ -599,6 +667,19 @@ export default function ChatPanel({
                   : 'rounded-tl-sm border border-white/[0.08] bg-[#0d0e10] text-white/85'
               }`}
             >
+              {msg.images?.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {msg.images.map((img, ii) => (
+                    <img
+                      key={ii}
+                      src={img.url}
+                      alt="attached"
+                      onClick={() => img.url && setLightbox(img.url)}
+                      className="h-28 w-28 cursor-zoom-in rounded-lg border border-white/15 object-cover"
+                    />
+                  ))}
+                </div>
+              )}
               {msg.content}
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
@@ -707,40 +788,89 @@ export default function ChatPanel({
       </div>
 
       {/* Composer */}
-      <div className="flex flex-shrink-0 items-center gap-2 border-t border-white/[0.08] px-4 py-3">
-        {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
-            the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
-        <textarea
-          rows={1}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          disabled={!!viewingSession}
-          name="prism-chat"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          data-1p-ignore
-          data-lpignore="true"
-          placeholder={
-            viewingSession
-              ? 'Viewing past chat — start a new chat to send messages'
-              : result
-              ? 'Ask or say "redraft email more formally"…'
-              : 'Ask a question…'
-          }
-          className="flex-1 resize-none rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <button
-          type="button"
-          onClick={() => send()}
-          disabled={!input.trim() || loading || !!viewingSession}
-          aria-label="Send message"
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-400 text-[#07040f] transition hover:from-cyan-400 hover:to-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <Send className="h-4 w-4" aria-hidden="true" />
-        </button>
+      <div
+        className="flex flex-shrink-0 flex-col gap-2 border-t border-white/[0.08] px-4 py-3"
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+      >
+        {/* Staged image thumbnails (before send) */}
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {pendingImages.map((img, ii) => (
+              <div key={ii} className="relative">
+                <img src={img.url} alt="attachment" className="h-14 w-14 rounded-lg border border-white/15 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPendingImages((prev) => prev.filter((_, k) => k !== ii))}
+                  aria-label="Remove image"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-[#0d0e10] text-white/70 hover:text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            {uploadingImage && <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-white/15 text-[10px] text-white/40">…</div>}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={handlePickImages} className="hidden" />
+          {isSignedIn && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!!viewingSession || pendingImages.length >= MAX_IMAGES || uploadingImage}
+              aria-label="Attach image"
+              title="Attach image (or paste / drop)"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.10] bg-[#0d0e10] text-white/60 transition hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ImagePlus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
+              the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
+          <textarea
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKey}
+            onPaste={handlePaste}
+            disabled={!!viewingSession}
+            name="prism-chat"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            data-1p-ignore
+            data-lpignore="true"
+            placeholder={
+              viewingSession
+                ? 'Viewing past chat — start a new chat to send messages'
+                : result
+                ? 'Ask or say "redraft email more formally"…'
+                : 'Ask a question… (paste or drop an image)'
+            }
+            className="flex-1 resize-none rounded-lg border border-white/[0.10] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => send()}
+            disabled={(!input.trim() && pendingImages.length === 0) || loading || !!viewingSession}
+            aria-label="Send message"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-400 text-[#07040f] transition hover:from-cyan-400 hover:to-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Send className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="full size" className="max-h-full max-w-full rounded-lg object-contain" />
+        </div>
+      )}
     </div>
   )
 }
