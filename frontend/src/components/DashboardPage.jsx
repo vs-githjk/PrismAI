@@ -657,6 +657,9 @@ export default function DashboardPage(props) {
   const historyCount = props.history?.length || 0
   const isFirstRender = useRef(true)
   const userSelectedMeetingRef = useRef(false)
+  // The meeting the auto-switch effect last acted on, so history mutations
+  // (e.g. checking off an action item) don't re-trigger a stray navigation.
+  const lastNavMeetingRef = useRef(undefined)
 
   // --- Chat panel state ---
   const [chatOpen, setChatOpen] = useState(() => {
@@ -737,12 +740,18 @@ export default function DashboardPage(props) {
     if (props.loading) persistView('meeting')
   }, [props.loading])
 
-  // Auto-switch to meeting view when a new result is loaded (not on initial mount)
+  // Auto-switch to meeting view when a new result is loaded (not on initial mount).
+  // Guarded on the OPEN meeting changing: history is in the deps for the sample
+  // check below, but a history mutation alone (e.g. checking off an action item)
+  // must NOT navigate — that pulled the user into the last-loaded meeting.
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false
+      lastNavMeetingRef.current = props.meetingId
       return
     }
+    if (props.meetingId === lastNavMeetingRef.current) return
+    lastNavMeetingRef.current = props.meetingId
     const latest = props.history?.[0]
     const showingLatestSample =
       props.isTestAccount &&
