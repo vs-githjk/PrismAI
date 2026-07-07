@@ -519,6 +519,38 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 </button>
               )}
 
+              {/* Auto-join behavior — the SAME global setting as Google Calendar; it
+                  applies to every connected calendar, so configuring it here or under
+                  the Calendar tab is equivalent. */}
+              {outlookConnected && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-gray-400 px-0.5">Auto-join behavior</p>
+                  {AUTO_JOIN_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => onAutoJoinChange?.(opt.value)}
+                      disabled={isTestAccount}
+                      className="w-full flex items-start gap-3 rounded-xl p-3 text-left transition-all"
+                      style={autoJoinSetting === opt.value
+                        ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)' }
+                        : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className={`w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border ${autoJoinSetting === opt.value ? 'border-sky-400' : 'border-gray-600'}`}>
+                        {autoJoinSetting === opt.value && (
+                          <div className="w-2 h-2 rounded-full bg-sky-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className={`text-xs font-medium ${autoJoinSetting === opt.value ? 'text-sky-300' : 'text-gray-300'}`}>{opt.label}</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5 leading-relaxed">{opt.hint}</p>
+                      </div>
+                    </button>
+                  ))}
+                  <p className="text-[10px] text-gray-600 px-0.5 leading-relaxed">
+                    Shared with Google Calendar — applies to all connected calendars.
+                  </p>
+                </div>
+              )}
+
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 PrismAI requests read-only access to your Outlook calendar (Microsoft Graph). It surfaces upcoming meetings and detects Teams/Zoom/Meet links so you can join in one click.

@@ -1880,9 +1880,11 @@ export default function App() {
       })
   }
 
-  // Calendar polling — next-up banner + auto-join check, one fetch per 60s
+  // Calendar polling — next-up banner + auto-join check, one fetch per 60s.
+  // Covers BOTH Google and Outlook: whichever calendars are connected are polled,
+  // merged, and run through the same auto-join logic (one global auto-join setting).
   useEffect(() => {
-    if (!calendarConnected || !user) {
+    if (!user || (!calendarConnected && !outlookConnected)) {
       setNextUpcomingMeeting(null)
       return
     }
@@ -1891,11 +1893,28 @@ export default function App() {
 
     async function pollCalendarEvents() {
       try {
-        const res = await apiFetch('/calendar/events?days_ahead=1')
-        if (!res.ok) throw new Error()
-        const data = await res.json()
+        const reqs = []
+        if (calendarConnected) reqs.push(apiFetch('/calendar/events?days_ahead=1'))
+        if (outlookConnected) reqs.push(apiFetch('/ms-calendar/events?days_ahead=1'))
+        const settled = await Promise.allSettled(reqs)
         if (cancelled) return
-        const events = data?.events || []
+        // Merge events from every connected provider; a meeting on both calendars is
+        // deduped by link+start so it isn't joined twice.
+        let events = []
+        for (const s of settled) {
+          if (s.status !== 'fulfilled' || !s.value.ok) continue
+          const data = await s.value.json().catch(() => ({}))
+          events = events.concat(data?.events || [])
+        }
+        const seen = new Set()
+        events = events
+          .filter((e) => {
+            const key = `${e?.meeting_link || e?.id}|${e?.start || ''}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          .sort((a, b) => new Date(a?.start || 0) - new Date(b?.start || 0))
 
         setNextUpcomingMeeting(events.find((e) => e?.start) || null)
 
@@ -1928,7 +1947,7 @@ export default function App() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [calendarConnected, user?.id, autoJoinSetting])
+  }, [calendarConnected, outlookConnected, user?.id, autoJoinSetting])
 
   const mergeHistoryEntries = (entries) => {
     const seen = new Set()
