@@ -319,6 +319,53 @@ class KeytermGroundingTestCase(unittest.TestCase):
         with patch.object(recall_routes, "supabase", None):
             self.assertEqual(recall_routes._gather_keyterms("u", "w"), [])
 
+    def test_proper_nouns_from_content_ranks_strong_signals(self):
+        texts = [
+            "The pipeline uses Reciprocal Rank Fusion to merge results. "
+            "We also run CodeQL and KLEE on the code. Reciprocal Rank Fusion is key.",
+            "OpenSearch integrates CodeQL for static analysis. The team met to discuss it.",
+        ]
+        terms = recall_routes._proper_nouns_from_texts(texts, limit=10)
+        # Multi-word Title Case + camelCase are strong signals and kept.
+        self.assertIn("Reciprocal Rank Fusion", terms)
+        self.assertIn("CodeQL", terms)
+        self.assertIn("OpenSearch", terms)
+        # Sentence-initial common words are filtered (not surfaced as terms).
+        self.assertNotIn("The", terms)
+        self.assertNotIn("We", terms)
+
+    def test_gather_keyterms_mines_doc_content(self):
+        class _Resp:
+            def __init__(self, data): self.data = data
+
+        class _Query:
+            def __init__(self, data): self._data = data
+            def select(self, *_): return self
+            def eq(self, *_): return self
+            def in_(self, *_): return self
+            def is_(self, *_): return self
+            def gte(self, *_): return self
+            def order(self, *_, **__): return self
+            def limit(self, *_): return self
+            def execute(self): return _Resp(self._data)
+
+        class _SB:
+            def table(self, name):
+                if name == "knowledge_chunks":
+                    return _Query([
+                        {"content": "The system uses CodeQL and Reciprocal Rank Fusion. "
+                                    "Reciprocal Rank Fusion improves recall."},
+                    ])
+                return _Query([])
+
+        with patch.object(recall_routes, "supabase", _SB()), \
+             patch("caches.get_user_workspace_ids", return_value=["ws1"]):
+            terms = recall_routes._gather_keyterms("user-1", "ws1")
+
+        # Proper nouns from the doc BODY (not just titles) are grounded now.
+        self.assertIn("CodeQL", terms)
+        self.assertIn("Reciprocal Rank Fusion", terms)
+
 
 class BrandedBotTestCase(unittest.TestCase):
     """#4 — branded bot join: display name + logo camera tile."""

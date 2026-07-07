@@ -161,7 +161,7 @@ def _db_load(bot_id: str) -> dict | None:
             # fallback can recover it after a restart when Recall has 0 recordings.
             rt_blob = row.get("realtime_transcript") or ""
             rt_lines = rt_blob.split("\n") if rt_blob else []
-            return {
+            loaded = {
                 "status": row.get("status", "joining"),
                 "result": row.get("result"),
                 "error": row.get("error"),
@@ -170,6 +170,11 @@ def _db_load(bot_id: str) -> dict | None:
                 "user_id": row.get("user_id"),
                 "realtime_transcript_lines": rt_lines,
             }
+            # Restore seekable segments so click-to-seek survives a mid-meeting restart.
+            rt_segs = row.get("transcript_segments")
+            if isinstance(rt_segs, list) and rt_segs:
+                loaded["realtime_segments"] = rt_segs
+            return loaded
     except Exception as exc:
         print(f"[recall] db load failed for {bot_id}: {exc}")
     return None
@@ -454,9 +459,65 @@ def _name_from_email(email: str) -> str:
     return " ".join(words[:3]).strip()
 
 
+# Title-Case / camelCase term extractor for keyterm content-mining. Matches 1–3-word
+# Title-Case runs ("Reciprocal Rank Fusion") and internal-caps tokens ("CodeQL", "PrismAI").
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}\b")
+_CAMEL_RE = re.compile(r"\b[A-Z][a-z]+[A-Z][a-zA-Z]+\b")
+# Common English words that get capitalised at sentence start — filtered so the
+# keyterm budget isn't wasted on "The", "This", "We", etc.
+_COMMON_LEADING_WORDS = frozenset({
+    "the", "this", "that", "these", "those", "we", "i", "you", "he", "she", "it", "they",
+    "a", "an", "and", "but", "or", "so", "if", "then", "there", "here", "our", "your",
+    "their", "his", "her", "its", "what", "when", "where", "how", "why", "who", "which",
+    "for", "to", "in", "on", "at", "as", "of", "by", "is", "are", "was", "were", "be",
+    "will", "would", "should", "could", "can", "may", "might", "also", "now", "let",
+    "lets", "let's", "no", "yes", "not", "all", "some", "each", "every", "any", "one",
+})
+
+
+def _proper_nouns_from_texts(texts: list[str], limit: int = 15) -> list[str]:
+    """Rank candidate proper nouns mined from doc content. Multi-word Title-Case and
+    internal-caps tokens are strong signals; single Title-Case words must recur (>=2)
+    to beat sentence-initial noise. Returns highest-signal terms first, bounded."""
+    from collections import Counter
+    counts: Counter = Counter()
+    strong: set[str] = set()
+
+    def _keep(term: str) -> bool:
+        # Drop common words (incl. sentence-initial "The/This/We") whose lowercase, or
+        # leading word, is a known stopword — so the small budget isn't wasted on noise.
+        first = term.split(" ", 1)[0].lower()
+        if term.lower() in _KEYTERM_STOPWORDS or first in _KEYTERM_STOPWORDS:
+            return False
+        if first in _COMMON_LEADING_WORDS:
+            return False
+        return True
+
+    for text in texts:
+        if not isinstance(text, str) or not text:
+            continue
+        for m in _PROPER_NOUN_RE.findall(text):
+            if not _keep(m):
+                continue
+            counts[m] += 1
+            if " " in m:            # multi-word Title Case = strong signal
+                strong.add(m)
+        for m in _CAMEL_RE.findall(text):
+            if not _keep(m):
+                continue
+            counts[m] += 1
+            strong.add(m)
+    # Strong terms first (by frequency), then recurring single-word terms.
+    ranked = sorted(strong, key=lambda t: -counts[t])
+    singles = sorted((t for t, c in counts.items() if t not in strong and c >= 2),
+                     key=lambda t: -counts[t])
+    return (ranked + singles)[:limit]
+
+
 def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]:
     """Best-effort proper-noun list to ground Deepgram nova-3 (keyterm prompting):
-    teammate names + knowledge-doc titles + recent-meeting speaker/owner names.
+    teammate names + knowledge-doc titles + knowledge-doc CONTENT proper nouns +
+    recent-meeting speaker/owner names.
     Capitalisation is preserved (Deepgram weights proper nouns by spelling) and the
     list is bounded to ~40 terms. Returns [] on any failure so the bot-create config
     stays exactly as before — grounding is a pure add-on, never a blocker."""
@@ -523,6 +584,24 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
                 _add(r.get("name") or "")
     except Exception as exc:
         print(f"[keyterms] doc titles skipped: {exc}")
+
+    # 2.5 Proper nouns mined from knowledge-doc CONTENT (not just titles) — the real
+    #     jargon / product / people names live in the body. Sample a bounded set of
+    #     chunks, rank Title-Case / camelCase terms by frequency, add the top ones.
+    try:
+        contents: list[str] = []
+        if user_id:
+            own_c = (supabase.table("knowledge_chunks").select("content")
+                     .eq("user_id", user_id).limit(60).execute())
+            contents += [r.get("content") or "" for r in (own_c.data or [])]
+        if ws_ids:
+            shared_c = (supabase.table("knowledge_chunks").select("content")
+                        .in_("workspace_id", ws_ids).limit(60).execute())
+            contents += [r.get("content") or "" for r in (shared_c.data or [])]
+        for term in _proper_nouns_from_texts(contents, limit=15):
+            _add(term)
+    except Exception as exc:
+        print(f"[keyterms] doc content skipped: {exc}")
 
     # 3. Recent-meeting speaker + action-item-owner names (structured, from result
     #    JSON — avoids pulling full transcripts at join time).
@@ -1696,6 +1775,16 @@ async def _process_bot_transcript(bot_id: str):
         elif not transcript.strip() and rt_lines:
             transcript = "\n".join(rt_lines)
             print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
+
+        # Seekable segments: Recall's word-timestamped transcript is preferred, but when
+        # it's absent (bot spoke → live transcript used, or Recall returned no words) fall
+        # back to the segments we built live from Deepgram's recording-relative word times.
+        # Keeps click-to-seek working for those meetings instead of degrading to plain text.
+        if not segments:
+            rt_segments = bot_store.get(bot_id, {}).get("realtime_segments") or []
+            if rt_segments:
+                segments = rt_segments
+                print(f"[recall] using {len(rt_segments)} realtime-buffer segments for playback sync")
 
         if not transcript.strip():
             error_msg = "No transcript content found — the meeting may have been too short or had no speech"

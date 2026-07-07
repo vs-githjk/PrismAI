@@ -59,6 +59,9 @@ function MeetingActionsBar({
   copyMarkdown,
   exportMarkdown,
   exportPDF,
+  exportTranscriptPDF,
+  downloadTranscriptTxt,
+  hasTranscript = false,
   exportToSlack,
   exportToNotion,
   exportingSlack,
@@ -158,6 +161,18 @@ function MeetingActionsBar({
             <FileText className={iconClass} aria-hidden="true" />
             Open print view
           </DropdownMenuItem>
+          {hasTranscript && (
+            <>
+              <DropdownMenuItem onSelect={() => exportTranscriptPDF?.()} className={itemClass}>
+                <FileText className={iconClass} aria-hidden="true" />
+                Transcript → PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => downloadTranscriptTxt?.()} className={itemClass}>
+                <Download className={iconClass} aria-hidden="true" />
+                Download transcript .txt
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={exportingSlack}
@@ -692,18 +707,30 @@ export default function DashboardPage(props) {
   // Per-meeting chat history. ChatPanel saves the live thread continuously
   // (one growing session per meeting); this just (re)loads the session list —
   // called on meeting change and whenever ChatPanel reports a brand-new session.
+  // Which meeting the currently-held pastSessions belong to. A freshly-keyed
+  // ChatPanel initializes its thread from activeSession DURING render — before the
+  // clear-and-refetch effect runs — so without this guard it would seed the new
+  // meeting with the PREVIOUS meeting's thread and then auto-save it under the new
+  // id (cross-meeting chat bleed). We only hand sessions to ChatPanel when they were
+  // fetched for the meeting currently open.
+  const [sessionsForMeeting, setSessionsForMeeting] = useState(null)
+
   const refreshPastSessions = useCallback(() => {
-    if (!props.meetingId || !props.user) { setPastSessions([]); return }
-    apiFetch(`/chat-sessions/${props.meetingId}`)
+    if (!props.meetingId || !props.user) { setPastSessions([]); setSessionsForMeeting(props.meetingId ?? null); return }
+    const forId = props.meetingId
+    apiFetch(`/chat-sessions/${forId}`)
       .then((res) => (res.ok ? res.json() : { sessions: [] }))
-      .then((data) => setPastSessions(data.sessions || []))
-      .catch(() => setPastSessions([]))
+      .then((data) => { setPastSessions(data.sessions || []); setSessionsForMeeting(forId) })
+      .catch(() => { setPastSessions([]); setSessionsForMeeting(forId) })
   }, [props.meetingId, props.user?.id])
 
   // Clear stale sessions immediately on meeting switch (ChatPanel is keyed by
   // meetingId and remounts before the new fetch lands — must not see the old
   // meeting's thread), then load the new meeting's.
-  useEffect(() => { setPastSessions([]); refreshPastSessions() }, [refreshPastSessions])
+  useEffect(() => { setPastSessions([]); setSessionsForMeeting(null); refreshPastSessions() }, [refreshPastSessions])
+
+  // Only the sessions confirmed to belong to the open meeting are visible to ChatPanel.
+  const scopedSessions = sessionsForMeeting === props.meetingId ? pastSessions : []
 
   // Switch to meeting view immediately when analysis starts
   useEffect(() => {
@@ -1237,6 +1264,9 @@ export default function DashboardPage(props) {
               copyMarkdown={props.copyMarkdown}
               exportMarkdown={props.exportMarkdown}
               exportPDF={props.exportPDF}
+              exportTranscriptPDF={props.exportTranscriptPDF}
+              downloadTranscriptTxt={props.downloadTranscriptTxt}
+              hasTranscript={!!props.transcript?.trim()}
               exportToSlack={props.exportToSlack}
               exportToNotion={props.exportToNotion}
               exportingSlack={props.exportingSlack}
@@ -1484,13 +1514,15 @@ export default function DashboardPage(props) {
                 key={props.meetingId || 'no-meeting'}
                 meetingId={props.meetingId}
                 initialMessages={[]}
-                activeSession={pastSessions[0] || null}
-                pastSessions={pastSessions}
+                activeSession={scopedSessions[0] || null}
+                pastSessions={scopedSessions}
                 onPastSessionsChange={setPastSessions}
                 onThreadSaved={refreshPastSessions}
                 transcript={props.transcript}
                 result={props.result}
                 onResultUpdate={persistResultPatch}
+                onExportTranscriptPDF={props.exportTranscriptPDF}
+                onDownloadTranscriptTxt={props.downloadTranscriptTxt}
                 isSignedIn={!!props.user}
                 personaPreset={props.personaPreset}
                 personaCustomPrompt={props.personaCustomPrompt}

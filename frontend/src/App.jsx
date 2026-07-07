@@ -527,6 +527,40 @@ function buildPrintHTML(result) {
   </style></head><body>${body}</body></html>`
 }
 
+// Transcript-only print doc (for "Download transcript" → Save as PDF). Renders each
+// "Speaker: text" line with the speaker bolded; escapes HTML so raw transcript text
+// can't inject markup.
+function buildTranscriptPrintHTML(transcript, title = '') {
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const heading = title ? esc(title) : `Transcript — ${date}`
+  const lines = String(transcript || '').split('\n').map((raw) => {
+    const line = raw.trimEnd()
+    if (!line.trim()) return '<p class="blank"></p>'
+    const m = line.match(/^([^:]{1,40}):\s*(.*)$/)
+    return m
+      ? `<p><span class="spk">${esc(m[1])}:</span> ${esc(m[2])}</p>`
+      : `<p>${esc(line)}</p>`
+  }).join('')
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${heading}</title><style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:40px auto;color:#111;line-height:1.6}
+    h1{font-size:1.5rem;margin-bottom:1rem}
+    p{margin:.35rem 0}.blank{margin:.6rem 0}
+    .spk{font-weight:600;color:#0e7490}
+    .toolbar{position:fixed;top:16px;right:16px;display:flex;gap:8px}
+    .toolbar button{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px;
+      border:1px solid #0e7490;background:#0e7490;color:#fff;cursor:pointer}
+    .toolbar button.ghost{background:#fff;color:#0e7490}
+    @media print{.toolbar{display:none}}
+  </style></head><body>
+    <div class="toolbar">
+      <button onclick="window.print()">⬇ Save as PDF</button>
+      <button class="ghost" onclick="navigator.clipboard.writeText(document.body.innerText).then(()=>{this.textContent='Copied!'})">Copy text</button>
+    </div>
+    <h1>${heading}</h1>${lines}
+  </body></html>`
+}
+
 // ── Prism background ─────────────────────────────────────────────
 // ── Agent pipeline loader ────────────────────────────────────────
 
@@ -2453,6 +2487,33 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
+  // Transcript-only PDF: opens a clean print view the user saves as PDF (matches the
+  // exportPDF pattern — no PDF lib needed). Also invocable from chat ("download the
+  // transcript as a pdf"). Returns false when there's no transcript to export.
+  const exportTranscriptPDF = () => {
+    if (!transcript?.trim()) return false
+    const title = result ? deriveDisplayTitle({ result }) : ''
+    const html = buildTranscriptPrintHTML(transcript, title ? `Transcript — ${title}` : '')
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const w = window.open(url, '_blank')
+    w?.focus()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    return true
+  }
+
+  const downloadTranscriptTxt = () => {
+    if (!transcript?.trim()) return false
+    const blob = new Blob([transcript], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `transcript-${new Date().toISOString().slice(0, 10)}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+    return true
+  }
+
   // Landing screen — shown to first-time visitors
   if (showLanding) {
     return (
@@ -2649,6 +2710,8 @@ export default function App() {
           mdCopied={mdCopied}
           exportMarkdown={exportMarkdown}
           exportPDF={exportPDF}
+          exportTranscriptPDF={exportTranscriptPDF}
+          downloadTranscriptTxt={downloadTranscriptTxt}
           exportToSlack={exportToSlack}
           exportToNotion={exportToNotion}
           exportingSlack={exportingSlack}

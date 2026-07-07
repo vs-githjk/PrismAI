@@ -109,6 +109,21 @@ function pickThree(pool, seed) {
   return arr.slice(0, 3)
 }
 
+// Deterministic "export the transcript" intent — download/save/export transcript as
+// PDF or text. Returns 'pdf' | 'txt' | null. Handled client-side (no model call).
+function detectTranscriptExportIntent(msg) {
+  const m = msg.toLowerCase()
+  if (!/\btranscript\b/.test(m)) return null
+  // Explicit format wins ("transcript as a pdf", "make the transcript a pdf").
+  if (/\b(txt|text file|\.txt|plain text)\b/.test(m)) return 'txt'
+  if (/\b(pdf|\.pdf|print)\b/.test(m)) return 'pdf'
+  // Strong export verb with no format → default to PDF ("download the transcript").
+  if (/\b(download|export|save|convert)\b/.test(m)) return 'pdf'
+  // Bare "show me / view the transcript" (no format, no export verb) is a content
+  // request — let it fall through to normal chat.
+  return null
+}
+
 function detectGlobalIntent(msg) {
   const m = msg.toLowerCase()
   return (
@@ -177,6 +192,19 @@ function deepRename(value, from, to) {
   return walk(value)
 }
 
+// A message's content may be a plain string or an OpenAI vision array
+// ([{type:'text',text},{type:'image_url',…}]). Return a safe display string so
+// history previews and bubbles never render an object (blank/crash).
+function messageText(content) {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const textPart = content.find((p) => p && p.type === 'text')
+    if (textPart?.text) return textPart.text
+    return content.some((p) => p && p.type === 'image_url') ? '📎 Image' : ''
+  }
+  return ''
+}
+
 function formatSessionDate(value) {
   if (!value) return ''
   const parsed = new Date(value)
@@ -200,6 +228,8 @@ export default function ChatPanel({
   workspaceDefaultPersona = null,
   onSavePersona,
   activeWorkspaceId = null,
+  onExportTranscriptPDF,
+  onDownloadTranscriptTxt,
 }) {
   // The live thread for this meeting is restored from its most recent saved
   // session (continuous per-meeting chat) — ChatPanel is keyed by meetingId so
@@ -341,12 +371,26 @@ export default function ChatPanel({
     // With images attached, skip the deterministic rename/agent intents (they don't
     // handle images) and route to a vision-capable chat surface (/chat or /chat/global).
     const imageUrls = imgs.map((i) => i.url).filter(Boolean)
-    const rename = (imgs.length === 0 && result) ? detectRenameIntent(msg) : null
+    // Transcript export — deterministic, client-side, no model call.
+    const transcriptExport = imgs.length === 0 ? detectTranscriptExportIntent(msg) : null
+    const rename = (imgs.length === 0 && result && !transcriptExport) ? detectRenameIntent(msg) : null
     const agentIntent = (imgs.length === 0 && !rename && result) ? detectAgentIntent(msg) : null
     const globalIntent = !rename && !agentIntent && detectGlobalIntent(msg)
 
     try {
-      if (rename) {
+      if (transcriptExport) {
+        const ok = transcriptExport === 'txt'
+          ? onDownloadTranscriptTxt?.()
+          : onExportTranscriptPDF?.()
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: ok === false
+            ? "There's no transcript available for this meeting to export."
+            : transcriptExport === 'txt'
+              ? 'Downloading the transcript as a .txt file.'
+              : 'Opening the transcript as a print view — use your browser’s “Save as PDF”.',
+        }])
+      } else if (rename) {
         // Deterministic cross-card rename — no model call, no Linear ticket.
         prevResultRef.current = result
         onResultUpdate(deepRename(result, rename.from, rename.to))
@@ -592,7 +636,7 @@ export default function ChatPanel({
               </button>
 
               {showHistory && (
-                <div className="absolute right-0 top-8 z-40 w-72 overflow-hidden rounded-xl border border-white/[0.12] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
+                <div className="absolute left-0 top-8 z-50 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-white/[0.12] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
                     <p className="text-[11px] font-semibold text-white/86">Past chats</p>
                     <p className="text-[10px] text-white/40">{pastSessions.length} of 3</p>
@@ -601,6 +645,7 @@ export default function ChatPanel({
                     {pastSessions.map((session) => {
                       const msgs = session.messages || []
                       const firstUser = msgs.find((m) => m.role === 'user')
+                      const preview = firstUser ? messageText(firstUser.content) : ''
                       return (
                         <div
                           key={session.id}
@@ -611,9 +656,9 @@ export default function ChatPanel({
                             onClick={() => { setViewingSession(session); setShowHistory(false) }}
                             className="min-w-0 flex-1 px-3 py-2.5 text-left transition hover:bg-white/[0.04]"
                           >
-                            <p className="text-[11px] text-white/40">{formatSessionDate(session.created_at)}</p>
-                            {firstUser && (
-                              <p className="mt-0.5 truncate text-[12px] text-white/86">{firstUser.content}</p>
+                            <p className="text-[11px] text-white/40">{formatSessionDate(session.created_at) || 'Saved chat'}</p>
+                            {preview && (
+                              <p className="mt-0.5 truncate text-[12px] text-white/86">{preview}</p>
                             )}
                             <p className="mt-1 text-[10px] text-white/40">
                               {msgs.length} message{msgs.length !== 1 ? 's' : ''}
@@ -715,7 +760,7 @@ export default function ChatPanel({
               )}
               {msg.role === 'assistant' && typeof msg.content === 'string'
                 ? <MarkdownMessage>{msg.content}</MarkdownMessage>
-                : msg.content}
+                : messageText(msg.content)}
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {msg.toolsUsed.map((t, ti) => (

@@ -930,6 +930,15 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
         )
     # Durable full transcript (append-only; survives buffer trims + restart-resume).
     _append_realtime_line(bot_id, line)
+    # Seekable segment (recording-relative timing) so the player supports click-to-seek
+    # even for bot-spoke / realtime-buffer meetings where Recall gives no word timing.
+    if u.start_rel is not None:
+        _append_realtime_segment(bot_id, {
+            "speaker": u.speaker_name,
+            "start": float(u.start_rel),
+            "end": float(u.end_rel if u.end_rel is not None else u.start_rel),
+            "text": u.text,
+        })
     if state["meeting_start_ts"] is None:
         state["meeting_start_ts"] = time.time()
 
@@ -2079,6 +2088,18 @@ def _append_realtime_line(bot_id: str, line: str) -> None:
         del rt[: len(rt) - _RT_TRANSCRIPT_CAP]
 
 
+def _append_realtime_segment(bot_id: str, seg: dict) -> None:
+    """Append one seekable transcript segment ({speaker,start,end,text}) to bot_store.
+    Parallel to _append_realtime_line but carries recording-relative timing so the
+    recording player can click-to-seek. Capped alongside the line buffer."""
+    if bot_id not in bot_store:
+        return
+    segs = bot_store[bot_id].setdefault("realtime_segments", [])
+    segs.append(seg)
+    if len(segs) > _RT_TRANSCRIPT_CAP:
+        del segs[: len(segs) - _RT_TRANSCRIPT_CAP]
+
+
 async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
     """Record a human's in-meeting CHAT message into the transcript (buffer + durable),
     mirroring _record_bot_line for the bot's side. Recall only transcribes spoken AUDIO,
@@ -2113,7 +2134,13 @@ def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> 
     if not force and len(rt_lines) - last < _TRANSCRIPT_PERSIST_EVERY:
         return
     state["_transcript_persist_len"] = len(rt_lines)
-    _db_save(bot_id, {"realtime_transcript": "\n".join(rt_lines)})
+    fields = {"realtime_transcript": "\n".join(rt_lines)}
+    # Persist the seekable segments too (staging column) so click-to-seek survives a
+    # mid-meeting restart, mirroring the transcript restore in _db_load.
+    rt_segments = bot_store.get(bot_id, {}).get("realtime_segments")
+    if rt_segments:
+        fields["transcript_segments"] = rt_segments
+    _db_save(bot_id, fields)
 
 
 def _record_bot_line(bot_id: str, state: dict, text: str, bot_name: str) -> None:
@@ -3368,12 +3395,17 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # The legacy 3s fuzzy dedup is subsumed by the accumulator's
             # intra-utterance re-emission detection.
             _last_word_abs = ""
+            _first_word_rel = None
+            _last_word_rel = None
             if isinstance(segment, dict):
                 _words_for_ts = segment.get("words") or []
                 if _words_for_ts:
                     _last_word_abs = (
                         (_words_for_ts[-1].get("start_timestamp") or {}).get("absolute", "") or ""
                     )
+                    # Recording-relative timing (seconds) for seekable segments.
+                    _first_word_rel = (_words_for_ts[0].get("start_timestamp") or {}).get("relative")
+                    _last_word_rel = (_words_for_ts[-1].get("start_timestamp") or {}).get("relative")
             # Compare mode: mirror to the parallel legacy buffer so the
             # two transcripts can be diffed offline. Runs BEFORE the
             # accumulator update so the simulation reflects what legacy
@@ -3387,6 +3419,8 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     speaker_name=speaker,
                     text=text,
                     last_word_abs=_last_word_abs,
+                    first_word_rel=_first_word_rel,
+                    last_word_rel=_last_word_rel,
                 )
             return {"ok": True}
 

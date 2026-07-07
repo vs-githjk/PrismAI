@@ -545,5 +545,30 @@ class IntegrationPingPong(unittest.TestCase):
         self.assertIn("Who are you?", flushed[0].text)
 
 
+class RelativeTimestamps(unittest.TestCase):
+    """Recording-relative word timestamps thread through to FlushedUtterance so the
+    recording player can build seekable segments for bot-spoke / fallback meetings."""
+
+    def test_start_end_rel_captured_across_chunks(self):
+        acc, flushed, _ = make_accumulator()
+        acc.add_chunk("pid_a", "Alice", "Hello there", now_mono=1.0,
+                      first_word_rel=12.0, last_word_rel=12.8)
+        acc.add_chunk("pid_a", "Alice", "how are you.", now_mono=1.4,
+                      first_word_rel=13.0, last_word_rel=13.9)
+        acc.flush_all(now_mono=5.0)
+        self.assertEqual(len(flushed), 1)
+        # start = first chunk's first word; end = last chunk's last word.
+        self.assertAlmostEqual(flushed[0].start_rel, 12.0)
+        self.assertAlmostEqual(flushed[0].end_rel, 13.9)
+
+    def test_missing_timestamps_leave_rel_none(self):
+        acc, flushed, _ = make_accumulator()
+        acc.add_chunk("pid_a", "Alice", "no timing here.", now_mono=1.0)
+        acc.flush_all(now_mono=5.0)
+        self.assertEqual(len(flushed), 1)
+        self.assertIsNone(flushed[0].start_rel)
+        self.assertIsNone(flushed[0].end_rel)
+
+
 if __name__ == "__main__":
     unittest.main()
