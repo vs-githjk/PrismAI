@@ -91,6 +91,9 @@ class AgentRequest(BaseModel):
     # current viewer's name so each person can regenerate the draft as themselves
     # (per-viewer authorship) instead of a single owner-authored draft.
     owner_name: str | None = None
+    # Content-analysis lens for re-running content_analyst when the user overrides
+    # the auto-detected meeting type ('pitch' | 'interview_content' | 'interview_job').
+    meeting_type: str | None = None
 
 
 class ConfirmToolRequest(BaseModel):
@@ -464,6 +467,8 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
                 "unactioned_decisions": [d for d in unactioned if d],
                 # Per-viewer authorship: email_drafter writes FROM this person.
                 "owner_name": (req.owner_name or "").strip(),
+                # content_analyst reads this to pick its rubric on a type-override re-run.
+                "meeting_type": (req.meeting_type or "").strip().lower(),
             }
             return await AGENT_MAP[req.agent](augmented, context)
         return await AGENT_MAP[req.agent](augmented)

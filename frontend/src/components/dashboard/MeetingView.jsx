@@ -8,10 +8,14 @@ import RecordingPlayer from './RecordingPlayer'
 import SentimentCard from './SentimentCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
 import SuggestedActions from './SuggestedActions'
+import ContentAnalysisCard from './ContentAnalysisCard'
+import MeetingTypeControl from './MeetingTypeControl'
 import KnowledgeUploadModal from '../KnowledgeUploadModal'
 import { listDocs } from '../../lib/knowledge'
+import { apiFetch } from '../../lib/api'
 import { useCountUp, overallHealth } from '../../lib/healthScore'
 import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
+import { MEETING_TYPES, resolvedType, hasContentAnalysis } from '../../lib/meetingType'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
 const GAUGE_RADIUS = 46
@@ -93,6 +97,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
+  // Content-analysis lens override (re-runs content_analyst via /agent).
+  const [typeBusy, setTypeBusy] = useState(false)
+  const [typeError, setTypeError] = useState('')
   // Persist the bot-exit dismissal per meeting so a refresh doesn't bring the banner
   // back once the user has acknowledged why the bot left.
   const exitDismissKey = meeting?.id ? `prism:exit-dismiss:${meeting.id}` : null
@@ -140,6 +147,51 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   // the row is loaded from history). We use that to flag the health score as a live
   // estimate — the saved copy is re-scored in a separate pass and is authoritative.
   const isProvisional = !meeting && !readOnly
+
+  // Content analysis (pitch / interview deep-dive). `special` gates the score swap
+  // + deep-dive card; the lens is overridable (re-runs content_analyst).
+  const special = hasContentAnalysis(result)
+  const contentAnalysis = special ? result.content_analysis : null
+  const currentType = resolvedType(result)
+  const canReanalyze = !!(transcript && transcript.trim())
+
+  const handleTypeChange = async (newType) => {
+    if (typeBusy || newType === currentType) return
+    setTypeError('')
+    // Switching to Standard just drops the deep-dive lens — no LLM needed.
+    if (newType === 'standard') {
+      onResultUpdate?.({ content_analysis: null, meeting_type: 'standard' })
+      return
+    }
+    if (!canReanalyze) {
+      setTypeError('Re-analysis needs the transcript in this view (bot-recorded meetings load it from history).')
+      return
+    }
+    setTypeBusy(true)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60_000)
+    try {
+      const res = await apiFetch('/agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'content_analyst', transcript, result, meeting_type: newType }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error('failed')
+      const data = await res.json()
+      const ca = data?.content_analysis
+      if (ca && ca.type === newType && Array.isArray(ca.rubric) && ca.rubric.length) {
+        onResultUpdate?.({ content_analysis: ca, meeting_type: newType })
+      } else {
+        setTypeError('Could not produce a breakdown for that type. Try again.')
+      }
+    } catch (e) {
+      setTypeError(e?.name === 'AbortError' ? 'Re-analysis timed out. Try again.' : 'Re-analysis failed. Please try again.')
+    } finally {
+      clearTimeout(timeout)
+      setTypeBusy(false)
+    }
+  }
 
   // Show the balance triangle only when all three sub-scores are present & finite;
   // otherwise fall back to the single-arc gauge (seed/old meetings, mid-analysis).
@@ -238,6 +290,27 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           </button>
         </div>
       )}
+      {!readOnly && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <MeetingTypeControl
+            label="Analysis lens"
+            value={currentType}
+            onChange={handleTypeChange}
+            options={MEETING_TYPES}
+            loading={typeBusy}
+            title={canReanalyze
+              ? 'Re-analyze this meeting with a different lens (pitch / interview get a deeper breakdown)'
+              : 'Change the meeting type — deeper re-analysis needs the transcript loaded in this view'}
+          />
+          {typeBusy && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-cyan-200/75">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+              Re-analyzing the transcript… this takes ~15s
+            </span>
+          )}
+          {!typeBusy && typeError && <span className="text-[11px] text-amber-300/85">{typeError}</span>}
+        </div>
+      )}
       <div
         className={`grid gap-5 ${
           showPinned
@@ -246,7 +319,14 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         }`}
       >
         <section className="flex max-h-[30vh] flex-col items-center justify-center px-2 py-4">
-          {hasBreakdown ? (
+          {special ? (
+            // Health triangle (clarity/engagement/action) is the wrong lens for a
+            // pitch or interview — show the type's own headline score instead.
+            <>
+              <SemicircularGauge score={Number(contentAnalysis.headline_score) || 0} />
+              <p className="mt-1.5 text-sm font-medium text-white/55">{contentAnalysis.score_label || 'Score'}</p>
+            </>
+          ) : hasBreakdown ? (
             <MeetingHealthTriangle scores={breakdown} />
           ) : healthScore?.score !== undefined ? (
             <>
@@ -258,7 +338,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           )}
           {/* Live/unsaved analyses run a separate LLM pass from the saved copy, so the
               score can drift a point or two — flag it as provisional, not authoritative. */}
-          {isProvisional && (healthScore?.score !== undefined || hasBreakdown) && (
+          {!special && isProvisional && (healthScore?.score !== undefined || hasBreakdown) && (
             <span
               title="This is the live analysis. The saved copy is re-scored and is the authoritative value."
               className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-400/25 bg-cyan-400/[0.08] px-2.5 py-0.5 text-[10px] font-medium text-cyan-200/80"
@@ -289,7 +369,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 ))}
               </div>
             )}
-            {healthScore?.verdict && (
+            {!special && healthScore?.verdict && (
               <figure
                 className="mt-3.5 border-l-2 pl-3.5"
                 style={{ borderColor: healthColor(overallScore) }}
@@ -305,7 +385,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                 </blockquote>
               </figure>
             )}
-            {healthScore?.improvement_tip && (
+            {!special && healthScore?.improvement_tip && (
               <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
                 <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
                 <div>
@@ -319,6 +399,8 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
         {pinnedSection}
       </div>
+
+      {special && <ContentAnalysisCard analysis={contentAnalysis} />}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>

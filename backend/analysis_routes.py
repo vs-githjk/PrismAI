@@ -18,6 +18,9 @@ class AnalyzeRequest(BaseModel):
     transcript: str
     speakers: list = []
     owner_name: str | None = None
+    # Meeting type for the content-analysis lens: '' / 'auto' (detect), 'standard',
+    # 'pitch', 'interview_content', 'interview_job'. See agents/content_analyst.py.
+    meeting_type: str | None = None
     # Persona — resolved client-side (the analyze endpoint is unauthenticated,
     # so the server can't look up the user's effective persona on its own).
     persona_preset: str | None = None
@@ -38,6 +41,7 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
             persona_preset=req.persona_preset,
             persona_custom_prompt=req.persona_custom_prompt,
             owner_name=req.owner_name,
+            meeting_type=req.meeting_type,
         )
 
     @router.post("/analyze-stream")
@@ -49,7 +53,8 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
 
         async def event_stream():
             initial: dict = {"transcript": transcript, "agents_to_run": [], "results": {}, "context": {},
-                             "owner_name": (req.owner_name or "").strip()}
+                             "owner_name": (req.owner_name or "").strip(),
+                             "meeting_type": (req.meeting_type or "").strip().lower()}
             if req.persona_preset:
                 initial["persona_preset"] = req.persona_preset
             if req.persona_custom_prompt:
@@ -77,6 +82,12 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
                         dl = update.get("results", {}).get("decision_linker", {})
                         if dl:
                             yield f"data: {json.dumps({'agent': 'decision_linker', 'decision_links': dl.get('decision_links', [])})}\n\n"
+                        # The barrier resolves the meeting type (explicit pick or
+                        # classifier detection) — surface it so the UI knows the
+                        # lens even before content_analyst finishes / for standard.
+                        mt = update.get("context", {}).get("meeting_type")
+                        if mt:
+                            yield f"data: {json.dumps({'meeting_type': mt})}\n\n"
 
             yield f"data: {json.dumps({'agents_run': succeeded_agents})}\n\n"
             yield "data: [DONE]\n\n"

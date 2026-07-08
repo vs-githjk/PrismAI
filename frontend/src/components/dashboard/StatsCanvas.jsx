@@ -2,6 +2,7 @@ import { Check, Clock, UserRound } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
 import { dueInfo, dueLabel } from '../../lib/dueStatus'
+import { hasContentAnalysis, typeMeta } from '../../lib/meetingType'
 
 // Same due badge styling as MeetingView, so Home and the meeting agree.
 const DUE_STYLE = {
@@ -135,9 +136,13 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
           {history.length ? (
             <div className="space-y-2.5">
               {history.map((entry) => {
-                const score = overallHealth(entry.result?.health_score)
+                // Pitch / interview meetings score on their own rubric — show that
+                // (e.g. "PITCH 72") instead of the misleading health % for them.
+                const ca = hasContentAnalysis(entry.result) ? entry.result.content_analysis : null
+                const score = ca ? Number(ca.headline_score) : overallHealth(entry.result?.health_score)
                 const band = scoreBand(score)
                 const hasScore = Number.isFinite(Number(score))
+                const scoreLabel = ca ? typeMeta(ca.type).short : 'Health'
                 const isSelected = entry.id === selectedMeetingId
                 const summary =
                   entry.result?.summary || entry.result?.health_score?.verdict || 'No summary recorded.'
@@ -157,9 +162,9 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                     <div className="flex shrink-0 flex-col items-end justify-center pl-1">
                       <span className="font-bold leading-none tracking-tight" style={{ color: band.color }}>
                         <span className="text-[28px]">{hasScore ? score : '—'}</span>
-                        {hasScore && <span className="text-[15px]">%</span>}
+                        {hasScore && !ca && <span className="text-[15px]">%</span>}
                       </span>
-                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/35">Health</span>
+                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/35">{scoreLabel}</span>
                     </div>
                   </button>
                 )

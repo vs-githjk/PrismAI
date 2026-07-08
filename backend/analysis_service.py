@@ -9,10 +9,12 @@ from agents import (
     action_executor,
     action_items,
     calendar_suggester,
+    content_analyst,
     decision_linker,
     decisions,
     email_drafter,
     health_score,
+    meeting_classifier,
     orchestrator,
     sentiment,
     speaker_coach,
@@ -30,10 +32,15 @@ AGENT_MAP = {
     "health_score": health_score.run,
     "speaker_coach": speaker_coach.run,
     "action_executor": action_executor.run,
+    "meeting_classifier": meeting_classifier.run,
+    "content_analyst": content_analyst.run,
 }
 
-TIER1_AGENTS = frozenset({"summarizer", "decisions", "action_items", "sentiment", "speaker_coach"})
-TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester", "action_executor"})
+# meeting_classifier is Tier-1 (runs in parallel, only when type is auto-detected).
+# content_analyst is Tier-2 so it can read the classifier's resolved type + the
+# tier-1 summary; it self-gates (no LLM) for standard meetings.
+TIER1_AGENTS = frozenset({"summarizer", "decisions", "action_items", "sentiment", "speaker_coach", "meeting_classifier"})
+TIER2_AGENTS = frozenset({"email_drafter", "health_score", "calendar_suggester", "action_executor", "content_analyst"})
 
 # Tier-2 agents that don't need the full transcript — they synthesize from
 # context (summary + decisions + action_items + sentiment) which tier-1 has
@@ -57,6 +64,8 @@ AGENT_PERSONA_WHITELIST: dict[str, set[str]] = {
     "health_score":       {"default", "concise", "formal"},
     "calendar_suggester": {"default", "concise", "formal"},
     "action_executor":    {"default", "concise", "formal", "cheeky", "socratic", "custom"},
+    "meeting_classifier": {"default", "concise", "formal"},
+    "content_analyst":    {"default", "concise", "formal"},
 }
 
 
@@ -99,6 +108,8 @@ DEFAULT_RESULT = {
     "speaker_coach": {"speakers": [], "balance_score": 100},
     "decision_links": [],
     "suggested_actions": [],
+    "meeting_type": "standard",
+    "content_analysis": None,
     "agents_run": [],
 }
 
@@ -113,6 +124,8 @@ AGENT_RESULT_KEY = {
     "speaker_coach": "speaker_coach",
     "decision_linker": "decision_links",
     "action_executor": "suggested_actions",
+    "meeting_classifier": "meeting_type",
+    "content_analyst": "content_analysis",
 }
 
 
@@ -122,6 +135,7 @@ class AnalysisState(TypedDict, total=False):
     results: Annotated[dict, operator.or_]
     context: dict
     owner_name: str               # meeting owner — passed to email_drafter via context, NOT into the transcript
+    meeting_type: str             # '' | 'auto' | 'standard' | 'pitch' | 'interview_content' | 'interview_job'
     persona_preset: str           # 'default' | 'concise' | 'formal' | 'cheeky' | 'socratic' | 'custom'
     persona_custom_prompt: str    # only when persona_preset == 'custom'
 
@@ -150,7 +164,7 @@ def build_analysis_transcript(transcript: str, speakers: list | None = None, own
 
 async def _orchestrator_node(state: AnalysisState) -> dict:
     # Routing is now deterministic (no LLM call) — see agents/orchestrator.py.
-    agents = orchestrator.run_orchestrator(state["transcript"] or "")
+    agents = orchestrator.run_orchestrator(state["transcript"] or "", state.get("meeting_type"))
     return {"agents_to_run": [a for a in agents if a in AGENT_MAP]}
 
 
@@ -202,6 +216,18 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
     # transcript is the OTHER attendee.
     owner_name = (state.get("owner_name") or "").strip()
 
+    # Resolve the meeting type BEFORE Tier-2 so content_analyst knows which lens to
+    # apply. An explicit user pick wins; otherwise use the classifier's detection
+    # (it ran in Tier-1 only when the type was 'auto'). Falls back to 'standard'.
+    from agents.meeting_classifier import VALID_TYPES
+    explicit = (state.get("meeting_type") or "").strip().lower()
+    if explicit and explicit != "auto":
+        resolved_type = explicit if explicit in VALID_TYPES else "standard"
+    else:
+        resolved_type = r.get("meeting_classifier", {}).get("meeting_type", "standard")
+    if resolved_type not in VALID_TYPES:
+        resolved_type = "standard"
+
     return {
         "results": {"decision_linker": link_out},
         "context": {
@@ -211,6 +237,7 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
             "sentiment": r.get("sentiment", {}).get("sentiment", {}),
             "unactioned_decisions": unactioned_texts,
             "owner_name": owner_name,
+            "meeting_type": resolved_type,
         },
     }
 
@@ -332,6 +359,14 @@ def _state_to_result(state: AnalysisState) -> dict:
         if aer["suggested_actions"]:
             succeeded.append("action_executor")
 
+    # Resolved meeting type lives on the context the barrier built; the deep-dive
+    # card (content_analysis) is only kept when it's a specialized type.
+    result["meeting_type"] = state.get("context", {}).get("meeting_type", "standard")
+    car = raw.get("content_analyst", {}).get("content_analysis")
+    if car and car.get("type") in ("pitch", "interview_content", "interview_job") and car.get("rubric"):
+        result["content_analysis"] = car
+        succeeded.append("content_analyst")
+
     result["agents_run"] = succeeded
     return result
 
@@ -341,6 +376,7 @@ async def run_full_analysis(
     persona_preset: str | None = None,
     persona_custom_prompt: str | None = None,
     owner_name: str | None = None,
+    meeting_type: str | None = None,
 ) -> dict:
     initial: dict = {
         "transcript": transcript,
@@ -348,6 +384,7 @@ async def run_full_analysis(
         "results": {},
         "context": {},
         "owner_name": (owner_name or "").strip(),
+        "meeting_type": (meeting_type or "").strip().lower(),
     }
     if persona_preset:
         initial["persona_preset"] = persona_preset

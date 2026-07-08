@@ -16,6 +16,8 @@ import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
+import MeetingTypeControl from './dashboard/MeetingTypeControl'
+import { INPUT_TYPE_OPTIONS } from '../lib/meetingType'
 import LiveCatchup from './LiveCatchup'
 import StandInComposer from './StandInComposer'
 const ProxyProfile = lazy(() => import('./ProxyProfile'))
@@ -196,7 +198,7 @@ function MeetingActionsBar({
   )
 }
 
-function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, transcript }) {
+function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, transcript, meetingType, setMeetingType }) {
   if (loading) {
     return (
       <button type="button" onClick={cancelActiveAnalysis} className="w-full rounded-full border border-white/[0.10] py-2.5 text-sm font-semibold text-white/60 transition hover:bg-white/[0.05]">
@@ -205,14 +207,25 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
     )
   }
   return (
-    <button
-      type="button"
-      onClick={handleAnalyzeClick}
-      disabled={!transcript}
-      className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      Analyze Meeting
-    </button>
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <MeetingTypeControl
+          label="Type"
+          value={meetingType || 'auto'}
+          onChange={setMeetingType}
+          options={INPUT_TYPE_OPTIONS}
+          title="Auto detects pitch / interview meetings for a deeper, type-specific analysis. Pick one to force it."
+        />
+      </div>
+      <button
+        type="button"
+        onClick={handleAnalyzeClick}
+        disabled={!transcript}
+        className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Analyze Meeting
+      </button>
+    </div>
   )
 }
 

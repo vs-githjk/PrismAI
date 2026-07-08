@@ -31,11 +31,11 @@ class WhitelistTests(unittest.TestCase):
         import analysis_service
         importlib.reload(analysis_service)
 
-    def test_whitelist_has_all_9_agents(self):
+    def test_whitelist_has_all_agents(self):
         import analysis_service
         expected = {"summarizer", "decisions", "action_items", "sentiment",
                     "speaker_coach", "email_drafter", "health_score", "calendar_suggester",
-                    "action_executor"}
+                    "action_executor", "meeting_classifier", "content_analyst"}
         self.assertEqual(set(analysis_service.AGENT_PERSONA_WHITELIST), expected)
 
     def test_structured_agents_exclude_cheeky_and_socratic(self):

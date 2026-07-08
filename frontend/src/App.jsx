@@ -341,6 +341,8 @@ const DEFAULT_RESULT = {
   calendar_suggestion: { recommended: false, reason: '', suggested_timeframe: '', resolved_date: '', resolved_day: '' },
   health_score: { score: 0, verdict: '', badges: [], breakdown: { clarity: 0, action_orientation: 0, engagement: 0 } },
   speaker_coach: { speakers: [], balance_score: 100 },
+  meeting_type: 'standard',
+  content_analysis: null,
   agents_run: [],
 }
 
@@ -880,6 +882,9 @@ export default function App() {
 
   // Join Meeting state
   const [inputTab, setInputTab] = useState('join') // 'paste' | 'join'
+  // Content-analysis lens picked on the input surface. 'auto' = let the backend
+  // classify (default); an explicit pick skips the classifier. Sent on /analyze-stream.
+  const [meetingType, setMeetingType] = useState('auto')
   const [meetingUrl, setMeetingUrl] = useState('')
   const [joinMode, setJoinMode] = useState('utterance')  // pre-join response mode: 'utterance' | 'autonomous'
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
@@ -2355,6 +2360,8 @@ export default function App() {
           transcript: t,
           speakers: validSpeakers,
           owner_name: authSession?.user?.user_metadata?.full_name || null,
+          // Content-analysis lens ('auto' → backend classifies; else explicit).
+          meeting_type: meetingType || 'auto',
           // Persona — resolved client-side because /analyze-stream is unauthenticated.
           persona_preset: personaPreset || 'default',
           persona_custom_prompt: personaPreset === 'custom' ? (personaCustomPrompt || '') : null,
@@ -2399,6 +2406,9 @@ export default function App() {
               const meetingTitle = entry?.title || accumulated.summary?.slice(0, 65) || 'Meeting Analysis'
               void deliverMeetingRecap(meetingTitle, accumulated, entry?.id)
             }
+            // Reset the lens to Auto so a forced type doesn't carry to the next
+            // meeting (the result can still be re-lensed from the meeting view).
+            setMeetingType('auto')
             streamDone = true
             break
           }
@@ -2662,6 +2672,8 @@ export default function App() {
           exitDemoMode={exitDemoMode}
           inputTab={inputTab}
           setInputTab={setInputTab}
+          meetingType={meetingType}
+          setMeetingType={setMeetingType}
           inputModeMeta={inputModeMeta}
           transcript={transcript}
           setTranscriptForTab={setTranscriptForTab}

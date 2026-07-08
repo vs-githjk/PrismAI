@@ -10,10 +10,12 @@ No LLM call, no JSON-parse failure mode, consistent across short and long meetin
 
 # Agents the StateGraph can run. (decision_linker runs inside _tier1_barrier,
 # not as a graph node, so it is intentionally absent here.)
+# content_analyst always routes but early-returns (no LLM) for standard meetings;
+# meeting_classifier only runs when the type is auto-detected (see run_orchestrator).
 ALL_AGENTS = [
     "summarizer", "action_items", "decisions", "sentiment",
     "email_drafter", "calendar_suggester", "health_score", "speaker_coach",
-    "action_executor",
+    "action_executor", "content_analyst",
 ]
 
 
@@ -32,14 +34,21 @@ def _count_speakers(transcript: str) -> int:
     return len(speakers)
 
 
-def run_orchestrator(transcript: str) -> list[str]:
+def run_orchestrator(transcript: str, meeting_type: str | None = None) -> list[str]:
     """Decide which agents to run — deterministically.
 
     All agents run; sentiment is gated to multi-speaker meetings (a solo recording
     has no interpersonal dynamic to characterize). calendar_suggester always runs
     and self-decides whether a follow-up is recommended.
+
+    meeting_classifier runs only when the type is auto-detected (falsy / 'auto') —
+    when the user pre-picks a type there's nothing to classify. content_analyst is
+    always routed (it self-gates on the resolved type, no LLM for standard).
     """
     agents = list(ALL_AGENTS)
     if _count_speakers(transcript) < 2:
         agents = [a for a in agents if a != "sentiment"]
+    mt = (meeting_type or "").strip().lower()
+    if mt in ("", "auto"):
+        agents.append("meeting_classifier")
     return agents
