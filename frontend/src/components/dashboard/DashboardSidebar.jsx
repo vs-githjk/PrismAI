@@ -90,6 +90,7 @@ export default function DashboardSidebar(props) {
     setNewMeetingOpen,
     onOpenNewMeeting,
     newMeetingPanel,
+    newMeetingCollisionPadding,
     // Unauthenticated shell: a signed-out viewer (e.g. someone who opened a
     // live/share link) sees the chrome with every feature locked. Clicking a
     // locked feature calls onLockedFeature, which opens the sign-in gate.
@@ -192,9 +193,9 @@ export default function DashboardSidebar(props) {
               side="bottom"
               align="start"
               sideOffset={10}
-              collisionPadding={64}
+              collisionPadding={newMeetingCollisionPadding ?? 64}
               modal={false}
-              className="dashboard-island dashboard-body-font w-[340px] p-0"
+              className="dashboard-island dashboard-body-font w-[min(340px,calc(100vw-1.25rem))] p-0"
               // Inline style, not a Tailwind class: the base DropdownMenuContent class has
               // overflow-hidden, and `max-h-[var(...)]` arbitrary values get dropped by
               // tailwind-merge — so the height cap never applied and the popover ran off

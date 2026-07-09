@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Search } from 'lucide-react'
+import { ArrowLeft, Menu, Search } from 'lucide-react'
 import StatusIsland from './StatusIsland'
 
 /**
@@ -11,7 +11,7 @@ import StatusIsland from './StatusIsland'
  * When `onBack` is provided (i.e. a meeting is focused) a back arrow returns
  * to the previous non-meeting view; the Home sidebar item still works too.
  */
-export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature, onBack = null }) {
+export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature, onBack = null, onMenu = null }) {
   const trackRef = useRef(null)
   const textRef = useRef(null)
   const [shift, setShift] = useState(0) // px the title must travel to reveal its tail; 0 = no marquee
@@ -35,7 +35,18 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
   const overflowing = shift > 0
 
   return (
-    <header className="dashboard-topbar dashboard-island z-30 flex items-center gap-4 px-6">
+    <header className="dashboard-topbar dashboard-island z-30 flex items-center gap-3 px-4 sm:gap-4 sm:px-6">
+      {/* Mobile-only hamburger: opens the off-canvas nav drawer. */}
+      {onMenu && (
+        <button
+          type="button"
+          onClick={onMenu}
+          aria-label="Open menu"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/75 transition hover:border-cyan-400/45 hover:text-white lg:hidden"
+        >
+          <Menu className="h-[19px] w-[19px]" aria-hidden="true" />
+        </button>
+      )}
       {/* Left: optional back arrow + page title (marquee on overflow) + inline actions */}
       <div className="flex min-w-0 shrink items-center gap-3">
         {onBack && (
@@ -65,12 +76,13 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
           title and the search pill, and justify-center sits the island in the
           middle of that gap — so it stays equidistant from both and shifts as the
           title grows/shrinks. The title (left) absorbs squeeze via its marquee. */}
-      <div className="flex min-w-0 flex-1 items-center justify-center">
+      <div className="hidden min-w-0 flex-1 items-center justify-center sm:flex">
         <StatusIsland status={status} />
       </div>
 
-      {/* Right: global search pill */}
-      <div className="flex h-11 w-[clamp(200px,30vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-4 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.06]">
+      {/* Right: global search pill (shrinks on mobile; ml-auto keeps it right-aligned
+          when the center status island is hidden). */}
+      <div className="ml-auto flex h-11 w-[clamp(120px,26vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3.5 transition focus-within:border-cyan-400/45 focus-within:bg-white/[0.06] sm:ml-0 sm:px-4">
         <input
           value={signedOut ? '' : (searchValue || '')}
           onChange={(e) => onSearchChange?.(e.target.value)}

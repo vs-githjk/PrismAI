@@ -682,6 +682,9 @@ export default function DashboardPage(props) {
     if (typeof window === 'undefined') return false
     return window.matchMedia('(max-width: 1023px)').matches
   })
+  // Off-canvas nav drawer (mobile). Opened by the topbar hamburger; closed by the
+  // backdrop, Escape, navigating, or growing back to desktop width.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [pastSessions, setPastSessions] = useState([])
 
   useEffect(() => {
@@ -691,10 +694,20 @@ export default function DashboardPage(props) {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
     const mql = window.matchMedia('(max-width: 1023px)')
-    const handler = (e) => setIsNarrow(e.matches)
+    const handler = (e) => { setIsNarrow(e.matches); if (!e.matches) setMobileNavOpen(false) }
     mql.addEventListener?.('change', handler)
     return () => mql.removeEventListener?.('change', handler)
   }, [])
+
+  // Close the mobile drawer whenever the view or workspace changes (a nav/meeting
+  // tap), and on Escape.
+  useEffect(() => { setMobileNavOpen(false) }, [activeView, activeWorkspaceId])
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined
+    const handler = (e) => { if (e.key === 'Escape') setMobileNavOpen(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [mobileNavOpen])
 
   useEffect(() => {
     if (!chatOpen) return undefined
@@ -1041,6 +1054,7 @@ export default function DashboardPage(props) {
     props.setShowHistory?.(false)
     props.loadFromHistory?.(entry)
     persistView('meeting')
+    setMobileNavOpen(false)
   }
 
   // Open a meeting by id — fetches the full row first so this works even when the
@@ -1235,8 +1249,16 @@ export default function DashboardPage(props) {
 
   return (
     <div
-      className="landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]"
+      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--landing-text)]${mobileNavOpen ? ' nav-open' : ''}`}
     >
+      {/* Mobile drawer backdrop — taps close the nav. */}
+      {mobileNavOpen && (
+        <div
+          className="dashboard-nav-backdrop lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       {!signedOut && (
       <WorkspaceIsland
         user={props.user}
@@ -1275,6 +1297,7 @@ export default function DashboardPage(props) {
         onSearchChange={handleHistorySearchChange}
         signedOut={signedOut}
         onLockedFeature={requestSignIn}
+        onMenu={signedOut ? null : () => setMobileNavOpen(true)}
         onBack={activeView === 'meeting' ? goBackFromMeeting : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
@@ -1330,6 +1353,7 @@ export default function DashboardPage(props) {
         signOut={props.signOut}
         newMeetingOpen={newMeetingOpen}
         setNewMeetingOpen={setNewMeetingOpen}
+        newMeetingCollisionPadding={isNarrow ? 12 : 64}
         onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
         newMeetingPanel={
           <NewMeetingPanel

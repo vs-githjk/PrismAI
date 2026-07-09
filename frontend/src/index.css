@@ -1259,6 +1259,67 @@ h1, h2, h3, .font-display {
   }
 }
 
+/* ============================================================
+   MOBILE SHELL (≤1023px) — the fixed 300px sidebar + margin-content
+   layout is unusable on a phone (content shoved off-canvas). Below the
+   breakpoint the chrome collapses: full-width topbar with a hamburger,
+   the workspace island + sidebar become one off-canvas drawer, and the
+   content fills the width. Matches Tailwind's `lg` (1024px) and the
+   existing isNarrow (1023px) so JS + CSS agree.
+   ============================================================ */
+@media (max-width: 1023px) {
+  .dashboard-page {
+    --dashboard-edge: 12px;
+    --dashboard-gutter: 12px;
+  }
+
+  /* Topbar spans the full width; the hamburger (rendered in the topbar,
+     lg:hidden) opens the drawer. */
+  .dashboard-topbar {
+    left: var(--dashboard-edge);
+    right: var(--dashboard-edge);
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  /* Workspace island + sidebar slide in together as the drawer. Off-canvas
+     by default; `.nav-open` (toggled in DashboardPage) slides them in. */
+  .dashboard-workspace-island,
+  .dashboard-sidebar {
+    width: min(310px, 86vw);
+    transform: translateX(calc(-100% - var(--dashboard-edge) - 10px));
+    transition: transform 0.28s ease;
+    z-index: 60;
+  }
+  .dashboard-page.nav-open .dashboard-workspace-island,
+  .dashboard-page.nav-open .dashboard-sidebar {
+    transform: translateX(0);
+  }
+
+  /* Content fills the width (was margin-left ~342px for the fixed sidebar). */
+  .dashboard-content {
+    margin-left: var(--dashboard-edge);
+    margin-right: var(--dashboard-edge);
+  }
+  /* Home no longer fills a fixed viewport height — it stacks and the page
+     scrolls (the internal-scroll 2x2 grid only makes sense on desktop). */
+  .dashboard-content.is-home {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  /* Backdrop behind the open drawer. */
+  .dashboard-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 6, 12, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 55;
+  }
+}
+
 /* ---- Topbar title (marquee on overflow) ---- */
 .dashboard-title-track {
   overflow: hidden;
