@@ -725,13 +725,19 @@ export default function DashboardPage(props) {
     const merged = { ...(props.result || {}), ...patch }
     props.setResult(merged)
     if (props.meetingId) {
+      // Keep the in-memory history entry in sync too — Home cards and "reopen from
+      // history" read from `history`, so without this a re-lens / edit shows stale
+      // (e.g. the meeting-type override wouldn't reflect on Home or on reopen).
+      props.setHistory?.((prev) =>
+        prev.map((e) => (String(e.id) === String(props.meetingId) ? { ...e, result: merged } : e)),
+      )
       apiFetch(`/meetings/${props.meetingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result: merged }),
       }).catch(() => {})
     }
-  }, [props.result, props.meetingId, props.setResult])
+  }, [props.result, props.meetingId, props.setResult, props.setHistory])
 
   // Per-meeting chat history. ChatPanel saves the live thread continuously
   // (one growing session per meeting); this just (re)loads the session list —
