@@ -1592,6 +1592,62 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
     return segments or None
 
 
+# deepgram_async diarization labels speakers as bare cluster IDs (e.g. "500-1",
+# "100-0", "speaker 2") with NO participant-name mapping — Recall's live streaming
+# transcript is what carries the real names. A transcript whose prefixes are these
+# IDs makes the two per-speaker agents (sentiment, speaker_coach) analyse nameless
+# speakers. Detect that so we can recover names before analysis.
+_ANON_SPEAKER_RE = re.compile(r"^(?:speaker[\s_-]*)?\d+(?:[\s_-]+\d+)?$", re.I)
+
+
+def _line_speaker_label(line: str) -> str | None:
+    """The speaker prefix of a 'Speaker: text' line, or None if the line isn't one."""
+    if ":" not in line:
+        return None
+    head = line.split(":", 1)[0].strip()
+    if not head or len(head) > 48 or any(c in head for c in ".?!"):
+        return None
+    return head
+
+
+def _speakers_anonymous(transcript: str, threshold: float = 0.6) -> bool:
+    """True when most of the transcript's speaker prefixes are numeric diarization IDs
+    (no real names) — the signature of a deepgram_async transcript that lost participant
+    attribution."""
+    total = anon = 0
+    for line in transcript.split("\n"):
+        label = _line_speaker_label(line)
+        if label is None:
+            continue
+        total += 1
+        if _ANON_SPEAKER_RE.match(label):
+            anon += 1
+    return total > 0 and (anon / total) >= threshold
+
+
+def _relabel_segments_by_overlap(anon_segments: list[dict], named_segments: list[dict]) -> list[dict]:
+    """Map each anonymously-labelled segment to the named live segment it overlaps most in
+    time (recording-relative seconds), recovering real participant names on the more-
+    accurate async transcript. Both segment lists share the {speaker,start,end,text} shape
+    and recording-relative timing. Segments overlapping nothing keep their original label."""
+    out: list[dict] = []
+    for seg in anon_segments:
+        s0 = float(seg.get("start") or 0.0)
+        s1 = float(seg.get("end") or s0)
+        best_name, best_ov = None, 0.0
+        for ns in named_segments:
+            n0 = float(ns.get("start") or 0.0)
+            n1 = float(ns.get("end") or n0)
+            ov = min(s1, n1) - max(s0, n0)
+            if ov > best_ov:
+                best_ov, best_name = ov, ns.get("speaker")
+        new = dict(seg)
+        if best_name and not _ANON_SPEAKER_RE.match(str(best_name)):
+            new["speaker"] = best_name
+        out.append(new)
+    return out
+
+
 def _resolve_owner_workspace(bot_id: str) -> tuple[str | None, str | None]:
     """Best-effort (owner_user_id, workspace_id) for a bot, durable across a restart.
     Precedence: a stand-in rep → the live bot_store entry → the meeting_bots row.
@@ -1785,6 +1841,31 @@ async def _process_bot_transcript(bot_id: str):
             if rt_segments:
                 segments = rt_segments
                 print(f"[recall] using {len(rt_segments)} realtime-buffer segments for playback sync")
+
+        # Speaker-name recovery: a deepgram_async (Lever B) transcript diarizes speakers as
+        # bare numeric IDs (e.g. "500-1") with no participant mapping — which reads fine in
+        # summary/action-items (owners come from spoken content) but breaks sentiment +
+        # speaker_coach (the per-speaker agents key off the prefix). Recall's live streaming
+        # transcript DOES carry real names. When the chosen transcript is anonymous:
+        #   1. If we have named live segments, relabel by time-overlap → keep async wording
+        #      + seekable timing + real names.
+        #   2. Else fall back to the named live transcript entirely (names >> marginal async
+        #      spelling gain). This also restores click-to-seek for those meetings.
+        if transcript.strip() and _speakers_anonymous(transcript):
+            named_segs = bot_store.get(bot_id, {}).get("realtime_segments") or []
+            if segments and named_segs and _speakers_anonymous(
+                "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+            ):
+                segments = _relabel_segments_by_overlap(segments, named_segs)
+                transcript = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+                print(f"[recall] recovered speaker names via time-overlap relabel ({len(segments)} segments)")
+            elif rt_lines and not _speakers_anonymous("\n".join(rt_lines)):
+                transcript = "\n".join(rt_lines)
+                if named_segs:
+                    segments = named_segs
+                print(f"[recall] anonymous async speakers — fell back to named live transcript ({len(rt_lines)} lines)")
+            else:
+                print("[recall] transcript has anonymous speakers but no named source to recover from")
 
         if not transcript.strip():
             error_msg = "No transcript content found — the meeting may have been too short or had no speech"

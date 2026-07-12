@@ -454,5 +454,61 @@ class HumanWordCountTestCase(unittest.TestCase):
         self.assertEqual(recall_routes._human_word_count(""), 0)
 
 
+class AnonymousSpeakerRecoveryTestCase(unittest.TestCase):
+    """deepgram_async diarization emits numeric speaker IDs with no participant names;
+    the two per-speaker agents (sentiment, speaker_coach) then analyse nameless speakers.
+    These guard the detection + name-recovery logic."""
+
+    def test_numeric_diarization_labels_are_anonymous(self):
+        transcript = "\n".join([
+            "500-1: So there's two important things.",
+            "100-0: Fine. What's this meeting for?",
+            "200-2: Hello.",
+        ])
+        self.assertTrue(recall_routes._speakers_anonymous(transcript))
+
+    def test_speaker_word_form_is_anonymous(self):
+        transcript = "speaker 0: hi\nspeaker 1: hey there"
+        self.assertTrue(recall_routes._speakers_anonymous(transcript))
+
+    def test_real_names_are_not_anonymous(self):
+        transcript = "\n".join([
+            "Vidyut Sriram: Let's spend the budget on screens.",
+            "Ishaan Narang: Sounds good to me.",
+            "Glow: I'll take notes.",
+        ])
+        self.assertFalse(recall_routes._speakers_anonymous(transcript))
+
+    def test_mixed_below_threshold_not_anonymous(self):
+        # One numeric line among real names stays under the 0.6 anon threshold.
+        transcript = "\n".join([
+            "Vidyut Sriram: hi",
+            "Ishaan Narang: hey",
+            "500-1: yeah",
+        ])
+        self.assertFalse(recall_routes._speakers_anonymous(transcript))
+
+    def test_relabel_by_overlap_recovers_names(self):
+        anon = [
+            {"speaker": "500-1", "start": 0.0, "end": 5.0, "text": "budget talk"},
+            {"speaker": "100-0", "start": 5.0, "end": 9.0, "text": "what's this for"},
+        ]
+        named = [
+            {"speaker": "Vidyut Sriram", "start": 0.2, "end": 4.8, "text": "budget"},
+            {"speaker": "Ishaan Narang", "start": 5.1, "end": 8.9, "text": "what for"},
+        ]
+        out = recall_routes._relabel_segments_by_overlap(anon, named)
+        self.assertEqual(out[0]["speaker"], "Vidyut Sriram")
+        self.assertEqual(out[1]["speaker"], "Ishaan Narang")
+        # Text (async wording) is preserved — only the label changes.
+        self.assertEqual(out[0]["text"], "budget talk")
+
+    def test_relabel_keeps_label_when_no_overlap(self):
+        anon = [{"speaker": "500-1", "start": 100.0, "end": 105.0, "text": "x"}]
+        named = [{"speaker": "Vidyut Sriram", "start": 0.0, "end": 5.0, "text": "y"}]
+        out = recall_routes._relabel_segments_by_overlap(anon, named)
+        self.assertEqual(out[0]["speaker"], "500-1")
+
+
 if __name__ == "__main__":
     unittest.main()
