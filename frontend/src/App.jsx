@@ -2030,6 +2030,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ share_token: token }),
       }).catch(() => {})
+      // Reflect the generated token in history — otherwise reopening this meeting
+      // sees no token and mints a NEW one, overwriting the DB and invalidating any
+      // share link already sent out.
+      setHistory((prev) => prev.map((e) => (e.id === entry.id ? { ...e, share_token: token } : e)))
     }
     setShareToken(token)
     setSessionId(s => s + 1)
@@ -2453,13 +2457,17 @@ export default function App() {
     const updatedResult = { ...snapshot, action_items: updated }
     setResult(updatedResult)
     if (meetingId) {
+      // Sync the history entry too, or Home's open-action-items + reopening the
+      // meeting show the pre-toggle state (the Home-side toggle already does this).
+      setHistory((prev) => prev.map((e) => (String(e.id) === String(meetingId) ? { ...e, result: updatedResult } : e)))
       apiFetch(`/meetings/${meetingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result: updatedResult }),
       }).catch(() => {
-        // Revert optimistic update if persist fails
+        // Revert optimistic update (both live + history) if persist fails
         setResult(snapshot)
+        setHistory((prev) => prev.map((e) => (String(e.id) === String(meetingId) ? { ...e, result: snapshot } : e)))
       })
     }
   }
