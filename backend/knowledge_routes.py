@@ -75,6 +75,44 @@ def _coerce_meeting_id(value) -> Optional[int]:
         return None
 
 
+async def _sibling_meeting_ids(sb, meeting_id: int) -> list[int]:
+    """All meeting-row ids that are the SAME logical meeting as `meeting_id`.
+
+    In a workspace each member holds their own fan-out copy of a meeting, each with a
+    DIFFERENT id. A doc pinned by the owner carries the owner's copy id — so a teammate
+    viewing their own copy (a different id) wouldn't see the pin. Resolve every copy that
+    shares the recall_bot_id (bot meetings) or the (workspace_id, date) pair (uploads), so
+    a pin surfaces on all copies. Always includes the original id. Best-effort → [id]."""
+    ids = {meeting_id}
+    try:
+        resp = await _execute(
+            sb.table("meetings").select("recall_bot_id,workspace_id,date")
+            .eq("id", meeting_id).limit(1)
+        )
+        row = (resp.data or [None])[0] if resp else None
+        if not row:
+            return list(ids)
+        bot_id = row.get("recall_bot_id")
+        ws_id = row.get("workspace_id")
+        date = row.get("date")
+        if bot_id:
+            sib = await _execute(
+                sb.table("meetings").select("id").eq("recall_bot_id", bot_id)
+            )
+        elif ws_id and date:
+            sib = await _execute(
+                sb.table("meetings").select("id").eq("workspace_id", ws_id).eq("date", date)
+            )
+        else:
+            sib = None
+        for r in ((sib.data if sib else None) or []):
+            if r.get("id") is not None:
+                ids.add(int(r["id"]))
+    except Exception as exc:
+        print(f"[knowledge] sibling meeting resolve failed for {meeting_id}: {exc}")
+    return list(ids)
+
+
 async def _insert_doc_row(sb, *, user_id: str, name: str, source_type: str,
                           source_url: Optional[str] = None, file_path: Optional[str] = None,
                           size_bytes: Optional[int] = None, meeting_id: Optional[str] = None,
@@ -208,7 +246,13 @@ async def list_docs(
         # Pinned docs for a meeting — still scoped to docs the caller can access
         # (their own, or shared into a workspace they belong to).
         ws_ids = get_user_workspace_ids(sb, user_id)
-        q = q.eq("meeting_id", mid)
+        # A pin carries the pinner's meeting-copy id; teammates hold other copies of the
+        # same logical meeting. Match every sibling id so the pin shows on all copies.
+        sib_ids = await _sibling_meeting_ids(sb, mid)
+        if len(sib_ids) > 1:
+            q = q.in_("meeting_id", sib_ids)
+        else:
+            q = q.eq("meeting_id", mid)
         if ws_ids:
             q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
         else:
