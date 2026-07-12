@@ -184,7 +184,7 @@ def _looks_like_bot_participant(name: str, raw: dict) -> bool:
     nm = (name or "").strip().lower()
     if nm in _BOT_SELF_NAMES:
         return True
-    # Tolerate the branded display name ("PrismAI Notetaker") and stand-in names
+    # Tolerate the branded display name ("PrismAI") and stand-in names
     # ("<owner> (PrismAI stand-in)") — both are our bot, not a human.
     return nm.startswith("prismai") or "(prismai stand-in)" in nm
 

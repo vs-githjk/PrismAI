@@ -61,10 +61,10 @@ RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # Branded bot join (#4): the in-meeting display name + a static logo tile shown as
-# the bot's camera output so it reads as "PrismAI Notetaker" with our mark rather
-# than a bare "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9,
-# <=1.3MB) generated from the app logo (backend/assets/bot_tile.jpg).
-BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI Notetaker")
+# the bot's camera output so it reads as "PrismAI" with our mark rather than a bare
+# "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9, <=1.3MB)
+# generated from the app logo (backend/assets/bot_tile.jpg).
+BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI")
 # Live-streaming keyterm grounding is OFF by default — it broke Deepgram nova-3
 # streaming transcription (no transcript.data events / empty transcript). Grounding
 # still applies in the async batch re-transcription path. Flip to "1" to re-test.

@@ -373,7 +373,7 @@ class BrandedBotTestCase(unittest.TestCase):
     def test_default_display_name_is_branded(self):
         body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
         self.assertEqual(body["bot_name"], recall_routes.BOT_DISPLAY_NAME)
-        self.assertEqual(recall_routes.BOT_DISPLAY_NAME, "PrismAI Notetaker")
+        self.assertEqual(recall_routes.BOT_DISPLAY_NAME, "PrismAI")
 
     def test_explicit_bot_name_wins(self):
         body = recall_routes._recall_bot_create_json(
