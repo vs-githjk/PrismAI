@@ -1,4 +1,4 @@
-import { Quote, ThumbsDown, ThumbsUp, Sparkles } from 'lucide-react'
+import { Quote, ThumbsDown, ThumbsUp, Sparkles, ShieldQuestion } from 'lucide-react'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
 
 function scoreColor(s) {
@@ -16,7 +16,7 @@ function scoreColor(s) {
 // here we lead with the verdict + per-dimension breakdown.
 export default function ContentAnalysisCard({ analysis }) {
   if (!analysis) return null
-  const { type_label, score_label, headline_score, verdict, rubric = [], strengths = [], weaknesses = [], key_moments = [] } = analysis
+  const { type_label, score_label, headline_score, verdict, rubric = [], strengths = [], weaknesses = [], key_moments = [], authenticity_signals = [], authenticity_note } = analysis
 
   return (
     <section className={`${glassCard} p-5`} style={cardGlowStyle}>
@@ -118,6 +118,29 @@ export default function ContentAnalysisCard({ analysis }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {authenticity_signals.length > 0 && (
+        <div className="mt-4 border-t border-white/[0.07] pt-4">
+          <div className="mb-2 flex items-center gap-1.5">
+            <ShieldQuestion className="h-3.5 w-3.5 text-amber-300/80" aria-hidden="true" />
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-300/80">Authenticity signals</p>
+          </div>
+          {/* Heuristic only — reliable AI detection does not exist. Never a verdict. */}
+          <p className="mb-2.5 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 text-[11.5px] leading-5 text-amber-100/70">
+            Heuristic writing patterns, <span className="font-semibold">not proof</span> of AI use — automated AI detection is unreliable. Read these as observations, not a judgment.
+          </p>
+          <ul className="space-y-1">
+            {authenticity_signals.map((s, i) => (
+              <li key={i} className="flex gap-1.5 text-[12.5px] leading-5 text-white/72">
+                <span className="text-amber-300/60">·</span><span>{s}</span>
+              </li>
+            ))}
+          </ul>
+          {authenticity_note && (
+            <p className="mt-2 text-[12px] italic leading-5 text-white/55">{authenticity_note}</p>
+          )}
         </div>
       )}
     </section>

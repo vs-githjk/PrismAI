@@ -7,6 +7,7 @@ export const MEETING_TYPES = [
   { value: 'pitch',             label: 'Pitch / Presentation', short: 'Pitch',    accent: '#a78bfa' },
   { value: 'interview_content', label: 'Content interview',   short: 'Interview', accent: '#f472b6' },
   { value: 'interview_job',     label: 'Job interview',       short: 'Candidate', accent: '#fbbf24' },
+  { value: 'article',           label: 'Article / Report',    short: 'Article',   accent: '#34d399' },
 ]
 
 // 'auto' is an input-time choice only (server detects) — never a resolved value.
@@ -15,7 +16,7 @@ export const AUTO_OPTION = { value: 'auto', label: 'Auto-detect', short: 'Auto',
 // Options for the New-Meeting input picker (Auto first, default).
 export const INPUT_TYPE_OPTIONS = [AUTO_OPTION, ...MEETING_TYPES]
 
-const SPECIAL = new Set(['pitch', 'interview_content', 'interview_job'])
+const SPECIAL = new Set(['pitch', 'interview_content', 'interview_job', 'article'])
 
 // A "special" type gets the deep-dive card + its own headline score (health ring
 // is the wrong lens for it). Standard / auto / unknown → false.

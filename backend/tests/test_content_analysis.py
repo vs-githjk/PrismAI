@@ -114,6 +114,29 @@ class ContentAnalystTests(unittest.TestCase):
         self.assertEqual(ca["headline_score"], 70)
         self.assertEqual(len(ca["rubric"]), 1)
 
+    def test_article_includes_authenticity_signals(self):
+        payload = {
+            "headline_score": 64,
+            "rubric": [{"dimension": "Thesis & clarity", "score": 70}],
+            "authenticity_signals": ["Uniform sentence cadence throughout", "Little first-hand detail"],
+            "authenticity_note": "Some patterns are consistent with AI assistance, but this is not conclusive.",
+        }
+        with patch.object(content_analyst, "llm_call", new=_fake_llm(payload)):
+            out = asyncio.run(content_analyst.run("An essay about X.", {"meeting_type": "article"}))
+        ca = out["content_analysis"]
+        self.assertEqual(ca["type"], "article")
+        self.assertEqual(ca["score_label"], "Writing quality")
+        self.assertEqual(len(ca["authenticity_signals"]), 2)
+        self.assertIn("not conclusive", ca["authenticity_note"])
+
+    def test_non_article_has_no_authenticity_field(self):
+        payload = {"headline_score": 70, "rubric": [{"dimension": "d", "score": 70}],
+                   "authenticity_signals": ["should be ignored"]}
+        with patch.object(content_analyst, "llm_call", new=_fake_llm(payload)):
+            out = asyncio.run(content_analyst.run("A: pitch", {"meeting_type": "pitch"}))
+        # authenticity is article-only — a pitch must not carry it even if the model emits it.
+        self.assertNotIn("authenticity_signals", out["content_analysis"])
+
     def test_bad_json_returns_shell_with_type(self):
         async def _boom(system, user):
             return "}{ broken"
@@ -134,7 +157,7 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("meeting_classifier", run_orchestrator(self.TWO_SPEAKER, "auto"))
 
     def test_explicit_type_skips_classifier(self):
-        for t in ("standard", "pitch", "interview_content", "interview_job"):
+        for t in ("standard", "pitch", "interview_content", "interview_job", "article"):
             self.assertNotIn("meeting_classifier", run_orchestrator(self.TWO_SPEAKER, t),
                              f"explicit '{t}' should not run the classifier")
 

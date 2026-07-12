@@ -363,7 +363,7 @@ def _state_to_result(state: AnalysisState) -> dict:
     # card (content_analysis) is only kept when it's a specialized type.
     result["meeting_type"] = state.get("context", {}).get("meeting_type", "standard")
     car = raw.get("content_analyst", {}).get("content_analysis")
-    if car and car.get("type") in ("pitch", "interview_content", "interview_job") and car.get("rubric"):
+    if car and car.get("type") in ("pitch", "interview_content", "interview_job", "article") and car.get("rubric"):
         result["content_analysis"] = car
         succeeded.append("content_analyst")
 

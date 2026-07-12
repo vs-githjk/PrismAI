@@ -52,21 +52,52 @@ RUBRICS = {
             "Role fit & motivation — alignment with the role and genuine interest",
         ],
     },
+    "article": {
+        "type_label": "Article / Report",
+        "score_label": "Writing quality",
+        "role": "an editorial analyst evaluating a written article, essay, or report",
+        "dimensions": [
+            "Thesis & clarity — is the central point clear and well-framed",
+            "Structure & flow — logical organization and transitions",
+            "Argument & evidence — claims backed by facts, data, examples, or sources",
+            "Originality & insight — fresh thinking vs. generic restatement",
+            "Style & readability — voice, precision, and prose quality",
+        ],
+        # Article-only: surface heuristic AI-assistance SIGNALS (never a verdict).
+        "authenticity": True,
+    },
 }
 
 
 def _build_prompt(cfg: dict) -> str:
     dims = "\n".join(f"  - {d}" for d in cfg["dimensions"])
+    # Article-only: heuristic AI-assistance SIGNALS, framed as neutral observations
+    # — never a probability or verdict (reliable AI detection is impossible).
+    auth_instr = (
+        "\n\nAdditionally, list AUTHENTICITY SIGNALS — observable writing patterns that MIGHT "
+        "suggest AI assistance (uniform sentence cadence, generic phrasing, low specificity / no "
+        "first-hand detail, reflexive hedging, over-tidy list structure, absent personal voice). "
+        "Frame each as a neutral OBSERVATION, not an accusation. Do NOT output any probability, "
+        "percentage, or verdict — reliable AI detection is impossible. When the prose shows strong "
+        "human specificity or a distinct voice, say so as a signal too."
+        if cfg.get("authenticity") else ""
+    )
+    auth_fields = (
+        ',\n  "authenticity_signals": ["short neutral observation", …],\n'
+        '  "authenticity_note": "one hedged sentence — what the signals suggest, explicitly uncertain"'
+        if cfg.get("authenticity") else ""
+    )
     return (
         f"You are {cfg['role']}. Give a rigorous, specific, evidence-grounded breakdown. "
-        "Be candid — praise what works, name what doesn't, and cite the transcript. "
+        "Be candid — praise what works, name what doesn't, and cite the text. "
         "Score each dimension 0-100 and compute a single headline score (a weighted sense "
         "of the whole, NOT a rote average — the most important dimensions matter more).\n\n"
         f"Score these dimensions:\n{dims}\n\n"
         "For each dimension give: a 0-100 score, a ONE-sentence note (concrete, actionable), "
-        "and a short supporting quote from the transcript (evidence — empty string if none fits). "
-        "Then give overall strengths, weaknesses, and up to 4 key moments (a labelled turning "
-        "point with a quote and why it mattered — strong or weak). Keep every string tight.\n\n"
+        "and a short supporting quote from the text (evidence — empty string if none fits). "
+        "Then give overall strengths, weaknesses, and up to 4 key moments (a labelled notable "
+        "passage with a quote and why it mattered — strong or weak). Keep every string tight."
+        f"{auth_instr}\n\n"
         "CRITICAL: respond with ONLY the raw JSON object — no markdown fences, no commentary, "
         "no text before the opening brace or after the closing brace:\n"
         "{\n"
@@ -77,7 +108,7 @@ def _build_prompt(cfg: dict) -> str:
         '  "rubric": [{ "dimension": "short name", "score": 0, "notes": "…", "evidence": "quote or empty" }],\n'
         '  "strengths": ["…"],\n'
         '  "weaknesses": ["…"],\n'
-        '  "key_moments": [{ "label": "…", "quote": "…", "note": "why it mattered" }]\n'
+        f'  "key_moments": [{{ "label": "…", "quote": "…", "note": "why it mattered" }}]{auth_fields}\n'
         "}"
     )
 
@@ -133,7 +164,7 @@ async def run(transcript: str, context: dict | None = None) -> dict:
                     "quote": str(m.get("quote", ""))[:300],
                     "note": str(m.get("note", ""))[:300],
                 })
-            return {"content_analysis": {
+            out = {
                 "type": mtype,
                 "type_label": data.get("type_label") or cfg["type_label"],
                 "score_label": data.get("score_label") or cfg["score_label"],
@@ -143,7 +174,12 @@ async def run(transcript: str, context: dict | None = None) -> dict:
                 "strengths": [str(s)[:300] for s in (data.get("strengths") or [])[:6]],
                 "weaknesses": [str(w)[:300] for w in (data.get("weaknesses") or [])[:6]],
                 "key_moments": moments,
-            }}
+            }
+            # Article-only: heuristic authenticity signals (observations, never a verdict).
+            if cfg.get("authenticity"):
+                out["authenticity_signals"] = [str(s)[:200] for s in (data.get("authenticity_signals") or [])[:8]]
+                out["authenticity_note"] = str(data.get("authenticity_note", ""))[:400]
+            return {"content_analysis": out}
         except Exception:
             if attempt == 1:
                 # Signal type so the UI can still badge it, without a broken card.

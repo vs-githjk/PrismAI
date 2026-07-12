@@ -3,7 +3,7 @@ from .utils import strip_fences, llm_call
 
 # The vocabulary the whole content-analysis feature keys on. Keep in sync with
 # content_analyst.RUBRICS and the frontend meeting-type selector.
-VALID_TYPES = ("standard", "pitch", "interview_content", "interview_job")
+VALID_TYPES = ("standard", "pitch", "interview_content", "interview_job", "article")
 
 SYSTEM_PROMPT = (
     "You classify a recorded conversation into exactly one type so the right analysis "
@@ -14,9 +14,11 @@ SYSTEM_PROMPT = (
     "guest questions to draw OUT their story, expertise, or opinions (the value is the guest's answers).\n"
     "- 'interview_job': a hiring/job interview where an interviewer EVALUATES a candidate for a role "
     "(the value is judging the candidate's fit, skills, and answers).\n"
+    "- 'article': written prose that is NOT a conversation — an article, essay, report, blog post, "
+    "or feature story. Continuous authored text (may quote people) rather than a back-and-forth dialogue.\n"
     "- 'standard': anything else — a normal working meeting, standup, 1-on-1, brainstorm, "
     "sync, or discussion among peers.\n"
-    "Default to 'standard' unless the transcript clearly matches one of the specialized types. "
+    "Default to 'standard' unless the text clearly matches one of the specialized types. "
     'Return ONLY valid JSON: { "meeting_type": "standard", "confidence": 0.0, "reason": "one short phrase" }. '
     "confidence is 0.0-1.0."
 )
