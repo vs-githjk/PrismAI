@@ -1012,6 +1012,28 @@ export default function App() {
     }
   }, [history]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep the OPEN meeting in sync with freshly-fetched history. The restore above only
+  // loads a meeting once (latched), so after that a newer copy arriving in history — a
+  // backend-side change, a teammate's edit, a re-fan-out — would stay invisible until
+  // the tab is dropped. Whenever history refreshes with a different copy of the meeting
+  // that's currently open, reconcile `result`/`shareToken` to it. Server/history is the
+  // source of truth for SAVED state (the three-copy invariant), and same-tab edits write
+  // result + history together, so for those the entry matches and this is a no-op. Skips
+  // while a fresh analysis is running so an in-flight run isn't clobbered.
+  useEffect(() => {
+    if (!meetingId || loading) return
+    const entry = history.find((e) => String(e.id) === String(meetingId))
+    if (!entry || !hasMeaningfulResult(entry.result)) return
+    setResult((cur) => {
+      try {
+        return JSON.stringify(cur) === JSON.stringify(entry.result) ? cur : entry.result
+      } catch {
+        return entry.result
+      }
+    })
+    if (entry.share_token) setShareToken((t) => t || entry.share_token)
+  }, [history, meetingId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const titleBackfillDone = useRef(false)
   useEffect(() => {
     if (!user || isTestAccount || history.length === 0 || titleBackfillDone.current) return

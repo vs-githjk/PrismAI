@@ -445,13 +445,28 @@ export default function ChatPanel({
         }[agentIntent]
 
         if (agentKey && data[agentKey] !== undefined) {
-          prevResultRef.current = { [agentKey]: result[agentKey] }
-          onResultUpdate({ [agentKey]: data[agentKey] })
-          setMessages((prev) => [...prev, {
-            role: 'assistant',
-            content: `Done — I've updated the ${agentIntent.replace(/_/g, ' ')} card with your changes.`,
-            agentUpdated: agentIntent,
-          }])
+          // Only claim success when the card actually changed. A re-run can reproduce
+          // identical content (asking to change something already true, or the model
+          // ignoring the instruction) — reporting "updated" then is misleading and
+          // looks like a silent failure.
+          let changed = true
+          try {
+            changed = JSON.stringify(data[agentKey]) !== JSON.stringify(result[agentKey])
+          } catch { changed = true }
+          if (changed) {
+            prevResultRef.current = { [agentKey]: result[agentKey] }
+            onResultUpdate({ [agentKey]: data[agentKey] })
+            setMessages((prev) => [...prev, {
+              role: 'assistant',
+              content: `Done — I've updated the ${agentIntent.replace(/_/g, ' ')} card with your changes.`,
+              agentUpdated: agentIntent,
+            }])
+          } else {
+            setMessages((prev) => [...prev, {
+              role: 'assistant',
+              content: `The re-run came back with the same ${agentIntent.replace(/_/g, ' ')} — nothing changed. It may already reflect what you asked; try being more specific about what to change.`,
+            }])
+          }
         } else {
           throw new Error('No result')
         }
