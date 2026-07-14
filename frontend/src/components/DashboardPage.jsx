@@ -221,10 +221,14 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
         type="button"
         onClick={handleAnalyzeClick}
         disabled={!transcript}
+        title={!transcript ? 'Add a transcript first' : undefined}
         className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
       >
         Analyze Meeting
       </button>
+      {!transcript && (
+        <p className="text-center text-[11px] text-white/40">Paste, upload, record, or join a meeting to analyze.</p>
+      )}
     </div>
   )
 }
