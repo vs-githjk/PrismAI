@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Eye, FileText, Globe, RefreshCw, Trash2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Eye, FileText, Globe, RefreshCw, Trash2, Check, X, Loader2 } from 'lucide-react'
 import { deleteDoc, resyncDoc, updateDoc } from '../lib/knowledge'
 import { glassCard, cardGlowStyle, subtleText } from './dashboard/dashboardStyles'
 import KnowledgeDocViewer from './KnowledgeDocViewer'
@@ -19,14 +19,36 @@ const STATUS_META = {
 
 export default function KnowledgeDocCard({ doc, onChange }) {
   const [viewing, setViewing] = useState(false)
+  const [confirming, setConfirming] = useState(false)  // inline delete confirm (no native confirm())
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const confirmTimer = useRef(null)
   const Icon = doc.source_type === 'url' ? Globe : FileText
   const sens = SENSITIVITY_META[doc.sensitivity] || SENSITIVITY_META.internal
   const status = STATUS_META[doc.status] || { label: doc.status, dot: 'bg-white/40' }
 
-  const handleDelete = async () => {
-    if (!confirm(`Delete "${doc.name}"?`)) return
-    await deleteDoc(doc.id)
-    onChange?.()
+  // Two-step delete: first click arms it (auto-cancels after 4s), second confirms.
+  const armDelete = () => {
+    setDeleteError('')
+    setConfirming(true)
+    clearTimeout(confirmTimer.current)
+    confirmTimer.current = setTimeout(() => setConfirming(false), 4000)
+  }
+  const cancelDelete = () => {
+    clearTimeout(confirmTimer.current)
+    setConfirming(false)
+  }
+  const confirmDelete = async () => {
+    clearTimeout(confirmTimer.current)
+    setDeleting(true)
+    try {
+      await deleteDoc(doc.id)
+      onChange?.()
+    } catch {
+      setDeleting(false)
+      setConfirming(false)
+      setDeleteError('Could not delete — please try again.')
+    }
   }
 
   const handleResync = async () => {
@@ -102,16 +124,41 @@ export default function KnowledgeDocCard({ doc, onChange }) {
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
-          <button
-            onClick={handleDelete}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/55 transition hover:border-rose-400/30 hover:text-rose-300"
-            title="Delete"
-            aria-label="Delete document"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {deleting ? (
+            <span className="flex h-7 w-7 items-center justify-center text-rose-300" aria-label="Deleting">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            </span>
+          ) : confirming ? (
+            <>
+              <button
+                onClick={confirmDelete}
+                className="flex h-7 items-center justify-center gap-1 rounded-lg border border-rose-400/40 bg-rose-400/15 px-2 text-[11px] font-medium text-rose-200 transition hover:bg-rose-400/25"
+                aria-label={`Confirm delete ${doc.name}`}
+              >
+                <Check className="h-3.5 w-3.5" /> Delete
+              </button>
+              <button
+                onClick={cancelDelete}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/55 transition hover:border-white/[0.2] hover:text-white/80"
+                aria-label="Cancel delete"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={armDelete}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/55 transition hover:border-rose-400/30 hover:text-rose-300"
+              title="Delete"
+              aria-label="Delete document"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
+
+      {deleteError && <p className="text-[11px] text-rose-300/90">{deleteError}</p>}
 
       <KnowledgeDocViewer doc={doc} open={viewing} onOpenChange={setViewing} />
     </section>
