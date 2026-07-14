@@ -106,6 +106,56 @@ Priority = severity × reach ÷ effort. Output = one ranked backlog.
 
 ---
 
-## BACKLOG (populated in Phase 0 — empty until the audit runs)
+## BACKLOG — Phase 0 audit findings (breadth pass, Jul 14)
 
-_(ranked findings land here)_
+**Method:** cross-cutting code scans (grep-verified across all 56 frontend components) + line reads of the core surfaces (App.jsx input flow, DashboardPage, MeetingView, ChatPanel, SuggestedActions). Each finding: lens · evidence · effort(S/M/L) · reach. Priority = trust-impact × reach ÷ effort.
+**Coverage honesty:** systemic findings below are hard-verified. Surface-specific items tagged `[deep-dive]` get a line-by-line read during their grouped fix PR (listed at the bottom).
+
+### TIER P0 — highest trust-per-effort (systemic, do first)
+
+**Group A — Component consistency (theme #5)**
+- **A1. Shared `ui/button` has ZERO adoption.** 34 files, **186 raw `<button>`, 0 import `ui/button`.** Every button is bespoke → inconsistent size/state/focus/disabled. *Consistency · verified · M · huge reach.* → finalize a Button variant set, migrate area-by-area.
+- **A2. Modal fragmentation.** 7 hand-rolled `fixed inset-0` overlays (ChatPanel, StandInComposer, SuggestedActions, …) vs 4 on shared `ui/dialog` → inconsistent overlay/blur/escape/focus-trap/scroll-lock. *Consistency + a11y · verified · M.* → one Dialog, migrate all.
+- **A3. Fragmented feedback/toasts.** ≥5 mechanisms: `notifyStatus`, `setWorkspaceToast`, `StatusIsland`, `setIntegrationToast`, `setInviteStatus`. *Consistency · verified · M.* → one toast/status system.
+
+**Group B — Reliability (theme #1)**
+- **B1. Raw `fetch()` bypasses `apiFetch`** in LiveCatchup, IntegrationsModal (×2), LiveMeetingView → they SKIP the new `cache:'no-store'` fix (+ auth on authed ones). Reopens the stale-data class we just closed. *Reliability · verified · S.* → route through apiFetch (or a shared no-store fetch for token-gated public calls).
+- **B2. 54 swallowed `catch {}`.** Some legit best-effort; several hide real failures (no toast/retry). *Reliability/error-recovery · verified · M — audit each.*
+- **B3. Leftover `console.*`** in App.jsx, ChatPanel, IntegrationsModal. *Polish · S.*
+
+**Group C — Accessibility (theme #1/#5)**
+- **C1. Icon-only buttons missing `aria-label`.** 186 buttons / 47 aria-labels → many unlabeled icon buttons (screen-reader + missing tooltips). *A11y · verified · M.*
+- **C2. Native `confirm()` for destructive delete** (KnowledgeDocCard) — inconsistent, blocking, ugly. *Consistency/UX · verified · S.* → shared confirm dialog.
+
+### TIER P1 — transparency + ease (themes #2, #3)
+
+**Group D — Transparency (theme #3)**
+- **D1. No consistent "bot is recording / what's captured" cue.** Consent/recording copy in only 3 files. A trust product needs a clear, uniform in-meeting + on-join notice. *Transparency · high trust · M · [deep-dive: live view + join].*
+- **D2. No in-product "what Prism/the bot does" for new users** (only marketing landing). *Transparency/ease · M.*
+- **D3. Inconsistent "why this card / how it's computed" explainers** — some cards have help (Sentiment, HealthScore), others none. *Transparency · S-M · normalize.*
+- **D4. Extend the destination pattern** (shipped for tickets) to ALL outbound actions + clearer "connect X first" states. *Transparency/ease · S.*
+
+**Group E — Ease & friction (theme #2)**
+- **E1. Empty states — verify core surfaces** (Home 0-meetings, Knowledge, Workspace, Insights) are actionable, not blank. *Ease · M · [deep-dive].*
+- **E2. Loading states — verify every async surface** shows skeleton/spinner (no blank/jump). *Ease/perf · M · [deep-dive].*
+- **E3. Disabled controls (19 files) — verify each explains WHY** ("connect Slack first," not a dead grey button). *Ease · S-M.*
+- **E4. Generic error copy** ("Agent call failed", "Chat failed", "Slack export failed", "Something went wrong") — no cause/recovery path. *Ease/transparency · M.*
+- **E5. Input-flow clarity** (paste/record/upload/join) — verify each mode self-explains + handles bad input. *Ease · [deep-dive].*
+
+### TIER P2 — design-system foundation (theme #5, feeds Phase 2)
+- **F1. No color-token layer** — raw hex scattered (App 21, ProxyProfile 20, SentimentCard 19, CalendarView 17, DashboardPage 14…). *Consistency · L · Phase 2a.*
+- **F2. Inconsistent date formatting** — `toLocaleDateString`/`toLocaleString`/`formatSessionDate`/`Intl` mixed. *Consistency · S-M · one date util.*
+- **F3. Spacing/radius not tokenized** — verify against CLAUDE.md scale during the visual pass. *Consistency · Phase 2.*
+
+### Still to deep-read (during grouped fix PRs)
+Landing (HowItWorks/Pricing/Signup/Nav), KnowledgeBase + upload/viewer modals, LiveMeetingView + LiveCatchup, ProxyProfile + StandInComposer, WorkspaceIsland + workspace settings, CalendarView, and each result card (Summary/ActionItems/Decisions/Sentiment/SpeakerCoach/Health/Content/Email/Calendar/RecordingPlayer).
+
+### Progress log
+- **✅ B1** (raw fetch → apiFetch): LiveMeetingView poll + IntegrationsModal webhooks done; LiveCatchup intentionally left (streaming POST, per-viewer token).
+- **✅ B3** reviewed → no-op (all `console.*` are legit error logging).
+- **🟡 E4** started: chat error copy now offline-aware + recovery. Remaining generic messages (analysis fail, export fail, ErrorBoundary) pending.
+
+### ⚠️ Sequencing correction (Jul 14)
+The big structural unifications — **A1 buttons, A2 modals, A3 toasts, C1 app-wide a11y, F1 tokens** — are **Phase 2 (design-system)**, NOT quick wins. They must follow **Phase 2a: define the ONE visual direction** (a user decision — depends on target aesthetic). Phase 1 = only the safe, direction-independent quick wins (B1 ✅, E3, E4, D3, D4, C2-if-a-shared-confirm-exists).
+
+_Next decision (user): start Phase 2a (pick the visual direction) to unblock the button/modal/token unification, or keep grinding Phase-1 quick wins first._
