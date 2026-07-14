@@ -517,7 +517,13 @@ export default function ChatPanel({
         }])
       }
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Sorry, something went wrong.' }])
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: offline
+          ? "I can't reach the server — you appear to be offline. Reconnect and try again."
+          : 'Something went wrong with that message. Please try again in a moment — if it keeps happening, refresh the page.',
+      }])
     } finally {
       setLoading(false)
       setLoadingGlobal(false)
