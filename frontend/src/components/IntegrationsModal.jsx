@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
 import { writeIntegrationStore } from '../lib/integrationStore'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const TABS = ['Slack', 'Teams', 'Notion', 'Calendar', 'Outlook', 'Gmail', 'Linear', 'Jira']
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint, disabled = false }) {
@@ -151,7 +150,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     setTestingSlack(true)
     setSlackTestResult(null)
     try {
-      const res = await fetch(`${API}/export/slack`, {
+      const res = await apiFetch('/export/slack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -174,7 +173,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     setTestingTeams(true)
     setTeamsTestResult(null)
     try {
-      const res = await fetch(`${API}/export/teams`, {
+      const res = await apiFetch('/export/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
