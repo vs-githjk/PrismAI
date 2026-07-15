@@ -57,7 +57,7 @@ natural language — with image analysis and grounded citations from your knowle
 - **Real-time meeting bot** — live transcription, wake-word commands, personas, private "catch me up," and a shareable live view
 - **Knowledge base (RAG)** — hybrid vector + BM25 search over your docs *and* past transcripts, with reranking, conflict detection, and citations
 - **Team workspaces** — shared meetings, invites, per-workspace briefs, and bot de-duplication
-- **Stand-in proxy** — have PrismAI represent you in a meeting you can't attend
+- **Stand-in proxy** — have PrismAI represent you in a meeting you can't attend, then brief you back afterward on what happened for you (decisions, answers to what you asked, tasks now yours)
 - **Recording playback** — click any transcript line to seek the recording
 
 ## Stack
