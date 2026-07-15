@@ -106,6 +106,11 @@ alter table bot_sessions add column if not exists live_token     text;
 -- Why the bot left the meeting (removed / permission denied / meeting ended / …),
 -- captured from Recall's status sub_code so a disconnect is never a silent mystery.
 alter table bot_sessions add column if not exists leave_reason   text;
+-- Owner attribution + workspace context, persisted so a mid-meeting Render restart
+-- keeps the email-FROM-owner sender and workspace fan-out/persona (otherwise these
+-- live only in the in-memory bot_store and are lost on restart).
+alter table bot_sessions add column if not exists owner_name     text;
+alter table bot_sessions add column if not exists workspace_id   text;
 
 create index if not exists bot_sessions_user_id_idx    on bot_sessions(user_id);
 create unique index if not exists bot_sessions_live_token_idx on bot_sessions(live_token);

@@ -48,10 +48,10 @@ Legend: **R** = reliability, **E** = effectiveness (user POV), **→** = verdict
 
 ## Ranked execution plan
 
-**Tier 1 — Trust foundations (reliability + transparency):**
-1. **Cluster B bug verification + fixes** — Calendar fail, Jira no-action/persistence, bot-leave logging, notes-to-all, stand-in input. Concrete known breakage; verify current state first (some may be fixed).
-2. **Silent-failure audit** — triage the 25 swallows; surface real failures (turn "Done" into honest outcomes).
-3. **Durability partial fix** — persist the few critical `bot_store` keys to `bot_sessions` so a deploy mid-meeting recovers (short of full AWS).
+**Tier 1 — Trust foundations (reliability + transparency): ✅ DONE (Jul 15)**
+1. ✅ **Cluster B** — B-1/B-3/B-4/B-5 + health-provisional already fixed + deployed (verified in code); B-2 (notes-to-all) built (`6f35595`).
+2. ✅ **Silent-failure audit** — all 25 `except: pass` triaged: **21 correct fail-safe**, 4 given diagnostic logs (action-ref persist [the "Done but not tracked" case], owner-email ×2, MS token-refresh). Conclusion: no silent-failure epidemic.
+3. ✅ **Durability partial fix** — `_db_load` now restores `live_token` (was persisted but dropped on load → live/notes link survives restart) + new persisted `owner_name`/`workspace_id` columns on `bot_sessions` (email-FROM-owner sender + workspace fan-out/persona survive a mid-meeting restart). Migration via `schema.sql` (idempotent, auto-applies on boot).
 
 **Tier 2 — Effectiveness (user POV):**
 4. **Analysis output prioritization** — lead with acted-on agents; demote/collapse the rest; prune any that don't earn their place.
@@ -73,4 +73,5 @@ Legend: **R** = reliability, **E** = effectiveness (user POV), **→** = verdict
 ## Progress log
 - Jul 15: audit written. Modal foundation done (`ui/dialog` re-skinned, KnowledgeUploadModal migrated — `b786469`, local). Button foundation live on main (`1788424`).
 - Jul 15: **Tier 1 #1 — Cluster B verification DONE.** B-1 (leave reason), B-3 (calendar surfacing; root cause = Google OAuth config, external), B-4 (Jira re-seed), B-5 (stand-in input guard), health-score "provisional" — all present in current code + on main (deployed, never live-verified by user). Only B-2 was open.
+- Jul 15: **Tier 1 COMPLETE.** #2 silent-failure audit (21/25 correct, 4 logged) + #3 durability fix (`_db_load` restores live_token; `owner_name`/`workspace_id` now persisted+restored via schema.sql columns). Not yet committed. **Next: Tier 2 — analysis surfacing (sentiment→dropdown), stand-in double-down, or live-bot voice.**
 - Jul 15: **B-2 (notes-to-all) BUILT.** Timing reality: analysis completes AFTER the meeting ends (dead chat), and the bot can't know when a meeting will end — so delivery is attached to *reliable events*, not end-detection. The bot already broadcasts the persistent `/#live/{token}` link at intro (and `/live` serves the final `result` once done, so it *becomes* the notes page). Added `post_late_join_link` (recall_routes) fired from the `participant_events.join` handler (realtime_routes) — re-posts the same link to anyone who joins AFTER the intro (guarded by `intro_sent` + once-per-pid), so late-joiners get the notes link too. Intro copy now frames the link as persistent notes. No toggle needed (no NEW sharing — intro already broadcasts this link). 3 tests, 744 total. **Not yet committed/pushed.**

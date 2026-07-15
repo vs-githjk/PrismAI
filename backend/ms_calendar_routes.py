@@ -124,8 +124,10 @@ async def get_valid_ms_token(user_id: str, row: dict | None = None) -> str:
                     if new_token.get("refresh_token"):
                         update["ms_refresh_token"] = new_token["refresh_token"]
                     supabase.table("user_settings").update(update).eq("user_id", user_id).execute()
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            # A malformed stored expiry silently skips refresh → calendar later
+            # fails with no trace. Log so "calendar stopped working" is diagnosable.
+            print(f"[ms_calendar] token-expiry parse/refresh skipped uid={str(user_id)[:8]}: {exc!r}")
 
     return access_token
 

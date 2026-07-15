@@ -2816,8 +2816,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                             "tool": result["external_ref"]["tool"],
                             "external_id": result["external_ref"]["external_id"],
                         }).execute()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # The external action already succeeded; only the tracking
+                        # row failed. Don't fail the user response — but log it, or
+                        # a successful action silently goes unrecorded.
+                        print(f"[realtime] action_ref persist failed (action already executed): {exc!r}")
                 tools_used.append(tc_name)
                 messages.append({
                     "role": "tool",

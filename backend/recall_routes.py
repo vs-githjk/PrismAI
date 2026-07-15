@@ -169,6 +169,13 @@ def _db_load(bot_id: str) -> dict | None:
                 "commands": row.get("commands") or [],
                 "user_id": row.get("user_id"),
                 "realtime_transcript_lines": rt_lines,
+                # Restore identity/context so a mid-meeting restart keeps the live/
+                # notes link (live_token), the email-FROM-owner sender (owner_name),
+                # and workspace fan-out/persona (workspace_id). These were persisted
+                # by _db_save but previously dropped on load.
+                "live_token": row.get("live_token"),
+                "owner_name": row.get("owner_name"),
+                "workspace_id": row.get("workspace_id"),
             }
             # Restore seekable segments so click-to-seek survives a mid-meeting restart.
             rt_segs = row.get("transcript_segments")
@@ -799,7 +806,8 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
         "initial_mode": None, "standin": True,
     }
     _live_token_index[live_token] = bot_id
-    _db_save(bot_id, {"status": "scheduled", "user_id": user_id, "live_token": live_token})
+    _db_save(bot_id, {"status": "scheduled", "user_id": user_id, "live_token": live_token,
+                      "owner_name": owner_name, "workspace_id": workspace_id})
 
     from realtime_routes import init_bot_realtime, register_realtime_token
     register_realtime_token(realtime_token, bot_id)
@@ -962,8 +970,8 @@ def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
         )
         if rep.data and (rep.data[0].get("author_email") or "").strip():
             return rep.data[0]["author_email"].strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[recall] resolve_owner_email rep lookup failed bot={bot_id[:8]}: {exc!r}")
     if user_id:
         try:
             wm = (
@@ -972,8 +980,8 @@ def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
             )
             if wm.data and (wm.data[0].get("user_email") or "").strip():
                 return wm.data[0]["user_email"].strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[recall] resolve_owner_email member lookup failed uid={str(user_id)[:8]}: {exc!r}")
     return ""
 
 
@@ -2100,7 +2108,8 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         "initial_mode": req.mode if req.mode in ("utterance", "autonomous") else None,
     }
     _live_token_index[live_token] = bot_id
-    _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
+    _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token,
+                      "owner_name": req.owner_name, "workspace_id": req.workspace_id})
 
     from realtime_routes import init_bot_realtime, _run_proactive_checker, register_realtime_token
     # Bind the webhook token AFTER Recall confirmed the bot id. The mapping
