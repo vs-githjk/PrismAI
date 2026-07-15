@@ -1356,7 +1356,7 @@ async def _send_bot_intro(bot_id: str):
 
     message = persona_greeting_from_preset(preset)
     if live_link:
-        message += f"\n\nAnyone can follow along live: {live_link}"
+        message += f"\n\nAnyone can follow along live — and the full meeting notes will be here afterward: {live_link}"
     message += f"\n\n⚠️ If you don't consent to being recorded, let {owner_name} know or type /leave and I'll exit the call."
     try:
         async with httpx.AsyncClient() as client:
@@ -1369,8 +1369,47 @@ async def _send_bot_intro(bot_id: str):
                 json={"message": message},
                 timeout=10,
             )
+        # Mark the intro as broadcast so late-joiner re-posts can fire. Everyone
+        # present at intro saw this message; only participants who join AFTER get
+        # a re-post (see post_late_join_link).
+        if bot_id in bot_store:
+            bot_store[bot_id]["intro_sent"] = True
     except Exception:
         pass
+
+
+async def post_late_join_link(bot_id: str, participant_name: str = "") -> None:
+    """Re-post the live/notes link when someone joins AFTER the intro broadcast,
+    so late arrivals get the same link everyone else already saw. No-op until the
+    intro has been sent (the initial roster is covered by the intro message), and
+    no-op without a live_token. Introduces no new sharing — the intro already
+    broadcasts this exact link to the whole chat."""
+    state = bot_store.get(bot_id) or {}
+    if not state.get("intro_sent"):
+        return
+    live_token = state.get("live_token")
+    if not live_token:
+        return
+    frontend_url = os.getenv("FRONTEND_URL", "https://meetprismai.com")
+    link = f"{frontend_url}/#live/{live_token}"
+    who = f" {participant_name.strip()}" if participant_name and participant_name.strip() else ""
+    message = (
+        f"👋 Welcome{who}! Follow along live — and the full meeting notes will be "
+        f"here after the meeting: {link}"
+    )
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{RECALL_API_BASE}/bot/{bot_id}/send_chat_message/",
+                headers={
+                    "Authorization": f"Token {RECALL_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"message": message},
+                timeout=10,
+            )
+    except Exception as exc:
+        print(f"[recall] late-join link post failed bot={bot_id[:8]}: {exc!r}")
 
 
 async def _fetch_transcript(bot_id: str, attempts: int = 12, prefer_async: bool = False):

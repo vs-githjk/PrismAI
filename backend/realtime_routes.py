@@ -3656,10 +3656,21 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             if is_leave:
                 parts.pop(pid, None)
             else:
+                is_bot_participant = _looks_like_bot_participant(pname, participant)
                 parts[pid] = {
                     "name": pname,
-                    "is_bot": _looks_like_bot_participant(pname, participant),
+                    "is_bot": is_bot_participant,
                 }
+                # Late-joiner notes link: re-post the live/notes link to anyone who
+                # joins AFTER the intro broadcast (post_late_join_link no-ops until
+                # intro_sent, so the initial roster isn't double-notified). Once per
+                # human pid. Introduces no new sharing — same link the intro posts.
+                if not is_bot_participant:
+                    notified = state.setdefault("late_join_notified", set())
+                    if pid not in notified:
+                        notified.add(pid)
+                        from recall_routes import post_late_join_link
+                        asyncio.create_task(post_late_join_link(bot_id, pname))
             state["participants_seen"] = True
             _note_human_count(state, _human_participant_count(state))
             print(

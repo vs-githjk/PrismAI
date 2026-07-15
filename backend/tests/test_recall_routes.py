@@ -201,6 +201,47 @@ class LeaveReasonTestCase(unittest.TestCase):
         self.assertEqual(bs["leave_sub_code"], "bot_received_leave_call")
         recall_routes.bot_store.pop("bot-sticky", None)
 
+    def _capture_posts(self):
+        """A fake httpx.AsyncClient that records .post() calls (message payloads)."""
+        posts = []
+
+        class _Cap:
+            async def __aenter__(self_inner):
+                return self_inner
+            async def __aexit__(self_inner, *_):
+                return False
+            async def post(self_inner, *_args, **kwargs):
+                posts.append(kwargs.get("json") or {})
+                return DummyResponse(200)
+
+        return posts, _Cap
+
+    def test_late_join_link_noop_before_intro(self):
+        # Intro not yet sent → initial roster is covered by the intro broadcast,
+        # so a late-join re-post must NOT fire.
+        recall_routes.bot_store["bot-lj1"] = {"status": "recording", "live_token": "tok1"}
+        posts, Cap = self._capture_posts()
+        with patch("recall_routes.httpx.AsyncClient", Cap):
+            asyncio.run(recall_routes.post_late_join_link("bot-lj1", "Sam"))
+        self.assertEqual(posts, [])
+
+    def test_late_join_link_posts_after_intro(self):
+        recall_routes.bot_store["bot-lj2"] = {"status": "recording", "live_token": "tok2", "intro_sent": True}
+        posts, Cap = self._capture_posts()
+        with patch("recall_routes.httpx.AsyncClient", Cap):
+            asyncio.run(recall_routes.post_late_join_link("bot-lj2", "Sam"))
+        self.assertEqual(len(posts), 1)
+        msg = posts[0].get("message", "")
+        self.assertIn("tok2", msg)      # the persistent live/notes link
+        self.assertIn("Sam", msg)       # personalized welcome
+
+    def test_late_join_link_noop_without_token(self):
+        recall_routes.bot_store["bot-lj3"] = {"status": "recording", "intro_sent": True}
+        posts, Cap = self._capture_posts()
+        with patch("recall_routes.httpx.AsyncClient", Cap):
+            asyncio.run(recall_routes.post_late_join_link("bot-lj3", "Sam"))
+        self.assertEqual(posts, [])
+
 
 class KeytermGroundingTestCase(unittest.TestCase):
     """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""
