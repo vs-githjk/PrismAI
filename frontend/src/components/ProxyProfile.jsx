@@ -53,6 +53,7 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
   const [loaded, setLoaded] = useState(false)
   const [saveState, setSaveState] = useState('idle')
   const [reps, setReps] = useState([])
+  const [openBrief, setOpenBrief] = useState(null)  // rep.id whose follow-up brief is expanded
 
   const [digest, setDigest] = useState({ action_items: [], decisions: [] })
   const [digestLoading, setDigestLoading] = useState(true)
@@ -442,6 +443,30 @@ export default function ProxyProfile({ user = null, workspaceId = null, workspac
                       </span>
                     </div>
                     <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-white/55">{rep.approved_body || rep.draft_body || '—'}</p>
+                    {/* Close-the-loop: Prism's brief on what happened FOR you. */}
+                    {rep.followup_brief && (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => setOpenBrief((id) => (id === rep.id ? null : rep.id))}
+                          className="ps-anim inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.08] px-2.5 py-1 text-[11px] font-medium text-cyan-200 transition hover:bg-cyan-400/[0.14]"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          {openBrief === rep.id ? 'Hide your brief' : 'Your brief from this meeting'}
+                          {rep.followup_sent_at && <span className="text-cyan-300/60">· emailed</span>}
+                        </button>
+                        {openBrief === rep.id && (
+                          <div className="mt-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
+                            <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-white/75">{rep.followup_brief}</p>
+                            {rep.followup_meeting_id && (
+                              <button onClick={() => open(rep.followup_meeting_id)}
+                                className="ps-anim mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-cyan-300 transition hover:text-cyan-200">
+                                Open the full meeting <ArrowUpRight className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {['draft', 'pending'].includes(es) && (
                     <button onClick={() => cancelRep(rep.id)}

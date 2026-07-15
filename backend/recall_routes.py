@@ -1793,6 +1793,14 @@ async def _persist_bot_meeting(bot_id: str) -> None:
         _standin_persisted.add(bot_id)
         await save_meeting(entry, owner_user_id)
         print(f"[recall] auto-promoted bot {bot_id} into meetings for {owner_user_id} (workspace={workspace_id})")
+        # Close the stand-in loop: brief each absent author this bot represented
+        # (best-effort, non-blocking) — what happened for them + answers to what
+        # they asked + tasks now theirs. No-op if this bot delivered no stand-ins.
+        try:
+            from proxy_routes import generate_standin_followups
+            asyncio.create_task(generate_standin_followups(bot_id, entry.id, result, transcript))
+        except Exception as exc:
+            print(f"[recall] standin followup dispatch failed for {bot_id}: {exc}")
     except Exception as exc:
         print(f"[recall] auto-promote failed for {bot_id}: {exc}")
 

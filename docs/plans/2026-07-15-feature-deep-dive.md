@@ -53,10 +53,10 @@ Legend: **R** = reliability, **E** = effectiveness (user POV), **→** = verdict
 2. ✅ **Silent-failure audit** — all 25 `except: pass` triaged: **21 correct fail-safe**, 4 given diagnostic logs (action-ref persist [the "Done but not tracked" case], owner-email ×2, MS token-refresh). Conclusion: no silent-failure epidemic.
 3. ✅ **Durability partial fix** — `_db_load` now restores `live_token` (was persisted but dropped on load → live/notes link survives restart) + new persisted `owner_name`/`workspace_id` columns on `bot_sessions` (email-FROM-owner sender + workspace fan-out/persona survive a mid-meeting restart). Migration via `schema.sql` (idempotent, auto-applies on boot).
 
-**Tier 2 — Effectiveness (user POV):**
-4. **Analysis output prioritization** — lead with acted-on agents; demote/collapse the rest; prune any that don't earn their place.
-5. **Live bot loop voice redo (Cluster A)** — highest ceiling; assess spoken-vs-chat-first.
-6. **Stand-in ROI call** — simplify or double-down; fix input bug.
+**Tier 2 — Effectiveness (user POV):**  ⛔ VOICE = DEVAJ (owns Cluster A voice agent, done ~Jul 16 — DON'T touch the realtime/voice path)
+4. ✅ **Analysis surfacing** — Sentiment now collapsible (keystone-aware: defaults OPEN, label pill + arc stay in header). `90c5eec`.
+5. ~~Live bot voice redo~~ → **DEVAJ owns this.** Skip.
+6. ✅ **Stand-in double-down = close the loop.** Was one-way (deliver → silence); built the **follow-up brief**: after analysis, brief each absent author (what happened for you / answers to what you asked / tasks now yours / what they need from you) — stamped on the rep (ProxyProfile "Your brief" expander) + emailed via their own Gmail (best-effort). `proxy_routes.generate_standin_followups`; migration #23 (MANUAL). NOT yet committed.
 
 **Tier 3 — Opportunistic / assess:**
 7. Insights, Personas, Notifications — keep/improve/cut calls.
