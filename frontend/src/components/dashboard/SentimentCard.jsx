@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Activity, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react'
+import { Activity, TrendingUp, TrendingDown, Minus, AlertTriangle, ChevronDown } from 'lucide-react'
 import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
 function useCountUp(target, duration = 1000) {
@@ -101,6 +101,10 @@ function SpeakerRow({ speaker, isLast }) {
 }
 
 export default function SentimentCard({ sentiment }) {
+  // Keystone insight — collapsible (like Speaker Coaching / Transcript) so the
+  // meeting view can be tidied, but default OPEN and with the headline (overall
+  // label + arc) always in the header so it stays a keystone, not a hidden card.
+  const [open, setOpen] = useState(true)
   if (!sentiment?.overall) return null
   const labelKey = String(sentiment.overall).toLowerCase()
   const meta = LABEL_META[labelKey] || LABEL_META.neutral
@@ -108,22 +112,29 @@ export default function SentimentCard({ sentiment }) {
   const tensions = sentiment.tension_moments || []
 
   return (
-    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-      <div className="mb-3 flex items-center gap-2">
-        <Activity className="h-4 w-4 text-cyan-200/70" aria-hidden="true" />
+    <section className={glassCard} style={cardGlowStyle}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full flex-wrap items-center gap-2 p-4"
+      >
+        <Activity className="h-4 w-4 shrink-0 text-cyan-200/70" aria-hidden="true" />
         <p className={eyebrow}>Sentiment</p>
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
         <span
-          className="rounded-full border px-3 py-1 text-sm font-semibold capitalize"
+          className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold capitalize"
           style={{ borderColor: meta.border, color: meta.color, background: meta.tint }}
         >
           {sentiment.overall}
         </span>
         {sentiment.arc && <ArcIndicator arc={sentiment.arc} />}
-      </div>
+        <ChevronDown
+          className={`ml-auto h-4 w-4 shrink-0 text-white/70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
 
+      {open && (
+      <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
       <div className="mb-3">
         <ScoreBar score={sentiment.score} color={meta.color} />
       </div>
@@ -176,6 +187,8 @@ export default function SentimentCard({ sentiment }) {
             })}
           </ul>
         </div>
+      )}
+      </div>
       )}
     </section>
   )
