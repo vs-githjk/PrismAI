@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/api'
 import { Mail, Calendar, Ticket, MessageSquare, Check, Loader2, X, Sparkles, ExternalLink } from 'lucide-react'
+import { Button } from '../ui/button'
 
 // Each suggested action maps to an action_type the agent chose; the concrete tool is
 // resolved from what the user actually has connected (task→Jira/Linear, chat→Slack/Teams).
@@ -124,13 +125,13 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
                       → {dest}
                     </span>
                   )}
-                  <button
-                    type="button"
+                  <Button
+                    variant="accent"
                     onClick={() => setActive(a)}
-                    className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-[12.5px] font-medium text-cyan-200 transition hover:border-cyan-400/55 hover:bg-cyan-400/15"
+                    className="px-3 py-1.5 text-[12.5px] font-medium"
                   >
                     Review &amp; {meta.verb.toLowerCase()}
-                  </button>
+                  </Button>
                 </div>
               )}
             </li>
@@ -338,10 +339,9 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
             {error && <p className="text-[12.5px] text-rose-300">{error}</p>}
 
             <div className="mt-1 flex items-center justify-end gap-2">
-              <button type="button" onClick={onClose}
-                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-[13px] text-white/75 hover:bg-white/10">
+              <Button variant="ghost" onClick={onClose} className="px-4 py-2 text-[13px]">
                 Cancel
-              </button>
+              </Button>
               <button type="button" onClick={submit} disabled={busy}
                 className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-4 py-2 text-[13px] font-medium text-cyan-100 transition hover:bg-cyan-400/25 disabled:opacity-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}

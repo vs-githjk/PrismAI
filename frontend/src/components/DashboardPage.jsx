@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
+import { Button } from './ui/button'
 import {
   Dialog,
   DialogContent,
@@ -217,15 +218,16 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
           title="Auto detects pitch / interview meetings for a deeper, type-specific analysis. Pick one to force it."
         />
       </div>
-      <button
-        type="button"
+      <Button
+        variant="primary"
+        size="cta"
         onClick={handleAnalyzeClick}
         disabled={!transcript}
         title={!transcript ? 'Add a transcript first' : undefined}
-        className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+        className="w-full disabled:cursor-not-allowed disabled:opacity-40"
       >
         Analyze Meeting
-      </button>
+      </Button>
       {!transcript && (
         <p className="text-center text-[11px] text-white/40">Paste, upload, record, or join a meeting to analyze.</p>
       )}
@@ -241,14 +243,15 @@ function NewMeetingPanel(props) {
     <div className="dashboard-body-font w-full overflow-hidden rounded-2xl">
       <div className="flex items-center justify-between px-4 pb-3 pt-3.5">
         <p className="text-[13px] font-semibold text-white/90">New Meeting</p>
-        <button
-          type="button"
+        <Button
+          variant="subtle"
+          size="icon-xs"
           onClick={props.onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-white/40 transition hover:bg-white/[0.07] hover:text-white/70"
+          className="rounded-full"
           aria-label="Close"
         >
           <X className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={props.setInputTab} className="w-full">
@@ -507,17 +510,18 @@ function NewMeetingPanel(props) {
                 </button>
               )}
 
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="cta"
                 onClick={props.joinMeeting}
                 disabled={!props.meetingUrl || botActive}
-                className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                className="w-full disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {props.botStatus === 'joining' ? 'Joining…' :
                  props.botStatus === 'recording' ? 'Recording…' :
                  props.botStatus === 'processing' ? 'Processing…' :
                  'Join Meeting'}
-              </button>
+              </Button>
             </div>
           </TabsContent>
         </div>

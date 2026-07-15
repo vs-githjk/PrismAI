@@ -32,7 +32,12 @@
 | `ghost` | `border-white/10 bg-white/5 text-white/75 hover:bg-white/10` | secondary/cancel |
 | `danger` | `border-rose-400/40 bg-rose-400/15 text-rose-200` | destructive confirm |
 | `icon` | `h-7 w-7 / h-8 w-8` square, ghost surface | icon-only (needs `aria-label`) |
+| `subtle` | `border-transparent bg-transparent text-white/40 hover:bg-white/[0.07]` | borderless icons (close ✕) — the 2nd real icon flavor |
 | `link` | `text-cyan-300 hover:underline` | inline links |
+
+> **Sizes** — beyond shadcn's compact fixed heights (`default h-8`, `sm h-7`, icon `size-6/7/8`), a `cta` size (`h-10 px-4 text-sm font-semibold`, pair with `w-full`) matches the app's real full-width panel CTA (Analyze). `icon` is a *size*, `subtle`/`ghost` are the surface variants.
+>
+> **Shape outliers (converge later, not silently):** some full-width ghost buttons use `rounded-xl` + `text-white/80` (Upload) vs canonical ghost `rounded-lg` + `text-white/75`; stateful toggles (Record: red↔ghost) don't map to one variant. These aren't no-op migrations — converging them shifts a corner radius / color, so they're a deliberate consistency decision for a later grouped PR, not part of the drop-in pass.
 
 **Card** — standardize on `glassCard` + `cardGlowStyle` (already shared). One card, everywhere.
 
