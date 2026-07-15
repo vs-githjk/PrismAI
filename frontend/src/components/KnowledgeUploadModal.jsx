@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { X, Upload, Link as LinkIcon, FileText } from 'lucide-react'
+import { Upload, Link as LinkIcon, FileText } from 'lucide-react'
 import { uploadFile, uploadUrl, connectSource } from '../lib/knowledge'
 import { notifyStatus } from '../lib/statusNotify'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 
 export default function KnowledgeUploadModal({ open, onClose, meetingId, workspaceId, onUploaded }) {
   const [tab, setTab] = useState('file')
@@ -11,8 +12,6 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
   const [sensitivity, setSensitivity] = useState('internal')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-
-  if (!open) return null
 
   const close = () => { setError(null); setBusy(false); onClose() }
 
@@ -57,12 +56,11 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="dashboard-popup w-full max-w-lg rounded-2xl p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-white">Add to Knowledge Base</h3>
-          <button onClick={close}><X className="h-4 w-4 text-white/60" /></button>
-        </div>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) close() }}>
+      <DialogContent className="dashboard-body-font sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add to Knowledge Base</DialogTitle>
+        </DialogHeader>
 
         <div className="mb-4 flex gap-1 rounded-lg bg-white/5 p-1">
           {[
@@ -123,7 +121,7 @@ export default function KnowledgeUploadModal({ open, onClose, meetingId, workspa
         )}
 
         {error && <p className="mt-3 text-xs text-rose-300">{error}</p>}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
