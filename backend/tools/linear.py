@@ -101,6 +101,35 @@ async def linear_create_issue(args: dict, user_settings: dict | None = None) -> 
         return {"error": f"Linear create failed: {errors}"}
 
 
+async def linear_validate(user_settings: dict | None = None) -> dict:
+    """Cheap credential check (no writes): GraphQL `viewer` query. Returns
+    {ok, account_name, error?} so the Integrations UI can confirm the Linear key
+    works before a ticket fails. Accepts just-typed creds (same shape as create)."""
+    try:
+        key = _get_key(user_settings or {})
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            resp = await client.post(
+                LINEAR_API,
+                headers={"Authorization": key, "Content-Type": "application/json"},
+                json={"query": "{ viewer { name email } }"},
+                timeout=12,
+            )
+    except httpx.HTTPError as exc:
+        return {"ok": False, "error": f"Couldn't reach Linear: {exc}"}
+    if resp.status_code in (401, 400):
+        return {"ok": False, "error": "Invalid Linear API key."}
+    if resp.status_code != 200:
+        return {"ok": False, "error": f"Linear returned {resp.status_code}."}
+    data = resp.json() or {}
+    if data.get("errors"):
+        return {"ok": False, "error": "Invalid Linear API key."}
+    viewer = (data.get("data") or {}).get("viewer") or {}
+    return {"ok": True, "account_name": viewer.get("name") or viewer.get("email") or "your account"}
+
+
 # Register tool
 register_tool(
     name="linear_create_issue",

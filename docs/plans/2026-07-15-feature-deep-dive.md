@@ -58,10 +58,10 @@ Legend: **R** = reliability, **E** = effectiveness (user POV), **→** = verdict
 5. ~~Live bot voice redo~~ → **DEVAJ owns this.** Skip.
 6. ✅ **Stand-in double-down = close the loop.** Was one-way (deliver → silence); built the **follow-up brief**: after analysis, brief each absent author (what happened for you / answers to what you asked / tasks now yours / what they need from you) — stamped on the rep (ProxyProfile "Your brief" expander) + emailed via their own Gmail (best-effort). `proxy_routes.generate_standin_followups`; migration #23 (MANUAL). NOT yet committed.
 
-**Tier 3 — Opportunistic / assess:**
-7. Insights, Personas, Notifications — keep/improve/cut calls.
-8. Integrations hardening + per-workspace (#2).
-9. Modal migrations — fold into whichever feature is being touched (StandInComposer, IntegrationsModal, ChatPanel, SuggestedActions, App.jsx, DashboardPage inline).
+**Tier 3 — Opportunistic / assess:** (IN PROGRESS Jul 15)
+7. ✅ **Assess calls resolved:** Insights → KEEP (substantive: ownership drift / action hygiene / decision memory / theme chips / health trend, all with graceful empty states — not a graveyard). Personas → KEEP (woven through ChatPanel/sidebar/landing + real backend: bot names/greetings/wake words). Notifications → HANDS-OFF (not built, handed to a friend — don't duplicate).
+8. Integrations: ✅ **hardening (in progress)** — `POST /integrations/test` + "Test connection" buttons for Jira + Linear (validate creds before a silent mid-meeting filing failure; Cluster B). ⏭ **per-workspace (#2) NEXT** — the big architecture change (user chose: hardening first, then #2).
+9. Modal migrations — fold into whichever feature is being touched.
 
 ---
 

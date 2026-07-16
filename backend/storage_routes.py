@@ -146,6 +146,36 @@ async def save_user_settings(settings: UserToolSettings, user_id: str = Depends(
     return {"ok": True}
 
 
+class IntegrationTestRequest(BaseModel):
+    provider: str  # 'jira' | 'linear'
+    jira_base_url: str | None = None
+    jira_email: str | None = None
+    jira_api_token: str | None = None
+    jira_project_key: str | None = None
+    linear_api_key: str | None = None
+
+
+@router.post("/integrations/test")
+async def test_integration(req: IntegrationTestRequest, user_id: str = Depends(require_user_id)):
+    """Validate ticket-integration credentials (Jira / Linear) BEFORE they're relied
+    on mid-meeting — so a bad token / project key surfaces here instead of a silent
+    filing failure later (Cluster B). Accepts just-typed creds so the user can test
+    before saving. Read-only: no writes to the external tool. Auth-gated."""
+    provider = (req.provider or "").strip().lower()
+    if provider == "jira":
+        from tools.jira import jira_validate
+        return await jira_validate({
+            "jira_base_url": req.jira_base_url,
+            "jira_email": req.jira_email,
+            "jira_api_token": req.jira_api_token,
+            "jira_project_key": req.jira_project_key,
+        })
+    if provider == "linear":
+        from tools.linear import linear_validate
+        return await linear_validate({"linear_api_key": req.linear_api_key})
+    return {"ok": False, "error": f"Unknown provider '{provider}'."}
+
+
 @router.get("/meetings")
 async def get_meetings(
     q: str = Query(default=""),

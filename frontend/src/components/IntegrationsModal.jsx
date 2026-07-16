@@ -76,6 +76,11 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
   const [jiraProjectKey, setJiraProjectKey] = useState(integrations.jira_project_key || '')
   const [savingTools, setSavingTools] = useState(false)
   const [toolSaveResult, setToolSaveResult] = useState(null) // 'ok' | 'err'
+  // Verify ticket-integration creds before relying on them mid-meeting (Cluster B).
+  const [testingJira, setTestingJira] = useState(false)
+  const [jiraTestResult, setJiraTestResult] = useState(null) // {ok, account_name?, error?, project_ok?}
+  const [testingLinear, setTestingLinear] = useState(false)
+  const [linearTestResult, setLinearTestResult] = useState(null)
 
   // Re-seed the server-side tool tokens when they arrive/change. useState only
   // captures the initial prop, so a modal opened before /user-settings resolved would
@@ -187,6 +192,50 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
       setTeamsTestResult('err')
     } finally {
       setTestingTeams(false)
+    }
+  }
+
+  async function testJira() {
+    if (isTestAccount) return
+    setTestingJira(true)
+    setJiraTestResult(null)
+    try {
+      const res = await apiFetch('/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'jira',
+          jira_base_url: jiraBaseUrl,
+          jira_email: jiraEmail,
+          jira_api_token: jiraApiToken,
+          jira_project_key: jiraProjectKey,
+        }),
+      })
+      const data = await res.json().catch(() => ({ ok: false, error: 'Test failed.' }))
+      setJiraTestResult(data)
+    } catch {
+      setJiraTestResult({ ok: false, error: 'Could not reach the server.' })
+    } finally {
+      setTestingJira(false)
+    }
+  }
+
+  async function testLinear() {
+    if (isTestAccount) return
+    setTestingLinear(true)
+    setLinearTestResult(null)
+    try {
+      const res = await apiFetch('/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'linear', linear_api_key: linearApiKey }),
+      })
+      const data = await res.json().catch(() => ({ ok: false, error: 'Test failed.' }))
+      setLinearTestResult(data)
+    } catch {
+      setLinearTestResult({ ok: false, error: 'Could not reach the server.' })
+    } finally {
+      setTestingLinear(false)
     }
   }
 
@@ -614,13 +663,19 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 hint="Create a personal API key at linear.app/settings/api. This lets PrismAI create issues from action items."
               />
               {linearApiKey.trim() && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Key configured
-                  </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={testLinear}
+                    disabled={isTestAccount || testingLinear}
+                    className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                    {testingLinear ? 'Testing…' : 'Test connection'}
+                  </button>
+                  {linearTestResult && (
+                    <span className={`text-[11px] ${linearTestResult.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {linearTestResult.ok ? `✓ Connected as ${linearTestResult.account_name}` : (linearTestResult.error || 'Connection failed')}
+                    </span>
+                  )}
                 </div>
               )}
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
@@ -665,6 +720,22 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 disabled={isTestAccount}
                 hint="The project new issues are created in (you can override per request in chat)."
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={testJira}
+                  disabled={isTestAccount || testingJira || !jiraBaseUrl.trim() || !jiraEmail.trim() || !jiraApiToken.trim()}
+                  className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                  {testingJira ? 'Testing…' : 'Test connection'}
+                </button>
+                {jiraTestResult && (
+                  <span className={`text-[11px] ${jiraTestResult.ok && !jiraTestResult.error ? 'text-emerald-400' : jiraTestResult.ok ? 'text-amber-400' : 'text-red-400'}`}>
+                    {jiraTestResult.ok && !jiraTestResult.error
+                      ? `✓ Connected as ${jiraTestResult.account_name}${jiraTestResult.project_ok ? ' · project OK' : ''}`
+                      : (jiraTestResult.error || 'Connection failed')}
+                  </span>
+                )}
+              </div>
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 With Jira connected, ask PrismAI to file issues from chat. For example: "create a Jira ticket for the login bug we discussed."

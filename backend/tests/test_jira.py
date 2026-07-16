@@ -66,5 +66,55 @@ class CreateIssueTests(unittest.TestCase):
         self.assertEqual(fake.captured["fields"]["summary"].count("[Prism]"), 1)
 
 
+class _GetResp:
+    def __init__(self, status, payload=None):
+        self.status_code = status
+        self._payload = payload or {}
+        self.text = ""
+    def json(self):
+        return self._payload
+
+
+class _FakeGetClient:
+    """Fake httpx.AsyncClient whose .get returns queued responses in order."""
+    def __init__(self, responses):
+        self._responses = list(responses)
+    async def __aenter__(self): return self
+    async def __aexit__(self, *a): return False
+    async def get(self, url, headers=None, timeout=None):
+        return self._responses.pop(0)
+
+
+class JiraValidateTests(unittest.TestCase):
+    creds = {"jira_base_url": "https://x.atlassian.net", "jira_email": "e@x.com", "jira_api_token": "t"}
+
+    def test_missing_creds_no_network(self):
+        out = asyncio.run(jira.jira_validate({}))
+        self.assertFalse(out["ok"])
+        self.assertIn("error", out)
+
+    def test_valid_account(self):
+        fake = _FakeGetClient([_GetResp(200, {"displayName": "Alice"})])
+        with patch.object(jira.httpx, "AsyncClient", return_value=fake):
+            out = asyncio.run(jira.jira_validate(self.creds))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["account_name"], "Alice")
+
+    def test_bad_token_401(self):
+        fake = _FakeGetClient([_GetResp(401)])
+        with patch.object(jira.httpx, "AsyncClient", return_value=fake):
+            out = asyncio.run(jira.jira_validate(self.creds))
+        self.assertFalse(out["ok"])
+        self.assertIn("401", out["error"])
+
+    def test_project_not_found_warns(self):
+        fake = _FakeGetClient([_GetResp(200, {"displayName": "Alice"}), _GetResp(404)])
+        with patch.object(jira.httpx, "AsyncClient", return_value=fake):
+            out = asyncio.run(jira.jira_validate({**self.creds, "jira_project_key": "NOPE"}))
+        self.assertTrue(out["ok"])            # creds are fine
+        self.assertFalse(out["project_ok"])   # but project isn't
+        self.assertIn("NOPE", out["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
