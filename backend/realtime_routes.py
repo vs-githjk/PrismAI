@@ -138,6 +138,36 @@ def _wake_patterns_for_bot(bot_id: str) -> tuple[re.Pattern, re.Pattern]:
 # Seconds to wait for the command after a bare trigger word OR for an incomplete same-fragment command to finish
 PENDING_TRIGGER_WINDOW = 8
 
+# Late-joiner re-post grace: Recall replays a join event for everyone already in
+# the room the instant the bot enters. Joins within this window of the bot first
+# seeing the roster are that initial roster (already covered by the intro) and are
+# NOT re-posted to; only later arrivals are treated as genuine late-joiners.
+_ROSTER_GRACE_SEC = float(os.getenv("PRISM_ROSTER_GRACE_SEC", "20"))
+
+
+def _should_repost_late_join(state: dict, pid: str, is_bot_participant: bool, now: float | None = None) -> bool:
+    """Decide whether a participant.join warrants re-posting the live/notes link.
+
+    Only genuine late-joiners qualify. The bot fires its intro eagerly at
+    /join-meeting, so by the time the bot actually enters the room the intro is
+    already sent — and Recall then replays a join event for EVERYONE already
+    present. Those initial-roster events all land within a few seconds of the bot
+    first seeing the roster (`roster_epoch`); they already saw the intro link, so
+    they must NOT be re-posted to. Bots never qualify. De-duped once per human pid.
+    Mutates `state` (sets roster_epoch, records the notified pid)."""
+    now = now if now is not None else time.time()
+    if not state.get("roster_epoch"):
+        state["roster_epoch"] = now
+    if is_bot_participant:
+        return False
+    notified = state.setdefault("late_join_notified", set())
+    if pid in notified:
+        return False
+    if (now - state["roster_epoch"]) < _ROSTER_GRACE_SEC:
+        return False  # initial roster — already covered by the intro
+    notified.add(pid)
+    return True
+
 # An "utterance-complete" command ends with sentence-terminating punctuation
 # OR contains at least this many words. Until one of those holds, we treat
 # the captured command as an in-progress utterance and keep accumulating
@@ -3665,15 +3695,11 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     "is_bot": is_bot_participant,
                 }
                 # Late-joiner notes link: re-post the live/notes link to anyone who
-                # joins AFTER the intro broadcast (post_late_join_link no-ops until
-                # intro_sent, so the initial roster isn't double-notified). Once per
-                # human pid. Introduces no new sharing — same link the intro posts.
-                if not is_bot_participant:
-                    notified = state.setdefault("late_join_notified", set())
-                    if pid not in notified:
-                        notified.add(pid)
-                        from recall_routes import post_late_join_link
-                        asyncio.create_task(post_late_join_link(bot_id, pname))
+                # joins AFTER the intro + initial-roster window. Introduces no new
+                # sharing — same link the intro posts. (See _should_repost_late_join.)
+                if _should_repost_late_join(state, pid, is_bot_participant):
+                    from recall_routes import post_late_join_link
+                    asyncio.create_task(post_late_join_link(bot_id, pname))
             state["participants_seen"] = True
             _note_human_count(state, _human_participant_count(state))
             print(
