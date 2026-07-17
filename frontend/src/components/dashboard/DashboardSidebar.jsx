@@ -123,6 +123,9 @@ export default function DashboardSidebar(props) {
   const accountName =
     user?.email?.split('@')[0] || (isDemoMode ? 'Demo session' : 'Guest')
   const accountSub = user?.email || (isTestAccount ? 'Test run' : 'Not signed in')
+  // Profile photo from the signed-in provider (Google OAuth → user_metadata).
+  const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || ''
+  const [avatarOk, setAvatarOk] = useState(true)
 
   return (
     <aside className="dashboard-sidebar dashboard-island flex flex-col" aria-label="Dashboard navigation">
@@ -353,8 +356,18 @@ export default function DashboardSidebar(props) {
               type="button"
               className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.05]"
             >
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cyan-400/[0.14] text-cyan-200">
-                <UserCircle className="h-6 w-6" />
+              <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-cyan-400/[0.14] text-cyan-200">
+                {avatarUrl && avatarOk ? (
+                  <img
+                    src={avatarUrl}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    onError={() => setAvatarOk(false)}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : (
+                  <UserCircle className="h-6 w-6" />
+                )}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-semibold text-white/88">
