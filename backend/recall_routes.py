@@ -58,6 +58,28 @@ RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8001")
 RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
+
+
+def _webhook_base_is_local() -> bool:
+    """True when the bot would register a non-public webhook/realtime URL — Recall's
+    servers can't reach localhost/127.0.0.1, so EVERY inbound live feature silently
+    dies (live transcript → speaker names, chat /leave, participant join → late-join
+    link). Only the pull-based on-call-end analysis works. The usual cause locally is
+    a missing/stale ngrok tunnel (free ngrok rotates the URL on every restart)."""
+    u = (WEBHOOK_BASE_URL or "").lower()
+    return "localhost" in u or "127.0.0.1" in u or "0.0.0.0" in u
+
+
+def _warn_if_local_webhook(context: str) -> None:
+    """Loudly flag an unreachable WEBHOOK_BASE_URL at bot-create time so a dead tunnel
+    screams in the log instead of silently killing live features mid-meeting."""
+    if _webhook_base_is_local():
+        print(
+            f"[recall] ⚠️  WEBHOOK_BASE_URL={WEBHOOK_BASE_URL!r} is NOT publicly reachable "
+            f"({context}). Recall cannot deliver live webhooks → NO live transcript/speaker "
+            f"names, NO /leave, NO late-join link. Set WEBHOOK_BASE_URL to a public tunnel "
+            f"(e.g. ngrok) and restart, or test on prod. Only end-of-call analysis will work."
+        )
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # Branded bot join (#4): the in-meeting display name + a static logo tile shown as
@@ -795,6 +817,7 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     realtime_token = secrets.token_urlsafe(32)
     realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
+    _warn_if_local_webhook("join_meeting")
     # Name the bot after the person it stands in for, so attendees recognise it in
     # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
     display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else BOT_DISPLAY_NAME
@@ -2100,6 +2123,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     # to the public webhook endpoint.
     realtime_token = secrets.token_urlsafe(32)
     realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
+    _warn_if_local_webhook("schedule_standin_bot")
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
