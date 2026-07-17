@@ -1477,29 +1477,83 @@ export default function App() {
     }
   }, [inputTab, transcriptDrafts])
 
+  // Per-workspace integration routing (#2): the recap body ships NO creds; the
+  // personal fallback carries them. In a workspace scope we try the team's
+  // server-resolved config first (/workspaces/{id}/export/{provider}); a 404 means
+  // the workspace hasn't configured that provider, so we fall back to the caller's
+  // personal creds (the byte-for-byte-unchanged /export/{provider} path). In
+  // Personal scope (no activeWorkspaceId) we go straight to personal.
+  function _personalExportBody(provider, title, result) {
+    if (provider === 'slack') {
+      return integrations.slack_webhook
+        ? { webhook_url: integrations.slack_webhook, title, result } : null
+    }
+    if (provider === 'teams') {
+      return integrations.teams_webhook
+        ? { webhook_url: integrations.teams_webhook, title, result } : null
+    }
+    if (provider === 'notion') {
+      return integrations.notion_token && integrations.notion_page_id
+        ? { token: integrations.notion_token, parent_page_id: integrations.notion_page_id, title, result } : null
+    }
+    return null
+  }
+
+  // Returns { ok, url?, needConfig?, routedTo }. needConfig = neither the workspace
+  // nor the caller has that provider configured (surface "connect it" to the user).
+  async function sendRecap(provider, title, result) {
+    if (activeWorkspaceId) {
+      try {
+        const wres = await apiFetch(`/workspaces/${activeWorkspaceId}/export/${provider}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, result }),
+        })
+        if (wres.ok) {
+          const data = provider === 'notion' ? await wres.json().catch(() => ({})) : {}
+          return { ok: true, url: data.url, routedTo: 'workspace' }
+        }
+        // 404 = workspace has no config for this provider → fall through to personal.
+        // Any other status = a real failure of the workspace path.
+        if (wres.status !== 404) return { ok: false, routedTo: 'workspace' }
+      } catch {
+        return { ok: false, routedTo: 'workspace' }
+      }
+    }
+    const body = _personalExportBody(provider, title, result)
+    if (!body) return { needConfig: true }
+    try {
+      const res = await apiFetch(`/export/${provider}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) return { ok: false, routedTo: 'personal' }
+      const data = provider === 'notion' ? await res.json().catch(() => ({})) : {}
+      return { ok: true, url: data.url, routedTo: 'personal' }
+    } catch {
+      return { ok: false, routedTo: 'personal' }
+    }
+  }
+
   async function exportToSlack() {
     if (isTestAccount) {
       setIntegrationToast({ type: 'err', msg: 'Connect a real account to export to Slack.' })
       setTimeout(() => setIntegrationToast(null), 3000)
       return
     }
-    if (!integrations.slack_webhook) { setShowIntegrations(true); return }
     setExportingSlack(true)
     try {
-      const res = await apiFetch('/export/slack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          webhook_url: integrations.slack_webhook,
-          title: history.find(h => h.id === meetingId)?.title || 'Meeting',
-          result,
-        }),
-      })
-      if (!res.ok) throw new Error('Failed')
-      setIntegrationToast({ type: 'ok', msg: 'Sent to Slack!' })
-      notifyStatus({ kind: 'send', message: 'Sent to Slack' })
-    } catch {
-      setIntegrationToast({ type: 'err', msg: 'Slack export failed' })
+      const title = history.find(h => h.id === meetingId)?.title || 'Meeting'
+      const out = await sendRecap('slack', title, result)
+      if (out.needConfig) { setShowIntegrations(true); return }
+      if (out.ok) {
+        const where = out.routedTo === 'workspace' ? 'workspace Slack' : 'Slack'
+        setIntegrationToast({ type: 'ok', msg: `Sent to ${where}!` })
+        notifyStatus({ kind: 'send', message: `Sent to ${where}` })
+      } else {
+        setIntegrationToast({ type: 'err', msg: 'Slack export failed' })
+      }
     } finally {
       setExportingSlack(false)
       setTimeout(() => setIntegrationToast(null), 3000)
@@ -1518,59 +1572,22 @@ export default function App() {
     const delivered = []
     const failed = []
 
+    // Auto-send stays gated on the personal auto_send_* flags + personal creds, but
+    // routes through sendRecap so a workspace-configured provider is preferred (with
+    // the personal creds as the guaranteed fallback).
     if (integrations.auto_send_slack && integrations.slack_webhook) {
-      try {
-        const res = await apiFetch('/export/slack', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webhook_url: integrations.slack_webhook,
-            title: meetingTitle,
-            result: meetingResult,
-          }),
-        })
-        if (!res.ok) throw new Error('Slack failed')
-        delivered.push('Slack')
-      } catch {
-        failed.push('Slack')
-      }
+      const out = await sendRecap('slack', meetingTitle, meetingResult)
+      ;(out.ok ? delivered : failed).push('Slack')
     }
 
     if (integrations.auto_send_teams && integrations.teams_webhook) {
-      try {
-        const res = await apiFetch('/export/teams', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webhook_url: integrations.teams_webhook,
-            title: meetingTitle,
-            result: meetingResult,
-          }),
-        })
-        if (!res.ok) throw new Error('Teams failed')
-        delivered.push('Teams')
-      } catch {
-        failed.push('Teams')
-      }
+      const out = await sendRecap('teams', meetingTitle, meetingResult)
+      ;(out.ok ? delivered : failed).push('Teams')
     }
 
     if (integrations.auto_send_notion && integrations.notion_token && integrations.notion_page_id) {
-      try {
-        const res = await apiFetch('/export/notion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: integrations.notion_token,
-            parent_page_id: integrations.notion_page_id,
-            title: meetingTitle,
-            result: meetingResult,
-          }),
-        })
-        if (!res.ok) throw new Error('Notion failed')
-        delivered.push('Notion')
-      } catch {
-        failed.push('Notion')
-      }
+      const out = await sendRecap('notion', meetingTitle, meetingResult)
+      ;(out.ok ? delivered : failed).push('Notion')
     }
 
     if (delivered.length > 0) {
@@ -1596,28 +1613,18 @@ export default function App() {
       setTimeout(() => setIntegrationToast(null), 3000)
       return
     }
-    if (!integrations.notion_token || !integrations.notion_page_id) { setShowIntegrations(true); return }
     setExportingNotion(true)
     try {
-      const res = await apiFetch('/export/notion', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: integrations.notion_token,
-          parent_page_id: integrations.notion_page_id,
-          title: history.find(h => h.id === meetingId)?.title || 'Meeting Analysis',
-          result,
-        }),
-      })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        throw new Error(d.detail || 'Failed')
+      const title = history.find(h => h.id === meetingId)?.title || 'Meeting Analysis'
+      const out = await sendRecap('notion', title, result)
+      if (out.needConfig) { setShowIntegrations(true); return }
+      if (out.ok) {
+        const where = out.routedTo === 'workspace' ? 'workspace Notion' : 'Notion'
+        setIntegrationToast({ type: 'ok', msg: `Exported to ${where}!`, url: out.url })
+        notifyStatus({ kind: 'send', message: `Exported to ${where}` })
+      } else {
+        setIntegrationToast({ type: 'err', msg: 'Notion export failed' })
       }
-      const data = await res.json()
-      setIntegrationToast({ type: 'ok', msg: 'Exported to Notion!', url: data.url })
-      notifyStatus({ kind: 'send', message: 'Exported to Notion' })
-    } catch (e) {
-      setIntegrationToast({ type: 'err', msg: e.message || 'Notion export failed' })
     } finally {
       setExportingNotion(false)
       setTimeout(() => setIntegrationToast(null), 5000)

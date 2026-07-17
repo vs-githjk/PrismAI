@@ -67,7 +67,7 @@ function defaultDate() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export default function SuggestedActions({ actions = [], connections = {}, suggestedEmails = [], meetingId = null, teamsWebhook = '', readOnly = false }) {
+export default function SuggestedActions({ actions = [], connections = {}, suggestedEmails = [], meetingId = null, teamsWebhook = '', workspaceId = null, readOnly = false }) {
   const [active, setActive] = useState(null)   // the action being reviewed
   const [executed, setExecuted] = useState(() => loadExecuted(meetingId))
   // Reload the executed set when the meeting changes (SuggestedActions may not remount).
@@ -145,6 +145,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
           suggestedEmails={suggestedEmails}
           meetingId={meetingId}
           teamsWebhook={teamsWebhook}
+          workspaceId={workspaceId}
           onExecuted={(url) => markExecuted(active, url)}
           onClose={() => setActive(null)}
         />, document.body)}
@@ -152,7 +153,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
   )
 }
 
-function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, onExecuted, onClose }) {
+function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, workspaceId, onExecuted, onClose }) {
   const meta = TYPE_META[action.action_type]
   const resolved = resolveTool(action.action_type, connections)
   const [busy, setBusy] = useState(false)
@@ -172,14 +173,29 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
   async function submit() {
     setBusy(true); setError('')
     try {
-      // Teams uses the recap webhook route, not the unified tool endpoint.
+      // Teams uses the recap webhook route, not the unified tool endpoint. In a
+      // workspace scope, prefer the team's server-resolved webhook; a 404 (workspace
+      // hasn't configured Teams) falls back to the caller's personal webhook.
       if (resolved.tool === 'teams_webhook') {
-        const res = await apiFetch('/export/teams', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ webhook_url: teamsWebhook, title: title || 'Action', result: { summary: body } }),
-        })
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Teams post failed')
+        const recap = { title: title || 'Action', result: { summary: body } }
+        let posted = false
+        if (workspaceId) {
+          const wres = await apiFetch(`/workspaces/${workspaceId}/export/teams`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recap),
+          })
+          if (wres.ok) posted = true
+          else if (wres.status !== 404) throw new Error((await wres.json().catch(() => ({}))).detail || 'Teams post failed')
+        }
+        if (!posted) {
+          const res = await apiFetch('/export/teams', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ webhook_url: teamsWebhook, ...recap }),
+          })
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Teams post failed')
+        }
         setDone({})
         onExecuted?.(null)
         return

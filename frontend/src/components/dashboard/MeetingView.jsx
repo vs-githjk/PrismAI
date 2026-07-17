@@ -552,6 +552,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           suggestedEmails={suggestedEmails}
           meetingId={meetingId}
           teamsWebhook={teamsWebhook}
+          workspaceId={workspaceId}
           readOnly={readOnly}
         />
       )}
