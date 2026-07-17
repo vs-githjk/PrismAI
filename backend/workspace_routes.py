@@ -373,3 +373,109 @@ async def get_workspace_brief(workspace_id: str, user_id: str = Depends(require_
     # Deadline-aware: dated items first (overdue/soonest), undated last; then cap.
     open_items.sort(key=lambda x: (not x["due_date"], x["due_date"]))
     return {"open_items": open_items[:10]}
+
+
+# ── Per-workspace integrations (#2) ──────────────────────────────────────────
+# Owner configures Jira/Linear/Slack/Teams/Notion once per workspace; the resolver
+# (workspace_integrations.resolve_tool_settings) routes the workspace's meetings
+# there. GET is member-gated and returns only a NON-SECRET status/label — raw
+# tokens never leave the server (RLS + this). Writes are owner-only.
+_INTEG_PROVIDERS = ("jira", "linear", "slack", "teams", "notion")
+
+
+def _require_member(client, workspace_id: str, user_id: str) -> str:
+    res = (
+        client.table("workspace_members").select("role")
+        .eq("workspace_id", workspace_id).eq("user_id", user_id).maybe_single().execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=403, detail="Workspace membership required")
+    return res.data.get("role") or "member"
+
+
+def _integration_label(provider: str, cfg: dict) -> str:
+    """A safe, non-secret one-liner summarizing a configured integration."""
+    cfg = cfg or {}
+    if provider == "jira":
+        parts = [cfg.get("jira_email") or "", cfg.get("jira_project_key") or ""]
+        return " · ".join(p for p in parts if p) or "configured"
+    if provider == "linear":
+        return "API key set" if cfg.get("linear_api_key") else "not set"
+    if provider == "slack":
+        if cfg.get("slack_bot_token"):
+            return "bot token set"
+        return "webhook set" if cfg.get("slack_webhook") else "not set"
+    if provider == "teams":
+        return "webhook set" if cfg.get("teams_webhook") else "not set"
+    if provider == "notion":
+        return "token set" if cfg.get("notion_token") else "not set"
+    return "configured"
+
+
+class WorkspaceIntegrationConfig(BaseModel):
+    config: dict = {}
+    enabled: bool = True
+
+
+@router.get("/workspaces/{workspace_id}/integrations")
+async def list_workspace_integrations(workspace_id: str, user_id: str = Depends(require_user_id)):
+    """Member-gated. Per-provider status + a masked label — NEVER raw secrets.
+    `can_edit` tells the UI whether this member may configure (owner-only)."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    role = _require_member(supabase, workspace_id, user_id)
+    res = (
+        supabase.table("workspace_integrations")
+        .select("provider, config, enabled, updated_at").eq("workspace_id", workspace_id).execute()
+    )
+    rows = {r["provider"]: r for r in (res.data or [])}
+    out = []
+    for p in _INTEG_PROVIDERS:
+        r = rows.get(p)
+        cfg = (r or {}).get("config") or {}
+        out.append({
+            "provider": p,
+            "connected": bool(r) and bool(cfg),
+            "enabled": (r or {}).get("enabled", True),
+            "label": _integration_label(p, cfg) if r else None,
+            "updated_at": (r or {}).get("updated_at"),
+        })
+    return {"integrations": out, "can_edit": role == "owner"}
+
+
+@router.put("/workspaces/{workspace_id}/integrations/{provider}")
+async def set_workspace_integration(workspace_id: str, provider: str,
+                                    body: WorkspaceIntegrationConfig,
+                                    user_id: str = Depends(require_user_id)):
+    """Owner-gated. Upsert a provider's config for the workspace (only known fields
+    are persisted)."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    provider = (provider or "").lower()
+    if provider not in _INTEG_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider '{provider}'")
+    _require_owner(supabase, workspace_id, user_id)
+    from workspace_integrations import PROVIDER_FIELDS
+    allowed = set(PROVIDER_FIELDS[provider]["all"])
+    clean = {k: v for k, v in (body.config or {}).items() if k in allowed}
+    supabase.table("workspace_integrations").upsert({
+        "workspace_id": workspace_id,
+        "provider": provider,
+        "config": clean,
+        "enabled": bool(body.enabled),
+        "configured_by": user_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }, on_conflict="workspace_id,provider").execute()
+    return {"ok": True}
+
+
+@router.delete("/workspaces/{workspace_id}/integrations/{provider}")
+async def delete_workspace_integration(workspace_id: str, provider: str,
+                                       user_id: str = Depends(require_user_id)):
+    """Owner-gated. Disconnect a provider for the workspace."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    _require_owner(supabase, workspace_id, user_id)
+    supabase.table("workspace_integrations").delete().eq(
+        "workspace_id", workspace_id).eq("provider", (provider or "").lower()).execute()
+    return {"ok": True}

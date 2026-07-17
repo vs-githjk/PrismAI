@@ -21,7 +21,7 @@ _pending_tools: dict[tuple[str, str], dict] = {}
 _PENDING_TTL = 300  # 5 minutes
 
 
-def _store_pending(user_id: str, tool: str, arguments: dict) -> str:
+def _store_pending(user_id: str, tool: str, arguments: dict, workspace_id: str | None = None) -> str:
     pending_id = secrets.token_urlsafe(16)
     # Prune expired entries
     now = time.time()
@@ -31,6 +31,9 @@ def _store_pending(user_id: str, tool: str, arguments: dict) -> str:
     _pending_tools[(user_id, pending_id)] = {
         "tool": tool,
         "arguments": arguments,
+        # Per-workspace routing (#2): the workspace this action originated in, so
+        # confirm_tool routes the confirmed action to the SAME workspace's creds.
+        "workspace_id": workspace_id,
         "expires_at": now + _PENDING_TTL,
     }
     return pending_id
@@ -311,7 +314,7 @@ def build_rag_context(tool_result: dict) -> dict:
     return {"sources": sources, "has_conflict": bool(tool_result.get("has_conflict"))}
 
 
-async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: list, user_id: str, user_settings: dict) -> dict:
+async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: list, user_id: str, user_settings: dict, workspace_id: str | None = None) -> dict:
     """
     LLM tool-calling loop: call LLM, if it wants tools execute them, feed results back.
     Returns { reply: str, tools_used: list[dict], rag_context: dict | None }
@@ -381,7 +384,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
             )
 
             if result.get("requires_confirmation"):
-                pending_id = _store_pending(user_id, tool_call.function.name, result["preview"])
+                pending_id = _store_pending(user_id, tool_call.function.name, result["preview"], workspace_id=workspace_id)
                 pending_confirmations.append({
                     "pending_id": pending_id,
                     "tool": tool_call.function.name,
@@ -476,14 +479,23 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
     @local_router.post("/chat")
     async def chat(req: ChatRequest, request: Request):
         user_id = await _optional_user_id(request)
+        # Active workspace (persona + per-workspace integration routing). Defined
+        # unconditionally so both the persona block and the integration overlay can
+        # reference it even when supabase is unset.
+        active_ws = request.headers.get("x-active-workspace") or None
         # Resolve persona for the duration of this request. The contextvar
         # is per-task in asyncio — when this handler returns the value dies
         # with the task, so no reset is needed.
         if user_id and supabase:
-            active_ws = request.headers.get("x-active-workspace") or None
             resolved = await resolve_persona(supabase, user_id, active_ws)
             _PERSONA_TEXT.set(resolved.text)
         user_settings = await _get_user_settings(user_id) if user_id else {}
+        # Per-workspace routing (#2): overlay the active workspace's integration creds
+        # (from the x-active-workspace header, same source persona uses) so a ticket/
+        # message filed from this meeting's chat goes to the TEAM's Jira/Slack.
+        if user_id and active_ws:
+            from workspace_integrations import resolve_tool_settings
+            user_settings = await resolve_tool_settings(user_settings, user_id, active_ws)
 
         context = ""
         if req.transcript.strip():
@@ -529,7 +541,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         ]
 
         if tools:
-            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings)
+            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings, workspace_id=active_ws)
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
@@ -638,7 +650,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         ]
 
         if tools:
-            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings)
+            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings, workspace_id=active_ws)
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
@@ -665,6 +677,12 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         if not entry:
             raise HTTPException(status_code=404, detail="Pending action not found or expired")
         user_settings = await _get_user_settings(user_id)
+        # Per-workspace routing (#2): route the confirmed action to the SAME workspace
+        # the request originated in (captured at _store_pending time).
+        ws_id = entry.get("workspace_id")
+        if ws_id:
+            from workspace_integrations import resolve_tool_settings
+            user_settings = await resolve_tool_settings(user_settings, user_id, ws_id)
         result = await confirm_and_execute(entry["tool"], entry["arguments"], user_settings=user_settings)
         return result
 
