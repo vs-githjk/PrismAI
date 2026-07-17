@@ -222,6 +222,7 @@ export default function ChatPanel({
   transcript,
   result,
   onResultUpdate,
+  onCorrectApplied,
   isSignedIn = false,
   personaPreset = 'default',
   personaCustomPrompt = '',
@@ -503,11 +504,17 @@ export default function ChatPanel({
             ...(activeWorkspaceId ? { 'x-active-workspace': activeWorkspaceId } : {}),
           },
           // Ship the parsed result too, so chat is grounded even when the browser
-          // has no raw transcript (bot-recorded meetings viewed live).
-          body: JSON.stringify({ message: msg, transcript, result: result || {}, image_urls: imageUrls }),
+          // has no raw transcript (bot-recorded meetings viewed live). meeting_id
+          // lets the correct_meeting_text tool edit THIS saved meeting in place.
+          body: JSON.stringify({ message: msg, transcript, result: result || {}, image_urls: imageUrls, meeting_id: meetingId ? Number(meetingId) : null }),
         })
         if (!res.ok) throw new Error('Chat failed')
         const data = await res.json()
+        // A chat correction edited the saved meeting — reflect the fresh result +
+        // transcript in the live view (cards + transcript) without a reload.
+        if (data.meeting_updated && data.updated) {
+          onCorrectApplied?.(data.updated)
+        }
         setMessages((prev) => [...prev, {
           role: 'assistant',
           content: data.response ?? 'No response from server.',

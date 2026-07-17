@@ -51,6 +51,7 @@ import tools.slack  # noqa: F401
 import tools.calendar  # noqa: F401
 import tools.linear  # noqa: F401
 import tools.jira  # noqa: F401
+import tools.meeting_edit  # noqa: F401  (correct_meeting_text — fix mis-transcribed terms)
 from tools.registry import get_available_tools, execute_tool, confirm_and_execute
 
 router = APIRouter(tags=["chat"])
@@ -63,6 +64,10 @@ class ChatRequest(BaseModel):
     message: str
     transcript: str = ""
     image_urls: list[str] = []
+    # Which saved meeting this chat is about. Enables the correct_meeting_text tool
+    # (fix a mis-transcribed term across the stored summary/transcript). Only used
+    # when authenticated — an anonymous demo chat can't edit stored meetings.
+    meeting_id: int | None = None
     # Parsed analysis (summary / action_items / decisions / sentiment). Sent so chat
     # can answer even when the raw transcript isn't in the browser — e.g. a bot-recorded
     # meeting viewed live, where the audio was transcribed server-side and the frontend
@@ -322,6 +327,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
     tools_used = []
     pending_confirmations = []
     rag_context = None  # structured grounding from knowledge_lookup, if it runs
+    meeting_updated = False  # set when correct_meeting_text actually changed the meeting
     max_iterations = 3
 
     call_kwargs = {
@@ -339,6 +345,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
             "tools_used": tools_used,
             "pending_confirmations": pending_confirmations,
             "rag_context": rag_context,
+            "meeting_updated": meeting_updated,
         }
 
     for _ in range(max_iterations):
@@ -370,6 +377,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
                 "tools_used": tools_used,
                 "pending_confirmations": pending_confirmations,
                 "rag_context": rag_context,
+                "meeting_updated": meeting_updated,
             }
 
         # Process tool calls
@@ -407,6 +415,9 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
                 # conflict warnings — independent of the model's prose.
                 if tool_call.function.name == "knowledge_lookup" and result.get("matches"):
                     rag_context = build_rag_context(result)
+                # A successful in-place meeting edit → tell the frontend to refresh.
+                if tool_call.function.name == "correct_meeting_text" and result.get("meeting_updated"):
+                    meeting_updated = True
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -422,6 +433,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
         "tools_used": tools_used,
         "pending_confirmations": pending_confirmations,
         "rag_context": rag_context,
+        "meeting_updated": meeting_updated,
     }
 
 
@@ -496,6 +508,10 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         if user_id and active_ws:
             from workspace_integrations import resolve_tool_settings
             user_settings = await resolve_tool_settings(user_settings, user_id, active_ws)
+        # Expose the meeting to the correction tool. `requires="_meeting_id"` gates
+        # its availability, so it appears ONLY on an authenticated per-meeting chat.
+        if user_id and req.meeting_id:
+            user_settings["_meeting_id"] = req.meeting_id
 
         context = ""
         if req.transcript.strip():
@@ -542,11 +558,27 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
 
         if tools:
             result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings, workspace_id=active_ws)
+            # If the correction tool edited the meeting, re-read it (outside the LLM
+            # loop so the transcript never bloats the model context) and hand the
+            # fresh result + transcript back so the UI updates the cards AND the
+            # transcript view without a manual reload.
+            updated = None
+            if result.get("meeting_updated") and user_id and req.meeting_id and supabase:
+                try:
+                    row = (supabase.table("meetings").select("result, transcript")
+                           .eq("id", req.meeting_id).eq("user_id", user_id)
+                           .maybe_single().execute()).data
+                    if row:
+                        updated = {"result": row.get("result") or {}, "transcript": row.get("transcript") or ""}
+                except Exception as exc:
+                    print(f"[chat] post-correction re-read failed: {exc}")
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
                 "pending_confirmations": result.get("pending_confirmations", []),
                 "rag_context": result.get("rag_context"),
+                "meeting_updated": result.get("meeting_updated", False),
+                "updated": updated,
             }
         else:
             try:

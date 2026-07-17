@@ -2706,6 +2706,7 @@ export default function App() {
           setMeetingType={setMeetingType}
           inputModeMeta={inputModeMeta}
           transcript={transcript}
+          setTranscript={setTranscript}
           setTranscriptForTab={setTranscriptForTab}
           transcriptStats={transcriptStats}
           transcriptSpeakerCount={transcriptSpeakerCount}

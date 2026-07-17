@@ -747,6 +747,26 @@ export default function DashboardPage(props) {
     }
   }, [props.result, props.meetingId, props.setResult, props.setHistory])
 
+  // A chat correction (correct_meeting_text) already persisted the fresh result +
+  // transcript server-side. Reflect it in the live view (cards + transcript) and the
+  // in-memory history WITHOUT re-persisting — the server is already the source of truth.
+  const onCorrectApplied = useCallback((data) => {
+    if (!data) return
+    if (data.result) props.setResult(data.result)
+    if (typeof data.transcript === 'string') props.setTranscript?.(data.transcript)
+    if (props.meetingId) {
+      props.setHistory?.((prev) =>
+        prev.map((e) => (String(e.id) === String(props.meetingId)
+          ? {
+              ...e,
+              ...(data.result ? { result: data.result } : {}),
+              ...(typeof data.transcript === 'string' ? { transcript: data.transcript } : {}),
+            }
+          : e)),
+      )
+    }
+  }, [props.meetingId, props.setResult, props.setTranscript, props.setHistory])
+
   // Per-meeting chat history. ChatPanel saves the live thread continuously
   // (one growing session per meeting); this just (re)loads the session list —
   // called on meeting change and whenever ChatPanel reports a brand-new session.
@@ -1581,6 +1601,7 @@ export default function DashboardPage(props) {
                 transcript={props.transcript}
                 result={props.result}
                 onResultUpdate={persistResultPatch}
+                onCorrectApplied={onCorrectApplied}
                 onExportTranscriptPDF={props.exportTranscriptPDF}
                 onDownloadTranscriptTxt={props.downloadTranscriptTxt}
                 isSignedIn={!!props.user}

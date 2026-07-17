@@ -566,6 +566,25 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
     if workspace_id and workspace_id not in ws_ids:
         ws_ids.append(workspace_id)
 
+    # 0. Explicit glossary (custom_keyterms) — hand-corrected mishearings and
+    #    added proper nouns. Highest priority: added FIRST so a user's own
+    #    corrections always survive the ~40-term cap. Fed by the chat correction
+    #    tool (tools/meeting_edit.correct_meeting_text).
+    try:
+        glossary: list[str] = []
+        if user_id:
+            gp = (supabase.table("custom_keyterms").select("term")
+                  .eq("user_id", user_id).eq("workspace_id", "").limit(40).execute())
+            glossary += [r.get("term") or "" for r in (gp.data or [])]
+        if ws_ids:
+            gw = (supabase.table("custom_keyterms").select("term")
+                  .in_("workspace_id", ws_ids).limit(40).execute())
+            glossary += [r.get("term") or "" for r in (gw.data or [])]
+        for t in glossary:
+            _add(t)
+    except Exception as exc:
+        print(f"[keyterms] glossary skipped: {exc}")
+
     # 1. Teammate names from workspace member emails.
     try:
         if ws_ids:
