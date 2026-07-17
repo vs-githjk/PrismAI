@@ -1,8 +1,10 @@
 import re
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from auth import require_user_id
 
 
 router = APIRouter(tags=["export"])
@@ -127,24 +129,28 @@ def _build_notion_blocks(result: dict) -> list:
 
 @router.post("/export/notion")
 async def export_to_notion(req: NotionExportRequest):
-    parent_id = req.parent_page_id.strip()
+    return await _do_notion_export(req.token, req.parent_page_id, req.title, req.result)
+
+
+async def _do_notion_export(token: str, parent_page_id: str, title: str, result: dict) -> dict:
+    parent_id = (parent_page_id or "").strip()
     match = re.search(r"([0-9a-f]{32})(?:[?#]|$)", parent_id.replace("-", ""), re.IGNORECASE)
     if not match:
         raise HTTPException(status_code=400, detail="Could not extract a valid Notion page ID from the URL")
     raw = match.group(1)
     parent_id = f"{raw[:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
 
-    all_blocks = _build_notion_blocks(req.result)
+    all_blocks = _build_notion_blocks(result or {})
     payload = {
         "parent": {"page_id": parent_id},
         "properties": {
-            "title": {"title": [{"type": "text", "text": {"content": req.title or "Meeting Analysis"}}]}
+            "title": {"title": [{"type": "text", "text": {"content": title or "Meeting Analysis"}}]}
         },
         "children": all_blocks[:100],
     }
 
     notion_headers = {
-        "Authorization": f"Bearer {req.token}",
+        "Authorization": f"Bearer {token}",
         "Notion-Version": "2022-06-28",
         "Content-Type": "application/json",
     }
@@ -182,9 +188,14 @@ async def export_to_notion(req: NotionExportRequest):
 
 @router.post("/export/slack")
 async def export_to_slack(req: SlackExportRequest):
-    if not req.webhook_url.startswith("https://hooks.slack.com/"):
+    await _do_slack_export(req.webhook_url, req.title, req.result)
+    return {"ok": True}
+
+
+async def _do_slack_export(webhook_url: str, title: str, result: dict) -> None:
+    if not (webhook_url or "").startswith("https://hooks.slack.com/"):
         raise HTTPException(status_code=400, detail="Invalid Slack webhook URL")
-    result = req.result
+    result = result or {}
     health = result.get("health_score") or {}
     items = result.get("action_items") or []
     decisions = result.get("decisions") or []
@@ -192,7 +203,7 @@ async def export_to_slack(req: SlackExportRequest):
     score_str = f"{health['score']}/100" if health.get("score") is not None else "N/A"
     verdict = health.get("verdict", "")
 
-    lines = [f"*{req.title}* — PrismAI Analysis"]
+    lines = [f"*{title}* — PrismAI Analysis"]
     lines.append(f"*Health Score:* {score_str}{(' — ' + verdict) if verdict else ''}")
 
     if result.get("summary"):
@@ -212,7 +223,7 @@ async def export_to_slack(req: SlackExportRequest):
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            req.webhook_url,
+            webhook_url,
             json={"text": "\n".join(lines)},
             timeout=10.0,
         )
@@ -279,13 +290,18 @@ def _build_teams_card(title: str, result: dict) -> dict:
 
 @router.post("/export/teams")
 async def export_to_teams(req: TeamsExportRequest):
-    url = req.webhook_url.strip()
+    await _do_teams_export(req.webhook_url, req.title, req.result)
+    return {"ok": True}
+
+
+async def _do_teams_export(webhook_url: str, title: str, result: dict) -> None:
+    url = (webhook_url or "").strip()
     # Accept both the new Power Automate Workflows host (logic.azure.com) and the
     # legacy Office 365 connector host (webhook.office.com).
     if not (url.startswith("https://") and ("logic.azure.com" in url or "webhook.office.com" in url)):
         raise HTTPException(status_code=400, detail="Invalid Teams webhook URL (expected a Workflows or Office 365 webhook)")
 
-    payload = _build_teams_card(req.title, req.result)
+    payload = _build_teams_card(title, result or {})
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json=payload, timeout=10.0)
@@ -294,4 +310,55 @@ async def export_to_teams(req: TeamsExportRequest):
     if resp.status_code not in (200, 202):
         raise HTTPException(status_code=502, detail=f"Teams webhook failed ({resp.status_code})")
 
+
+# ── Workspace-scoped export (per-workspace integrations #2, decision A) ───────
+# Resolve the workspace's export webhook/token SERVER-SIDE and post — the secret
+# never reaches the browser. Member-gated. The frontend calls these instead of the
+# body-cred /export/* endpoints when acting in a workspace scope.
+class WorkspaceExportRequest(BaseModel):
+    title: str = ""
+    result: dict = {}
+
+
+def _ws_provider_config(workspace_id: str, provider: str) -> dict:
+    from workspace_integrations import _load_workspace_integrations
+    return (_load_workspace_integrations(workspace_id) or {}).get(provider) or {}
+
+
+def _require_ws_member(workspace_id: str, user_id: str) -> None:
+    from workspace_integrations import _is_member
+    if not _is_member(user_id, workspace_id):
+        raise HTTPException(status_code=403, detail="Workspace membership required")
+
+
+@router.post("/workspaces/{workspace_id}/export/slack")
+async def workspace_export_slack(workspace_id: str, req: WorkspaceExportRequest,
+                                 user_id: str = Depends(require_user_id)):
+    _require_ws_member(workspace_id, user_id)
+    webhook = _ws_provider_config(workspace_id, "slack").get("slack_webhook")
+    if not webhook:
+        raise HTTPException(status_code=404, detail="This workspace has no Slack webhook configured")
+    await _do_slack_export(webhook, req.title, req.result)
     return {"ok": True}
+
+
+@router.post("/workspaces/{workspace_id}/export/teams")
+async def workspace_export_teams(workspace_id: str, req: WorkspaceExportRequest,
+                                 user_id: str = Depends(require_user_id)):
+    _require_ws_member(workspace_id, user_id)
+    webhook = _ws_provider_config(workspace_id, "teams").get("teams_webhook")
+    if not webhook:
+        raise HTTPException(status_code=404, detail="This workspace has no Teams webhook configured")
+    await _do_teams_export(webhook, req.title, req.result)
+    return {"ok": True}
+
+
+@router.post("/workspaces/{workspace_id}/export/notion")
+async def workspace_export_notion(workspace_id: str, req: WorkspaceExportRequest,
+                                  user_id: str = Depends(require_user_id)):
+    _require_ws_member(workspace_id, user_id)
+    cfg = _ws_provider_config(workspace_id, "notion")
+    token, page = cfg.get("notion_token"), cfg.get("notion_page_id")
+    if not token or not page:
+        raise HTTPException(status_code=404, detail="This workspace has no Notion integration configured")
+    return await _do_notion_export(token, page, req.title, req.result)

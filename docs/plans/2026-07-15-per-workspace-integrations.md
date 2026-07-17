@@ -193,3 +193,20 @@ Export endpoints take the webhook/token in the body today, so **the client decid
 ## 13. Effort estimate
 
 ~**3–4 focused days**: table+resolver+tests (0.5d) · thread the 3 tool paths (1d) · export server-resolve (0.5–1d) · UI scope switcher + owner gating + masked GET (1d) · e2e + polish (0.5d). Shippable in flag-gated slices.
+
+---
+
+## Build progress (Jul 16)
+
+**Shipped-ready (local commits on vids_branch):**
+- ✅ Migration `workspace_integrations_migration.sql` (table + RLS enabled, no policies → service-role only). APPLIED to Supabase.
+- ✅ Resolver core `workspace_integrations.resolve_tool_settings` (per-provider all-or-nothing overlay, personal fallback, membership-checked, flag-gated). 11 unit tests.
+- ✅ Owner CRUD API (`workspace_routes`): GET (member, masked) / PUT / DELETE `/workspaces/{id}/integrations[/{provider}]`.
+- ✅ Wiring: `actions_routes` (resolve meeting→workspace) + `chat_routes` (/chat via x-active-workspace header; pending-tool entry carries workspace_id so confirmations route right). /chat/global stays personal.
+- ✅ Export server-resolve (`export_routes`, decision A): member-gated `POST /workspaces/{id}/export/{slack|teams|notion}` — resolves the webhook/token server-side, secret never reaches the browser. (Refactored the body-cred handlers into reusable `_do_*` helpers.)
+- ✅ UI scope switcher (`IntegrationsModal`, built via subagent + reviewed): Personal | Workspace pills, owner-editable / member-readonly, masked status, Test-connection reuse, Save/Disconnect. Personal path unchanged.
+
+**Remaining:**
+- ⏭ **Realtime/live-bot wiring** — overlay `_get_settings_for_bot` with the bot's `workspace_id`. DEFERRED: `realtime_routes.py` is Devaj's active voice-redo domain; fold in after to avoid a merge conflict. (This is the highest-value path — team meetings via bot — so it's the top follow-up once Devaj lands.)
+- ⏭ **Frontend export CALL SITES** — the UI to CONFIGURE workspace export exists, but the "export summary to Slack/Teams" buttons (SuggestedActions / EmailCard / auto-send) still call the personal `/export/*`. Point them at `/workspaces/{id}/export/*` when in workspace scope. (Ticket-filing already routes correctly via the tool path.)
+- ⏭ Transparency: show "→ Acme workspace Jira" on a routed action (nice-to-have).
