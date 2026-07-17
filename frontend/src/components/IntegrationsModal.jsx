@@ -13,36 +13,46 @@ const WS_PROVIDERS = {
   Slack: {
     provider: 'slack',
     fields: [
-      { key: 'slack_bot_token', label: 'Bot Token', placeholder: 'xoxb-...', type: 'password' },
-      { key: 'slack_webhook', label: 'Incoming Webhook URL', placeholder: 'https://hooks.slack.com/services/...' },
+      { key: 'slack_bot_token', label: 'Bot Token', placeholder: 'xoxb-...', type: 'password',
+        hint: 'Lets the bot POST messages via commands (e.g. "post this to #team"). From api.slack.com/apps → your app → OAuth & Permissions → Bot User OAuth Token.' },
+      { key: 'slack_webhook', label: 'Incoming Webhook URL', placeholder: 'https://hooks.slack.com/services/...',
+        hint: 'Used to push meeting summaries to one channel. Optional if you only need bot-command posting.' },
     ],
   },
   Teams: {
     provider: 'teams',
     fields: [
-      { key: 'teams_webhook', label: 'Workflows Webhook URL', placeholder: 'https://prod-XX.westus.logic.azure.com/...' },
+      { key: 'teams_webhook', label: 'Workflows Webhook URL', placeholder: 'https://prod-XX.westus.logic.azure.com/...',
+        hint: 'A Power Automate "Workflows" (or legacy Office 365) incoming-webhook URL for the channel summaries should post to.' },
     ],
   },
   Notion: {
     provider: 'notion',
     fields: [
-      { key: 'notion_token', label: 'Integration Token', placeholder: 'secret_...', type: 'password' },
-      { key: 'notion_page_id', label: 'Parent Page ID', placeholder: '32-character page ID or full page URL' },
+      { key: 'notion_token', label: 'Integration Token', placeholder: 'secret_...', type: 'password',
+        hint: 'From notion.so/my-integrations → New integration → Internal Integration Token. Share the target page with the integration.' },
+      { key: 'notion_page_id', label: 'Parent Page ID', placeholder: '32-character page ID or full page URL',
+        hint: 'The page new meeting notes are created under — paste the page URL or its 32-char ID.' },
     ],
   },
   Linear: {
     provider: 'linear',
     fields: [
-      { key: 'linear_api_key', label: 'Linear API Key', placeholder: 'lin_api_...', type: 'password' },
+      { key: 'linear_api_key', label: 'Linear API Key', placeholder: 'lin_api_...', type: 'password',
+        hint: 'A personal API key from linear.app/settings/api. Lets the bot create issues from action items.' },
     ],
   },
   Jira: {
     provider: 'jira',
     fields: [
-      { key: 'jira_base_url', label: 'Site URL', placeholder: 'yoursite.atlassian.net' },
-      { key: 'jira_email', label: 'Account Email', placeholder: 'you@company.com' },
-      { key: 'jira_api_token', label: 'API Token', placeholder: 'Atlassian API token', type: 'password' },
-      { key: 'jira_project_key', label: 'Default Project Key', placeholder: 'e.g. PRISM' },
+      { key: 'jira_base_url', label: 'Site URL', placeholder: 'yoursite.atlassian.net',
+        hint: 'Your Jira Cloud site, e.g. yoursite.atlassian.net (with or without https://).' },
+      { key: 'jira_email', label: 'Account Email', placeholder: 'you@company.com',
+        hint: 'The Atlassian account email that owns the API token.' },
+      { key: 'jira_api_token', label: 'API Token', placeholder: 'Atlassian API token', type: 'password',
+        hint: 'Create one at id.atlassian.com/manage-profile/security/api-tokens.' },
+      { key: 'jira_project_key', label: 'Default Project Key', placeholder: 'e.g. PRISM',
+        hint: 'The project new issues are created in (overridable per request in chat).' },
     ],
   },
 }
@@ -466,6 +476,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 label={f.label}
                 placeholder={f.placeholder}
                 type={f.type || 'text'}
+                hint={f.hint}
                 value={wsForm[f.key] || ''}
                 onChange={val => setWsForm(prev => ({ ...prev, [f.key]: val }))}
               />
@@ -554,7 +565,11 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
           style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <div>
             <h3 className="text-sm font-semibold text-white">Integrations</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Connect PrismAI to your tools — tokens stay in your browser.</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {scope === 'personal'
+                ? 'Connect PrismAI to your tools — stored securely on your account.'
+                : `Shared across the “${activeWs?.name || 'workspace'}” — only the workspace owner can change these.`}
+            </p>
           </div>
           <button onClick={onClose} className="text-gray-600 hover:text-gray-300 transition-colors p-1">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
