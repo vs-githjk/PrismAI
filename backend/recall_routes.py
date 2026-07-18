@@ -2014,14 +2014,21 @@ async def _process_bot_transcript(bot_id: str):
             print(f"[recall] stamped exit_note onto meeting {bot_id[:8]}: {result['exit_note']}")
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
-        bot_store[bot_id]["status"] = "done"
         bot_store[bot_id]["transcript_segments"] = segments
+        # Persist transcript + segments to bot_sessions BEFORE flipping the in-memory
+        # status to "done". /bot-status reads bot_store (in-memory), and the browser
+        # saves the instant it sees "done" → save_meeting then resolves segments from
+        # bot_sessions by recall_bot_id. If "done" were visible first, the browser
+        # would save with NULL segments, and the delayed server persist no-ops because
+        # the row already exists → timestamped seek is lost. Persist-then-flip closes
+        # that race so the segments are always in bot_sessions before "done" is seen.
         _db_save(bot_id, {
-            "status": "done",
             "transcript": transcript,
             "result": result,
             "transcript_segments": segments,
         })
+        bot_store[bot_id]["status"] = "done"
+        _db_save(bot_id, {"status": "done"})
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
         # Persist to the meetings table server-side so a meeting is never lost to a

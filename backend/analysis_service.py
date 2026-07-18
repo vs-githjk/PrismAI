@@ -181,7 +181,11 @@ def _make_tier1_node(agent_name: str):
         token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
         try:
             result = await AGENT_MAP[agent_name](state["transcript"])
-        except Exception:
+        except Exception as exc:
+            # An agent throwing → empty card. Log WHY (was silent) so a transient
+            # LLM overload/timeout/parse error on a big transcript is diagnosable
+            # instead of a mystery "sentiment/health just failed".
+            print(f"[analysis] tier1 agent '{agent_name}' FAILED: {exc!r}")
             result = {}
         finally:
             _PERSONA_TEXT.reset(token)
@@ -265,7 +269,8 @@ def _make_tier2_node(agent_name: str):
             else:
                 transcript_in = state["transcript"]
             result = await AGENT_MAP[agent_name](transcript_in, ctx)
-        except Exception:
+        except Exception as exc:
+            print(f"[analysis] tier2 agent '{agent_name}' FAILED: {exc!r}")
             result = {}
         finally:
             _PERSONA_TEXT.reset(token)

@@ -135,7 +135,12 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
           <h2 className={`mb-4 ${cardHeading}`}>Recent meetings</h2>
           {history.length ? (
             <div className="space-y-2.5">
-              {history.map((entry) => {
+              {/* Newest-first — the fetched/merged history array isn't guaranteed to be
+                  date-ordered (a workspace re-fetch can land the newest meeting last),
+                  and this card, unlike the sidebar, would otherwise show raw order. */}
+              {[...history]
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .map((entry) => {
                 // Pitch / interview meetings score on their own rubric — show that
                 // (e.g. "PITCH 72") instead of the misleading health % for them.
                 const ca = hasContentAnalysis(entry.result) ? entry.result.content_analysis : null
