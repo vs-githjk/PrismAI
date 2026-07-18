@@ -886,7 +886,7 @@ export default function App() {
   // classify (default); an explicit pick skips the classifier. Sent on /analyze-stream.
   const [meetingType, setMeetingType] = useState('auto')
   const [meetingUrl, setMeetingUrl] = useState('')
-  const [joinMode, setJoinMode] = useState('utterance')  // pre-join response mode: 'utterance' | 'autonomous'
+  const [joinMode, setJoinMode] = useState('auto')  // pre-join engagement mode: 'auto' | 'manual'
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
   // Workspace the live bot was JOINED under — snapshotted at join because the global
   // activeWorkspaceId can change while a call is in progress. Drives the "Recording

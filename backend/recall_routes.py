@@ -2190,7 +2190,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         "owner_name": req.owner_name,
         "workspace_id": req.workspace_id,
         "realtime_token": realtime_token,
-        "initial_mode": req.mode if req.mode in ("utterance", "autonomous") else None,
+        "initial_mode": req.mode if req.mode in ("auto", "manual", "utterance", "autonomous") else None,
     }
     _live_token_index[live_token] = bot_id
     _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token,

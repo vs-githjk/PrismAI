@@ -370,6 +370,14 @@ def _two_channel_on() -> bool:
     return os.getenv("PRISM_TWO_CHANNEL") == "1"
 
 
+def _gate_on() -> bool:
+    """Phase 4: route engagement through the single `voice.gate` (Auto/Manual) instead of
+    the legacy wake-word + solo free-flow + ambient consent funnel. Default OFF — the
+    legacy detection stays the live path until a real meeting validates the gate; flip
+    PRISM_ENGAGEMENT_GATE=1 for that, then it becomes the default and the old paths die."""
+    return os.getenv("PRISM_ENGAGEMENT_GATE") == "1"
+
+
 def _accumulator_on() -> bool:
     return os.getenv("PRISM_ACCUMULATOR") == "1"
 
@@ -1235,9 +1243,18 @@ def _get_bot_state(bot_id: str) -> dict:
         # override so it's a stable choice for the whole meeting (not subject
         # to the autonomy cap / lull-revert in ambient_loop.update_mode).
         _initial_mode = (bot_store.get(bot_id) or {}).get("initial_mode")
-        if _initial_mode in ("utterance", "autonomous"):
+        if _initial_mode in ("auto", "manual"):
+            # Phase 4 vocabulary. Set the gate's mode + keep the legacy override
+            # consistent so the old path (gate off) behaves the same.
+            _bot_state[bot_id]["engagement_mode"] = _initial_mode
+            _legacy = "autonomous" if _initial_mode == "auto" else "utterance"
+            _bot_state[bot_id]["manual_mode"] = _legacy
+            _bot_state[bot_id]["mode"] = _legacy
+            _bot_state[bot_id]["mode_since_ts"] = time.time()
+        elif _initial_mode in ("utterance", "autonomous"):
             _bot_state[bot_id]["manual_mode"] = _initial_mode
             _bot_state[bot_id]["mode"] = _initial_mode
+            _bot_state[bot_id]["engagement_mode"] = "manual" if _initial_mode == "utterance" else "auto"
             _bot_state[bot_id]["mode_since_ts"] = time.time()
         # Build accumulator AFTER the state dict exists, so the on_flush
         # closure can capture the same state object.
@@ -1408,6 +1425,17 @@ async def _send_chat_response(bot_id: str, message: str):
             )
     except Exception as exc:
         print(f"[realtime] failed to send chat response: {exc}")
+
+
+async def _proactive_send(bot_id: str, state: dict, message: str) -> None:
+    """Proactive nudge sink (idea engine + proactive checker). Phase 4: routes through the
+    single engagement gate (mode/mute/quiet-window) when it's on, so the watchers no longer
+    decide on their own; falls back to a direct chat post when the gate is off."""
+    if _gate_on():
+        from voice import gate
+        await gate.propose(bot_id, state, message, kind="nudge")
+        return
+    await _send_chat_response(bot_id, message)
 
 
 # A typed "/leave" (optionally "/leave Prism") in the meeting chat tells the bot to
@@ -2322,7 +2350,7 @@ async def _maybe_generate_idea(bot_id: str, state: dict) -> None:
                 return
 
         prefix = _IDEA_TYPE_PREFIX.get(idea_type, "💡")
-        await _send_chat_response(bot_id, f"{prefix} {message}")
+        await _proactive_send(bot_id, state, f"{prefix} {message}")
 
         # Feature 1: Record gap category so it won't be re-flagged this meeting.
         if idea_type == "gap":
@@ -2403,8 +2431,8 @@ async def _run_proactive_checker(bot_id: str):
         if elapsed_min >= 30 and state["decisions_detected"] == 0 and not state["sent_30min_nudge"]:
             state["sent_30min_nudge"] = True
             state["intervention_last_ts"] = now
-            await _send_chat_response(
-                bot_id,
+            await _proactive_send(
+                bot_id, state,
                 f"📋 30 minutes in — no decisions logged yet. Say '{bot_name}, summarize what's been decided' to capture them.",
             )
             continue
@@ -2418,8 +2446,8 @@ async def _run_proactive_checker(bot_id: str):
         ):
             state["sent_no_owners_nudge"] = True
             state["intervention_last_ts"] = now
-            await _send_chat_response(
-                bot_id,
+            await _proactive_send(
+                bot_id, state,
                 f"👤 Some action items may not have clear owners yet. Say '{bot_name}, who owns what?' to clarify.",
             )
             continue
@@ -2428,8 +2456,8 @@ async def _run_proactive_checker(bot_id: str):
         if elapsed_min >= 55 and not state["sent_55min_nudge"]:
             state["sent_55min_nudge"] = True
             state["intervention_last_ts"] = now
-            await _send_chat_response(
-                bot_id,
+            await _proactive_send(
+                bot_id, state,
                 f"⏱️ Meeting approaching 1 hour. Say '{bot_name}, list the action items so far' to make sure everything is captured before wrapping up.",
             )
             continue
@@ -3541,6 +3569,18 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # mutations — see _compress_and_persist below.
             asyncio.create_task(_compress_and_persist(bot_id, state))
 
+            # ── Engagement gate (Phase 4) ─────────────────────────────────────
+            # One decision point for "speak now?" — absorbs wake-word + solo + ambient.
+            # Flux hands complete turns, so no fragment-gluing is needed here (that dead
+            # half is the legacy block below). Behind PRISM_ENGAGEMENT_GATE until a live
+            # meeting validates it; the legacy detection stays as the fallback.
+            if _gate_on():
+                from voice import gate
+                _speak, _cmd = await gate.decide(bot_id, state, text, speaker)
+                if _speak:
+                    _dispatch_command(state, bot_id, _cmd, speaker)
+                return {"ok": True}
+
             # ── Command detection & utterance gating ──────────────────────────
             # The transcript provider may finalize an utterance mid-sentence, e.g.
             # event 1: "Prism, can you"  → command="can you" (NOT yet complete)
@@ -3750,16 +3790,29 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
 
 @router.post("/bot/{bot_id}/mode")
 async def set_bot_mode(bot_id: str, body: dict):
-    """Owner manual override of the live bot's mode. body={"mode": "utterance"
-    |"autonomous"|null}. null clears the override (auto state machine resumes).
-    Unauthenticated like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    """Set the live bot's engagement mode. Unauthenticated like the other bot endpoints.
+
+    Phase 4 vocabulary: body={"mode": "auto"|"manual"} — Auto (speaks when warranted) or
+    Manual (wake-word only). Legacy body={"mode": "utterance"|"autonomous"|null} is still
+    accepted and mapped (autonomous→auto, utterance/null→the legacy override) so the old
+    dashboard control keeps working during the Phase-4 rollout."""
     mode = body.get("mode")
+    if mode in ("auto", "manual"):
+        state = _get_bot_state(bot_id)
+        from voice import gate
+        gate.set_mode(state, mode)
+        # Keep the legacy state machine consistent so the old path (gate off) still behaves.
+        state["manual_mode"] = "autonomous" if mode == "auto" else "utterance"
+        ambient_loop.update_mode(state, "", "", time.time())
+        print(f"[gate] engagement mode bot={bot_id[:8]} -> {mode!r}")
+        return {"mode": mode, "engagement_mode": mode}
     if mode not in (None, "utterance", "autonomous"):
-        return {"error": "mode must be 'utterance', 'autonomous', or null"}
+        return {"error": "mode must be 'auto', 'manual', 'utterance', 'autonomous', or null"}
     state = _get_bot_state(bot_id)
     state["manual_mode"] = mode
     if mode in ("utterance", "autonomous"):
         ambient_loop.update_mode(state, "", "", time.time())
+        state["engagement_mode"] = "manual" if mode == "utterance" else "auto"
     print(f"[ambient] manual mode override bot={bot_id[:8]} -> {mode!r}")
     return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
 

@@ -1,5 +1,15 @@
 # Phase 4 — One engagement gate (Auto / Manual)
 
+> **STATUS (2026-07-18): dry build COMPLETE, behind `PRISM_ENGAGEMENT_GATE=1` (default OFF).**
+> `voice/gate.py` built additively; legacy wake/solo/ambient stay as the fallback (§7
+> demolition deferred to after the one end-of-phases live test). **One deviation from §2:**
+> the per-utterance "ambient judge → speak directly" (Auto+N humans) was consolidated into
+> the proposer→gate path — the idea engine already generates contributions, so Auto-group
+> interjection flows through `propose()` (drift checker + idea engine), avoiding a second
+> judge and matching "the watchers never speak on their own." `propose()` is chat-primary
+> (spoken-proactive is a future-ideas tuning knob). Gate + brain-split are independent
+> flags (gate works with the fused OR split brain).
+
 Goal: collapse wake-word/solo-freeflow/ambient/proactive into a single decision point with one user-facing toggle. After this phase there are exactly two behaviors: **Auto** (bot speaks directly when it judges a contribution is warranted) and **Manual** (wake-word only). (KRC items 6–9, 11; fork ①; Q3; core decision #6.)
 
 ## 1. New module
