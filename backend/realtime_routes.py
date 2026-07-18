@@ -1669,6 +1669,14 @@ async def _send_voice_response(bot_id: str, text: str):
     Buffered (default) path: one TTS call, one upload."""
     if not RECALL_API_KEY:
         return
+    # Voice agent (Phase 2): if a live Flux/Cartesia pipeline is attached to this bot,
+    # speak through it (Cartesia → Output Media page) instead of the MP3 upload path.
+    # Leak-guarded like the streamed path; falls through to MP3 when no pipeline exists
+    # (the MP3 path is deleted in the Phase 2 demolition commit once this is proven live).
+    if "<function=" not in text:
+        from voice.bridge import speak as _voice_speak
+        if await _voice_speak(bot_id, text):
+            return
     audio_bytes = await text_to_speech(text)
     if not audio_bytes:
         print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
@@ -1932,6 +1940,13 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
         if "<function=" in chunk:
             print(f"[realtime] function_tag_leak_detected bot={bot_id[:8]}; aborting streamed voice")
             return
+
+    # Voice agent (Phase 2): hand the whole (leak-checked) reply to the live pipeline —
+    # Cartesia does its own streaming TTS and the sink stamps the t3→t4 mix-hop stopwatch.
+    # Falls back to the MP3 chunk loop below when no pipeline is attached.
+    from voice.bridge import speak as _voice_speak
+    if await _voice_speak(bot_id, text):
+        return
 
     state = _get_bot_state(bot_id)
     print(f"[realtime] chunker_sentences_emitted={len(chunks)} bot={bot_id[:8]}")

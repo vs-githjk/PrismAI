@@ -709,7 +709,19 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
         # transcript) when the term list contained anything malformed. Keyterm grounding
         # stays ON only in the async batch re-transcription (_request_async_transcript),
         # where it's well-supported. Re-enable here only after live validation.
+        # Voice-agent note: the live ears move to Deepgram Flux (backend/voice) — Flux
+        # DOES support keyterm prompting (query param + mid-stream Configure), so the
+        # keyterm list is threaded into the Flux socket in voice/pipeline.py, not here.
         deepgram["keyterm"] = keyterms[:50]
+    # Voice agent (Phase 2): the live speech path is now raw PCM → our WS → Deepgram
+    # Flux, and TTS out via Recall Output Media rendering our speaker page. The token
+    # embedded in realtime_url is reused for both new sockets (Phase 2 §2). WS scheme
+    # mirrors WEBHOOK_BASE_URL's; the speaker page is loaded over HTTP(S) by Recall's
+    # renderer and opens the speaker WS back to us.
+    token = realtime_url.rstrip("/").rsplit("/", 1)[-1]
+    ws_base = WEBHOOK_BASE_URL.replace("https://", "wss://").replace("http://", "ws://")
+    audio_ws_url = f"{ws_base}/voice/audio-in/{token}"
+    speaker_page_url = f"{WEBHOOK_BASE_URL}/voice/speaker-page/{token}"
     body = {
         "meeting_url": meeting_url,
         "bot_name": bot_name,
@@ -718,6 +730,13 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             "video_mixed_layout": "speaker_view",
             "video_mixed_mp4": {},
             "audio_mixed_mp3": {},
+            # Raw per-participant PCM (16kHz mono s16le) → our audio-in WS. Separate
+            # (not mixed) so each frame carries participant identity — that replaces
+            # the webhook diarization the retired transcript.data path gave us.
+            "audio_separate_raw": {},
+            # Kept: Recall still transcribes the RECORDING (deepgram_streaming) for the
+            # recording player + the post-meeting fallback transcript. We just stop
+            # SUBSCRIBING to live transcript.data — Flux is the live ears now.
             "transcript": {
                 "provider": {
                     "deepgram_streaming": deepgram
@@ -725,21 +744,36 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             },
             "realtime_endpoints": [
                 {
+                    # Speech path: raw audio to Pipecat/Flux. Only "websocket" is
+                    # supported for realtime audio data.
+                    "type": "websocket",
+                    "url": audio_ws_url,
+                    "events": ["audio_separate_raw.data"],
+                },
+                {
+                    # Chat + roster stay on the webhook door (Q2). transcript.data is
+                    # dropped — the ears moved to the audio WS above.
                     "type": "webhook",
                     "url": realtime_url,
                     "events": [
-                        "transcript.data",
                         "participant_events.chat_message",
                         "participant_events.join",
                         "participant_events.leave",
                     ],
-                }
+                },
             ],
         },
+        # The mouth: Recall's Output Media renderer loads our speaker page as the bot's
+        # camera and mixes its audio into the call. This SUPERSEDES automatic_video_output
+        # (both target the camera) — the speaker page owns the tile and renders branding
+        # itself, so we no longer set the static logo tile when Output Media is on.
+        "output_media": {
+            "camera": {
+                "kind": "webpage",
+                "config": {"url": speaker_page_url},
+            }
+        },
     }
-    tile = _bot_video_output()
-    if tile:
-        body["automatic_video_output"] = tile
     if join_at:
         body["join_at"] = join_at
     return body
