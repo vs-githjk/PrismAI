@@ -1,5 +1,15 @@
 # Phase 3 — The two-channel brain
 
+> **STATUS (2026-07-18): dry build COMPLETE, behind `PRISM_TWO_CHANNEL=1` (default OFF).**
+> Built additively — `_process_command` + `bridge.py` stay as the live fallback until one
+> real meeting validates the split (demolition-vs-wait → WAIT). So §5 demolition is
+> deferred, and the voice channel is currently a plain async handler reached via the
+> Phase-2 bridge/dispatch sites, **not yet a Pipecat FrameProcessor** — that frame-level
+> integration lands with demolition (it's also what Phase-5 barge-in needs). Groq was
+> re-added (owner call) after finding it had been removed 2026-06-14; see master §6.
+> Modules: `voice/{prompts,bus,agent_channel,voice_channel}.py`. Everything else below is
+> as-built.
+
 Goal: kill the fused `_process_command` shape. Voice channel (Groq, streaming, ZERO tools) talks; agent channel (gpt-4o-mini, ALL tools) works; a queue + visibility bus connects them. Chat acks replace spoken filler. (KRC items 10, 12–18, 23; forks ②③; Q3, Q4.)
 
 ## 1. New modules

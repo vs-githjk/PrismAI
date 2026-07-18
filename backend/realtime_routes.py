@@ -362,6 +362,14 @@ def _owner_id_lock_on() -> bool:
     return os.getenv("PRISM_OWNER_ID_LOCK") == "1"
 
 
+def _two_channel_on() -> bool:
+    """Phase 3: route commands through the voice/agent split (bus + tiered dedup) instead
+    of the fused `_process_command`. Default OFF — the fused path stays the live default
+    until a real meeting validates the new one; flip PRISM_TWO_CHANNEL=1 for that first
+    live join, then it becomes the default and `_process_command` is demolished."""
+    return os.getenv("PRISM_TWO_CHANNEL") == "1"
+
+
 def _accumulator_on() -> bool:
     return os.getenv("PRISM_ACCUMULATOR") == "1"
 
@@ -3161,7 +3169,16 @@ def _dispatch_command(state: dict, bot_id: str, command: str, speaker: str) -> N
       people asking consecutively are BOTH answered in order rather than the
       second being dropped. The current answer is NOT cut off — to interrupt
       explicitly, say "Prism, stop" or hit mute.
+
+    Phase 3: when PRISM_TWO_CHANNEL=1, the command goes to the voice/agent bus
+    (tiered dedup + serial drain) instead — the queue+debounce below are the
+    thing the bus replaces (item 10).
     """
+    if _two_channel_on():
+        from voice import voice_channel  # noqa: F401 — import registers the bus handler
+        from voice import bus
+        asyncio.create_task(bus.submit(bot_id, command, speaker))
+        return
     if not state.get("processing"):
         asyncio.create_task(_process_command(bot_id, command, speaker))
         return
@@ -3682,7 +3699,12 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r} (chat-only reply)")
                 # Typed in chat → answer in chat only, never speak into the meeting.
-                asyncio.create_task(_process_command(bot_id, command, sender, from_chat=True))
+                if _two_channel_on():
+                    from voice import voice_channel  # noqa: F401 — registers the bus handler
+                    from voice import bus
+                    asyncio.create_task(bus.submit(bot_id, command, sender, from_chat=True))
+                else:
+                    asyncio.create_task(_process_command(bot_id, command, sender, from_chat=True))
 
     elif event_type in (
         "participant_events.join",
@@ -3796,6 +3818,11 @@ def cleanup_bot_state(bot_id: str) -> None:
     _BOT_WAKE_ALIAS.pop(bot_id, None)
     unregister_realtime_token(bot_id)
     perception_state.cleanup_bot(bot_id)
+    try:
+        from voice import bus as _voice_bus
+        _voice_bus.cleanup_bot(bot_id)
+    except Exception:
+        pass
     if state is not None:
         # Cancel the tick task (its `finally` block also runs flush_all
         # as a backstop). Best-effort — cancellation may race with the
