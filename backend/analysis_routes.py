@@ -13,6 +13,11 @@ from analysis_service import AGENT_RESULT_KEY, _GRAPH, build_analysis_transcript
 _transcribe_log: dict[str, list[float]] = defaultdict(list)
 _TRANSCRIBE_PER_MINUTE = 5
 
+# Document text-extraction (.docx/.pdf/.txt → text) for the Article/Report input path.
+_doc_extract_log: dict[str, list[float]] = defaultdict(list)
+_DOC_EXTRACT_PER_MINUTE = 10
+_DOC_MAX_BYTES = 15 * 1024 * 1024
+
 
 class AnalyzeRequest(BaseModel):
     transcript: str
@@ -118,5 +123,51 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
             return {"transcript": transcription.text}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Transcription failed: {str(exc)}")
+
+    @router.post("/extract-document")
+    async def extract_document(request: Request, file: UploadFile = File(...)):
+        """Extract plain text from an uploaded document (.docx / .pdf / .txt) so it can
+        be analyzed like a pasted transcript — the Article/Report "upload instead of
+        paste" path. Reuses the knowledge-base loaders; no storage, just extract and
+        return `{transcript}` (same shape as /transcribe so the frontend flow is shared).
+        Unauthenticated to match the demo analyze flow; IP rate-limited + size-capped."""
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        _doc_extract_log[client_ip] = [t for t in _doc_extract_log[client_ip] if now - t < 60]
+        if len(_doc_extract_log[client_ip]) >= _DOC_EXTRACT_PER_MINUTE:
+            raise HTTPException(status_code=429, detail="Too many uploads — try again in a minute")
+        _doc_extract_log[client_ip].append(now)
+
+        content = await file.read()
+        if len(content) > _DOC_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="File too large. Max 15MB.")
+
+        name = (file.filename or "").lower()
+        ext = name.rsplit(".", 1)[-1] if "." in name else ""
+        from knowledge_ingest.loaders_base import LoaderError
+        try:
+            if ext == "pdf":
+                from knowledge_ingest import pdf_loader as loader
+            elif ext == "docx":
+                from knowledge_ingest import docx_loader as loader
+            elif ext in ("txt", "md", "markdown", "text"):
+                from knowledge_ingest import text_loader as loader
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unsupported file type. Upload a .docx, .pdf, or .txt (old .doc isn't supported — save as .docx).",
+                )
+            loaded = await loader.load(content)
+        except HTTPException:
+            raise
+        except LoaderError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not read the document: {exc}")
+
+        text = (loaded.text or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="No readable text found in the document.")
+        return {"transcript": text, "filename": file.filename, "words": len(text.split())}
 
     return router

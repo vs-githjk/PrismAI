@@ -879,6 +879,10 @@ export default function App() {
   const [transcribeStatus, setTranscribeStatus] = useState('')
   const [transcribeError, setTranscribeError] = useState('')
   const fileInputRef = useRef(null)
+  // Document upload (.docx/.pdf/.txt → text) for the Paste tab — Article/Report input.
+  const [extractingDoc, setExtractingDoc] = useState(false)
+  const [docError, setDocError] = useState('')
+  const docInputRef = useRef(null)
 
   // Join Meeting state
   const [inputTab, setInputTab] = useState('join') // 'paste' | 'join'
@@ -2156,6 +2160,34 @@ export default function App() {
     }
   }
 
+  const handleDocumentUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setExtractingDoc(true)
+    setDocError('')
+    const formData = new FormData()
+    formData.append('file', file)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000)
+    try {
+      const res = await apiFetch('/extract-document', { method: 'POST', body: formData, signal: controller.signal })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Could not read the document')
+      const data = await res.json()
+      if (!data.transcript?.trim()) throw new Error('No readable text found in the document.')
+      // Extracted text flows into the same paste field → analyze like any transcript.
+      setTranscriptForTab(data.transcript, 'paste')
+    } catch (err) {
+      console.error('[upload] document extract failed:', err)
+      setDocError(err.name === 'AbortError'
+        ? 'Reading the document timed out — try a smaller file.'
+        : (err.message || 'Could not read the document'))
+    } finally {
+      clearTimeout(timeout)
+      setExtractingDoc(false)
+      e.target.value = ''
+    }
+  }
+
   const handleAnalyzeClick = () => {
     if (!transcript.trim()) return
     const detected = extractSpeakers(transcript)
@@ -2772,6 +2804,10 @@ export default function App() {
           transcribeError={transcribeError}
           fileInputRef={fileInputRef}
           handleAudioUpload={handleAudioUpload}
+          extractingDoc={extractingDoc}
+          docError={docError}
+          docInputRef={docInputRef}
+          handleDocumentUpload={handleDocumentUpload}
           shareToken={shareToken}
           shareCopied={shareCopied}
           setShareCopied={setShareCopied}

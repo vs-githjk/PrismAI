@@ -270,13 +270,37 @@ function NewMeetingPanel(props) {
               <textarea
                 value={props.transcript || ''}
                 onChange={(e) => props.setTranscriptForTab(e.target.value, 'paste')}
-                placeholder="Paste your meeting transcript here..."
+                placeholder="Paste a transcript, article, or report…"
                 rows={7}
                 className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
               />
-              {props.transcriptStats?.words > 0 && (
-                <p className="text-[10.5px] text-white/38">
-                  {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
+              {/* Upload a document instead of pasting — extracts text server-side
+                  (.docx/.pdf/.txt). Handy for the Article / Report lens. */}
+              <input
+                ref={props.docInputRef}
+                type="file"
+                accept=".docx,.pdf,.txt,.md,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={props.handleDocumentUpload}
+              />
+              <div className="flex items-center justify-between gap-2">
+                {props.transcriptStats?.words > 0 ? (
+                  <p className="text-[10.5px] text-white/38">
+                    {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
+                  </p>
+                ) : <span />}
+                <button
+                  type="button"
+                  onClick={() => props.docInputRef?.current?.click()}
+                  disabled={props.extractingDoc}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-medium text-cyan-300/80 transition hover:text-cyan-200 disabled:opacity-50"
+                >
+                  {props.extractingDoc ? '⏳ Reading document…' : '📄 Upload a document'}
+                </button>
+              </div>
+              {props.docError && (
+                <p className="rounded-lg border border-red-400/25 bg-red-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {props.docError}
                 </p>
               )}
               <AnalyzeButton {...props} />
