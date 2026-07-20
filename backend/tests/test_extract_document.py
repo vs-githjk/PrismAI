@@ -1,10 +1,20 @@
 """/extract-document — turns an uploaded .docx/.pdf/.txt into text for the
-Article/Report input path (reuses the knowledge-base loaders)."""
+Article/Report input path (reuses the knowledge-base loaders).
+
+Isolation notes (this suite shares a process with mock-heavy siblings):
+- `test_docx_loader.py` installs a FAKE `docx` module in sys.modules via setdefault;
+  import the REAL python-docx here first (this file collects before that one) so our
+  build+parse round-trip uses the genuine library.
+- Import `analysis_routes` LAZILY (in setUp, not at module import) so we don't populate
+  the module cache before `test_main_routes.py` installs its fake `analysis_service`
+  — importing it at collection time would defeat that test's mock.
+"""
 import io
 import sys
-import importlib
 import unittest
 from pathlib import Path
+
+import docx  # noqa: F401 — pin the REAL python-docx before a sibling's fake shim wins
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,8 +22,6 @@ from fastapi.testclient import TestClient
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
-
-analysis_routes = importlib.import_module("analysis_routes")
 
 
 def _make_docx(text: str) -> bytes:
@@ -28,6 +36,8 @@ def _make_docx(text: str) -> bytes:
 
 class ExtractDocumentTestCase(unittest.TestCase):
     def setUp(self):
+        import analysis_routes  # lazy — see module docstring
+        self.ar = analysis_routes
         app = FastAPI()
         app.include_router(analysis_routes.create_analysis_router(openai_client=None))
         self.client = TestClient(app)
@@ -63,13 +73,13 @@ class ExtractDocumentTestCase(unittest.TestCase):
         self.assertTrue("empty" in detail or "no readable text" in detail, detail)
 
     def test_oversized_rejected(self):
-        big = b"x" * (analysis_routes._DOC_MAX_BYTES + 1)
+        big = b"x" * (self.ar._DOC_MAX_BYTES + 1)
         r = self._post("huge.txt", big)
         self.assertEqual(r.status_code, 400)
         self.assertIn("too large", r.json()["detail"].lower())
 
     def test_rate_limited(self):
-        for _ in range(analysis_routes._DOC_EXTRACT_PER_MINUTE):
+        for _ in range(self.ar._DOC_EXTRACT_PER_MINUTE):
             self._post("n.txt", b"hello there friend")
         r = self._post("n.txt", b"hello there friend")
         self.assertEqual(r.status_code, 429)

@@ -2190,6 +2190,10 @@ export default function App() {
 
   const handleAnalyzeClick = () => {
     if (!transcript.trim()) return
+    // An article/report is single-authored — skip speaker detection and the
+    // confirm-speakers modal (a report's colon-prefixed headings otherwise
+    // read as a dozen phantom "speakers").
+    if (meetingType === 'article') { runAnalysis([]); return }
     const detected = extractSpeakers(transcript)
     if (detected.length === 0) { runAnalysis([]); return }
     setSpeakers(detected)

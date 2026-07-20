@@ -9,10 +9,16 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# Stub python-docx so the test can run without the package installed
-fake_docx = types.ModuleType("docx")
-fake_docx.Document = MagicMock()
-sys.modules.setdefault("docx", fake_docx)
+# python-docx is an installed dependency, so prefer the REAL library — these tests
+# patch docx_loader.Document per-test anyway. Only stub it if genuinely absent.
+# (Using setdefault to leave a fake `docx` in sys.modules would poison sibling tests
+# that use the real library, e.g. test_extract_document.)
+try:
+    import docx  # noqa: F401  (real python-docx)
+except ImportError:
+    fake_docx = types.ModuleType("docx")
+    fake_docx.Document = MagicMock()
+    sys.modules["docx"] = fake_docx
 
 
 class DocxLoaderTests(unittest.TestCase):

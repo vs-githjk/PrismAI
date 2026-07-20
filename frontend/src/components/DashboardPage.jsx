@@ -286,16 +286,37 @@ function NewMeetingPanel(props) {
               <div className="flex items-center justify-between gap-2">
                 {props.transcriptStats?.words > 0 ? (
                   <p className="text-[10.5px] text-white/38">
-                    {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
+                    {props.transcriptStats.words} words
+                    {/* Speaker count is meaningless for a single-authored article/report. */}
+                    {props.meetingType !== 'article' && ` · ${props.transcriptSpeakerCount || 0} speaker${props.transcriptSpeakerCount !== 1 ? 's' : ''}`}
                   </p>
                 ) : <span />}
                 <button
                   type="button"
                   onClick={() => props.docInputRef?.current?.click()}
                   disabled={props.extractingDoc}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-medium text-cyan-300/80 transition hover:text-cyan-200 disabled:opacity-50"
+                  title="Upload a .docx, .pdf, or .txt"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[11px] font-medium text-white/55 transition hover:border-cyan-400/30 hover:bg-white/[0.06] hover:text-white/85 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {props.extractingDoc ? '⏳ Reading document…' : '📄 Upload a document'}
+                  {props.extractingDoc ? (
+                    <>
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+                        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                      </svg>
+                      Reading…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                        <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                        <path d="M12 18v-6" />
+                        <path d="m9.5 14.5 2.5-2.5 2.5 2.5" />
+                      </svg>
+                      Upload a document
+                    </>
+                  )}
                 </button>
               </div>
               {props.docError && (

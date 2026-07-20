@@ -166,6 +166,22 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("content_analyst", run_orchestrator(self.TWO_SPEAKER, "standard"))
         self.assertIn("content_analyst", run_orchestrator(self.TWO_SPEAKER, "pitch"))
 
+    def test_article_skips_speaker_based_agents(self):
+        # A single-authored article/report has no speakers → no per-speaker tone
+        # (sentiment) or talk-time (speaker_coach), even when colon-prefixed
+        # headings would otherwise read as multiple "speakers".
+        report = "Verdict: strong\nWeakest: onboarding\nStrongest: chat\nSummary: a report body"
+        agents = run_orchestrator(report, "article")
+        self.assertNotIn("sentiment", agents)
+        self.assertNotIn("speaker_coach", agents)
+        # ...but the article lens + core agents still run.
+        self.assertIn("content_analyst", agents)
+        self.assertIn("summarizer", agents)
+        # A real multi-speaker meeting still gets both.
+        both = run_orchestrator(self.TWO_SPEAKER, "standard")
+        self.assertIn("sentiment", both)
+        self.assertIn("speaker_coach", both)
+
     def test_content_analyst_not_context_only(self):
         # It needs the full transcript for evidence quotes.
         self.assertNotIn("content_analyst", analysis_service.TIER2_CONTEXT_ONLY)
