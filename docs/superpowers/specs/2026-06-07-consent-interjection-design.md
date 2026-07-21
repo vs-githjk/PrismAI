@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-07
 **Branch:** `fixed-changes`
-**Status:** Proposed — pending user review of spec
+**Status:** SUPERSEDED by `2026-06-11-ambient-contribution-lane-design.md` — do not build on the offer/consent machinery described here
 **Supersedes:** the always-on "answer any question" behavior of autonomous mode in
 `docs/superpowers/specs/2026-06-07-ambient-response-loop-design.md` (v1). The v1
 funnel, mode state machine, flags, and shadow-soak are reused; this changes what

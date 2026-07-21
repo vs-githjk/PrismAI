@@ -22,6 +22,7 @@ from realtime_routes import router as realtime_router
 from recall_routes import router as recall_router
 from knowledge_routes import router as knowledge_router
 from storage_routes import router as storage_router
+from warmup import warm_external_connections
 from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
 
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(http2=True, timeout=DEFAULT_TIMEOUT)
     app.state.openai = openai_client
     bind_clients(app)
+    # Pre-open the slow external connections (OpenAI ~9s cold, Supabase ~4s
+    # cold) without blocking startup — fire-and-forget.
+    asyncio.create_task(warm_external_connections("startup"))
     # Re-attach lifecycle pollers for any bots left mid-flight by a previous process
     # (restart / cold start) so headless stand-ins still get delivered, analysed, and
     # promoted to the dashboard without a browser or webhook. Best-effort, non-blocking.

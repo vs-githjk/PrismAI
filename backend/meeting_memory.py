@@ -107,23 +107,16 @@ def get_initial_memory_state() -> dict:
         "previous_idea_summaries": [],    # last 5 one-line summaries of posted ideas; injected to prevent repeats
         "gaps_flagged": set(),            # set[str]: gap categories already surfaced this meeting (cost, timeline…)
 
-        # ── Ambient response loop (mode machine + funnel) ─────────────────────
-        "mode": "utterance",            # 'utterance' | 'autonomous'
-        "mode_entry_reason": "",        # '' | 'lull' | 'handoff' | 'manual'
-        "mode_since_ts": 0.0,           # wall-clock ts the current mode was entered
-        "manual_mode": None,            # owner override: None | 'utterance' | 'autonomous'
-        "last_activity_ts": 0.0,        # last utterance-flush ts (for lull detection)
-        "recent_utterance_ts": [],      # rolling flush ts within ACTIVE_WINDOW_S
-        "ambient_last_spoke_ts": 0.0,   # last unsolicited spoken response ts
-        "_ambient_last_gate_ts": 0.0,   # last recall-gate pass (pause debounce)
-        "_ambient_evaluating": False,   # mutex — one funnel eval at a time per bot
-
-        # ── Consent-based interjection (autonomous v2) ────────────────────────
-        "interjection_state": "idle",   # 'idle' | 'offer_pending'
-        "pending_offer": None,          # {subject:str, ts:float, turns:int} while offer_pending
-        "offered_subjects": [],         # lowercased subjects already offered (dedup)
-        "offer_last_ts": 0.0,           # last offer made (offer cooldown)
-        "muted": False,                 # humans muted proactive offers
+        # ── Ambient contribution lane (spec 2026-06-11) ───────────────────────
+        "mode": "utterance",            # 'utterance' | 'autonomous' (join selector / mode endpoint)
+        "muted": False,                 # in-meeting kill switch for the ambient lane
+        "pending_question": None,       # {text, speaker_id, speaker_name, ts, window_s, candidate, candidate_done, delivered}
+        "last_audio_ts": 0.0,           # last human transcript-chunk arrival (timing gate + yield rule)
+        "ambient_voice_last_ts": 0.0,   # voice-tier cooldown anchor
+        "ambient_chat_last_ts": 0.0,    # chat-tier cooldown anchor
+        "contributed_subjects": [],     # normalized subjects already contributed (shared dedup ledger)
+        "_ambient_busy": False,         # one in-flight generation per bot
+        "ambient_speaking_since": 0.0,  # nonzero while ambient voice is playing (yield rule)
     }
 
 
@@ -538,9 +531,7 @@ def get_memory_snapshot(state: dict) -> dict:
         # Top-level fields returned by the /live API endpoint
         "memory_summary": state.get("memory_summary") or "",
         "mode": state.get("mode") or "utterance",
-        "mode_entry_reason": state.get("mode_entry_reason") or "",
         "muted": bool(state.get("muted")),
-        "interjection_state": state.get("interjection_state") or "idle",
         "live_decisions": state.get("live_decisions") or [],
         "live_action_items": state.get("live_action_items") or [],
         "top_entities": [w for w, _ in entities.most_common(10)],

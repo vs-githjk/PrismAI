@@ -54,17 +54,20 @@ async def knowledge_lookup(args: dict, user_settings: Optional[dict] = None) -> 
     if not query or not user_id:
         return {"error": "Both query and user_id are required"}
 
-    # On-demand path: enable Phase 4 (rerank) + Phase 5 (rewrite). The proactive
-    # surfacing path calls `search_knowledge` directly with both off so it stays
-    # ~150ms; this tool path budgets ~800ms and can afford the extra LLM hops.
+    # On-demand path: enable Phase 4 (rerank) + Phase 5 (rewrite) — EXCEPT when
+    # the caller sets fast_mode (the live-meeting voice path), where the extra
+    # Groq hops (rerank up to 4s, rewrite up to 3s) are unaffordable before a
+    # spoken reply. The proactive surfacing path calls `search_knowledge`
+    # directly with both off so it stays ~150ms.
+    fast = bool(settings.get("fast_mode"))
     matches = await search_knowledge(
         query,
         user_id,
         meeting_id=meeting_id,
         k=5,
         min_score=0.75,
-        rerank=True,
-        rewrite_query=True,
+        rerank=not fast,
+        rewrite_query=not fast,
         conversation_history=conversation_history,
     )
 
@@ -72,8 +75,11 @@ async def knowledge_lookup(args: dict, user_settings: Optional[dict] = None) -> 
         await _log_query(user_id, bot_id, query, None, None, None)
         return {
             "no_match": True,
-            "next_step": "Call web_search with this query. If web_search also fails, "
-                         "compose a brief question to ask the meeting participants directly.",
+            "next_step": "If this is a public/external fact, call web_search with this "
+                         "query. If it concerns the user's private meetings, documents, "
+                         "agendas, or internal plans (things the public web cannot know), "
+                         "do NOT call web_search — briefly say you don't have that "
+                         "information.",
         }
 
     has_conflict = any(m.get("possible_conflict") for m in matches)

@@ -456,7 +456,7 @@ function NewMeetingPanel(props) {
                 <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
                   {[
                     { id: 'utterance', label: 'Utterance', hint: 'Only responds when addressed ("Prism, …")' },
-                    { id: 'autonomous', label: 'Automatic', hint: 'Decides on its own when to chime in' },
+                    { id: 'autonomous', label: 'Automatic', hint: 'Chimes in with relevant info — speaks only for high-value moments' },
                   ].map((m) => (
                     <button
                       key={m.id}
@@ -476,7 +476,7 @@ function NewMeetingPanel(props) {
                 </div>
                 <p className="text-[10px] text-white/30">
                   {(props.joinMode || 'utterance') === 'autonomous'
-                    ? 'Prism will proactively contribute throughout the meeting.'
+                    ? 'Prism shares relevant info in chat and speaks up only for high-value moments.'
                     : 'Prism stays silent until you address it by name.'}
                 </p>
               </div>

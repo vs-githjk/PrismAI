@@ -123,6 +123,15 @@ async def maybe_proactive_knowledge_check(bot_id: str, state: dict) -> None:
 
         _doc_cooldown[(bot_id, doc_id)] = now
 
+        # Automatic mode: the ambient contribution lane owns this hit (it
+        # generates a cited, value-priced contribution instead of a snippet).
+        try:
+            from realtime_routes import _ambient_kb_route
+            if await _ambient_kb_route(bot_id, m):
+                return
+        except Exception as exc:
+            print(f"[proactive-knowledge] ambient route failed for {bot_id}: {exc}")
+
         snippet = (m.get("content") or "").strip().replace("\n", " ")
         if len(snippet) > 200:
             snippet = snippet[:200].rsplit(" ", 1)[0] + "..."
