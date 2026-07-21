@@ -1,4 +1,4 @@
-import { Check, Clock, UserRound } from 'lucide-react'
+import { Check, Clock, UserRound, Video, ClipboardList, Sparkles, CalendarPlus } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
 import { dueInfo, dueLabel } from '../../lib/dueStatus'
@@ -16,8 +16,8 @@ const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
 const cardHeading = 'text-[22px] font-semibold tracking-[-0.015em] text-white'
 const emptyCopy = 'text-sm leading-6 text-white/55'
 
-/** Top-left quadrant: static greeting, or a get-started prompt when history is empty. */
-function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
+/** Top-left quadrant: static greeting, or a get-started launcher when history is empty. */
+function Greeting({ isEmpty, onLoadSample, canLoadSample, onStartMeeting, onPasteTranscript, showConnectCalendar, onConnectCalendar }) {
   if (isEmpty) {
     return (
       <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
@@ -27,15 +27,49 @@ function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
           started.
         </h1>
         <p className="mt-4 max-w-md text-base leading-7 text-white/58">
-          Start a new meeting or upload a transcript with the&nbsp;+ in the sidebar.
+          Bring Prism into a live call, or paste a transcript to analyze.
         </p>
-        {canLoadSample && (
+        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+          {onStartMeeting && (
+            <button
+              type="button"
+              onClick={onStartMeeting}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 text-sm font-semibold text-[#04222a] shadow-sm transition-all hover:bg-cyan-300"
+            >
+              <Video className="h-4 w-4" aria-hidden="true" />
+              Start a meeting
+            </button>
+          )}
+          {onPasteTranscript && (
+            <button
+              type="button"
+              onClick={onPasteTranscript}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 text-sm font-medium text-white/85 transition-all hover:bg-white/[0.08]"
+            >
+              <ClipboardList className="h-4 w-4" aria-hidden="true" />
+              Paste a transcript
+            </button>
+          )}
+          {canLoadSample && (
+            <button
+              type="button"
+              onClick={onLoadSample}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/10 bg-transparent px-6 text-sm font-medium text-white/60 transition-all hover:bg-white/[0.05] hover:text-white/80"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              See a sample
+            </button>
+          )}
+        </div>
+        {showConnectCalendar && (
           <button
             type="button"
-            onClick={onLoadSample}
-            className="mt-6 inline-flex h-11 w-fit items-center justify-center gap-2 rounded-full border border-[#2f2f2f] bg-[#18181b] px-6 text-sm font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a]"
+            onClick={onConnectCalendar}
+            className="group mt-5 inline-flex w-fit items-center gap-2 text-[13px] text-white/50 transition-colors hover:text-cyan-200"
           >
-            Load sample dashboard
+            <CalendarPlus className="h-4 w-4 text-white/40 transition-colors group-hover:text-cyan-300" aria-hidden="true" />
+            <span>Connect Google or Outlook calendar to auto-join meetings</span>
+            <span className="font-semibold text-cyan-300/80 group-hover:text-cyan-200">Connect →</span>
           </button>
         )}
       </section>
@@ -189,6 +223,10 @@ export default function StatsCanvas({
   loadFromHistory,
   loadSample,
   canLoadSample = false,
+  onStartMeeting,
+  onPasteTranscript,
+  showConnectCalendar = false,
+  onConnectCalendar,
   selectedMeetingId = null,
   onToggleAction,
 }) {
@@ -210,7 +248,15 @@ export default function StatsCanvas({
 
   return (
     <div className="dashboard-home-grid">
-      <Greeting isEmpty={safeHistory.length === 0} onLoadSample={loadSample} canLoadSample={canLoadSample} />
+      <Greeting
+        isEmpty={safeHistory.length === 0}
+        onLoadSample={loadSample}
+        canLoadSample={canLoadSample}
+        onStartMeeting={onStartMeeting}
+        onPasteTranscript={onPasteTranscript}
+        showConnectCalendar={showConnectCalendar}
+        onConnectCalendar={onConnectCalendar}
+      />
       <ActionItemsCard actions={actions} onOpen={loadFromHistory} onToggle={onToggleAction} />
       <MeetingsCard history={safeHistory} onOpen={loadFromHistory} selectedMeetingId={selectedMeetingId} />
     </div>

@@ -845,6 +845,11 @@ export default function App() {
     !INITIAL_LIVE_TOKEN
   const [isDemoMode, setIsDemoMode] = useState(false)
   const [demoChatOpen, setDemoChatOpen] = useState(false)
+  // True while a REAL (non-test) signed-in user is viewing the in-memory sample
+  // dashboard. Drives the "Example data — not your history · Clear" banner and its
+  // exit back to the true empty Home. The sample is never persisted, so clearing it
+  // is a pure in-memory reset. (The test/demo account has its own demo affordances.)
+  const [viewingSample, setViewingSample] = useState(false)
 
   const enterDashboardTestRun = () => {
     sessionStorage.setItem(TEST_RUN_SESSION_KEY, '1')
@@ -1119,6 +1124,13 @@ export default function App() {
 
   // Integrations
   const [showIntegrations, setShowIntegrations] = useState(false)
+  // Which tab the Integrations modal opens to. Lets the first-run calendar nudge deep-link
+  // to the Calendar tab (where both Google Calendar + Outlook are offered).
+  const [integrationsInitialTab, setIntegrationsInitialTab] = useState('Slack')
+  const openIntegrations = (tab = 'Slack') => {
+    setIntegrationsInitialTab(tab)
+    setShowIntegrations(true)
+  }
   // Integration tokens are loaded PER USER once auth resolves (see the effect below).
   // Start empty + purge the old global keys so a prior account's tokens can't bleed in.
   const [integrations, setIntegrations] = useState(() => {
@@ -2027,7 +2039,15 @@ export default function App() {
       // source of truth and will overwrite this on the next merge.
       recording_provider: recallBotId ? 'recall' : null,
     }
-    setHistory(prev => mergeHistoryEntries([entry, ...prev]))
+    // If the user was viewing the in-memory sample and just produced a REAL meeting,
+    // drop the sample entries (they were never persisted) so their history starts
+    // clean with this genuine first meeting — not mixed with example data.
+    if (viewingSample) {
+      setViewingSample(false)
+      setHistory([entry])
+    } else {
+      setHistory(prev => mergeHistoryEntries([entry, ...prev]))
+    }
     setMeetingId(id)
     setShareToken(share_token)
     notifyStatus({ kind: 'success', message: 'Meeting saved' })
@@ -2337,8 +2357,23 @@ export default function App() {
     setShareToken(entries[0].share_token)
     setInitialMessages([])
     setSessionId((s) => s + 1)
+    // Flag the sample for real users so the "Example data" banner + Clear show. The
+    // test account keeps its own demo flow, so don't mark it there.
+    setViewingSample(!isTestAccount)
     setWorkspaceToast('Loaded sample dashboard.')
     setTimeout(() => setWorkspaceToast(null), 2500)
+  }
+
+  // Exit the sample and return to the user's TRUE empty Home. The sample lives only in
+  // memory (loadDashboardSample never persisted it), so this is a clean reset — no DB
+  // write, no deletion. Distinct from exitDemoMode, which restores history[0] (that
+  // would circle back into the sample here, since history IS the sample).
+  const clearSample = () => {
+    setViewingSample(false)
+    clearWorkspaceState()
+    setHistory([])
+    setTranscriptDrafts((prev) => ({ ...prev, paste: '' }))
+    setShowHistory(false)
   }
 
   const cancelActiveAnalysis = () => {
@@ -2371,6 +2406,7 @@ export default function App() {
     sessionStorage.removeItem('prism_active_bot_id')
     setDemoChatOpen(false)
     setIsDemoMode(false)
+    setViewingSample(false)
     setHistory([])
     if (isTestAccount) {
       sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
@@ -2739,7 +2775,9 @@ export default function App() {
           isTestAccount={isTestAccount}
           signOut={signOut}
           loadDashboardSample={loadDashboardSample}
-          canLoadSample={isTestAccount}
+          canLoadSample={isTestAccount || !!user}
+          viewingSample={viewingSample && !!user && !isTestAccount}
+          clearSample={clearSample}
           selectedMeetingId={meetingId ?? history?.[0]?.id}
           isDemoMode={isDemoMode}
           exitDemoMode={exitDemoMode}
@@ -2798,6 +2836,7 @@ export default function App() {
           botTranscriptReady={botTranscriptReady}
           liveCommands={liveCommands}
           calendarConnected={calendarConnected}
+          onOpenCalendarSetup={() => openIntegrations('Calendar')}
           nextUpcomingMeeting={nextUpcomingMeeting}
           recording={recording}
           startRecording={startRecording}
@@ -2892,6 +2931,7 @@ export default function App() {
             <IntegrationsModal
               integrations={integrations}
               userId={user?.id}
+              initialTab={integrationsInitialTab}
               onSave={setIntegrations}
               onClose={() => setShowIntegrations(false)}
               calendarConnected={calendarConnected}

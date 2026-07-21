@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
+  CalendarPlus,
   Check,
   Copy,
   Download,
@@ -423,6 +424,23 @@ function NewMeetingPanel(props) {
                     />
                   </Suspense>
                 </div>
+              )}
+              {!props.calendarConnected && props.user && !props.isTestAccount && (
+                // Calendar not connected → the upcoming-meetings list can't render, so
+                // fill that spot with the exact CTA the user needs here (auto-join is
+                // the highest-value setup step). Opens Integrations → Calendar tab, where
+                // both Google Calendar and Outlook are offered.
+                <button
+                  type="button"
+                  onClick={() => { props.onClose?.(); props.onOpenCalendarSetup?.() }}
+                  className="group flex w-full items-center gap-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2.5 text-left transition hover:bg-cyan-400/[0.11]"
+                >
+                  <CalendarPlus className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 text-[12px] leading-snug text-cyan-100/80">
+                    Connect Google or Outlook calendar to see your upcoming meetings and one-click join.
+                  </span>
+                  <span className="shrink-0 text-[12px] font-semibold text-cyan-200">Connect →</span>
+                </button>
               )}
               <input
                 type="url"
@@ -1486,12 +1504,32 @@ export default function DashboardPage(props) {
           }`}
         >
           <div key={activeView} className={`animate-fade-in-up ${activeView === 'home' ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+          {props.viewingSample && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.08] px-4 py-2.5">
+              <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-cyan-300" />
+              <p className="flex-1 text-[13px] text-cyan-100/90">
+                <span className="font-semibold">Example data</span>
+                <span className="text-cyan-100/60"> — this isn&rsquo;t your history. It&rsquo;s here so you can see what Prism produces.</span>
+              </p>
+              <button
+                type="button"
+                onClick={props.clearSample}
+                className="shrink-0 rounded-full border border-cyan-300/30 px-3 py-1 text-[12px] font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
               loadFromHistory={handleSelectMeeting}
               loadSample={props.loadDashboardSample}
               canLoadSample={props.canLoadSample}
+              onStartMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
+              onPasteTranscript={() => { props.setInputTab?.('paste'); setNewMeetingOpen(true) }}
+              showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
+              onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
               memberEmailMap={workspaceMemberMap}
               currentUserId={props.user?.id}
