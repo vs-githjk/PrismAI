@@ -2031,14 +2031,17 @@ async def _process_bot_transcript(bot_id: str):
         _db_save(bot_id, {"status": "done"})
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
-        # Persist to the meetings table server-side so a meeting is never lost to a
-        # crashed/closed dashboard tab. A headless stand-in has no browser → save now;
-        # a regular bot's browser normally saves it → only fall back after a delay if it
-        # didn't. Both dedup on recall_bot_id, so no double-write when the browser wins.
-        if (bot_store.get(bot_id) or {}).get("standin"):
-            await _persist_bot_meeting(bot_id)
-        else:
-            asyncio.create_task(_persist_bot_meeting_delayed(bot_id))
+        # Persist to the meetings table server-side, IMMEDIATELY, for EVERY bot — the
+        # save must never depend on the owner's browser still being there when analysis
+        # lands. The browser only auto-saves if its /bot-status poll catches "done", but
+        # that poll gives up after 6 min; when Recall's recording takes longer to finish
+        # (seen: 25 min), the browser is long gone and the meeting would otherwise be
+        # stranded in bot_sessions (visible on the live link, absent from the dashboard).
+        # The old "delay 120s then save" fallback was a fragile in-memory task that died
+        # if the process stopped inside the window — exactly what lost bot 95ff9b48.
+        # save_meeting dedups on recall_bot_id (per user), so a browser that DID save
+        # first just makes this a no-op — awaiting here can't double-write.
+        await _persist_bot_meeting(bot_id)
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:
