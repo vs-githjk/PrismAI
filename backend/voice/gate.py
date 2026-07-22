@@ -102,6 +102,29 @@ async def decide(bot_id: str, state: dict, text: str, speaker: str) -> tuple[boo
     return (False, "")
 
 
+def might_engage(bot_id: str, state: dict, text: str, speaker: str) -> bool:
+    """Read-only "would `decide()` plausibly say yes?" — the predicate the Phase-5
+    speculative call (§3) asks at EagerEndOfTurn, before the turn is confirmed.
+
+    Deliberately NOT `decide()`: that one arms and disarms the bare-name window, and a
+    speculation must never consume state the real decision still needs. Deliberately
+    permissive too — a false positive costs one discarded LLM call, a false negative costs
+    the whole latency win. The gate remains the only thing that can actually speak."""
+    rr = _rr()
+    text = (text or "").strip()
+    if not text or state.get("muted"):
+        return False
+    if rr._looks_like_bot_participant(speaker, {}):
+        return False
+    if state.get("_gate_armed_speaker") and time.time() - state.get("_gate_armed_ts", 0.0) < _ARM_WINDOW_S:
+        return True
+    if rr._detect_command(text, bot_id) or rr._has_trigger_word(text, bot_id):
+        return True
+    if get_mode(state) == "manual":
+        return False
+    return bool(rr._solo_mode_active(state) and rr._solo_freeflow_text_eligible(text))
+
+
 async def propose(bot_id: str, state: dict, candidate: str, kind: str = "nudge", speak: bool = False) -> bool:
     """A watcher's candidate contribution (drift nudge, idea-engine insight). Voiced only
     if: not muted, mode is Auto, and no other nudge fired inside the quiet window — so
@@ -168,6 +191,21 @@ if __name__ == "__main__":
         assert (await decide("b", st, "summarize the last point", "A"))[0] is True
         # Mute hard-stops.
         assert await decide("b", {"muted": True}, "Prism, help", "A") == (False, "")
+
+        # might_engage mirrors decide's verdict WITHOUT consuming the arm window.
+        st = {"engagement_mode": "auto", "_humans": 3}
+        assert might_engage("b", st, "Prism what's the risk", "A") is True
+        assert might_engage("b", st, "we should ship friday", "A") is False
+        st = {"engagement_mode": "auto", "_humans": 1}
+        assert might_engage("b", st, "what did we decide", "A") is True
+        assert might_engage("b", {"engagement_mode": "manual", "_humans": 1},
+                            "what did we decide", "A") is False
+        assert might_engage("b", {"muted": True}, "Prism, help", "A") is False
+        # The arm survives a speculation: decide() must still see it on the real turn.
+        st = {"engagement_mode": "auto", "_humans": 3}
+        await decide("b", st, "Prism.", "A")
+        assert might_engage("b", st, "summarize the last point", "A") is True
+        assert (await decide("b", st, "summarize the last point", "A"))[0] is True
         print("gate self-check OK")
 
     asyncio.run(_main())

@@ -37,7 +37,11 @@ dateparser
 groq>=0.11.0
 # Voice agent (Phase 2): the realtime audio loop — Deepgram Flux ears + Cartesia
 # mouth run inside a per-bot Pipecat pipeline (backend/voice/). Pinned to 1.5.0
-# (installed + validated; API confirmed via settings=). Phase 2 uses Flux's built-in
-# interruption — the [silero] VAD extra (onnxruntime) is added at Phase 5; it lacks
-# Python 3.14 wheels today, so on 3.14 Phase 5 will need a 3.13 env for it.
-pipecat-ai[deepgram,cartesia]==1.5.0
+# (installed + validated; API confirmed via settings=).
+#
+# [silero] (Phase 5) pulls onnxruntime for the local VAD that owns barge-in — fork ④'s
+# "did someone start talking over us?" half. onnxruntime has no Python 3.14 wheels yet;
+# render.yaml pins PYTHON_VERSION 3.11.0, so prod gets it. On a 3.14 dev box the install
+# fails and the pipeline degrades on purpose (voice/pipeline._make_vad → Flux's own
+# interruption + transcript-timestamp politeness gap), so the backend still runs.
+pipecat-ai[deepgram,cartesia,silero]==1.5.0

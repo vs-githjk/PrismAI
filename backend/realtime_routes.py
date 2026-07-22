@@ -24,6 +24,7 @@ from personas import persona_identity_resolved, DEFAULT_BOT_NAME, PERSONA_NAMES
 from clients import get_openai, get_http
 from tools.registry import get_available_tools, get_tool, execute_tool, confirm_and_execute, is_tainted
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
+from voice import tuning as _voice_tuning  # Phase 5 feel knobs (pure os.getenv, no cycle)
 from tools.tts import text_to_speech
 from recall_routes import bot_store, _db_append_command, _db_save_memory, _db_save
 from auth import supabase
@@ -1654,12 +1655,20 @@ def _spoken_version(text: str) -> str:
 _LIST_LINE_RE = re.compile(r"(^|\n)\s*([-*•]|\d+[.)])\s+", re.M)
 
 
-def _spoken_condense(text: str, max_sentences: int = 3, max_chars: int = 340) -> str:
+def _spoken_condense(text: str, max_sentences: int = 0, max_chars: int = 0) -> str:
     """The SPOKEN copy of a reply, length-capped. Each spoken sentence blocks the next for
     its real playback duration (so multiple voices don't overlap), which means a long reply
     — a 6-bullet outline read aloud — stalls every queued command behind it. That's the #1
     source of live-conversation lag. So we speak a tight lead and push the rest to chat
-    (which already gets the FULL reply). Short, non-list replies are spoken verbatim."""
+    (which already gets the FULL reply). Short, non-list replies are spoken verbatim.
+
+    Phase 5 §4: the caps are now knobs (`voice.tuning.SPOKEN_MAX_*`, 0 = use the knob).
+    The streaming mouth removes the pacing constraint above — audio starts immediately
+    instead of being uploaded clip-by-clip — so the ceiling is now "don't monologue", not
+    "don't overlap". Re-picking the numbers needs real-meeting feel, so they ship at the
+    old value and get turned in the §6 loop rather than guessed at now."""
+    max_sentences = max_sentences or _voice_tuning.SPOKEN_MAX_SENTENCES
+    max_chars = max_chars or _voice_tuning.SPOKEN_MAX_CHARS
     if not (text or "").strip():
         return text
     m = _LIST_LINE_RE.search(text)
@@ -1677,27 +1686,16 @@ def _spoken_condense(text: str, max_sentences: int = 3, max_chars: int = 340) ->
     return f"{lead} I've put the rest in the chat."
 
 
-_GAP_SILENCE_S = float(os.getenv("PRISM_GAP_SILENCE_S", "1.2"))
-_GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
-
-
 async def _wait_for_speech_gap(state: dict) -> None:
-    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't
-    talk over someone mid-sentence. Returns as soon as there's been ~_GAP_SILENCE_S
-    of quiet (tracked via last_segment_ts), or after _GAP_MAX_WAIT_S regardless so it
-    never hangs if the room never goes quiet. Bails early if the speaking session was
-    cancelled (mute / "stop"). Disable with PRISM_GAP_WAIT=0."""
-    if os.getenv("PRISM_GAP_WAIT", "1") == "0":
-        return
-    deadline = time.time() + _GAP_MAX_WAIT_S
-    while time.time() < deadline:
-        sess = perception_state.get_session(state)
-        if sess is not None and sess.is_cancelled:
-            return
-        last = state.get("last_segment_ts", 0.0) or 0.0
-        if time.time() - last >= _GAP_SILENCE_S:
-            return
-        await asyncio.sleep(0.2)
+    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't talk
+    over someone mid-sentence.
+
+    Phase 5 §2 re-homed the implementation onto acoustic truth — `voice.barge` reads
+    Silero VAD silence when a live pipeline is attached (`state["voice_room"]`), and falls
+    back to the old transcript-timestamp estimate otherwise. Knobs, the cancel bail-out
+    (mute / "stop") and `PRISM_GAP_WAIT=0` all live there now."""
+    from voice import barge as _voice_barge
+    await _voice_barge.wait_for_gap(state=state)
 
 
 async def _send_voice_response(bot_id: str, text: str):
@@ -3413,12 +3411,22 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         # silent no-op.
         if _barge_in_on() and isinstance(segment, dict):
             _words = segment.get("words") or []
-            _stop_text = " ".join(w.get("text", "") for w in _words)
+            # Flux delivers a whole finished turn with no word list (bridge sets words=[]),
+            # so the word-join is empty on the voice-agent path — fall back to the segment
+            # text or "stop" stops being detectable at all once the ears are swapped.
+            _stop_text = " ".join(w.get("text", "") for w in _words) or (segment.get("text") or "")
             if perception_state.is_stop_command(_stop_text):
                 _stop_speaker = (segment.get("participant") or {}).get("name", "") or "Speaker"
                 _stop_speaker_id = str((segment.get("participant") or {}).get("id") or "").strip()
                 _stop_sess = perception_state.get_session(state)
                 _detected_mono = perception_state._now_mono()
+                # Phase 5 §1: "stop" is an instant kill, pre-gate — it also drops the live
+                # TTS turn and the audio already queued in the speaker page.
+                try:
+                    from voice import barge as _voice_barge
+                    await _voice_barge.hard_stop(bot_id, "stop_command")
+                except Exception as _exc:
+                    print(f"[realtime] voice hard-stop failed: {_exc}")
                 if _stop_sess is not None and not _stop_sess.is_cancelled:
                     _stop_sess.cancel()
                     perception_state.bump(state, "stop_command_fired")
@@ -3835,6 +3843,13 @@ async def set_bot_mute(bot_id: str, body: dict):
         sess = perception_state.get_session(state)
         if sess is not None and not sess.is_cancelled:
             sess.cancel()
+        # Voice agent (Phase 5 §1): mute is pre-gate — kill the Cartesia turn and drop
+        # the audio already scheduled in the speaker page, don't wait it out.
+        try:
+            from voice import barge as _voice_barge
+            await _voice_barge.hard_stop(bot_id, "mute")
+        except Exception as exc:
+            print(f"[realtime] voice hard-stop failed: {exc}")
     print(f"[ambient] mute via API bot={bot_id[:8]} muted={muted}")
     return {"muted": state.get("muted")}
 
@@ -3872,8 +3887,10 @@ def cleanup_bot_state(bot_id: str) -> None:
     unregister_realtime_token(bot_id)
     perception_state.cleanup_bot(bot_id)
     try:
-        from voice import bus as _voice_bus
+        from voice import barge as _voice_barge, bus as _voice_bus, voice_channel as _voice_ch
         _voice_bus.cleanup_bot(bot_id)
+        _voice_barge.cleanup_bot(bot_id)   # VAD gate + room state
+        _voice_ch.cleanup_bot(bot_id)      # any in-flight speculative call
     except Exception:
         pass
     if state is not None:

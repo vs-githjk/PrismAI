@@ -76,10 +76,18 @@ async def speak(bot_id: str, text: str, turn=None) -> bool:
     if session is None or session.pipeline is None:
         return False
     if turn is None:
-        # Auto-open a stopwatch so the t3→t4 mix-hop line fires even before the old
-        # brain threads t0–t2 through (that fuller wiring is a live-tuning follow-up).
-        import time
-        from voice.stopwatch import TurnStopwatch
-        turn = TurnStopwatch(bot_id, f"t{int(time.time() * 1000)}")
+        # Claim the turn the ears opened at EndOfTurn, so t0→t4 is one real timeline.
+        # Nothing to claim + an utterance already rendering ⇒ this is a later chunk of a
+        # streamed reply: leave the running stopwatch alone. Nothing to claim and nothing
+        # rendering ⇒ an unprompted utterance (a nudge): mint one so the mix-hop line,
+        # the number the owner watches, still fires.
+        from voice import stopwatch as _sw
+        turn = _sw.take_turn(bot_id)
+        if turn is None and not session.pipeline.has_open_turn:
+            import time
+            turn = _sw.TurnStopwatch(bot_id, f"t{int(time.time() * 1000)}")
+    # The mouth is committed from here, not from the first audio byte — see
+    # RoomAudio.note_speak_queued (Phase 5 §2).
+    session.pipeline.room.note_speak_queued()
     await session.pipeline.speak(text, turn=turn)
     return True

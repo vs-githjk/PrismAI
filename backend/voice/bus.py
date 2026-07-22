@@ -30,14 +30,17 @@ from collections import deque
 from difflib import SequenceMatcher
 from typing import Awaitable, Callable, Optional
 
+from voice import tuning
+
 # Command-handler signature: (bot_id, command, speaker, from_chat) -> awaitable.
 CommandHandler = Callable[[str, str, str, bool], Awaitable[None]]
 
 _HANDLER: Optional[CommandHandler] = None
 
-_DEDUP_WINDOW_S = float(os.getenv("PRISM_DEDUP_WINDOW_S", "3"))
-_DEDUP_DROP_RATIO = 0.85   # ≥ this within the window → tier-1 drop (same re-heard command)
-_DEDUP_AMBIG_RATIO = 0.60  # [ambig, drop) → tier-2 model adjudicates
+# Knobs live in the Phase-5 table (voice/tuning.py) so every feel dial is in one file.
+_DEDUP_WINDOW_S = tuning.DEDUP_WINDOW_S
+_DEDUP_DROP_RATIO = tuning.DEDUP_DROP_RATIO   # ≥ this within the window → tier-1 drop
+_DEDUP_AMBIG_RATIO = tuning.DEDUP_AMBIG_RATIO  # [ambig, drop) → tier-2 model adjudicates
 _TIER2_MODEL = os.getenv("PRISM_DEDUP_TIER2_MODEL", "llama-3.1-8b-instant")
 _QUEUE_MAX = 3  # depth cap — mirrors the old FIFO cap
 

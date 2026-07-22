@@ -10,7 +10,10 @@ mixes its audio+video into the call. The page:
   3. on the FIRST audio of each utterance, sends a `{"type":"playout"}` ping so the
      backend can close the mix-hop latency loop (t4 → real playout),
   4. answers `{"type":"ping"}` with `{"type":"pong"}` for WS RTT measurement,
-  5. renders branding (it owns the camera — this SUPERSEDES the static logo tile).
+  5. drops everything already scheduled on `{"type":"stop"}` — the barge-in kill (Phase 5
+     §1). Cartesia audio runs ahead of the ear, so cancelling the TTS turn server-side is
+     only half the job; the buffers sitting in the page's Web Audio queue have to die too,
+  6. renders branding (it owns the camera — this SUPERSEDES the static logo tile).
 
 No product logic lives here: play + ping only (Q7 / master doc §3). ~110 lines of JS.
 
@@ -85,6 +88,7 @@ _TEMPLATE = r"""<!doctype html>
   var playing = 0;          // count of scheduled-but-unfinished buffers
   var utteranceOpen = false; // have we pinged playout for the current utterance?
   var ws = null;
+  var sources = [];          // scheduled-but-unfinished buffer sources, for barge-in
 
   function setStatus(s) { statusEl.textContent = s; }
 
@@ -104,6 +108,7 @@ _TEMPLATE = r"""<!doctype html>
       try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.type === "ping") { send({ type: "pong", t: m.t }); }
       else if (m.type === "flush") { utteranceOpen = false; }
+      else if (m.type === "stop") { stopAll(); }
       return;
     }
     playPcm(ev.data);
@@ -131,10 +136,26 @@ _TEMPLATE = r"""<!doctype html>
     src.start(cursor);
     cursor += buf.duration;
     playing++;
+    sources.push(src);
     src.onended = function () {
       playing--;
+      var i = sources.indexOf(src);
+      if (i >= 0) sources.splice(i, 1);
       if (playing <= 0) { utteranceOpen = false; prismEl.classList.remove("speaking"); }
     };
+  }
+
+  // Barge-in: someone talked over the bot. Kill every buffer already scheduled and
+  // reset the cursor so the next utterance starts at "now", not behind the dead queue.
+  function stopAll() {
+    for (var i = 0; i < sources.length; i++) {
+      try { sources[i].onended = null; sources[i].stop(); } catch (e) {}
+    }
+    sources = [];
+    playing = 0;
+    cursor = 0;
+    utteranceOpen = false;
+    prismEl.classList.remove("speaking");
   }
 
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }

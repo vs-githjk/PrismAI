@@ -161,6 +161,43 @@ def _pctl(values: list[float], q: float) -> float:
 _AGG = _RollingAggregator()
 
 
+# ── per-bot open turn ─────────────────────────────────────────────────────────
+# The markers are set from four different places (Flux capture, the voice channel, the
+# speaker sink) that never see each other. One slot per bot joins them: the ears open a
+# turn, the mouth takes it. Without this only t3/t4 are ever populated — which is why
+# Phase 5 §3's "review the t0–t4 medians per segment" needed it.
+
+_OPEN: dict[str, TurnStopwatch] = {}
+
+
+def open_turn(bot_id: str, meta: Optional[dict] = None) -> TurnStopwatch:
+    """A finished human turn arrived. t0 (speech end) and t1 (final transcript) are the
+    same instant on the Flux path — the semantic end-of-turn decision IS the transcript,
+    so there is no separate STT wait to measure from out here."""
+    turn = TurnStopwatch(bot_id, f"t{int(time.time() * 1000)}", meta)
+    turn.mark("t0")
+    turn.mark("t1")
+    _OPEN[bot_id] = turn
+    return turn
+
+
+def mark_turn(bot_id: str, marker: str) -> None:
+    """Stamp a marker on this bot's open turn, if there is one."""
+    turn = _OPEN.get(bot_id)
+    if turn is not None:
+        turn.mark(marker)
+
+
+def take_turn(bot_id: str) -> Optional[TurnStopwatch]:
+    """Claim the open turn (the mouth's first chunk wins; later chunks get None and keep
+    the stopwatch already running in the sink)."""
+    return _OPEN.pop(bot_id, None)
+
+
+def cleanup_bot(bot_id: str) -> None:
+    _OPEN.pop(bot_id, None)
+
+
 def _demo() -> None:
     """Runnable self-check: assert intervals + rtt math are computed correctly."""
     sw = TurnStopwatch("botxxxxxxxx", "turn-1")
@@ -184,6 +221,20 @@ def _demo() -> None:
 
     # Percentile sanity.
     assert _pctl([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 90) == 9.1, _pctl([1,2,3,4,5,6,7,8,9,10], 90)
+
+    # Per-bot open turn: the ears open it, the voice channel marks t2, the mouth claims
+    # it exactly once — a second claim must return None so streamed chunks 2..n keep the
+    # stopwatch already running instead of each opening a bogus turn.
+    turn = open_turn("botopen", {"speaker": "Dana"})
+    assert "t0" in turn._marks and "t1" in turn._marks
+    mark_turn("botopen", "t2")
+    assert "t2" in turn._marks
+    assert take_turn("botopen") is turn
+    assert take_turn("botopen") is None
+    mark_turn("botopen", "t3")            # no open turn → silently ignored, never raises
+    open_turn("botgone")
+    cleanup_bot("botgone")
+    assert take_turn("botgone") is None
     print("stopwatch self-check OK")
 
 
