@@ -421,13 +421,18 @@ class BrandedBotTestCase(unittest.TestCase):
             "https://meet/x", "rt", "wh", bot_name="Jane (PrismAI stand-in)")
         self.assertEqual(body["bot_name"], "Jane (PrismAI stand-in)")
 
-    def test_video_output_present_when_tile_available(self):
+    def test_output_media_supersedes_the_static_tile(self):
+        # Voice agent (Phase 2): the bot's camera now renders the speaker page, which owns
+        # the branding AND carries the bot's audio into the call. Both target the camera,
+        # so the static logo tile is deliberately no longer sent — even when one is
+        # available. If this ever regresses, Recall picks one and the mouth may go silent.
         recall_routes._bot_video_output.cache_clear()
         with patch.object(recall_routes, "_BOT_TILE_ENABLED", True):
             tile = {"in_call_recording": {"kind": "jpeg", "b64_data": "abc"}}
             with patch.object(recall_routes, "_bot_video_output", return_value=tile):
                 body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
-        self.assertEqual(body["automatic_video_output"], tile)
+        self.assertNotIn("automatic_video_output", body)
+        self.assertEqual(body["output_media"]["camera"]["kind"], "webpage")
 
     def test_video_output_omitted_when_disabled(self):
         recall_routes._bot_video_output.cache_clear()
