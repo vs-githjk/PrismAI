@@ -1,0 +1,2 @@
+https://www.browserbase.com/devtools-fullscreen/inspector.html?wss=connect.browserbase.com/debug/f497efb1-1791-41e7-97ae-00263089e141/devtools/page/7C34991A5E6FC2FC274B42EE243D7985?debug=true
+f497efb1-1791-41e7-97ae-00263089e141

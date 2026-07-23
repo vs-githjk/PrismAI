@@ -24,10 +24,15 @@ def register_tool(
     requires: str | None = None,
     confirm: bool = False,
     taints_context: bool = False,
+    presents: bool = False,
 ):
     """Register a tool. `requires` is an env/setting key that must be present for the tool to be available.
     `taints_context=True` marks tools whose output mixes attacker-controlled data into the LLM context
     (e.g. web_search) — callers must strip further tool access after one of these runs.
+    `presents=True` marks tools that drive the bot's on-screen presentation (computer use): the command
+    loop routes these through the presentation manager (background task) instead of plain dispatch, and
+    they are only offered to the model when the deterministic verb pre-gate matches the utterance
+    (see tools/present_gate.py).
     """
     _TOOLS[name] = {
         "name": name,
@@ -37,11 +42,17 @@ def register_tool(
         "requires": requires,
         "confirm": confirm,
         "taints_context": taints_context,
+        "presents": presents,
     }
 
 
 def is_tainted(name: str) -> bool:
     return bool(_TOOLS.get(name, {}).get("taints_context", False))
+
+
+def is_presents(name: str) -> bool:
+    """True if the named tool drives the on-screen presentation surface (presents=True)."""
+    return bool(_TOOLS.get(name, {}).get("presents", False))
 
 
 def get_available_tools(user_settings: dict | None = None, exclude_confirm: bool = False) -> list[dict]:

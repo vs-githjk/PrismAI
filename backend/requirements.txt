@@ -29,3 +29,18 @@ google-auth>=2.30.0
 pysbd==0.3.4
 langgraph==1.2.0
 dateparser
+# Managed cloud browser: the bot's presentation screen (backend/sandbox/,
+# default provider since ADR 0003). Pinned to the spike-verified pair — the
+# adapter depends on verified SDK behaviors (project resolved from key, Context
+# create + persist bind, keep_alive sessions surviving a CDP disconnect, live
+# debug URL). playwright drives the session over CDP (connect_over_cdp);
+# `python -m playwright install chromium` provides the local driver. Bump only
+# after re-running backend/sandbox/browserbase_provider.py to PASS.
+browserbase==1.15.0
+playwright==1.61.0
+# E2B desktop sandboxes: the FALLBACK presentation provider (PRISM_SANDBOX_PROVIDER=e2b).
+# Pinned exactly to the spike-verified pair — the adapter depends on verified
+# SDK behaviors (client-side stream auth key, connect() auto-resume, lifecycle
+# auto-pause). Bump only after re-running backend/spikes/spike1_e2b_torture.py.
+e2b==2.31.0
+e2b-desktop==2.4.1

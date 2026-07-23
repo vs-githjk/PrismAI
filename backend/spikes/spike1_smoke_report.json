@@ -1,0 +1,94 @@
+{
+  "spike": "spike1_e2b_torture",
+  "ran_at": "2026-07-13T10:07:38.255890",
+  "sandbox_id": "i4kjj0nkja2ble6ch8f6n",
+  "template": "desktop (SDK default)",
+  "sdk_versions": {
+    "e2b": "2.31.0",
+    "e2b_desktop": "2.4.1"
+  },
+  "cycles_requested": 2,
+  "cycles_all_ok": 2,
+  "resume_connect_s": {
+    "p50": 0.645,
+    "p95": 0.914,
+    "min": 0.347,
+    "max": 0.944
+  },
+  "time_to_usable_s": {
+    "p50": 0.925,
+    "p95": 1.194,
+    "min": 0.626,
+    "max": 1.224
+  },
+  "marker_failures_by_cycle": {
+    "file": [],
+    "breadcrumbs_884": [],
+    "memory_process": [],
+    "browser": [],
+    "stream_http": [],
+    "host_stability": []
+  },
+  "browser_marker_in_gate": true,
+  "stream_url": "https://6080-i4kjj0nkja2ble6ch8f6n.e2b.app/vnc.html?autoconnect=true&resize=scale&password=BJgn5BiZXvC7mDB6",
+  "gates": {
+    "GATE_FIDELITY (all markers intact every cycle)": "PASS",
+    "GATE_LATENCY (p95 time_to_usable <= 3s)": "PASS"
+  },
+  "claim_verdicts": {
+    "(a) desktop pause/resume preserves memory+processes": "PASS",
+    "(b) stream URL survives resume (same URL, serves again)": "PASS",
+    "(c) resume latency on RAM-heavy desktop": "p95 time_to_usable=1.194s (gate 3s): PASS",
+    "(d) multi-cycle fidelity (#884 file loss / #1031 bookkeeping)": "PASS; sdk process-table lens per cycle: [4, 4]"
+  },
+  "per_cycle": [
+    {
+      "cycle": 1,
+      "pause_s": 0.919,
+      "pause_returned": true,
+      "resume_connect_s": 0.944,
+      "time_to_usable_s": 1.224,
+      "usable_last_error": "",
+      "host_stable": true,
+      "stream_http_s": 0.808,
+      "stream_status": 200,
+      "stream_ok": true,
+      "file_ok": true,
+      "breadcrumbs_ok": true,
+      "breadcrumbs_missing": [],
+      "counter_pre_pause": 13,
+      "counter_post_resume": 20,
+      "mem_verdict": "SURVIVED (same run_id+pid, counter advanced)",
+      "mem_ok": true,
+      "browser_alive": true,
+      "browser_same_pids": true,
+      "browser_ok": true,
+      "sdk_process_table_len": 4,
+      "all_ok": true
+    },
+    {
+      "cycle": 2,
+      "pause_s": 1.14,
+      "pause_returned": true,
+      "resume_connect_s": 0.347,
+      "time_to_usable_s": 0.626,
+      "usable_last_error": "",
+      "host_stable": true,
+      "stream_http_s": 0.827,
+      "stream_status": 200,
+      "stream_ok": true,
+      "file_ok": true,
+      "breadcrumbs_ok": true,
+      "breadcrumbs_missing": [],
+      "counter_pre_pause": 21,
+      "counter_post_resume": 30,
+      "mem_verdict": "SURVIVED (same run_id+pid, counter advanced)",
+      "mem_ok": true,
+      "browser_alive": true,
+      "browser_same_pids": true,
+      "browser_ok": true,
+      "sdk_process_table_len": 4,
+      "all_ok": true
+    }
+  ]
+}

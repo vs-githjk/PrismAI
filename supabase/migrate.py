@@ -48,6 +48,7 @@ MIGRATION_ORDER = [
     "proxy_workspace_profiles_migration.sql",   # per-workspace profiles + borrow_scopes
     "proxy_default_standin_migration.sql",       # per-space default stand-in
     "meeting_bots_workspace_migration.sql",      # meeting_bots.workspace_id (durable server-side persist)
+    "sandbox_migration.sql",                     # E2B sandbox columns on user_settings (screen presentation)
 ]
 
 migrations_dir = Path(__file__).parent

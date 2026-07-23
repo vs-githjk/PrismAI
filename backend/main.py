@@ -18,9 +18,11 @@ from clients import DEFAULT_TIMEOUT, bind as bind_clients
 from export_routes import router as export_router
 from actions_routes import router as actions_router
 from migrations import run_migrations
+from present_routes import router as present_router
 from realtime_routes import router as realtime_router
 from recall_routes import router as recall_router
 from knowledge_routes import router as knowledge_router
+from sandbox_routes import router as sandbox_router
 from storage_routes import router as storage_router
 from warmup import warm_external_connections
 from proxy_routes import router as proxy_router
@@ -71,6 +73,8 @@ app.include_router(actions_router)
 app.include_router(calendar_router)
 app.include_router(ms_calendar_router)
 app.include_router(realtime_router)
+app.include_router(sandbox_router)
+app.include_router(present_router)
 
 app.include_router(create_analysis_router(openai_client))
 app.include_router(create_chat_router(openai_client))

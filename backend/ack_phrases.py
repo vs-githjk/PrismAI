@@ -23,8 +23,16 @@ _WRITE_VERBS = r"(?:send|draft|write|reply|forward|compose)"
 _CAL_WORDS = r"(?:calendar|schedule|events?|invites?)"
 _CAL_WRITE = r"(?:schedule|create|set\s+up|add|book|move|reschedule)"
 
-# Ordered: first match wins. meeting_recall outranks knowledge/web so
-# "check the docs about what we discussed last meeting" acknowledges recall.
+# Ordered: first match wins. meeting_recall outranks knowledge/web so "check the
+# docs about what we discussed last meeting" acknowledges recall.
+#
+# NOTE: there is deliberately NO `present` (screen-share) category here. Whether a
+# "pull it up on screen" ask actually starts a presentation depends on runtime
+# state the pre-classifier can't see (the owner having a provisioned sandbox +
+# the deterministic verb gate), so a speculative "Let me pull that up on screen—"
+# ack would promise a screen the bot often can't deliver. The presentation
+# manager speaks that line itself, only once a present is confirmed to start
+# (backend/presentation.py). See the 2026-07 live-test regression.
 _RULES: list[tuple[str, re.Pattern]] = [
     ("meeting_recall", re.compile(
         r"\b(?:last|previous|earlier)\s+meeting\b"

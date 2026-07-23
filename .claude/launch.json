@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bbview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8091", "-d", "C:\\Users\\abhin\\AppData\\Local\\Temp\\claude\\C--Users-abhin-PrismAI\\1d4eaf66-d5ea-47e4-ab1d-07922f5d84d3\\scratchpad\\bbview"],
+      "port": 8091
+    }
+  ]
+}

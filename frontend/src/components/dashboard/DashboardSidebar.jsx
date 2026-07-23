@@ -13,6 +13,7 @@ import {
   UserCircle,
   UserRoundCheck,
   CalendarDays,
+  Monitor,
   Sun,
   Moon,
 } from 'lucide-react'
@@ -89,6 +90,7 @@ export default function DashboardSidebar(props) {
     liveActive = false,
     onSelectLive,
     setShowIntegrations,
+    onSetupWorkspace,
     signOut,
     newMeetingOpen,
     setNewMeetingOpen,
@@ -384,6 +386,17 @@ export default function DashboardSidebar(props) {
                 <IntegrationsIcon className="h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]" />
                 Integrations
               </DropdownMenuItem>
+              {/* AI workspace setup — requires a real signed-in user (backend is
+                  auth-gated); hidden for demo/test sessions. */}
+              {user && onSetupWorkspace && (
+                <DropdownMenuItem
+                  onSelect={() => onSetupWorkspace()}
+                  className="cursor-pointer gap-3 px-3 py-2 text-xs font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]"
+                >
+                  <Monitor className="h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]" />
+                  Set up my AI workspace
+                </DropdownMenuItem>
+              )}
               <div className="px-0 py-0">
                 <PersonaChip
                   personaPreset={personaPreset || 'default'}

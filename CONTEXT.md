@@ -54,6 +54,29 @@ The action that starts a new analysis (paste / upload / record / bot).
 The assistant panel docked at the bottom-right, for asking questions about
 meetings and triggering agent/global actions.
 
+### Present / Presentation (live bot)
+The live meeting bot screensharing its owner's **AI workspace** into the call
+while narrating and driving it. Presenting is asked for in workspace meetings by
+any workspace member, in personal meetings by the owner only; **anyone** in the
+call can stop it. One presentation per bot at a time.
+
+### AI workspace
+A user's persistent cloud **browser** (a managed Browserbase session), logged
+into their own web apps (GitHub, Figma, dashboards), that the bot presents from
+and drives. Owned by exactly one user — teammates share the *content* (a common
+repo), never the workspace or its logins. Split into two parts:
+- a **Context** — the durable, per-user profile (cookies, logins) that persists
+  across meetings; the user logs in once via "Set up my AI workspace";
+- a **Session** — an ephemeral browser instance bound to the Context, created
+  per presentation and torn down after (so there's no idle cost between meetings).
+_Avoid_: "sandbox" / "desktop" — the earlier E2B Linux-desktop design was
+replaced by a browser-first one (see ADR 0003).
+
+## Flagged ambiguities
+- "Sandbox" originally meant an E2B Linux desktop (persistent, pause/resume).
+  The AI workspace is now a **browser** (Browserbase Context + ephemeral
+  Session). Use "AI workspace", "Context", or "Session" — not "sandbox".
+
 ## Design language
 
 Canonical visual identity (do not drift):

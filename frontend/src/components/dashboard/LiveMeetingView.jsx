@@ -12,6 +12,7 @@ import EmailCard from './EmailCard'
 import CalendarCard from './CalendarCard'
 import SpeakerCoachCard from './SpeakerCoachCard'
 import LiveCatchup from '../LiveCatchup'
+import PresentationMirror from './PresentationMirror'
 
 // Collapsible pre-meeting brief shown above the live transcript while a meeting
 // is in progress. Only used by LiveMeetingView, so it lives here.
@@ -146,7 +147,10 @@ export default function LiveMeetingView({ token, onStatusChange }) {
       }
     }
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/live/${token}`)
+      // apiFetch (not raw fetch) so a signed-in workspace member's Bearer token is
+      // attached — the backend unlocks the members-only screenshare mirror URL for
+      // them (anonymous link-holders still poll fine, just without a stream URL).
+      const res = await apiFetch(`/live/${token}`)
       if (res.status === 404) { setError('Live session not found or has expired.'); clearInterval(intervalRef.current); return }
       if (!res.ok) { onDisconnect(); return }
       const json = await res.json()
@@ -199,6 +203,9 @@ export default function LiveMeetingView({ token, onStatusChange }) {
       {status === 'recording' && (
         <LiveCatchup liveToken={token} accessToken={session?.access_token || null} />
       )}
+      {/* Live mirror of what Prism is presenting on-screen. The stream URL is
+          members-only (backend-gated); anonymous viewers see an indicator only. */}
+      <PresentationMirror screenshare={data?.screenshare} />
       {standinUpdates.length > 0 && (
         <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(34,211,238,0.14)' }}>
           <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>

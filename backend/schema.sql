@@ -45,6 +45,12 @@ alter table user_settings add column if not exists ms_access_token         text;
 alter table user_settings add column if not exists ms_refresh_token        text;
 alter table user_settings add column if not exists ms_token_expires_at     timestamptz;
 alter table user_settings add column if not exists outlook_connected       boolean not null default false;
+-- E2B desktop sandbox (bot screen presentation) — the stream auth key is
+-- generated client-side at stream.start() and unrecoverable later, so it is
+-- persisted here at create time alongside the sandbox id + assembled URL.
+alter table user_settings add column if not exists sandbox_id              text;
+alter table user_settings add column if not exists sandbox_auth_key        text;
+alter table user_settings add column if not exists sandbox_stream_url      text;
 
 alter table user_settings enable row level security;
 

@@ -1,0 +1,182 @@
+<!doctype html>
+<!--
+  THROWAWAY PREVIEW — faithful reproduction of frontend/src/components/dashboard/RecordingPlayer.jsx
+  Generated for design review (diagnose 2026-06-08). Safe to delete.
+  Mirrors the real component's layout/classes: grid md:grid-cols-[3fr_2fr], rounded-2xl,
+  border-white/10, bg-black/40, synced clickable transcript with sky-400 active row.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recording Player — design preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background:
+        radial-gradient(900px 500px at 12% -8%, rgba(34,211,238,0.10), transparent 60%),
+        radial-gradient(700px 600px at 100% 0%, rgba(56,189,248,0.08), transparent 55%),
+        #070b11;
+    }
+    /* faint grain so the dark panels have depth like the real dashboard */
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; opacity: 0.035; z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .scroll-thin::-webkit-scrollbar { width: 8px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+    .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</head>
+<body class="min-h-screen text-white/90 antialiased">
+  <main class="relative z-10 mx-auto max-w-5xl px-6 py-12">
+
+    <!-- breadcrumb / context so it's clear where this sits -->
+    <div class="mb-6 flex items-center gap-2 text-xs text-white/40">
+      <span>Dashboard</span><span class="text-white/20">/</span>
+      <span>History</span><span class="text-white/20">/</span>
+      <span class="text-white/70">Weekly Sync — Jun 7</span>
+    </div>
+
+    <!-- meeting title block, matching MeetingView header tone -->
+    <div class="mb-5">
+      <h1 class="text-2xl font-semibold tracking-tight text-white">Weekly Sync</h1>
+      <p class="mt-1 text-sm text-white/45">Jun 7, 2026 · 24 min ·
+        <span class="text-cyan-300/80">Recorded by amd8101@psu.edu</span>
+      </p>
+    </div>
+
+    <!-- ─── THE RECORDING PLAYER (ready state) ───────────────────────────── -->
+    <!-- This is RecordingPlayer → SyncedPlayer, reproduced class-for-class. -->
+    <section class="grid gap-4 md:grid-cols-[3fr_2fr] rounded-2xl border border-white/10 bg-black/40 p-4 shadow-[0_24px_60px_-30px_rgba(0,0,0,0.8)]">
+      <!-- left: video -->
+      <div>
+        <video
+          id="rec"
+          class="w-full rounded-lg bg-black"
+          controls
+          playsinline
+          poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='450'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230b1622'/%3E%3Cstop offset='1' stop-color='%23071019'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23g)'/%3E%3Ccircle cx='400' cy='225' r='46' fill='none' stroke='%2322d3ee' stroke-opacity='0.5' stroke-width='2'/%3E%3Cpath d='M388 203 l28 22 l-28 22 z' fill='%2367e8f9'/%3E%3Ctext x='400' y='320' fill='%23ffffff' fill-opacity='0.35' font-family='sans-serif' font-size='15' text-anchor='middle'%3Evideo_mixed · Recall.ai%3C/text%3E%3C/svg%3E"
+          src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        ></video>
+        <p class="mt-2 px-1 text-[11px] text-white/35">
+          Signed URL from Recall.ai (auto-refreshes if it expires mid-playback).
+        </p>
+      </div>
+
+      <!-- right: synced, clickable transcript -->
+      <div id="list" class="scroll-thin max-h-[420px] overflow-y-auto rounded-lg border border-white/5 bg-white/5 p-3">
+        <!-- rows injected by JS so the sync + active-row highlight is real -->
+      </div>
+    </section>
+
+    <p class="mt-3 text-center text-[11px] text-white/30">
+      ▶ Press play, or click any transcript line to jump the video to that moment. The active line highlights in
+      <span class="text-sky-400">sky</span> and auto-scrolls.
+    </p>
+
+    <!-- ─── THE OTHER STATES ─────────────────────────────────────────────── -->
+    <h2 class="mt-12 mb-3 text-xs font-medium uppercase tracking-[0.18em] text-white/35">Other states the same component renders</h2>
+    <div class="grid gap-4 sm:grid-cols-3">
+      <!-- loading -->
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/60">
+        Loading recording…
+      </div>
+      <!-- processing (polls every 15s) -->
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+        Recording is still being prepared by Recall.ai. This usually takes 1–3 minutes after the meeting ends.
+      </div>
+      <!-- gone -->
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+        <div class="font-medium text-white/90">Recording is no longer available</div>
+        <div class="mt-1 text-white/50">Recall.ai's retention window has passed.</div>
+      </div>
+    </div>
+
+    <p class="mt-10 text-center text-[11px] text-white/25">
+      Faithful reproduction of <code class="text-white/40">RecordingPlayer.jsx</code> — same Tailwind classes, layout, and copy.
+    </p>
+  </main>
+
+  <script>
+    // Sample transcript segments (speaker/start/end/text) — same shape the backend
+    // stores in meetings.transcript_segments. Timeline mapped onto the sample clip.
+    const segments = [
+      { speaker: "Abhinav Dasari", start: 0,   end: 6,   text: "Alright, let's kick off the weekly sync — quick status round first." },
+      { speaker: "Vidyut Sriram",  start: 6,   end: 13,  text: "The deduplication works really nicely now, two bots collapse into one." },
+      { speaker: "Abhinav Dasari", start: 13,  end: 20,  text: "Yeah, that's been solid. The persona switching is what I want to demo today." },
+      { speaker: "Vidyut Sriram",  start: 20,  end: 27,  text: "Ask Prism the question now — let's see if it reads the room." },
+      { speaker: "Abhinav Dasari", start: 27,  end: 35,  text: "Glint, can you check the CV doc and tighten the cover letter?" },
+      { speaker: "Vidyut Sriram",  start: 35,  end: 42,  text: "Don't you have access to the knowledge base for that?" },
+      { speaker: "Abhinav Dasari", start: 42,  end: 50,  text: "Right — and the recording should show up on the dashboard after we wrap." },
+      { speaker: "Vidyut Sriram",  start: 50,  end: 58,  text: "Let's try one more join to confirm, then we'll talk next steps." },
+      { speaker: "Abhinav Dasari", start: 58,  end: 66,  text: "Perfect. Click into the meeting from history and the player loads inline." },
+      { speaker: "Vidyut Sriram",  start: 66,  end: 75,  text: "And clicking a line seeks the video — nice, that's the synced transcript." },
+    ];
+
+    const fmt = (s) => {
+      if (!isFinite(s) || s < 0) s = 0;
+      const t = Math.floor(s), m = Math.floor(t / 60), ss = String(t % 60).padStart(2, "0");
+      return `${m}:${ss}`;
+    };
+
+    const list = document.getElementById("list");
+    const video = document.getElementById("rec");
+    let activeIdx = -1;
+    let lastUserScroll = 0;
+
+    // build rows (mirrors the <button> rows in SyncedPlayer)
+    const rows = segments.map((seg, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "flex w-full items-baseline gap-2 text-left text-xs leading-5 px-2 py-1 rounded transition-colors text-white/70 hover:text-white hover:bg-white/5";
+      btn.innerHTML =
+        `<span class="shrink-0 tabular-nums text-[10.5px] text-white/40 font-mono">${fmt(seg.start)}</span>` +
+        `<span><span class="font-medium text-white/90">${seg.speaker}: </span>${seg.text}</span>`;
+      btn.addEventListener("click", () => {
+        lastUserScroll = 0;
+        video.currentTime = seg.start;
+        video.play().catch(() => {});
+      });
+      list.appendChild(btn);
+      return btn;
+    });
+
+    list.addEventListener("scroll", () => { lastUserScroll = performance.now(); });
+
+    function findIdx(t) {
+      let lo = 0, hi = segments.length - 1, best = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1, s = segments[mid];
+        if (t < s.start) hi = mid - 1;
+        else if (t >= s.end) { best = mid; lo = mid + 1; }
+        else return mid;
+      }
+      return best;
+    }
+
+    function setActive(idx) {
+      if (idx === activeIdx) return;
+      if (rows[activeIdx]) rows[activeIdx].className =
+        "flex w-full items-baseline gap-2 text-left text-xs leading-5 px-2 py-1 rounded transition-colors text-white/70 hover:text-white hover:bg-white/5";
+      activeIdx = idx;
+      if (rows[idx]) {
+        rows[idx].className =
+          "flex w-full items-baseline gap-2 text-left text-xs leading-5 px-2 py-1 rounded transition-colors text-sky-400 bg-white/5";
+        if (performance.now() - lastUserScroll > 3000)
+          rows[idx].scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+
+    let lastTick = 0;
+    video.addEventListener("timeupdate", () => {
+      const now = performance.now();
+      if (now - lastTick < 250) return;        // ~4Hz throttle, same as component
+      lastTick = now;
+      setActive(findIdx(video.currentTime || 0));
+    });
+  </script>
+</body>
+</html>

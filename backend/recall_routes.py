@@ -583,6 +583,12 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
         # stays ON only in the async batch re-transcription (_request_async_transcript),
         # where it's well-supported. Re-enable here only after live validation.
         deepgram["keyterm"] = keyterms[:50]
+    # TODO(phase-3, spike-contingent): Recall's FAQ flags the default `web` variant
+    # (250 millicores) as typically insufficient for Output Media screenshare; the
+    # recommendation is `web_4_core` (+$0.10/hr), fixed at bot-create (no live
+    # upgrade). Do NOT add `"variant": "web_4_core"` here until spike 2 confirms the
+    # screenshare actually needs it — it costs money on every bot. See
+    # docs/specs/2026-07-07-bot-screen-presentation-design.md "Recall constraints".
     body = {
         "meeting_url": meeting_url,
         "bot_name": bot_name,
@@ -1292,6 +1298,123 @@ async def _send_bot_intro(bot_id: str):
             )
     except Exception:
         pass
+
+
+# --------------------------------------------------------------------------- #
+# Bot screenshare output (Phase 3 — Bot Screen Presentation)
+#
+# Recall's Output Media streams a webpage WE control into the meeting as the bot's
+# screenshare. We point it at the /present/{token} wrapper (present_routes) whose
+# per-present token is the capability; Recall's headless Chromium can't send an
+# auth header or log in, so the token-in-URL IS the auth. These helpers are the raw
+# start/stop API calls — Phase 3 integration wires them into the computer_use flow.
+#
+# API shape (verified in spec, spike 2 pending for the create-time variant):
+#   START = POST   {base}/bot/{id}/output_media/  {"screenshare":{"kind":"webpage",
+#                                                   "config":{"url":<wrapper url>}}}
+#   STOP  = DELETE {base}/bot/{id}/output_media/  {"screenshare": true}
+# NOT /output_screenshare/ (that endpoint is JPEG-static-images only).
+# --------------------------------------------------------------------------- #
+
+def present_wrapper_url(token: str) -> str:
+    """Build the public wrapper URL Recall points its screenshare at for a present.
+
+    The /present/{token} page is served by present_routes off the BACKEND public
+    base (WEBHOOK_BASE_URL — the same env used for the Recall webhook + realtime
+    callbacks), NOT the frontend origin. Recall's headless Chromium loads this URL;
+    the per-present token is the capability (present_tokens), so no auth header is
+    needed (and Recall couldn't send one anyway)."""
+    base = (WEBHOOK_BASE_URL or "").rstrip("/")
+    return f"{base}/present/{token}"
+
+
+async def start_screenshare(bot_id: str, url: str) -> dict:
+    """Start streaming `url` (a present wrapper URL) into the meeting as the bot's
+    screenshare via Recall Output Media. Can start ad-hoc on a live bot mid-call.
+
+    Returns on a 2xx: {"success": True, "status": <code>, "data": <parsed body>}.
+    On a non-2xx returns {"success": False, "status": <code>, "error": <message>,
+    "body": <FULL response text>} — spike 2 showed the host "who can share"
+    permission-denied failure surfaces in the response BODY, so callers get the
+    whole thing to decide on the chat-link fallback. Never raises on an HTTP/
+    transport error (the caller's flow must post a graceful fallback, not crash);
+    a transport failure comes back as {"success": False, "status": 0, ...}.
+
+    Never logs `url` — it carries the present token (a live capability)."""
+    if not RECALL_API_KEY:
+        return {"success": False, "status": 0, "error": "Recall.ai API key not configured", "body": ""}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{RECALL_API_BASE}/bot/{bot_id}/output_media/",
+                headers={
+                    "Authorization": f"Token {RECALL_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"screenshare": {"kind": "webpage", "config": {"url": url}}},
+                timeout=30,
+            )
+    except httpx.HTTPError as exc:
+        print(f"[present] start_screenshare transport error bot={bot_id[:8]}: {exc!r}")
+        return {"success": False, "status": 0, "error": str(exc), "body": ""}
+
+    if resp.status_code in (200, 201, 202, 204):
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        return {"success": True, "status": resp.status_code, "data": data}
+
+    body = (resp.text or "").strip()
+    print(f"[present] start_screenshare failed bot={bot_id[:8]}: status={resp.status_code}")
+    return {
+        "success": False,
+        "status": resp.status_code,
+        "error": _extract_recall_error(resp),
+        "body": body,
+    }
+
+
+async def stop_screenshare(bot_id: str) -> dict:
+    """Stop the bot's active screenshare. DELETE /bot/{id}/output_media/ with body
+    {"screenshare": true} — sent via client.request('DELETE', ..., json=...) because
+    httpx's .delete() convenience method takes no body.
+
+    Idempotent-friendly: a 404 (no active screenshare / bot gone) is NOT fatal — the
+    share may have already been torn down or never started, so we log and return
+    success. This lets bot-teardown / present-cancel paths call it unconditionally.
+    Never raises; a transport error comes back as {"success": False, "status": 0}."""
+    if not RECALL_API_KEY:
+        return {"success": False, "status": 0, "error": "Recall.ai API key not configured"}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(
+                "DELETE",
+                f"{RECALL_API_BASE}/bot/{bot_id}/output_media/",
+                headers={
+                    "Authorization": f"Token {RECALL_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"screenshare": True},
+                timeout=15,
+            )
+    except httpx.HTTPError as exc:
+        print(f"[present] stop_screenshare transport error bot={bot_id[:8]}: {exc!r}")
+        return {"success": False, "status": 0, "error": str(exc)}
+
+    if resp.status_code in (200, 201, 202, 204, 404):
+        # 404 => nothing was actively sharing; treat as already-stopped (idempotent).
+        if resp.status_code == 404:
+            print(f"[present] stop_screenshare bot={bot_id[:8]}: no active share (404) — treated as stopped")
+        return {"success": True, "status": resp.status_code}
+
+    print(f"[present] stop_screenshare failed bot={bot_id[:8]}: status={resp.status_code}")
+    return {
+        "success": False,
+        "status": resp.status_code,
+        "error": _extract_recall_error(resp),
+        "body": (resp.text or "").strip(),
+    }
 
 
 async def _fetch_transcript(bot_id: str, attempts: int = 12, prefer_async: bool = False):
@@ -2030,8 +2153,38 @@ async def bot_status(bot_id: str):
     return entry
 
 
+async def _caller_is_bot_member(bot_id: str, request: Request) -> bool:
+    """Whether the request's Bearer token (if any) belongs to a workspace member
+    of the bot (or the owner of a personal, no-workspace bot). Mirrors the
+    members-only KB unlock in /live/{token}/ask — used to gate the screenshare
+    mirror URL to trusted, authenticated viewers (noVNC view_only is client-soft
+    and the stream URL carries the VNC password, so anonymous link-holders must
+    NOT get a stream URL). Anonymous / non-member => False."""
+    caller_id = await _optional_user_id(request)
+    if not caller_id:
+        return False
+    entry = bot_store.get(bot_id) or {}
+    ws_id = entry.get("workspace_id")
+    if ws_id and supabase:
+        try:
+            m = (
+                supabase.table("workspace_members")
+                .select("user_id")
+                .eq("workspace_id", ws_id)
+                .eq("user_id", caller_id)
+                .maybe_single()
+                .execute()
+            )
+            return bool(m and m.data)
+        except Exception:
+            return False
+    if not ws_id:
+        return entry.get("user_id") == caller_id
+    return False
+
+
 @router.get("/live/{live_token}")
-async def live_meeting(live_token: str):
+async def live_meeting(live_token: str, request: Request):
     """Public endpoint for live-share viewers. Returns safe bot state by live_token."""
     bot_id = _live_token_index.get(live_token)
 
@@ -2076,6 +2229,25 @@ async def live_meeting(live_token: str):
     import perception_state as _pp
     op_counters = _pp.operational_counters(rt) if rt else {}
 
+    # Bot screen presentation mirror (Phase 4). When the bot is presenting, expose
+    # a live indicator to everyone, but the actual view URL ONLY to authenticated
+    # workspace members — the noVNC view_only boundary is client-soft and the
+    # stream URL carries the VNC password, so anonymous link-holders get an
+    # indicator (active + goal) without a stream. Best-effort: never breaks /live.
+    screenshare = {"active": False, "view_url": None, "goal": None}
+    try:
+        import presentation as _present
+        info = _present.active_present_info(bot_id)
+        if info and info.get("token"):
+            is_member = await _caller_is_bot_member(bot_id, request)
+            screenshare = {
+                "active": True,
+                "goal": info.get("goal") or "",
+                "view_url": present_wrapper_url(info["token"]) if is_member else None,
+            }
+    except Exception:
+        pass
+
     return {
         "status": status,
         "commands": entry.get("commands", []),
@@ -2094,6 +2266,9 @@ async def live_meeting(live_token: str):
         # Include transcript when done so signed-in viewers can save a copy
         "transcript": entry.get("transcript") if status == "done" else None,
         "counters": op_counters,
+        # Live screen presentation (Phase 4): {active, goal, view_url}. view_url is
+        # members-only (null for anonymous link-holders — see _caller_is_bot_member).
+        "screenshare": screenshare,
     }
 
 

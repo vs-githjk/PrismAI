@@ -17,6 +17,7 @@ import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
 import LiveCatchup from './LiveCatchup'
 import StandInComposer from './StandInComposer'
+import AIWorkspaceSetup from './dashboard/AIWorkspaceSetup'
 const ProxyProfile = lazy(() => import('./ProxyProfile'))
 const CalendarView = lazy(() => import('./CalendarView'))
 import {
@@ -38,6 +39,7 @@ import SkeletonCard from './SkeletonCard'
 import DashboardSidebar from './dashboard/DashboardSidebar'
 import DashboardTopbar from './dashboard/DashboardTopbar'
 import LiveMeetingView from './dashboard/LiveMeetingView'
+import PresentationMirror from './dashboard/PresentationMirror'
 import { deriveStatus } from './dashboard/StatusIsland'
 import { useStatusNotification } from '../lib/statusNotify'
 import WorkspaceIsland from './dashboard/WorkspaceIsland'
@@ -375,6 +377,12 @@ function NewMeetingPanel(props) {
                 <LiveCatchup liveToken={props.activeLiveToken} accessToken={props.accessToken} />
               )}
 
+              {/* Live mirror of what Prism is presenting on screen (self-polls
+                  /live for the members-only stream URL — the owner is signed in). */}
+              {props.botStatus === 'recording' && props.activeLiveToken && (
+                <PresentationMirror liveToken={props.activeLiveToken} />
+              )}
+
               {props.liveCommands?.length > 0 && (
                 <div className="max-h-28 space-y-1 overflow-y-auto">
                   {props.liveCommands.slice(-5).map((cmd, i) => (
@@ -515,6 +523,7 @@ export default function DashboardPage(props) {
   // the dropdown closes on outside-click, so a portaled modal inside it would be
   // torn down the moment you interact with it.
   const [standIn, setStandIn] = useState(null)
+  const [showWorkspaceSetup, setShowWorkspaceSetup] = useState(false)
   const [activeView, setActiveView] = useState(() => {
     // A live/share token (deep-link) wins over the persisted view.
     if (props.liveToken) return 'live'
@@ -1157,6 +1166,7 @@ export default function DashboardPage(props) {
         liveActive={activeView === 'live'}
         onSelectLive={() => persistView('live')}
         setShowIntegrations={props.setShowIntegrations}
+        onSetupWorkspace={() => setShowWorkspaceSetup(true)}
         signOut={props.signOut}
         newMeetingOpen={newMeetingOpen}
         setNewMeetingOpen={setNewMeetingOpen}
@@ -1400,6 +1410,10 @@ export default function DashboardPage(props) {
 
       {standIn && (
         <StandInComposer meeting={standIn} user={props.user} onClose={() => setStandIn(null)} />
+      )}
+
+      {showWorkspaceSetup && (
+        <AIWorkspaceSetup onClose={() => setShowWorkspaceSetup(false)} />
       )}
 
       <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
