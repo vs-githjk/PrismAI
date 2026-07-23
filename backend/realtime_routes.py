@@ -3694,6 +3694,26 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     "name": pname,
                     "is_bot": is_bot_participant,
                 }
+                # Fix 2B: capture the stable static_participant_id → real name from the
+                # LIVE join event so the post-meeting deepgram_async transcript's anonymous
+                # speaker segments (200-0/100-0) can be relabelled deterministically by
+                # exact id. Recall exposes no clean post-meeting name map (2A's pe_url is
+                # absent), so the live roster is the only reliable source. Stored on
+                # bot_store (read by recall_routes._process_bot_transcript at analysis time,
+                # since _bot_state is realtime-private), accumulate-only so it survives a
+                # participant leaving. Humans only. [coordinated with the voice merge —
+                # keep additive; the robust names+seek path is realtime_segments post-merge.]
+                if pname and not is_bot_participant and bot_id in bot_store:
+                    try:
+                        from recall_routes import _static_participant_id as _static_pid
+                        _sid = _static_pid(participant)
+                    except Exception:
+                        _sid = None
+                    if _sid:
+                        _smap = bot_store[bot_id].setdefault("participant_static_ids", {})
+                        if _smap.get(_sid) != pname:
+                            _smap[_sid] = pname
+                            print(f"[realtime] 2B captured static id for {pname!r} (bot={bot_id[:8]})")
                 # Late-joiner notes link: re-post the live/notes link to anyone who
                 # joins AFTER the intro + initial-roster window. Introduces no new
                 # sharing — same link the intro posts. (See _should_repost_late_join.)

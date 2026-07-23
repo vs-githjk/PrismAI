@@ -48,13 +48,35 @@ export default function RecordingPlayer({
     abortRef.current = controller
     try {
       const res = await apiFetch(`/meetings/${meetingId}/recording`, { signal: controller.signal })
+      // Non-2xx (apiFetch doesn't throw on these): right after a meeting the row was
+      // JUST POSTed and may not be queryable yet → the endpoint 404s for a moment. Poll
+      // (bounded) instead of flashing "The bot recording was deleted." A genuinely
+      // missing/forbidden meeting resolves to the terminal state after the cap.
+      if (!res.ok) {
+        attemptsRef.current += 1
+        if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
+          setReason('not_found')
+          setState('gone')
+          return
+        }
+        setState('processing')
+        timeoutRef.current = setTimeout(() => fetchRecording(), POLL_INTERVAL_MS)
+        return
+      }
       const data = await res.json().catch(() => ({}))
       if (data.url) {
         setMedia({ url: data.url, kind: data.kind })
         setState('ready')
         return
       }
-      if (data.reason === 'not_ready') {
+      if (data.reason === 'not_a_bot_meeting') {
+        return  // defensive — provider check above should have prevented this
+      }
+      // Transient states right after a meeting: Recall hasn't finished attaching the
+      // recording yet (`no_recording` = recordings array still empty; `not_ready` = no
+      // media URL yet). The recording almost always lands within 1–3 min — poll instead
+      // of flashing a terminal "deleted"/"no audio" (the meeting just auto-promoted).
+      if (data.reason === 'not_ready' || data.reason === 'no_recording') {
         attemptsRef.current += 1
         if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
           setState('processing')
@@ -65,15 +87,27 @@ export default function RecordingPlayer({
         timeoutRef.current = setTimeout(() => fetchRecording(), POLL_INTERVAL_MS)
         return
       }
-      if (data.reason === 'not_a_bot_meeting') {
-        return  // defensive — provider check above should have prevented this
-      }
+      // expired / not_found (deleted) are genuinely terminal.
       setReason(data.reason || 'not_found')
       setState('gone')
     } catch (err) {
       if (err?.name === 'AbortError') return
-      setReason(isRefresh ? 'expired' : 'not_found')
-      setState('gone')
+      if (isRefresh) {
+        setReason('expired')
+        setState('gone')
+        return
+      }
+      // Initial fetch failed — the meeting row may have JUST been auto-promoted (or a
+      // network blip). Poll a bounded number of times before declaring it gone rather
+      // than showing "The bot recording was deleted" on a recording that's still landing.
+      attemptsRef.current += 1
+      if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
+        setReason('not_found')
+        setState('gone')
+        return
+      }
+      setState('processing')
+      timeoutRef.current = setTimeout(() => fetchRecording(), POLL_INTERVAL_MS)
     }
   }, [meetingId, isBotMeeting])
 

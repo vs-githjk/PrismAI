@@ -2122,8 +2122,19 @@ async def _process_bot_transcript(bot_id: str):
             # async one. This is the reliable named+timed source for the overlap relabel.
             if not named_segs and segments:
                 named_segs = await _fetch_streaming_named_segments(bot_id)
-            # Strategy 1: participant-id relabel (only worth the fetch when we have segments).
-            id_map = await _build_participant_name_map(bot_id) if segments else {}
+            # Strategy 1: participant-id relabel (only worth it when we have segments).
+            # Fix 2B (primary): the live participant_events.join handler captured a
+            # static_participant_id → real-name map onto bot_store as people joined —
+            # deterministic and present even when Recall's post-meeting sources are empty.
+            # Fall back to the (usually-empty) post-meeting fetch (2A) only when 2B is bare.
+            id_map: dict[str, str] = {}
+            if segments:
+                live_map = dict((bot_store.get(bot_id) or {}).get("participant_static_ids") or {})
+                if live_map:
+                    id_map = live_map
+                    print(f"[recall] 2B: using {len(live_map)} live-captured static-id name(s) for bot {bot_id[:8]}")
+                else:
+                    id_map = await _build_participant_name_map(bot_id)
             id_relabelled = _relabel_segments_by_participant_id(segments, id_map) if segments else 0
             seg_text = (
                 "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
