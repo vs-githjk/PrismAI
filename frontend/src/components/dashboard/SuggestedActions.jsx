@@ -1,15 +1,39 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/api'
 import { Mail, Calendar, Ticket, MessageSquare, Check, Loader2, X, Sparkles, ExternalLink } from 'lucide-react'
+import { Button } from '../ui/button'
 
 // Each suggested action maps to an action_type the agent chose; the concrete tool is
 // resolved from what the user actually has connected (task→Jira/Linear, chat→Slack/Teams).
 const TYPE_META = {
-  email:    { icon: Mail,          label: 'Send email',      verb: 'Send',  accent: '#22d3ee' },
-  calendar: { icon: Calendar,      label: 'Add to calendar', verb: 'Create', accent: '#67e8f9' },
-  task:     { icon: Ticket,        label: 'File ticket',     verb: 'File',  accent: '#a78bfa' },
-  chat:     { icon: MessageSquare, label: 'Post message',    verb: 'Post',  accent: '#34d399' },
+  // `verb` = button action; `past` = row badge after done; `done` = success-line phrase
+  // (spelled explicitly — "File" + "ed" would read "fileed").
+  email:    { icon: Mail,          label: 'Send email',      verb: 'Send',   past: 'Sent',   done: 'sent',                accent: '#22d3ee' },
+  calendar: { icon: Calendar,      label: 'Add to calendar', verb: 'Create', past: 'Added',  done: 'added to your calendar', accent: '#67e8f9' },
+  task:     { icon: Ticket,        label: 'File ticket',     verb: 'File',   past: 'Filed',  done: 'filed',               accent: '#a78bfa' },
+  chat:     { icon: MessageSquare, label: 'Post message',    verb: 'Post',   past: 'Posted', done: 'posted',              accent: '#34d399' },
+}
+
+// Executed suggested actions are remembered per-meeting so a completed action can't be
+// re-run (which would file a duplicate ticket / send a duplicate email). Keyed by the
+// action's type + task text; persisted to localStorage so it survives a reload.
+const EXECUTED_KEY = (mid) => `prism_executed_actions_${mid || 'none'}`
+const actionKey = (a) => `${a.action_type}:${(a.task || a.title || '').slice(0, 200)}`
+function loadExecuted(mid) {
+  try { return JSON.parse(localStorage.getItem(EXECUTED_KEY(mid)) || '{}') || {} } catch { return {} }
+}
+
+// Human-readable destination for a resolved tool — surfaced on the card + in the modal
+// so the user knows WHERE an action goes (Jira vs Linear, Slack vs Teams) before running
+// it, instead of only finding out from the created ticket's prefix.
+const TOOL_DEST = {
+  gmail_send: 'Gmail',
+  calendar_create_event: 'Google Calendar',
+  jira_create_issue: 'Jira',
+  linear_create_issue: 'Linear',
+  slack_post_message: 'Slack',
+  teams_webhook: 'Teams',
 }
 
 // Which integration a type needs, and the label shown when it isn't connected.
@@ -43,8 +67,20 @@ function defaultDate() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export default function SuggestedActions({ actions = [], connections = {}, suggestedEmails = [], meetingId = null, teamsWebhook = '', readOnly = false }) {
+export default function SuggestedActions({ actions = [], connections = {}, suggestedEmails = [], meetingId = null, teamsWebhook = '', workspaceId = null, readOnly = false }) {
   const [active, setActive] = useState(null)   // the action being reviewed
+  const [executed, setExecuted] = useState(() => loadExecuted(meetingId))
+  // Reload the executed set when the meeting changes (SuggestedActions may not remount).
+  useEffect(() => { setExecuted(loadExecuted(meetingId)) }, [meetingId])
+
+  function markExecuted(action, url) {
+    setExecuted((prev) => {
+      const next = { ...prev, [actionKey(action)]: { url: url || null, at: Date.now() } }
+      try { localStorage.setItem(EXECUTED_KEY(meetingId), JSON.stringify(next)) } catch { /* storage unavailable */ }
+      return next
+    })
+  }
+
   const list = (actions || []).filter((a) => a && TYPE_META[a.action_type])
   if (!list.length) return null
 
@@ -59,6 +95,9 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
         {list.map((a, i) => {
           const meta = TYPE_META[a.action_type]
           const Icon = meta.icon
+          const doneRef = executed[actionKey(a)]
+          const rowResolved = resolveTool(a.action_type, connections)
+          const dest = rowResolved.tool ? TOOL_DEST[rowResolved.tool] : null
           return (
             <li key={i} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
@@ -69,14 +108,31 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
                 <p className="truncate text-[13.5px] font-medium text-white/85">{a.title || a.task}</p>
                 <p className="truncate text-[12px] text-white/45">{a.task}</p>
               </div>
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => setActive(a)}
-                  className="shrink-0 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-[12.5px] font-medium text-cyan-200 transition hover:border-cyan-400/55 hover:bg-cyan-400/15"
-                >
-                  Review &amp; {meta.verb.toLowerCase()}
-                </button>
+              {doneRef ? (
+                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-emerald-300">
+                  <Check className="h-[15px] w-[15px]" aria-hidden="true" /> {meta.past}
+                  {doneRef.url && (
+                    <a href={doneRef.url} target="_blank" rel="noreferrer"
+                      className="ml-1 inline-flex items-center gap-1 text-cyan-300 hover:underline">
+                      Open <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    </a>
+                  )}
+                </span>
+              ) : !readOnly && (
+                <div className="flex shrink-0 items-center gap-2">
+                  {dest && (
+                    <span className="hidden rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-white/45 sm:inline">
+                      → {dest}
+                    </span>
+                  )}
+                  <Button
+                    variant="accent"
+                    onClick={() => setActive(a)}
+                    className="px-3 py-1.5 text-[12.5px] font-medium"
+                  >
+                    Review &amp; {meta.verb.toLowerCase()}
+                  </Button>
+                </div>
               )}
             </li>
           )
@@ -89,13 +145,15 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
           suggestedEmails={suggestedEmails}
           meetingId={meetingId}
           teamsWebhook={teamsWebhook}
+          workspaceId={workspaceId}
+          onExecuted={(url) => markExecuted(active, url)}
           onClose={() => setActive(null)}
         />, document.body)}
     </div>
   )
 }
 
-function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, onClose }) {
+function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, workspaceId, onExecuted, onClose }) {
   const meta = TYPE_META[action.action_type]
   const resolved = resolveTool(action.action_type, connections)
   const [busy, setBusy] = useState(false)
@@ -115,15 +173,31 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
   async function submit() {
     setBusy(true); setError('')
     try {
-      // Teams uses the recap webhook route, not the unified tool endpoint.
+      // Teams uses the recap webhook route, not the unified tool endpoint. In a
+      // workspace scope, prefer the team's server-resolved webhook; a 404 (workspace
+      // hasn't configured Teams) falls back to the caller's personal webhook.
       if (resolved.tool === 'teams_webhook') {
-        const res = await apiFetch('/export/teams', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ webhook_url: teamsWebhook, title: title || 'Action', result: { summary: body } }),
-        })
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Teams post failed')
+        const recap = { title: title || 'Action', result: { summary: body } }
+        let posted = false
+        if (workspaceId) {
+          const wres = await apiFetch(`/workspaces/${workspaceId}/export/teams`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recap),
+          })
+          if (wres.ok) posted = true
+          else if (wres.status !== 404) throw new Error((await wres.json().catch(() => ({}))).detail || 'Teams post failed')
+        }
+        if (!posted) {
+          const res = await apiFetch('/export/teams', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ webhook_url: teamsWebhook, ...recap }),
+          })
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Teams post failed')
+        }
         setDone({})
+        onExecuted?.(null)
         return
       }
 
@@ -154,7 +228,9 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Action failed')
-      setDone({ url: data.url || data.issue_url || null })
+      const url = data.url || data.issue_url || null
+      setDone({ url })
+      onExecuted?.(url)
     } catch (e) {
       setError(e.message || 'Something went wrong.')
     } finally {
@@ -178,7 +254,12 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
             style={{ background: `${meta.accent}1a`, color: meta.accent }}>
             <Icon className="h-[17px] w-[17px]" aria-hidden="true" />
           </span>
-          <h3 className="flex-1 text-[15px] font-semibold text-white/90">{meta.label}</h3>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[15px] font-semibold text-white/90">{meta.label}</h3>
+            {resolved.tool && TOOL_DEST[resolved.tool] && (
+              <p className="text-[12px] text-white/45">Goes to {TOOL_DEST[resolved.tool]}</p>
+            )}
+          </div>
           <button type="button" onClick={onClose} className="text-white/40 hover:text-white/80">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -193,7 +274,7 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
               <Check className="h-6 w-6" aria-hidden="true" />
             </span>
-            <p className="text-[14px] font-medium text-white/85">Done — {meta.verb.toLowerCase()}ed.</p>
+            <p className="text-[14px] font-medium text-white/85">Done — {meta.done}.</p>
             {done.url && (
               <a href={done.url} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-[13px] text-cyan-300 hover:underline">
@@ -274,10 +355,9 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
             {error && <p className="text-[12.5px] text-rose-300">{error}</p>}
 
             <div className="mt-1 flex items-center justify-end gap-2">
-              <button type="button" onClick={onClose}
-                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-[13px] text-white/75 hover:bg-white/10">
+              <Button variant="ghost" onClick={onClose} className="px-4 py-2 text-[13px]">
                 Cancel
-              </button>
+              </Button>
               <button type="button" onClick={submit} disabled={busy}
                 className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-4 py-2 text-[13px] font-medium text-cyan-100 transition hover:bg-cyan-400/25 disabled:opacity-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}

@@ -2,8 +2,60 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
 import { writeIntegrationStore } from '../lib/integrationStore'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const TABS = ['Slack', 'Teams', 'Notion', 'Calendar', 'Outlook', 'Gmail', 'Linear', 'Jira']
+
+// OAuth-based tabs are NOT workspace-configurable in v1 — they stay personal.
+const OAUTH_TABS = ['Calendar', 'Outlook', 'Gmail']
+
+// Token/webhook providers that CAN be configured per-workspace. Field `key`s match
+// the personal user_settings field names exactly (the backend expects the same shape).
+const WS_PROVIDERS = {
+  Slack: {
+    provider: 'slack',
+    fields: [
+      { key: 'slack_bot_token', label: 'Bot Token', placeholder: 'xoxb-...', type: 'password',
+        hint: 'Lets the bot POST messages via commands (e.g. "post this to #team"). From api.slack.com/apps → your app → OAuth & Permissions → Bot User OAuth Token.' },
+      { key: 'slack_webhook', label: 'Incoming Webhook URL', placeholder: 'https://hooks.slack.com/services/...',
+        hint: 'Used to push meeting summaries to one channel. Optional if you only need bot-command posting.' },
+    ],
+  },
+  Teams: {
+    provider: 'teams',
+    fields: [
+      { key: 'teams_webhook', label: 'Workflows Webhook URL', placeholder: 'https://prod-XX.westus.logic.azure.com/...',
+        hint: 'A Power Automate "Workflows" (or legacy Office 365) incoming-webhook URL for the channel summaries should post to.' },
+    ],
+  },
+  Notion: {
+    provider: 'notion',
+    fields: [
+      { key: 'notion_token', label: 'Integration Token', placeholder: 'secret_...', type: 'password',
+        hint: 'From notion.so/my-integrations → New integration → Internal Integration Token. Share the target page with the integration.' },
+      { key: 'notion_page_id', label: 'Parent Page ID', placeholder: '32-character page ID or full page URL',
+        hint: 'The page new meeting notes are created under — paste the page URL or its 32-char ID.' },
+    ],
+  },
+  Linear: {
+    provider: 'linear',
+    fields: [
+      { key: 'linear_api_key', label: 'Linear API Key', placeholder: 'lin_api_...', type: 'password',
+        hint: 'A personal API key from linear.app/settings/api. Lets the bot create issues from action items.' },
+    ],
+  },
+  Jira: {
+    provider: 'jira',
+    fields: [
+      { key: 'jira_base_url', label: 'Site URL', placeholder: 'yoursite.atlassian.net',
+        hint: 'Your Jira Cloud site, e.g. yoursite.atlassian.net (with or without https://).' },
+      { key: 'jira_email', label: 'Account Email', placeholder: 'you@company.com',
+        hint: 'The Atlassian account email that owns the API token.' },
+      { key: 'jira_api_token', label: 'API Token', placeholder: 'Atlassian API token', type: 'password',
+        hint: 'Create one at id.atlassian.com/manage-profile/security/api-tokens.' },
+      { key: 'jira_project_key', label: 'Default Project Key', placeholder: 'e.g. PRISM',
+        hint: 'The project new issues are created in (overridable per request in chat).' },
+    ],
+  },
+}
 
 function Field({ label, placeholder, value, onChange, type = 'text', hint, disabled = false }) {
   return (
@@ -54,8 +106,11 @@ const AUTO_JOIN_OPTIONS = [
   { value: 'marked', label: 'Auto-join starred',  hint: 'Only auto-join meetings you\'ve starred in the panel.' },
 ]
 
-export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, outlookConnected = false, onConnectOutlook, onDisconnectOutlook, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
-  const [tab, setTab] = useState('Slack')
+export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, outlookConnected = false, onConnectOutlook, onDisconnectOutlook, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false, initialTab = 'Slack' }) {
+  // initialTab lets a caller deep-link (e.g. the first-run "Connect calendar" nudge
+  // opens straight to the Calendar tab). The modal remounts on each open, so this is
+  // read fresh every time it's shown.
+  const [tab, setTab] = useState(TABS.includes(initialTab) ? initialTab : 'Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
   const [notionPageId, setNotionPageId] = useState(integrations.notion_page_id || '')
@@ -77,6 +132,141 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
   const [jiraProjectKey, setJiraProjectKey] = useState(integrations.jira_project_key || '')
   const [savingTools, setSavingTools] = useState(false)
   const [toolSaveResult, setToolSaveResult] = useState(null) // 'ok' | 'err'
+  // Verify ticket-integration creds before relying on them mid-meeting (Cluster B).
+  const [testingJira, setTestingJira] = useState(false)
+  const [jiraTestResult, setJiraTestResult] = useState(null) // {ok, account_name?, error?, project_ok?}
+  const [testingLinear, setTestingLinear] = useState(false)
+  const [linearTestResult, setLinearTestResult] = useState(null)
+
+  // ── Per-workspace integrations scope ────────────────────────────────────
+  // scope === 'personal' → today's behavior, 100% unchanged. Otherwise scope is a
+  // workspace id and all reads/writes route to the workspace integrations API.
+  const [scope, setScope] = useState('personal')
+  const [wsList, setWsList] = useState([])            // [{id, name, role, ...}]
+  const [wsData, setWsData] = useState(null)          // {integrations:[...], can_edit}
+  const [wsLoading, setWsLoading] = useState(false)
+  const [wsForm, setWsForm] = useState({})            // typed creds for the current workspace edit
+  const [wsSaving, setWsSaving] = useState(false)
+  const [wsSaveResult, setWsSaveResult] = useState(null) // 'ok' | 'err'
+  const [wsTestState, setWsTestState] = useState({ provider: null, testing: false, result: null })
+
+  // Fetch the user's workspaces once (only for real, signed-in accounts).
+  useEffect(() => {
+    if (!isSignedIn || isTestAccount) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await apiFetch('/workspaces')
+        const data = await res.json()
+        const list = Array.isArray(data) ? data : (data?.workspaces || [])
+        if (!cancelled) setWsList(list)
+      } catch (err) {
+        console.warn('[IntegrationsModal] Failed to load workspaces:', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isSignedIn, isTestAccount])
+
+  async function loadWsIntegrations(wsId) {
+    setWsLoading(true)
+    try {
+      const res = await apiFetch(`/workspaces/${wsId}/integrations`)
+      const data = await res.json()
+      setWsData(data && typeof data === 'object' ? data : null)
+    } catch (err) {
+      console.warn('[IntegrationsModal] Failed to load workspace integrations:', err)
+      setWsData(null)
+    } finally {
+      setWsLoading(false)
+    }
+  }
+
+  function switchScope(next) {
+    setScope(next)
+    setWsForm({})
+    setWsSaveResult(null)
+    setWsData(null)
+    setWsTestState({ provider: null, testing: false, result: null })
+    if (next !== 'personal') loadWsIntegrations(next)
+  }
+
+  function wsStatus(provider) {
+    const list = wsData?.integrations || []
+    return list.find(i => i.provider === provider) || null
+  }
+
+  async function wsSaveProvider() {
+    const cfg = WS_PROVIDERS[tab]
+    if (!cfg || scope === 'personal') return
+    const config = {}
+    cfg.fields.forEach(f => { config[f.key] = wsForm[f.key] || '' })
+    setWsSaving(true)
+    setWsSaveResult(null)
+    try {
+      const res = await apiFetch(`/workspaces/${scope}/integrations/${cfg.provider}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config, enabled: true }),
+      })
+      if (!res.ok) throw new Error('save failed')
+      setWsSaveResult('ok')
+      setWsForm({})
+      setWsTestState({ provider: null, testing: false, result: null })
+      await loadWsIntegrations(scope)
+    } catch (err) {
+      console.warn('[IntegrationsModal] Failed to save workspace integration:', err)
+      setWsSaveResult('err')
+    } finally {
+      setWsSaving(false)
+    }
+  }
+
+  async function wsDisconnect() {
+    const cfg = WS_PROVIDERS[tab]
+    if (!cfg || scope === 'personal') return
+    setWsSaving(true)
+    setWsSaveResult(null)
+    try {
+      const res = await apiFetch(`/workspaces/${scope}/integrations/${cfg.provider}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('delete failed')
+      setWsForm({})
+      setWsTestState({ provider: null, testing: false, result: null })
+      await loadWsIntegrations(scope)
+    } catch (err) {
+      console.warn('[IntegrationsModal] Failed to disconnect workspace integration:', err)
+      setWsSaveResult('err')
+    } finally {
+      setWsSaving(false)
+    }
+  }
+
+  async function wsTest(provider) {
+    setWsTestState({ provider, testing: true, result: null })
+    const body = { provider }
+    if (provider === 'jira') {
+      Object.assign(body, {
+        jira_base_url: wsForm.jira_base_url || '',
+        jira_email: wsForm.jira_email || '',
+        jira_api_token: wsForm.jira_api_token || '',
+        jira_project_key: wsForm.jira_project_key || '',
+      })
+    } else if (provider === 'linear') {
+      body.linear_api_key = wsForm.linear_api_key || ''
+    }
+    try {
+      const res = await apiFetch('/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({ ok: false, error: 'Test failed.' }))
+      setWsTestState({ provider, testing: false, result: data })
+    } catch {
+      setWsTestState({ provider, testing: false, result: { ok: false, error: 'Could not reach the server.' } })
+    }
+  }
+
+  const activeWs = wsList.find(w => String(w.id) === String(scope)) || null
 
   // Re-seed the server-side tool tokens when they arrive/change. useState only
   // captures the initial prop, so a modal opened before /user-settings resolved would
@@ -151,7 +341,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     setTestingSlack(true)
     setSlackTestResult(null)
     try {
-      const res = await fetch(`${API}/export/slack`, {
+      const res = await apiFetch('/export/slack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -174,7 +364,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     setTestingTeams(true)
     setTeamsTestResult(null)
     try {
-      const res = await fetch(`${API}/export/teams`, {
+      const res = await apiFetch('/export/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -191,6 +381,183 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     }
   }
 
+  async function testJira() {
+    if (isTestAccount) return
+    setTestingJira(true)
+    setJiraTestResult(null)
+    try {
+      const res = await apiFetch('/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'jira',
+          jira_base_url: jiraBaseUrl,
+          jira_email: jiraEmail,
+          jira_api_token: jiraApiToken,
+          jira_project_key: jiraProjectKey,
+        }),
+      })
+      const data = await res.json().catch(() => ({ ok: false, error: 'Test failed.' }))
+      setJiraTestResult(data)
+    } catch {
+      setJiraTestResult({ ok: false, error: 'Could not reach the server.' })
+    } finally {
+      setTestingJira(false)
+    }
+  }
+
+  async function testLinear() {
+    if (isTestAccount) return
+    setTestingLinear(true)
+    setLinearTestResult(null)
+    try {
+      const res = await apiFetch('/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'linear', linear_api_key: linearApiKey }),
+      })
+      const data = await res.json().catch(() => ({ ok: false, error: 'Test failed.' }))
+      setLinearTestResult(data)
+    } catch {
+      setLinearTestResult({ ok: false, error: 'Could not reach the server.' })
+    } finally {
+      setTestingLinear(false)
+    }
+  }
+
+  function renderWorkspace() {
+    const wsName = activeWs?.name || 'Workspace'
+
+    // OAuth providers are personal-only in v1.
+    if (OAUTH_TABS.includes(tab)) {
+      return (
+        <div className="rounded-xl p-4 text-[11px] text-gray-400 leading-relaxed"
+          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          Calendar &amp; email stay personal — connect them under <span className="text-gray-200">Personal</span>.
+          Workspace scope covers Slack, Teams, Notion, Linear, and Jira.
+        </div>
+      )
+    }
+
+    const cfg = WS_PROVIDERS[tab]
+    if (!cfg) return null
+
+    if (wsLoading) {
+      return <p className="text-xs text-gray-500 py-2">Loading workspace integrations…</p>
+    }
+
+    const status = wsStatus(cfg.provider)
+    const connected = !!status?.connected
+    const canEdit = !!wsData?.can_edit
+    const label = status?.label || ''
+    const testable = cfg.provider === 'jira' || cfg.provider === 'linear'
+    const testResult = wsTestState.provider === cfg.provider ? wsTestState.result : null
+    const testing = wsTestState.provider === cfg.provider && wsTestState.testing
+
+    return (
+      <div className="space-y-4">
+        {/* Current status */}
+        <div className="rounded-xl p-3 flex items-center gap-2.5"
+          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <span className="w-2 h-2 rounded-full flex-shrink-0"
+            style={{ background: connected ? '#34d399' : 'rgba(255,255,255,0.2)' }} />
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-gray-200">
+              {connected ? 'Connected' : 'Not configured'}
+              {connected && label && <span className="text-gray-500 font-normal"> · {label}</span>}
+            </p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Shared across the “{wsName}” workspace.</p>
+          </div>
+        </div>
+
+        {/* Owner: editable fields. Member: disabled + note. */}
+        {canEdit ? (
+          <>
+            {cfg.fields.map(f => (
+              <Field
+                key={f.key}
+                label={f.label}
+                placeholder={f.placeholder}
+                type={f.type || 'text'}
+                hint={f.hint}
+                value={wsForm[f.key] || ''}
+                onChange={val => setWsForm(prev => ({ ...prev, [f.key]: val }))}
+              />
+            ))}
+            <p className="text-[10px] text-gray-600 leading-relaxed px-0.5">
+              {connected
+                ? 'Secrets are never shown — re-enter credentials to update this connection.'
+                : 'Credentials are stored on the workspace and used for every member’s meetings.'}
+            </p>
+
+            {testable && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => wsTest(cfg.provider)}
+                  disabled={testing}
+                  className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                  {testing ? 'Testing…' : 'Test connection'}
+                </button>
+                {testResult && (
+                  <span className={`text-[11px] ${testResult.ok && !testResult.error ? 'text-emerald-400' : testResult.ok ? 'text-amber-400' : 'text-red-400'}`}>
+                    {testResult.ok && !testResult.error
+                      ? `✓ Connected as ${testResult.account_name}${testResult.project_ok ? ' · project OK' : ''}`
+                      : (testResult.error || 'Connection failed')}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={wsSaveProvider}
+                disabled={wsSaving}
+                className="text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+                {wsSaving ? 'Saving…' : 'Save to workspace'}
+              </button>
+              {connected && (
+                <button
+                  onClick={wsDisconnect}
+                  disabled={wsSaving}
+                  className="text-xs px-3 py-2 rounded-lg transition-all text-red-400 hover:text-red-300 disabled:opacity-50"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)' }}>
+                  Disconnect
+                </button>
+              )}
+              {wsSaveResult === 'ok' && <span className="text-[11px] text-emerald-400">✓ Saved</span>}
+              {wsSaveResult === 'err' && <span className="text-[11px] text-red-400">Save failed</span>}
+            </div>
+          </>
+        ) : (
+          <>
+            {cfg.fields.map(f => (
+              <Field
+                key={f.key}
+                label={f.label}
+                placeholder={connected ? '••••••••' : 'Not configured'}
+                type={f.type || 'text'}
+                value=""
+                onChange={() => {}}
+                disabled
+              />
+            ))}
+            <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              {connected
+                ? <>Configured by the workspace{label ? <> · <span className="text-gray-300">{label}</span></> : null}.</>
+                : 'Not configured.'}
+              {' '}Only the workspace owner can change this.
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  const showScopeSwitcher = isSignedIn && !isTestAccount && wsList.length > 0
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
@@ -201,7 +568,11 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
           style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <div>
             <h3 className="text-sm font-semibold text-[color:var(--db-text)]">Integrations</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Connect PrismAI to your tools — tokens stay in your browser.</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {scope === 'personal'
+                ? 'Connect PrismAI to your tools — stored securely on your account.'
+                : `Shared across the “${activeWs?.name || 'workspace'}” — only the workspace owner can change these.`}
+            </p>
           </div>
           <button onClick={onClose} className="text-gray-600 hover:text-gray-300 transition-colors p-1">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -280,6 +651,53 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               Integrations are disabled in test run. Create or log in to a real account to connect external tools.
             </div>
           )}
+
+          {/* Scope switcher — Personal | <workspaces>. Hidden entirely when the user
+              has no workspaces (personal-only, unchanged). */}
+          {showScopeSwitcher && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => switchScope('personal')}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                  scope === 'personal' ? 'text-cyan-200' : 'text-gray-500 hover:text-gray-300'
+                }`}
+                style={scope === 'personal'
+                  ? { background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.30)' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                Personal
+              </button>
+              {wsList.map(ws => (
+                <button
+                  key={ws.id}
+                  onClick={() => switchScope(ws.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                    String(scope) === String(ws.id) ? 'text-cyan-200' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                  style={String(scope) === String(ws.id)
+                    ? { background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.30)' }
+                    : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Save-target badge — never leave it ambiguous where creds land. */}
+          {showScopeSwitcher && (
+            <div className="flex items-center gap-2 -mt-1">
+              <span className="text-[10px] uppercase tracking-wide text-gray-600">Editing</span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                style={scope === 'personal'
+                  ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#cbd5e1' }
+                  : { background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.30)', color: '#67e8f9' }}>
+                {scope === 'personal' ? 'Personal' : `${activeWs?.name || 'Workspace'} · workspace`}
+              </span>
+            </div>
+          )}
+
+          {scope !== 'personal' && renderWorkspace()}
+
+          {scope === 'personal' && (<>
           {tab === 'Slack' && (
             <>
               <Field
@@ -519,6 +937,38 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 </button>
               )}
 
+              {/* Auto-join behavior — the SAME global setting as Google Calendar; it
+                  applies to every connected calendar, so configuring it here or under
+                  the Calendar tab is equivalent. */}
+              {outlookConnected && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-gray-400 px-0.5">Auto-join behavior</p>
+                  {AUTO_JOIN_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => onAutoJoinChange?.(opt.value)}
+                      disabled={isTestAccount}
+                      className="w-full flex items-start gap-3 rounded-xl p-3 text-left transition-all"
+                      style={autoJoinSetting === opt.value
+                        ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)' }
+                        : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className={`w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border ${autoJoinSetting === opt.value ? 'border-sky-400' : 'border-gray-600'}`}>
+                        {autoJoinSetting === opt.value && (
+                          <div className="w-2 h-2 rounded-full bg-sky-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className={`text-xs font-medium ${autoJoinSetting === opt.value ? 'text-sky-300' : 'text-gray-300'}`}>{opt.label}</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5 leading-relaxed">{opt.hint}</p>
+                      </div>
+                    </button>
+                  ))}
+                  <p className="text-[10px] text-gray-600 px-0.5 leading-relaxed">
+                    Shared with Google Calendar — applies to all connected calendars.
+                  </p>
+                </div>
+              )}
+
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 PrismAI requests read-only access to your Outlook calendar (Microsoft Graph). It surfaces upcoming meetings and detects Teams/Zoom/Meet links so you can join in one click.
@@ -583,13 +1033,19 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 hint="Create a personal API key at linear.app/settings/api. This lets PrismAI create issues from action items."
               />
               {linearApiKey.trim() && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Key configured
-                  </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={testLinear}
+                    disabled={isTestAccount || testingLinear}
+                    className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                    {testingLinear ? 'Testing…' : 'Test connection'}
+                  </button>
+                  {linearTestResult && (
+                    <span className={`text-[11px] ${linearTestResult.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {linearTestResult.ok ? `✓ Connected as ${linearTestResult.account_name}` : (linearTestResult.error || 'Connection failed')}
+                    </span>
+                  )}
                 </div>
               )}
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
@@ -634,12 +1090,29 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 disabled={isTestAccount}
                 hint="The project new issues are created in (you can override per request in chat)."
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={testJira}
+                  disabled={isTestAccount || testingJira || !jiraBaseUrl.trim() || !jiraEmail.trim() || !jiraApiToken.trim()}
+                  className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                  {testingJira ? 'Testing…' : 'Test connection'}
+                </button>
+                {jiraTestResult && (
+                  <span className={`text-[11px] ${jiraTestResult.ok && !jiraTestResult.error ? 'text-emerald-400' : jiraTestResult.ok ? 'text-amber-400' : 'text-red-400'}`}>
+                    {jiraTestResult.ok && !jiraTestResult.error
+                      ? `✓ Connected as ${jiraTestResult.account_name}${jiraTestResult.project_ok ? ' · project OK' : ''}`
+                      : (jiraTestResult.error || 'Connection failed')}
+                  </span>
+                )}
+              </div>
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 With Jira connected, ask PrismAI to file issues from chat. For example: "create a Jira ticket for the login bug we discussed."
               </div>
             </>
           )}
+          </>)}
         </div>
 
         {/* Footer */}
@@ -648,14 +1121,17 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
           <button onClick={onClose}
             className="text-xs px-4 py-2 rounded-lg text-gray-400 hover:text-[color:var(--db-text)] transition-colors"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            Cancel
+            {scope === 'personal' ? 'Cancel' : 'Close'}
           </button>
-          <button onClick={save}
-            disabled={isTestAccount}
-            className="text-xs px-4 py-2 rounded-lg font-semibold text-[color:var(--db-text)] transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
-            Save
-          </button>
+          {/* Workspace scope saves per-provider inline; the footer Save is personal-only. */}
+          {scope === 'personal' && (
+            <button onClick={save}
+              disabled={isTestAccount}
+              className="text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }}>
+              Save
+            </button>
+          )}
         </div>
       </div>
     </div>

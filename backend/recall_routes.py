@@ -58,13 +58,35 @@ RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
 WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8001")
 RECALL_WEBHOOK_SECRET = os.getenv("RECALL_WEBHOOK_SECRET", "")
+
+
+def _webhook_base_is_local() -> bool:
+    """True when the bot would register a non-public webhook/realtime URL — Recall's
+    servers can't reach localhost/127.0.0.1, so EVERY inbound live feature silently
+    dies (live transcript → speaker names, chat /leave, participant join → late-join
+    link). Only the pull-based on-call-end analysis works. The usual cause locally is
+    a missing/stale ngrok tunnel (free ngrok rotates the URL on every restart)."""
+    u = (WEBHOOK_BASE_URL or "").lower()
+    return "localhost" in u or "127.0.0.1" in u or "0.0.0.0" in u
+
+
+def _warn_if_local_webhook(context: str) -> None:
+    """Loudly flag an unreachable WEBHOOK_BASE_URL at bot-create time so a dead tunnel
+    screams in the log instead of silently killing live features mid-meeting."""
+    if _webhook_base_is_local():
+        print(
+            f"[recall] ⚠️  WEBHOOK_BASE_URL={WEBHOOK_BASE_URL!r} is NOT publicly reachable "
+            f"({context}). Recall cannot deliver live webhooks → NO live transcript/speaker "
+            f"names, NO /leave, NO late-join link. Set WEBHOOK_BASE_URL to a public tunnel "
+            f"(e.g. ngrok) and restart, or test on prod. Only end-of-call analysis will work."
+        )
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
 # Branded bot join (#4): the in-meeting display name + a static logo tile shown as
-# the bot's camera output so it reads as "PrismAI Notetaker" with our mark rather
-# than a bare "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9,
-# <=1.3MB) generated from the app logo (backend/assets/bot_tile.jpg).
-BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI Notetaker")
+# the bot's camera output so it reads as "PrismAI" with our mark rather than a bare
+# "P" initial. The tile is a 1280x720 JPEG (Recall requires 16:9, <=1.3MB)
+# generated from the app logo (backend/assets/bot_tile.jpg).
+BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI")
 # Live-streaming keyterm grounding is OFF by default — it broke Deepgram nova-3
 # streaming transcription (no transcript.data events / empty transcript). Grounding
 # still applies in the async batch re-transcription path. Flip to "1" to re-test.
@@ -161,7 +183,7 @@ def _db_load(bot_id: str) -> dict | None:
             # fallback can recover it after a restart when Recall has 0 recordings.
             rt_blob = row.get("realtime_transcript") or ""
             rt_lines = rt_blob.split("\n") if rt_blob else []
-            return {
+            loaded = {
                 "status": row.get("status", "joining"),
                 "result": row.get("result"),
                 "error": row.get("error"),
@@ -169,7 +191,19 @@ def _db_load(bot_id: str) -> dict | None:
                 "commands": row.get("commands") or [],
                 "user_id": row.get("user_id"),
                 "realtime_transcript_lines": rt_lines,
+                # Restore identity/context so a mid-meeting restart keeps the live/
+                # notes link (live_token), the email-FROM-owner sender (owner_name),
+                # and workspace fan-out/persona (workspace_id). These were persisted
+                # by _db_save but previously dropped on load.
+                "live_token": row.get("live_token"),
+                "owner_name": row.get("owner_name"),
+                "workspace_id": row.get("workspace_id"),
             }
+            # Restore seekable segments so click-to-seek survives a mid-meeting restart.
+            rt_segs = row.get("transcript_segments")
+            if isinstance(rt_segs, list) and rt_segs:
+                loaded["realtime_segments"] = rt_segs
+            return loaded
     except Exception as exc:
         print(f"[recall] db load failed for {bot_id}: {exc}")
     return None
@@ -454,9 +488,65 @@ def _name_from_email(email: str) -> str:
     return " ".join(words[:3]).strip()
 
 
+# Title-Case / camelCase term extractor for keyterm content-mining. Matches 1–3-word
+# Title-Case runs ("Reciprocal Rank Fusion") and internal-caps tokens ("CodeQL", "PrismAI").
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}\b")
+_CAMEL_RE = re.compile(r"\b[A-Z][a-z]+[A-Z][a-zA-Z]+\b")
+# Common English words that get capitalised at sentence start — filtered so the
+# keyterm budget isn't wasted on "The", "This", "We", etc.
+_COMMON_LEADING_WORDS = frozenset({
+    "the", "this", "that", "these", "those", "we", "i", "you", "he", "she", "it", "they",
+    "a", "an", "and", "but", "or", "so", "if", "then", "there", "here", "our", "your",
+    "their", "his", "her", "its", "what", "when", "where", "how", "why", "who", "which",
+    "for", "to", "in", "on", "at", "as", "of", "by", "is", "are", "was", "were", "be",
+    "will", "would", "should", "could", "can", "may", "might", "also", "now", "let",
+    "lets", "let's", "no", "yes", "not", "all", "some", "each", "every", "any", "one",
+})
+
+
+def _proper_nouns_from_texts(texts: list[str], limit: int = 15) -> list[str]:
+    """Rank candidate proper nouns mined from doc content. Multi-word Title-Case and
+    internal-caps tokens are strong signals; single Title-Case words must recur (>=2)
+    to beat sentence-initial noise. Returns highest-signal terms first, bounded."""
+    from collections import Counter
+    counts: Counter = Counter()
+    strong: set[str] = set()
+
+    def _keep(term: str) -> bool:
+        # Drop common words (incl. sentence-initial "The/This/We") whose lowercase, or
+        # leading word, is a known stopword — so the small budget isn't wasted on noise.
+        first = term.split(" ", 1)[0].lower()
+        if term.lower() in _KEYTERM_STOPWORDS or first in _KEYTERM_STOPWORDS:
+            return False
+        if first in _COMMON_LEADING_WORDS:
+            return False
+        return True
+
+    for text in texts:
+        if not isinstance(text, str) or not text:
+            continue
+        for m in _PROPER_NOUN_RE.findall(text):
+            if not _keep(m):
+                continue
+            counts[m] += 1
+            if " " in m:            # multi-word Title Case = strong signal
+                strong.add(m)
+        for m in _CAMEL_RE.findall(text):
+            if not _keep(m):
+                continue
+            counts[m] += 1
+            strong.add(m)
+    # Strong terms first (by frequency), then recurring single-word terms.
+    ranked = sorted(strong, key=lambda t: -counts[t])
+    singles = sorted((t for t, c in counts.items() if t not in strong and c >= 2),
+                     key=lambda t: -counts[t])
+    return (ranked + singles)[:limit]
+
+
 def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]:
     """Best-effort proper-noun list to ground Deepgram nova-3 (keyterm prompting):
-    teammate names + knowledge-doc titles + recent-meeting speaker/owner names.
+    teammate names + knowledge-doc titles + knowledge-doc CONTENT proper nouns +
+    recent-meeting speaker/owner names.
     Capitalisation is preserved (Deepgram weights proper nouns by spelling) and the
     list is bounded to ~40 terms. Returns [] on any failure so the bot-create config
     stays exactly as before — grounding is a pure add-on, never a blocker."""
@@ -498,6 +588,25 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
     if workspace_id and workspace_id not in ws_ids:
         ws_ids.append(workspace_id)
 
+    # 0. Explicit glossary (custom_keyterms) — hand-corrected mishearings and
+    #    added proper nouns. Highest priority: added FIRST so a user's own
+    #    corrections always survive the ~40-term cap. Fed by the chat correction
+    #    tool (tools/meeting_edit.correct_meeting_text).
+    try:
+        glossary: list[str] = []
+        if user_id:
+            gp = (supabase.table("custom_keyterms").select("term")
+                  .eq("user_id", user_id).eq("workspace_id", "").limit(40).execute())
+            glossary += [r.get("term") or "" for r in (gp.data or [])]
+        if ws_ids:
+            gw = (supabase.table("custom_keyterms").select("term")
+                  .in_("workspace_id", ws_ids).limit(40).execute())
+            glossary += [r.get("term") or "" for r in (gw.data or [])]
+        for t in glossary:
+            _add(t)
+    except Exception as exc:
+        print(f"[keyterms] glossary skipped: {exc}")
+
     # 1. Teammate names from workspace member emails.
     try:
         if ws_ids:
@@ -523,6 +632,24 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
                 _add(r.get("name") or "")
     except Exception as exc:
         print(f"[keyterms] doc titles skipped: {exc}")
+
+    # 2.5 Proper nouns mined from knowledge-doc CONTENT (not just titles) — the real
+    #     jargon / product / people names live in the body. Sample a bounded set of
+    #     chunks, rank Title-Case / camelCase terms by frequency, add the top ones.
+    try:
+        contents: list[str] = []
+        if user_id:
+            own_c = (supabase.table("knowledge_chunks").select("content")
+                     .eq("user_id", user_id).limit(60).execute())
+            contents += [r.get("content") or "" for r in (own_c.data or [])]
+        if ws_ids:
+            shared_c = (supabase.table("knowledge_chunks").select("content")
+                        .in_("workspace_id", ws_ids).limit(60).execute())
+            contents += [r.get("content") or "" for r in (shared_c.data or [])]
+        for term in _proper_nouns_from_texts(contents, limit=15):
+            _add(term)
+    except Exception as exc:
+        print(f"[keyterms] doc content skipped: {exc}")
 
     # 3. Recent-meeting speaker + action-item-owner names (structured, from result
     #    JSON — avoids pulling full transcripts at join time).
@@ -696,6 +823,7 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
     realtime_token = secrets.token_urlsafe(32)
     realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
     webhook_url = f"{WEBHOOK_BASE_URL}/recall-webhook"
+    _warn_if_local_webhook("join_meeting")
     # Name the bot after the person it stands in for, so attendees recognise it in
     # the waiting room (and know whose update it's carrying). Falls back to PrismAI.
     display_name = f"{owner_name.strip()} (PrismAI stand-in)" if (owner_name or "").strip() else BOT_DISPLAY_NAME
@@ -726,7 +854,8 @@ async def schedule_standin_bot(meeting_url: str, user_id: str, workspace_id: str
         "initial_mode": None, "standin": True,
     }
     _live_token_index[live_token] = bot_id
-    _db_save(bot_id, {"status": "scheduled", "user_id": user_id, "live_token": live_token})
+    _db_save(bot_id, {"status": "scheduled", "user_id": user_id, "live_token": live_token,
+                      "owner_name": owner_name, "workspace_id": workspace_id})
 
     from realtime_routes import init_bot_realtime, register_realtime_token
     register_realtime_token(realtime_token, bot_id)
@@ -889,8 +1018,8 @@ def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
         )
         if rep.data and (rep.data[0].get("author_email") or "").strip():
             return rep.data[0]["author_email"].strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[recall] resolve_owner_email rep lookup failed bot={bot_id[:8]}: {exc!r}")
     if user_id:
         try:
             wm = (
@@ -899,8 +1028,8 @@ def resolve_owner_email(bot_id: str, user_id: str | None = None) -> str:
             )
             if wm.data and (wm.data[0].get("user_email") or "").strip():
                 return wm.data[0]["user_email"].strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[recall] resolve_owner_email member lookup failed uid={str(user_id)[:8]}: {exc!r}")
     return ""
 
 
@@ -1283,7 +1412,7 @@ async def _send_bot_intro(bot_id: str):
 
     message = persona_greeting_from_preset(preset)
     if live_link:
-        message += f"\n\nAnyone can follow along live: {live_link}"
+        message += f"\n\nAnyone can follow along live — and the full meeting notes will be here afterward: {live_link}"
     message += f"\n\n⚠️ If you don't consent to being recorded, let {owner_name} know or type /leave and I'll exit the call."
     try:
         async with httpx.AsyncClient() as client:
@@ -1296,6 +1425,11 @@ async def _send_bot_intro(bot_id: str):
                 json={"message": message},
                 timeout=10,
             )
+        # Mark the intro as broadcast so late-joiner re-posts can fire. Everyone
+        # present at intro saw this message; only participants who join AFTER get
+        # a re-post (see post_late_join_link).
+        if bot_id in bot_store:
+            bot_store[bot_id]["intro_sent"] = True
     except Exception:
         pass
 
@@ -1415,6 +1549,40 @@ async def stop_screenshare(bot_id: str) -> dict:
         "error": _extract_recall_error(resp),
         "body": (resp.text or "").strip(),
     }
+
+
+async def post_late_join_link(bot_id: str, participant_name: str = "") -> None:
+    """Re-post the live/notes link when someone joins AFTER the intro broadcast,
+    so late arrivals get the same link everyone else already saw. No-op until the
+    intro has been sent (the initial roster is covered by the intro message), and
+    no-op without a live_token. Introduces no new sharing — the intro already
+    broadcasts this exact link to the whole chat."""
+    state = bot_store.get(bot_id) or {}
+    if not state.get("intro_sent"):
+        return
+    live_token = state.get("live_token")
+    if not live_token:
+        return
+    frontend_url = os.getenv("FRONTEND_URL", "https://meetprismai.com")
+    link = f"{frontend_url}/#live/{live_token}"
+    who = f" {participant_name.strip()}" if participant_name and participant_name.strip() else ""
+    message = (
+        f"👋 Welcome{who}! Follow along live — and the full meeting notes will be "
+        f"here after the meeting: {link}"
+    )
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{RECALL_API_BASE}/bot/{bot_id}/send_chat_message/",
+                headers={
+                    "Authorization": f"Token {RECALL_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"message": message},
+                timeout=10,
+            )
+    except Exception as exc:
+        print(f"[recall] late-join link post failed bot={bot_id[:8]}: {exc!r}")
 
 
 async def _fetch_transcript(bot_id: str, attempts: int = 12, prefer_async: bool = False):
@@ -1636,6 +1804,62 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
     return segments or None
 
 
+# deepgram_async diarization labels speakers as bare cluster IDs (e.g. "500-1",
+# "100-0", "speaker 2") with NO participant-name mapping — Recall's live streaming
+# transcript is what carries the real names. A transcript whose prefixes are these
+# IDs makes the two per-speaker agents (sentiment, speaker_coach) analyse nameless
+# speakers. Detect that so we can recover names before analysis.
+_ANON_SPEAKER_RE = re.compile(r"^(?:speaker[\s_-]*)?\d+(?:[\s_-]+\d+)?$", re.I)
+
+
+def _line_speaker_label(line: str) -> str | None:
+    """The speaker prefix of a 'Speaker: text' line, or None if the line isn't one."""
+    if ":" not in line:
+        return None
+    head = line.split(":", 1)[0].strip()
+    if not head or len(head) > 48 or any(c in head for c in ".?!"):
+        return None
+    return head
+
+
+def _speakers_anonymous(transcript: str, threshold: float = 0.6) -> bool:
+    """True when most of the transcript's speaker prefixes are numeric diarization IDs
+    (no real names) — the signature of a deepgram_async transcript that lost participant
+    attribution."""
+    total = anon = 0
+    for line in transcript.split("\n"):
+        label = _line_speaker_label(line)
+        if label is None:
+            continue
+        total += 1
+        if _ANON_SPEAKER_RE.match(label):
+            anon += 1
+    return total > 0 and (anon / total) >= threshold
+
+
+def _relabel_segments_by_overlap(anon_segments: list[dict], named_segments: list[dict]) -> list[dict]:
+    """Map each anonymously-labelled segment to the named live segment it overlaps most in
+    time (recording-relative seconds), recovering real participant names on the more-
+    accurate async transcript. Both segment lists share the {speaker,start,end,text} shape
+    and recording-relative timing. Segments overlapping nothing keep their original label."""
+    out: list[dict] = []
+    for seg in anon_segments:
+        s0 = float(seg.get("start") or 0.0)
+        s1 = float(seg.get("end") or s0)
+        best_name, best_ov = None, 0.0
+        for ns in named_segments:
+            n0 = float(ns.get("start") or 0.0)
+            n1 = float(ns.get("end") or n0)
+            ov = min(s1, n1) - max(s0, n0)
+            if ov > best_ov:
+                best_ov, best_name = ov, ns.get("speaker")
+        new = dict(seg)
+        if best_name and not _ANON_SPEAKER_RE.match(str(best_name)):
+            new["speaker"] = best_name
+        out.append(new)
+    return out
+
+
 def _resolve_owner_workspace(bot_id: str) -> tuple[str | None, str | None]:
     """Best-effort (owner_user_id, workspace_id) for a bot, durable across a restart.
     Precedence: a stand-in rep → the live bot_store entry → the meeting_bots row.
@@ -1693,6 +1917,18 @@ async def _persist_bot_meeting(bot_id: str) -> None:
         if existing.data:
             _standin_persisted.add(bot_id)
             return  # already on a dashboard (browser saved it first)
+        # If the user explicitly deleted this meeting, don't resurrect it. Startup
+        # recovery / a stray poller would otherwise re-persist a bot the user removed.
+        try:
+            mb = (
+                supabase.table("meeting_bots").select("status")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            if mb and (mb.data or {}).get("status") == "deleted":
+                _standin_persisted.add(bot_id)
+                return
+        except Exception:
+            pass
         owner_user_id, workspace_id = _resolve_owner_workspace(bot_id)
         if not owner_user_id:
             return
@@ -1722,6 +1958,14 @@ async def _persist_bot_meeting(bot_id: str) -> None:
         _standin_persisted.add(bot_id)
         await save_meeting(entry, owner_user_id)
         print(f"[recall] auto-promoted bot {bot_id} into meetings for {owner_user_id} (workspace={workspace_id})")
+        # Close the stand-in loop: brief each absent author this bot represented
+        # (best-effort, non-blocking) — what happened for them + answers to what
+        # they asked + tasks now theirs. No-op if this bot delivered no stand-ins.
+        try:
+            from proxy_routes import generate_standin_followups
+            asyncio.create_task(generate_standin_followups(bot_id, entry.id, result, transcript))
+        except Exception as exc:
+            print(f"[recall] standin followup dispatch failed for {bot_id}: {exc}")
     except Exception as exc:
         print(f"[recall] auto-promote failed for {bot_id}: {exc}")
 
@@ -1808,6 +2052,41 @@ async def _process_bot_transcript(bot_id: str):
             transcript = "\n".join(rt_lines)
             print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
 
+        # Seekable segments: Recall's word-timestamped transcript is preferred, but when
+        # it's absent (bot spoke → live transcript used, or Recall returned no words) fall
+        # back to the segments we built live from Deepgram's recording-relative word times.
+        # Keeps click-to-seek working for those meetings instead of degrading to plain text.
+        if not segments:
+            rt_segments = bot_store.get(bot_id, {}).get("realtime_segments") or []
+            if rt_segments:
+                segments = rt_segments
+                print(f"[recall] using {len(rt_segments)} realtime-buffer segments for playback sync")
+
+        # Speaker-name recovery: a deepgram_async (Lever B) transcript diarizes speakers as
+        # bare numeric IDs (e.g. "500-1") with no participant mapping — which reads fine in
+        # summary/action-items (owners come from spoken content) but breaks sentiment +
+        # speaker_coach (the per-speaker agents key off the prefix). Recall's live streaming
+        # transcript DOES carry real names. When the chosen transcript is anonymous:
+        #   1. If we have named live segments, relabel by time-overlap → keep async wording
+        #      + seekable timing + real names.
+        #   2. Else fall back to the named live transcript entirely (names >> marginal async
+        #      spelling gain). This also restores click-to-seek for those meetings.
+        if transcript.strip() and _speakers_anonymous(transcript):
+            named_segs = bot_store.get(bot_id, {}).get("realtime_segments") or []
+            if segments and named_segs and _speakers_anonymous(
+                "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+            ):
+                segments = _relabel_segments_by_overlap(segments, named_segs)
+                transcript = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+                print(f"[recall] recovered speaker names via time-overlap relabel ({len(segments)} segments)")
+            elif rt_lines and not _speakers_anonymous("\n".join(rt_lines)):
+                transcript = "\n".join(rt_lines)
+                if named_segs:
+                    segments = named_segs
+                print(f"[recall] anonymous async speakers — fell back to named live transcript ({len(rt_lines)} lines)")
+            else:
+                print("[recall] transcript has anonymous speakers but no named source to recover from")
+
         if not transcript.strip():
             error_msg = "No transcript content found — the meeting may have been too short or had no speech"
             bot_store[bot_id]["status"] = "error"
@@ -1858,24 +2137,34 @@ async def _process_bot_transcript(bot_id: str):
             print(f"[recall] stamped exit_note onto meeting {bot_id[:8]}: {result['exit_note']}")
         bot_store[bot_id]["transcript"] = transcript
         bot_store[bot_id]["result"] = result
-        bot_store[bot_id]["status"] = "done"
         bot_store[bot_id]["transcript_segments"] = segments
+        # Persist transcript + segments to bot_sessions BEFORE flipping the in-memory
+        # status to "done". /bot-status reads bot_store (in-memory), and the browser
+        # saves the instant it sees "done" → save_meeting then resolves segments from
+        # bot_sessions by recall_bot_id. If "done" were visible first, the browser
+        # would save with NULL segments, and the delayed server persist no-ops because
+        # the row already exists → timestamped seek is lost. Persist-then-flip closes
+        # that race so the segments are always in bot_sessions before "done" is seen.
         _db_save(bot_id, {
-            "status": "done",
             "transcript": transcript,
             "result": result,
             "transcript_segments": segments,
         })
+        bot_store[bot_id]["status"] = "done"
+        _db_save(bot_id, {"status": "done"})
         _mb_update_status(bot_id, "done")
         print(f"[recall] analysis complete for bot {bot_id}")
-        # Persist to the meetings table server-side so a meeting is never lost to a
-        # crashed/closed dashboard tab. A headless stand-in has no browser → save now;
-        # a regular bot's browser normally saves it → only fall back after a delay if it
-        # didn't. Both dedup on recall_bot_id, so no double-write when the browser wins.
-        if (bot_store.get(bot_id) or {}).get("standin"):
-            await _persist_bot_meeting(bot_id)
-        else:
-            asyncio.create_task(_persist_bot_meeting_delayed(bot_id))
+        # Persist to the meetings table server-side, IMMEDIATELY, for EVERY bot — the
+        # save must never depend on the owner's browser still being there when analysis
+        # lands. The browser only auto-saves if its /bot-status poll catches "done", but
+        # that poll gives up after 6 min; when Recall's recording takes longer to finish
+        # (seen: 25 min), the browser is long gone and the meeting would otherwise be
+        # stranded in bot_sessions (visible on the live link, absent from the dashboard).
+        # The old "delay 120s then save" fallback was a fragile in-memory task that died
+        # if the process stopped inside the window — exactly what lost bot 95ff9b48.
+        # save_meeting dedups on recall_bot_id (per user), so a browser that DID save
+        # first just makes this a no-op — awaiting here can't double-write.
+        await _persist_bot_meeting(bot_id)
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:
@@ -1967,6 +2256,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
     # to the public webhook endpoint.
     realtime_token = secrets.token_urlsafe(32)
     realtime_url = f"{WEBHOOK_BASE_URL}/realtime-events/{realtime_token}"
+    _warn_if_local_webhook("schedule_standin_bot")
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -2002,7 +2292,8 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         "initial_mode": req.mode if req.mode in ("utterance", "autonomous") else None,
     }
     _live_token_index[live_token] = bot_id
-    _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token})
+    _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token,
+                      "owner_name": req.owner_name, "workspace_id": req.workspace_id})
 
     from realtime_routes import init_bot_realtime, _run_proactive_checker, register_realtime_token
     # Bind the webhook token AFTER Recall confirmed the bot id. The mapping

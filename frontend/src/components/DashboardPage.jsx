@@ -1,10 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
+  CalendarPlus,
   Check,
   Copy,
   Download,
   FileText,
+  FolderInput,
   MessageSquare,
   MessagesSquare,
   Share2,
@@ -15,6 +17,8 @@ import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
+import MeetingTypeControl from './dashboard/MeetingTypeControl'
+import { INPUT_TYPE_OPTIONS } from '../lib/meetingType'
 import LiveCatchup from './LiveCatchup'
 import StandInComposer from './StandInComposer'
 import AIWorkspaceSetup from './dashboard/AIWorkspaceSetup'
@@ -28,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
+import { Button } from './ui/button'
 import {
   Dialog,
   DialogContent,
@@ -41,7 +46,7 @@ import DashboardTopbar from './dashboard/DashboardTopbar'
 import LiveMeetingView from './dashboard/LiveMeetingView'
 import PresentationMirror from './dashboard/PresentationMirror'
 import { deriveStatus } from './dashboard/StatusIsland'
-import { useStatusNotification } from '../lib/statusNotify'
+import { useStatusNotification, notifyStatus } from '../lib/statusNotify'
 import WorkspaceIsland from './dashboard/WorkspaceIsland'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
@@ -60,11 +65,18 @@ function MeetingActionsBar({
   copyMarkdown,
   exportMarkdown,
   exportPDF,
+  exportTranscriptPDF,
+  downloadTranscriptTxt,
+  hasTranscript = false,
   exportToSlack,
   exportToNotion,
   exportingSlack,
   exportingNotion,
   integrations,
+  canMove = false,
+  currentWorkspaceId = null,
+  workspaces = [],
+  onMoveMeeting,
 }) {
   const handleShare = () => {
     if (!shareToken) return
@@ -83,8 +95,44 @@ function MeetingActionsBar({
   const slackConnected = !!integrations?.slack_webhook
   const notionConnected = !!(integrations?.notion_token && integrations?.notion_page_id)
 
+  const curWs = currentWorkspaceId || null
+
   return (
     <div className="flex items-center gap-2">
+      {canMove && (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={secondaryButtonClass} aria-label="Move meeting" title="Move to…">
+              <FolderInput className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/35">Move to</div>
+            <DropdownMenuItem
+              disabled={curWs === null}
+              onSelect={() => onMoveMeeting?.(null)}
+              className={itemClass}
+            >
+              <span className="flex-1">Personal</span>
+              {curWs === null && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
+            </DropdownMenuItem>
+            {workspaces.map((ws) => (
+              <DropdownMenuItem
+                key={ws.id}
+                disabled={curWs === ws.id}
+                onSelect={() => onMoveMeeting?.(ws.id)}
+                className={itemClass}
+              >
+                <span className="min-w-0 flex-1 truncate">{ws.name}</span>
+                {curWs === ws.id && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       {shareToken && (
         <button
           type="button"
@@ -119,6 +167,18 @@ function MeetingActionsBar({
             <FileText className={iconClass} aria-hidden="true" />
             Open print view
           </DropdownMenuItem>
+          {hasTranscript && (
+            <>
+              <DropdownMenuItem onSelect={() => exportTranscriptPDF?.()} className={itemClass}>
+                <FileText className={iconClass} aria-hidden="true" />
+                Transcript → PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => downloadTranscriptTxt?.()} className={itemClass}>
+                <Download className={iconClass} aria-hidden="true" />
+                Download transcript .txt
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={exportingSlack}
@@ -142,7 +202,7 @@ function MeetingActionsBar({
   )
 }
 
-function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, transcript }) {
+function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, transcript, meetingType, setMeetingType }) {
   if (loading) {
     return (
       <button type="button" onClick={cancelActiveAnalysis} className="w-full rounded-full border border-[color:var(--db-border)] py-2.5 text-sm font-semibold text-[color:var(--db-text-muted)] transition hover:bg-[var(--db-fill)]">
@@ -151,14 +211,30 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
     )
   }
   return (
-    <button
-      type="button"
-      onClick={handleAnalyzeClick}
-      disabled={!transcript}
-      className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      Analyze Meeting
-    </button>
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <MeetingTypeControl
+          label="Type"
+          value={meetingType || 'auto'}
+          onChange={setMeetingType}
+          options={INPUT_TYPE_OPTIONS}
+          title="Auto detects pitch / interview meetings for a deeper, type-specific analysis. Pick one to force it."
+        />
+      </div>
+      <Button
+        variant="primary"
+        size="cta"
+        onClick={handleAnalyzeClick}
+        disabled={!transcript}
+        title={!transcript ? 'Add a transcript first' : undefined}
+        className="w-full disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Analyze Meeting
+      </Button>
+      {!transcript && (
+        <p className="text-center text-[11px] text-white/40">Paste, upload, record, or join a meeting to analyze.</p>
+      )}
+    </div>
   )
 }
 
@@ -170,14 +246,15 @@ function NewMeetingPanel(props) {
     <div className="dashboard-body-font w-full overflow-hidden rounded-2xl">
       <div className="flex items-center justify-between px-4 pb-3 pt-3.5">
         <p className="text-[13px] font-semibold text-[color:var(--db-text)]">New Meeting</p>
-        <button
-          type="button"
+        <Button
+          variant="subtle"
+          size="icon-xs"
           onClick={props.onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text-muted)]"
+          className="rounded-full"
           aria-label="Close"
         >
           <X className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={props.setInputTab} className="w-full">
@@ -196,13 +273,58 @@ function NewMeetingPanel(props) {
               <textarea
                 value={props.transcript || ''}
                 onChange={(e) => props.setTranscriptForTab(e.target.value, 'paste')}
-                placeholder="Paste your meeting transcript here..."
+                placeholder="Paste a transcript, article, or report…"
                 rows={7}
                 className="w-full resize-none rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2.5 text-sm text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
               />
-              {props.transcriptStats?.words > 0 && (
-                <p className="text-[10.5px] text-[color:var(--db-text-faint)]">
-                  {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
+              {/* Upload a document instead of pasting — extracts text server-side
+                  (.docx/.pdf/.txt). Handy for the Article / Report lens. */}
+              <input
+                ref={props.docInputRef}
+                type="file"
+                accept=".docx,.pdf,.txt,.md,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={props.handleDocumentUpload}
+              />
+              <div className="flex items-center justify-between gap-2">
+                {props.transcriptStats?.words > 0 ? (
+                  <p className="text-[10.5px] text-[color:var(--db-text-faint)]">
+                    {props.transcriptStats.words} words
+                    {/* Speaker count is meaningless for a single-authored article/report. */}
+                    {props.meetingType !== 'article' && ` · ${props.transcriptSpeakerCount || 0} speaker${props.transcriptSpeakerCount !== 1 ? 's' : ''}`}
+                  </p>
+                ) : <span />}
+                <button
+                  type="button"
+                  onClick={() => props.docInputRef?.current?.click()}
+                  disabled={props.extractingDoc}
+                  title="Upload a .docx, .pdf, or .txt"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/30 hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {props.extractingDoc ? (
+                    <>
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+                        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                      </svg>
+                      Reading…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                        <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                        <path d="M12 18v-6" />
+                        <path d="m9.5 14.5 2.5-2.5 2.5 2.5" />
+                      </svg>
+                      Upload a document
+                    </>
+                  )}
+                </button>
+              </div>
+              {props.docError && (
+                <p className="rounded-lg border border-red-400/25 bg-red-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {props.docError}
                 </p>
               )}
               <AnalyzeButton {...props} />
@@ -244,7 +366,7 @@ function NewMeetingPanel(props) {
               <input
                 ref={props.fileInputRef}
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
+                accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.webm,.mp4,.mov,.mkv,.m4v"
                 className="hidden"
                 onChange={props.handleAudioUpload}
               />
@@ -254,8 +376,20 @@ function NewMeetingPanel(props) {
                 disabled={props.transcribing}
                 className="w-full rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-4 py-2.5 text-sm font-semibold text-[color:var(--db-text-soft)] transition hover:bg-[var(--db-fill-strong)] disabled:opacity-50"
               >
-                {props.transcribing ? '⏳ Transcribing…' : '📎 Choose Audio File'}
+                {props.transcribing ? `⏳ ${props.transcribeStatus || 'Working…'}` : '📎 Choose Audio or Video'}
               </button>
+              {!props.transcribing && !props.transcript && !props.transcribeError && (
+                <p className="text-[10.5px] leading-relaxed text-white/38">
+                  Audio or video. Video audio is extracted in your browser — the first
+                  large file loads a converter (~30MB, cached after). Keep recordings
+                  under ~70 min.
+                </p>
+              )}
+              {props.transcribeError && !props.transcribing && (
+                <p className="rounded-lg border border-red-400/25 bg-red-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {props.transcribeError}
+                </p>
+              )}
               {props.transcript && (
                 <>
                   <textarea
@@ -292,6 +426,23 @@ function NewMeetingPanel(props) {
                     />
                   </Suspense>
                 </div>
+              )}
+              {!props.calendarConnected && props.user && !props.isTestAccount && (
+                // Calendar not connected → the upcoming-meetings list can't render, so
+                // fill that spot with the exact CTA the user needs here (auto-join is
+                // the highest-value setup step). Opens Integrations → Calendar tab, where
+                // both Google Calendar and Outlook are offered.
+                <button
+                  type="button"
+                  onClick={() => { props.onClose?.(); props.onOpenCalendarSetup?.() }}
+                  className="group flex w-full items-center gap-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2.5 text-left transition hover:bg-cyan-400/[0.11]"
+                >
+                  <CalendarPlus className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 text-[12px] leading-snug text-cyan-100/80">
+                    Connect Google or Outlook calendar to see your upcoming meetings and one-click join.
+                  </span>
+                  <span className="shrink-0 text-[12px] font-semibold text-cyan-200">Connect →</span>
+                </button>
               )}
               <input
                 type="url"
@@ -373,6 +524,19 @@ function NewMeetingPanel(props) {
                 </div>
               )}
 
+              {/* Where this live meeting's notes will be saved — the bot's workspace is
+                  fixed at join, so this stays accurate even if the global chip changes. */}
+              {botActive && (
+                <p className="px-1 text-[10.5px] text-white/40">
+                  Recording into:{' '}
+                  <span className="font-medium text-white/65">
+                    {props.botWorkspaceId
+                      ? (props.workspaces?.find((w) => w.id === props.botWorkspaceId)?.name ?? 'a workspace')
+                      : 'Personal'}
+                  </span>
+                </p>
+              )}
+
               {props.botStatus === 'recording' && props.activeLiveToken && (
                 <LiveCatchup liveToken={props.activeLiveToken} accessToken={props.accessToken} />
               )}
@@ -417,17 +581,18 @@ function NewMeetingPanel(props) {
                 </button>
               )}
 
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="cta"
                 onClick={props.joinMeeting}
                 disabled={!props.meetingUrl || botActive}
-                className="w-full rounded-full bg-cyan-400 py-2.5 text-sm font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                className="w-full disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {props.botStatus === 'joining' ? 'Joining…' :
                  props.botStatus === 'recording' ? 'Recording…' :
                  props.botStatus === 'processing' ? 'Processing…' :
                  'Join Meeting'}
-              </button>
+              </Button>
             </div>
           </TabsContent>
         </div>
@@ -596,6 +761,9 @@ export default function DashboardPage(props) {
   const historyCount = props.history?.length || 0
   const isFirstRender = useRef(true)
   const userSelectedMeetingRef = useRef(false)
+  // The meeting the auto-switch effect last acted on, so history mutations
+  // (e.g. checking off an action item) don't re-trigger a stray navigation.
+  const lastNavMeetingRef = useRef(undefined)
 
   // --- Chat panel state ---
   const [chatOpen, setChatOpen] = useState(() => {
@@ -605,6 +773,9 @@ export default function DashboardPage(props) {
     if (typeof window === 'undefined') return false
     return window.matchMedia('(max-width: 1023px)').matches
   })
+  // Off-canvas nav drawer (mobile). Opened by the topbar hamburger; closed by the
+  // backdrop, Escape, navigating, or growing back to desktop width.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [pastSessions, setPastSessions] = useState([])
 
   useEffect(() => {
@@ -614,10 +785,20 @@ export default function DashboardPage(props) {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
     const mql = window.matchMedia('(max-width: 1023px)')
-    const handler = (e) => setIsNarrow(e.matches)
+    const handler = (e) => { setIsNarrow(e.matches); if (!e.matches) setMobileNavOpen(false) }
     mql.addEventListener?.('change', handler)
     return () => mql.removeEventListener?.('change', handler)
   }, [])
+
+  // Close the mobile drawer whenever the view or workspace changes (a nav/meeting
+  // tap), and on Escape.
+  useEffect(() => { setMobileNavOpen(false) }, [activeView, activeWorkspaceId])
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined
+    const handler = (e) => { if (e.key === 'Escape') setMobileNavOpen(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [mobileNavOpen])
 
   useEffect(() => {
     if (!chatOpen) return undefined
@@ -635,41 +816,85 @@ export default function DashboardPage(props) {
     const merged = { ...(props.result || {}), ...patch }
     props.setResult(merged)
     if (props.meetingId) {
+      // Keep the in-memory history entry in sync too — Home cards and "reopen from
+      // history" read from `history`, so without this a re-lens / edit shows stale
+      // (e.g. the meeting-type override wouldn't reflect on Home or on reopen).
+      props.setHistory?.((prev) =>
+        prev.map((e) => (String(e.id) === String(props.meetingId) ? { ...e, result: merged } : e)),
+      )
       apiFetch(`/meetings/${props.meetingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result: merged }),
       }).catch(() => {})
     }
-  }, [props.result, props.meetingId, props.setResult])
+  }, [props.result, props.meetingId, props.setResult, props.setHistory])
+
+  // A chat correction (correct_meeting_text) already persisted the fresh result +
+  // transcript server-side. Reflect it in the live view (cards + transcript) and the
+  // in-memory history WITHOUT re-persisting — the server is already the source of truth.
+  const onCorrectApplied = useCallback((data) => {
+    if (!data) return
+    if (data.result) props.setResult(data.result)
+    if (typeof data.transcript === 'string') props.setTranscript?.(data.transcript)
+    if (props.meetingId) {
+      props.setHistory?.((prev) =>
+        prev.map((e) => (String(e.id) === String(props.meetingId)
+          ? {
+              ...e,
+              ...(data.result ? { result: data.result } : {}),
+              ...(typeof data.transcript === 'string' ? { transcript: data.transcript } : {}),
+            }
+          : e)),
+      )
+    }
+  }, [props.meetingId, props.setResult, props.setTranscript, props.setHistory])
 
   // Per-meeting chat history. ChatPanel saves the live thread continuously
   // (one growing session per meeting); this just (re)loads the session list —
   // called on meeting change and whenever ChatPanel reports a brand-new session.
+  // Which meeting the currently-held pastSessions belong to. A freshly-keyed
+  // ChatPanel initializes its thread from activeSession DURING render — before the
+  // clear-and-refetch effect runs — so without this guard it would seed the new
+  // meeting with the PREVIOUS meeting's thread and then auto-save it under the new
+  // id (cross-meeting chat bleed). We only hand sessions to ChatPanel when they were
+  // fetched for the meeting currently open.
+  const [sessionsForMeeting, setSessionsForMeeting] = useState(null)
+
   const refreshPastSessions = useCallback(() => {
-    if (!props.meetingId || !props.user) { setPastSessions([]); return }
-    apiFetch(`/chat-sessions/${props.meetingId}`)
+    if (!props.meetingId || !props.user) { setPastSessions([]); setSessionsForMeeting(props.meetingId ?? null); return }
+    const forId = props.meetingId
+    apiFetch(`/chat-sessions/${forId}`)
       .then((res) => (res.ok ? res.json() : { sessions: [] }))
-      .then((data) => setPastSessions(data.sessions || []))
-      .catch(() => setPastSessions([]))
+      .then((data) => { setPastSessions(data.sessions || []); setSessionsForMeeting(forId) })
+      .catch(() => { setPastSessions([]); setSessionsForMeeting(forId) })
   }, [props.meetingId, props.user?.id])
 
   // Clear stale sessions immediately on meeting switch (ChatPanel is keyed by
   // meetingId and remounts before the new fetch lands — must not see the old
   // meeting's thread), then load the new meeting's.
-  useEffect(() => { setPastSessions([]); refreshPastSessions() }, [refreshPastSessions])
+  useEffect(() => { setPastSessions([]); setSessionsForMeeting(null); refreshPastSessions() }, [refreshPastSessions])
+
+  // Only the sessions confirmed to belong to the open meeting are visible to ChatPanel.
+  const scopedSessions = sessionsForMeeting === props.meetingId ? pastSessions : []
 
   // Switch to meeting view immediately when analysis starts
   useEffect(() => {
     if (props.loading) persistView('meeting')
   }, [props.loading])
 
-  // Auto-switch to meeting view when a new result is loaded (not on initial mount)
+  // Auto-switch to meeting view when a new result is loaded (not on initial mount).
+  // Guarded on the OPEN meeting changing: history is in the deps for the sample
+  // check below, but a history mutation alone (e.g. checking off an action item)
+  // must NOT navigate — that pulled the user into the last-loaded meeting.
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false
+      lastNavMeetingRef.current = props.meetingId
       return
     }
+    if (props.meetingId === lastNavMeetingRef.current) return
+    lastNavMeetingRef.current = props.meetingId
     const latest = props.history?.[0]
     const showingLatestSample =
       props.isTestAccount &&
@@ -906,15 +1131,37 @@ export default function DashboardPage(props) {
     props.setHistorySearch?.(value)
   }
 
-  function handleDeleteHistoryEntry(entry) {
-    props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
-    if (!props.isTestAccount) {
-      props.apiFetch?.(`/meetings/${entry.id}`, { method: 'DELETE' }).catch(() => {})
+  async function handleDeleteHistoryEntry(entry) {
+    const clearIfOpen = () => {
+      if (entry.id === props.meetingId) {
+        sessionStorage.setItem('prism_new_meeting', '1')
+        props.clearWorkspaceState?.()
+        persistView('home')
+      }
     }
-    if (entry.id === props.meetingId) {
-      sessionStorage.setItem('prism_new_meeting', '1')
-      props.clearWorkspaceState?.()
-      persistView('home')
+    if (props.isTestAccount) {
+      props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
+      clearIfOpen()
+      return
+    }
+    // Confirm the server actually removed it before hiding it — a silent failure used to
+    // vanish from the list then reappear on refresh. Report what happened instead.
+    try {
+      const res = await apiFetch(`/meetings/${entry.id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        notifyStatus({ kind: 'error', message: `Delete failed (HTTP ${res.status})` })
+        return
+      }
+      if (!data.deleted) {
+        notifyStatus({ kind: 'error', message: `Delete matched 0 rows (${data.scope || 'unknown'})` })
+        return
+      }
+      props.setHistory?.((prev) => prev.filter((item) => item.id !== entry.id))
+      notifyStatus({ kind: 'success', message: 'Meeting deleted' })
+      clearIfOpen()
+    } catch {
+      notifyStatus({ kind: 'error', message: 'Delete failed (network)' })
     }
   }
 
@@ -924,6 +1171,7 @@ export default function DashboardPage(props) {
     props.setShowHistory?.(false)
     props.loadFromHistory?.(entry)
     persistView('meeting')
+    setMobileNavOpen(false)
   }
 
   // Open a meeting by id — fetches the full row first so this works even when the
@@ -957,6 +1205,45 @@ export default function DashboardPage(props) {
     if (currentMeeting.recorded_by_user_id === props.user?.id) return null
     return workspaceMemberMap[currentMeeting.recorded_by_user_id] || null
   }, [currentMeeting, props.user?.id, workspaceMemberMap])
+
+  // Only the meeting owner (recorder) may move it; a fan-out recipient can't (they'd
+  // request the owner to move it — deferred). A meeting with no recorder set is your own.
+  const canMoveCurrentMeeting = !!currentMeeting && (
+    !currentMeeting.recorded_by_user_id ||
+    currentMeeting.recorded_by_user_id === props.user?.id
+  )
+
+  // Move the current meeting between Personal and a workspace — moves ONLY the caller's
+  // copy (backend enforces owner-gate + membership). Updates the list in place; drops it
+  // from view if it left the currently-active scope.
+  async function moveCurrentMeeting(targetWorkspaceId) {
+    const id = currentMeeting?.id
+    if (!id) return
+    try {
+      const res = await apiFetch(`/meetings/${id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: targetWorkspaceId || '' }),
+      })
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({})))?.detail || 'Could not move meeting'
+        notifyStatus({ kind: 'error', message: detail })
+        return
+      }
+      const data = await res.json()
+      const newWs = data.workspace_id || null
+      const activeWs = activeWorkspaceId || null
+      props.setHistory?.((prev) => prev
+        .map((m) => (m.id === id ? { ...m, workspace_id: newWs } : m))
+        .filter((m) => m.id !== id || (m.workspace_id || null) === activeWs))
+      const label = newWs
+        ? (workspaces.find((w) => w.id === newWs)?.name ?? 'workspace')
+        : 'Personal'
+      notifyStatus({ kind: 'success', message: `Moved to ${label}` })
+    } catch (e) {
+      notifyStatus({ kind: 'error', message: 'Could not move meeting' })
+    }
+  }
 
   // Workspace teammates (minus the organizer) — offered as one-click invite
   // suggestions when scheduling a follow-up from a workspace meeting.
@@ -1079,8 +1366,16 @@ export default function DashboardPage(props) {
 
   return (
     <div
-      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--db-text)]${theme === 'light' ? ' theme-light' : ''}`}
+      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--db-text)]${theme === 'light' ? ' theme-light' : ''}${mobileNavOpen ? ' nav-open' : ''}`}
     >
+      {/* Mobile drawer backdrop — taps close the nav. */}
+      {mobileNavOpen && (
+        <div
+          className="dashboard-nav-backdrop lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       {!signedOut && (
       <WorkspaceIsland
         user={props.user}
@@ -1119,6 +1414,7 @@ export default function DashboardPage(props) {
         onSearchChange={handleHistorySearchChange}
         signedOut={signedOut}
         onLockedFeature={requestSignIn}
+        onMenu={signedOut ? null : () => setMobileNavOpen(true)}
         onBack={activeView === 'meeting' ? goBackFromMeeting : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
@@ -1130,11 +1426,18 @@ export default function DashboardPage(props) {
               copyMarkdown={props.copyMarkdown}
               exportMarkdown={props.exportMarkdown}
               exportPDF={props.exportPDF}
+              exportTranscriptPDF={props.exportTranscriptPDF}
+              downloadTranscriptTxt={props.downloadTranscriptTxt}
+              hasTranscript={!!props.transcript?.trim()}
               exportToSlack={props.exportToSlack}
               exportToNotion={props.exportToNotion}
               exportingSlack={props.exportingSlack}
               exportingNotion={props.exportingNotion}
               integrations={props.integrations}
+              canMove={canMoveCurrentMeeting && !!currentMeeting}
+              currentWorkspaceId={currentMeeting?.workspace_id || null}
+              workspaces={workspaces}
+              onMoveMeeting={moveCurrentMeeting}
             />
           ) : null
         }
@@ -1170,6 +1473,7 @@ export default function DashboardPage(props) {
         signOut={props.signOut}
         newMeetingOpen={newMeetingOpen}
         setNewMeetingOpen={setNewMeetingOpen}
+        newMeetingCollisionPadding={isNarrow ? 12 : 64}
         onOpenNewMeeting={() => (props.prepareNewMeeting ?? props.resetTranscriptWorkspaces)?.()}
         newMeetingPanel={
           <NewMeetingPanel
@@ -1223,12 +1527,32 @@ export default function DashboardPage(props) {
           }`}
         >
           <div key={activeView} className={`animate-fade-in-up ${activeView === 'home' ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+          {props.viewingSample && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.08] px-4 py-2.5">
+              <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-cyan-300" />
+              <p className="flex-1 text-[13px] text-cyan-100/90">
+                <span className="font-semibold">Example data</span>
+                <span className="text-cyan-100/60"> — this isn&rsquo;t your history. It&rsquo;s here so you can see what Prism produces.</span>
+              </p>
+              <button
+                type="button"
+                onClick={props.clearSample}
+                className="shrink-0 rounded-full border border-cyan-300/30 px-3 py-1 text-[12px] font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
               loadFromHistory={handleSelectMeeting}
               loadSample={props.loadDashboardSample}
               canLoadSample={props.canLoadSample}
+              onStartMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
+              onPasteTranscript={() => { props.setInputTab?.('paste'); setNewMeetingOpen(true) }}
+              showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
+              onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
               memberEmailMap={workspaceMemberMap}
               currentUserId={props.user?.id}
@@ -1376,13 +1700,16 @@ export default function DashboardPage(props) {
                 key={props.meetingId || 'no-meeting'}
                 meetingId={props.meetingId}
                 initialMessages={[]}
-                activeSession={pastSessions[0] || null}
-                pastSessions={pastSessions}
+                activeSession={scopedSessions[0] || null}
+                pastSessions={scopedSessions}
                 onPastSessionsChange={setPastSessions}
                 onThreadSaved={refreshPastSessions}
                 transcript={props.transcript}
                 result={props.result}
                 onResultUpdate={persistResultPatch}
+                onCorrectApplied={onCorrectApplied}
+                onExportTranscriptPDF={props.exportTranscriptPDF}
+                onDownloadTranscriptTxt={props.downloadTranscriptTxt}
                 isSignedIn={!!props.user}
                 personaPreset={props.personaPreset}
                 personaCustomPrompt={props.personaCustomPrompt}

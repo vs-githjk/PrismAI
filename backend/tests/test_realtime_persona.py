@@ -277,5 +277,42 @@ class ChatOnlyReplyTests(unittest.TestCase):
                          "from_chat must default to False so voice paths are unaffected")
 
 
+class LiveBotVisionTests(unittest.TestCase):
+    """Part B: images shared in the meeting chat reach the command LLM in vision format."""
+
+    def test_extract_image_urls(self):
+        text = "look at this https://cdn.example.com/shot.png and https://x.io/a.JPG?v=2 plus a link https://foo.com/page"
+        urls = rr._extract_image_urls(text)
+        self.assertIn("https://cdn.example.com/shot.png", urls)
+        self.assertIn("https://x.io/a.JPG?v=2", urls)
+        self.assertTrue(all("page" not in u for u in urls))  # non-image link ignored
+
+    def test_build_command_messages_plain_when_no_images(self):
+        msgs = rr._build_command_messages(
+            has_gmail=False, has_calendar=False, now_str="now", memory_context="",
+            speaker="Vidyut", command="summarize", prompt_cache_on=True,
+        )
+        self.assertIsInstance(msgs[-1]["content"], str)
+
+    def test_build_command_messages_vision_when_images(self):
+        msgs = rr._build_command_messages(
+            has_gmail=False, has_calendar=False, now_str="now", memory_context="",
+            speaker="Vidyut", command="what is on screen?", prompt_cache_on=True,
+            image_urls=["https://x/img.png"],
+        )
+        content = msgs[-1]["content"]
+        self.assertIsInstance(content, list)
+        self.assertEqual(content[0]["type"], "text")
+        self.assertEqual(content[1], {"type": "image_url", "image_url": {"url": "https://x/img.png"}})
+
+    def test_fresh_image_urls_drops_stale(self):
+        import time as _t
+        state = {"recent_image_urls": [
+            {"url": "old", "ts": _t.time() - 9999},
+            {"url": "new", "ts": _t.time()},
+        ]}
+        self.assertEqual(rr._fresh_image_urls(state), ["new"])
+
+
 if __name__ == "__main__":
     unittest.main()

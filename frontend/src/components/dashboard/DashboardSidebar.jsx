@@ -96,6 +96,7 @@ export default function DashboardSidebar(props) {
     setNewMeetingOpen,
     onOpenNewMeeting,
     newMeetingPanel,
+    newMeetingCollisionPadding,
     // Unauthenticated shell: a signed-out viewer (e.g. someone who opened a
     // live/share link) sees the chrome with every feature locked. Clicking a
     // locked feature calls onLockedFeature, which opens the sign-in gate.
@@ -128,6 +129,9 @@ export default function DashboardSidebar(props) {
   const accountName =
     user?.email?.split('@')[0] || (isDemoMode ? 'Demo session' : 'Guest')
   const accountSub = user?.email || (isTestAccount ? 'Test run' : 'Not signed in')
+  // Profile photo from the signed-in provider (Google OAuth → user_metadata).
+  const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || ''
+  const [avatarOk, setAvatarOk] = useState(true)
 
   return (
     <aside className="dashboard-sidebar dashboard-island flex flex-col" aria-label="Dashboard navigation">
@@ -198,9 +202,9 @@ export default function DashboardSidebar(props) {
               side="bottom"
               align="start"
               sideOffset={10}
-              collisionPadding={64}
+              collisionPadding={newMeetingCollisionPadding ?? 64}
               modal={false}
-              className="dashboard-island dashboard-body-font w-[340px] p-0"
+              className="dashboard-island dashboard-body-font w-[min(340px,calc(100vw-1.25rem))] p-0"
               // Inline style, not a Tailwind class: the base DropdownMenuContent class has
               // overflow-hidden, and `max-h-[var(...)]` arbitrary values get dropped by
               // tailwind-merge — so the height cap never applied and the popover ran off
@@ -358,8 +362,18 @@ export default function DashboardSidebar(props) {
               type="button"
               className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[var(--db-fill)]"
             >
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cyan-400/[0.14] text-cyan-200">
-                <UserCircle className="h-6 w-6" />
+              <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-cyan-400/[0.14] text-cyan-200">
+                {avatarUrl && avatarOk ? (
+                  <img
+                    src={avatarUrl}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    onError={() => setAvatarOk(false)}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : (
+                  <UserCircle className="h-6 w-6" />
+                )}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-semibold text-[color:var(--db-text)]">

@@ -36,6 +36,20 @@ class ActionExecuteRequest(BaseModel):
     task: str | None = None      # the originating action-item text (for the audit ref)
 
 
+def _meeting_workspace_id(meeting_id) -> str | None:
+    """Best-effort: the workspace a meeting belongs to, for per-workspace routing."""
+    if not meeting_id or not supabase:
+        return None
+    try:
+        res = supabase.table("meetings").select("workspace_id").eq("id", meeting_id).limit(1).execute()
+        if res.data:
+            ws = res.data[0].get("workspace_id")
+            return str(ws) if ws else None
+    except Exception as exc:
+        print(f"[actions] workspace lookup skipped: {exc}")
+    return None
+
+
 @router.post("/actions/execute")
 async def execute_action(req: ActionExecuteRequest, user_id: str = Depends(require_user_id)):
     """Execute a single user-approved suggested action. Returns the tool result
@@ -46,6 +60,13 @@ async def execute_action(req: ActionExecuteRequest, user_id: str = Depends(requi
     # Load the user's integration credentials and inject user_id so token-based tools
     # (gmail/calendar) resolve the right account — mirrors registry.execute_tool.
     settings = await _get_user_settings(user_id) or {}
+    # Per-workspace routing (#2): if this action came from a workspace meeting, overlay
+    # the workspace's integration creds (per-provider, personal fallback) so the ticket/
+    # message lands in the TEAM's Jira/Slack, not the acting user's personal one.
+    workspace_id = _meeting_workspace_id(req.meeting_id)
+    if workspace_id:
+        from workspace_integrations import resolve_tool_settings
+        settings = await resolve_tool_settings(settings, user_id, workspace_id)
     settings["user_id"] = user_id
 
     result = await confirm_and_execute(req.tool, req.args, user_settings=settings)

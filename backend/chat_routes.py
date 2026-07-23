@@ -1,9 +1,11 @@
+import asyncio
 import json
 import os
 import secrets
 import time
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
@@ -19,7 +21,7 @@ _pending_tools: dict[tuple[str, str], dict] = {}
 _PENDING_TTL = 300  # 5 minutes
 
 
-def _store_pending(user_id: str, tool: str, arguments: dict) -> str:
+def _store_pending(user_id: str, tool: str, arguments: dict, workspace_id: str | None = None) -> str:
     pending_id = secrets.token_urlsafe(16)
     # Prune expired entries
     now = time.time()
@@ -29,6 +31,9 @@ def _store_pending(user_id: str, tool: str, arguments: dict) -> str:
     _pending_tools[(user_id, pending_id)] = {
         "tool": tool,
         "arguments": arguments,
+        # Per-workspace routing (#2): the workspace this action originated in, so
+        # confirm_tool routes the confirmed action to the SAME workspace's creds.
+        "workspace_id": workspace_id,
         "expires_at": now + _PENDING_TTL,
     }
     return pending_id
@@ -46,6 +51,7 @@ import tools.slack  # noqa: F401
 import tools.calendar  # noqa: F401
 import tools.linear  # noqa: F401
 import tools.jira  # noqa: F401
+import tools.meeting_edit  # noqa: F401  (correct_meeting_text — fix mis-transcribed terms)
 from tools.registry import get_available_tools, execute_tool, confirm_and_execute
 
 router = APIRouter(tags=["chat"])
@@ -57,11 +63,22 @@ LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 class ChatRequest(BaseModel):
     message: str
     transcript: str = ""
+    image_urls: list[str] = []
+    # Which saved meeting this chat is about. Enables the correct_meeting_text tool
+    # (fix a mis-transcribed term across the stored summary/transcript). Only used
+    # when authenticated — an anonymous demo chat can't edit stored meetings.
+    meeting_id: int | None = None
+    # Parsed analysis (summary / action_items / decisions / sentiment). Sent so chat
+    # can answer even when the raw transcript isn't in the browser — e.g. a bot-recorded
+    # meeting viewed live, where the audio was transcribed server-side and the frontend
+    # never held the text. Without this, chat has no meeting context and web-searches.
+    result: dict = {}
 
 
 class GlobalChatRequest(BaseModel):
     message: str
     limit: int = 10
+    image_urls: list[str] = []
 
 
 class AgentRequest(BaseModel):
@@ -82,10 +99,150 @@ class AgentRequest(BaseModel):
     # current viewer's name so each person can regenerate the draft as themselves
     # (per-viewer authorship) instead of a single owner-authored draft.
     owner_name: str | None = None
+    # Content-analysis lens for re-running content_analyst when the user overrides
+    # the auto-detected meeting type ('pitch' | 'interview_content' | 'interview_job').
+    meeting_type: str | None = None
 
 
 class ConfirmToolRequest(BaseModel):
     pending_id: str
+
+
+class SignImagesRequest(BaseModel):
+    paths: list[str]
+
+
+# --- Image analysis (chat) --------------------------------------------------
+CHAT_IMAGE_BUCKET = "chat-images"
+_MAX_IMAGES_PER_MESSAGE = 3
+_IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+_IMAGE_MAX_BYTES = 5 * 1024 * 1024  # 5MB, mirrors the bucket limit
+
+
+def _build_user_turn(message: str, image_urls: list[str] | None) -> dict:
+    """Build the user chat turn. With images, use OpenAI's vision content array
+    (text + image_url parts) so gpt-4o-mini can see them; otherwise a plain string.
+    Capped at _MAX_IMAGES_PER_MESSAGE."""
+    urls = [u for u in (image_urls or []) if isinstance(u, str) and u.strip()][:_MAX_IMAGES_PER_MESSAGE]
+    if not urls:
+        return {"role": "user", "content": message}
+    parts: list[dict] = [{"type": "text", "text": message or "What's in this image?"}]
+    for u in urls:
+        parts.append({"type": "image_url", "image_url": {"url": u}})
+    return {"role": "user", "content": parts}
+
+
+def _result_context(result: dict) -> str:
+    """Render the parsed analysis into a compact grounding block for chat. This is the
+    fallback (and complement) to the raw transcript — the model can cite the actual
+    summary / action items / decisions instead of guessing or web-searching."""
+    if not isinstance(result, dict) or not result:
+        return ""
+    parts: list[str] = []
+    summary = result.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        parts.append(f"Summary:\n{summary.strip()[:2000]}")
+
+    actions = result.get("action_items")
+    if isinstance(actions, list) and actions:
+        lines = []
+        for a in actions[:25]:
+            if not isinstance(a, dict):
+                continue
+            task = str(a.get("task") or "").strip()
+            if not task:
+                continue
+            owner = str(a.get("owner") or "").strip()
+            due = str(a.get("due_date") or a.get("due") or "").strip()
+            suffix = " — ".join(x for x in [f"owner: {owner}" if owner else "", f"due: {due}" if due else ""] if x)
+            lines.append(f"- {task}" + (f" ({suffix})" if suffix else ""))
+        if lines:
+            parts.append("Action items:\n" + "\n".join(lines))
+
+    decisions = result.get("decisions")
+    if isinstance(decisions, list) and decisions:
+        lines = []
+        for d in decisions[:25]:
+            if isinstance(d, dict):
+                text = str(d.get("decision") or "").strip()
+                owner = str(d.get("owner") or "").strip()
+                if text:
+                    lines.append(f"- {text}" + (f" (owner: {owner})" if owner else ""))
+            elif isinstance(d, str) and d.strip():
+                lines.append(f"- {d.strip()}")
+        if lines:
+            parts.append("Decisions:\n" + "\n".join(lines))
+
+    sentiment = result.get("sentiment")
+    if isinstance(sentiment, dict):
+        overall = str(sentiment.get("overall") or "").strip()
+        notes = str(sentiment.get("notes") or "").strip()
+        if overall or notes:
+            parts.append("Sentiment: " + " — ".join(x for x in [overall, notes] if x)[:600])
+
+    if not parts:
+        return ""
+    return "\n\nParsed analysis of this meeting (authoritative — prefer this over external search):\n\n" + "\n\n".join(parts)
+
+
+def _sign_chat_image(path: str, expires: int = 3600) -> str | None:
+    """Fresh signed URL for a stored chat image (private bucket)."""
+    if not supabase or not path:
+        return None
+    try:
+        res = supabase.storage.from_(CHAT_IMAGE_BUCKET).create_signed_url(path, expires)
+        return res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
+    except Exception as exc:
+        print(f"[chat-image] sign failed for {path}: {exc}")
+        return None
+
+
+@router.post("/chat/upload-image")
+async def upload_chat_image(file: UploadFile = File(...), user_id: str = Depends(require_user_id)):
+    """Store one chat image in the private chat-images bucket and return a signed URL.
+    Validated to png/jpg/webp + <=5MB (mirrors the bucket config)."""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    if ext not in _IMAGE_MIME:
+        raise HTTPException(status_code=400, detail="Only PNG, JPG, or WebP images are allowed")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > _IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Image exceeds the 5MB limit")
+
+    path = f"{user_id}/{uuid.uuid4().hex}.{ext}"
+    try:
+        await asyncio.to_thread(
+            supabase.storage.from_(CHAT_IMAGE_BUCKET).upload,
+            path, content, {"content-type": _IMAGE_MIME[ext]},
+        )
+    except Exception as exc:
+        msg = str(exc)
+        # Log the full picture so we can see the real cause in Render logs.
+        print(f"[chat-image] upload failed for path={path} type={type(exc).__name__} repr={exc!r}")
+        low = msg.lower()
+        if "bucket not found" in low or ("not found" in low and "object" not in low):
+            raise HTTPException(status_code=502,
+                detail="Storage bucket 'chat-images' is missing — create it in Supabase Storage (private, image MIME types).")
+        raise HTTPException(status_code=502, detail=f"Upload failed: {msg[:200]}")
+
+    url = _sign_chat_image(path)
+    return {"path": path, "url": url}
+
+
+@router.post("/chat/sign")
+async def sign_chat_images(req: SignImagesRequest, user_id: str = Depends(require_user_id)):
+    """Re-mint signed URLs for stored chat-image paths (on chat-session restore, since the
+    signed URLs expire). Only signs the caller's own paths (path is prefixed by user_id)."""
+    out: dict[str, str] = {}
+    for p in (req.paths or []):
+        if isinstance(p, str) and p.startswith(f"{user_id}/"):
+            signed = _sign_chat_image(p)
+            if signed:
+                out[p] = signed
+    return {"urls": out}
 
 
 async def _get_user_settings(user_id: str) -> dict:
@@ -162,7 +319,7 @@ def build_rag_context(tool_result: dict) -> dict:
     return {"sources": sources, "has_conflict": bool(tool_result.get("has_conflict"))}
 
 
-async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: list, user_id: str, user_settings: dict) -> dict:
+async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: list, user_id: str, user_settings: dict, workspace_id: str | None = None) -> dict:
     """
     LLM tool-calling loop: call LLM, if it wants tools execute them, feed results back.
     Returns { reply: str, tools_used: list[dict], rag_context: dict | None }
@@ -170,6 +327,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
     tools_used = []
     pending_confirmations = []
     rag_context = None  # structured grounding from knowledge_lookup, if it runs
+    meeting_updated = False  # set when correct_meeting_text actually changed the meeting
     max_iterations = 3
 
     call_kwargs = {
@@ -187,6 +345,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
             "tools_used": tools_used,
             "pending_confirmations": pending_confirmations,
             "rag_context": rag_context,
+            "meeting_updated": meeting_updated,
         }
 
     for _ in range(max_iterations):
@@ -218,6 +377,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
                 "tools_used": tools_used,
                 "pending_confirmations": pending_confirmations,
                 "rag_context": rag_context,
+                "meeting_updated": meeting_updated,
             }
 
         # Process tool calls
@@ -232,7 +392,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
             )
 
             if result.get("requires_confirmation"):
-                pending_id = _store_pending(user_id, tool_call.function.name, result["preview"])
+                pending_id = _store_pending(user_id, tool_call.function.name, result["preview"], workspace_id=workspace_id)
                 pending_confirmations.append({
                     "pending_id": pending_id,
                     "tool": tool_call.function.name,
@@ -255,6 +415,9 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
                 # conflict warnings — independent of the model's prose.
                 if tool_call.function.name == "knowledge_lookup" and result.get("matches"):
                     rag_context = build_rag_context(result)
+                # A successful in-place meeting edit → tell the frontend to refresh.
+                if tool_call.function.name == "correct_meeting_text" and result.get("meeting_updated"):
+                    meeting_updated = True
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -270,6 +433,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
         "tools_used": tools_used,
         "pending_confirmations": pending_confirmations,
         "rag_context": rag_context,
+        "meeting_updated": meeting_updated,
     }
 
 
@@ -318,6 +482,8 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
                 "unactioned_decisions": [d for d in unactioned if d],
                 # Per-viewer authorship: email_drafter writes FROM this person.
                 "owner_name": (req.owner_name or "").strip(),
+                # content_analyst reads this to pick its rubric on a type-override re-run.
+                "meeting_type": (req.meeting_type or "").strip().lower(),
             }
             return await AGENT_MAP[req.agent](augmented, context)
         return await AGENT_MAP[req.agent](augmented)
@@ -325,25 +491,54 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
     @local_router.post("/chat")
     async def chat(req: ChatRequest, request: Request):
         user_id = await _optional_user_id(request)
+        # Active workspace (persona + per-workspace integration routing). Defined
+        # unconditionally so both the persona block and the integration overlay can
+        # reference it even when supabase is unset.
+        active_ws = request.headers.get("x-active-workspace") or None
         # Resolve persona for the duration of this request. The contextvar
         # is per-task in asyncio — when this handler returns the value dies
         # with the task, so no reset is needed.
         if user_id and supabase:
-            active_ws = request.headers.get("x-active-workspace") or None
             resolved = await resolve_persona(supabase, user_id, active_ws)
             _PERSONA_TEXT.set(resolved.text)
         user_settings = await _get_user_settings(user_id) if user_id else {}
+        # Per-workspace routing (#2): overlay the active workspace's integration creds
+        # (from the x-active-workspace header, same source persona uses) so a ticket/
+        # message filed from this meeting's chat goes to the TEAM's Jira/Slack.
+        if user_id and active_ws:
+            from workspace_integrations import resolve_tool_settings
+            user_settings = await resolve_tool_settings(user_settings, user_id, active_ws)
+        # Expose the meeting to the correction tool. `requires="_meeting_id"` gates
+        # its availability, so it appears ONLY on an authenticated per-meeting chat.
+        if user_id and req.meeting_id:
+            user_settings["_meeting_id"] = req.meeting_id
 
         context = ""
         if req.transcript.strip():
             context = f"\n\nMeeting transcript for context:\n{req.transcript[:15000]}"
+        # Always fold in the parsed analysis so chat is grounded even when the raw
+        # transcript isn't available (bot-recorded meetings viewed live).
+        context += _result_context(req.result)
 
         # Get available tools for this user
         tools = get_available_tools(user_settings) if user_id else []
 
-        system_content = (
-            "You are PrismAI, an intelligent meeting assistant. Answer questions about the meeting transcript concisely."
-        )
+        has_images = any(isinstance(u, str) and u.strip() for u in (req.image_urls or []))
+        if has_images:
+            # Image attached — the question is usually ABOUT the image (which may be
+            # unrelated to the meeting), so don't lock the model to meeting-only grounding.
+            system_content = (
+                "You are PrismAI, an intelligent meeting assistant. The user has shared one or more "
+                "images — look at them and answer directly: describe what you see and give the assessment "
+                "the user asks for. Meeting context is provided below for reference if relevant."
+            )
+        else:
+            system_content = (
+                "You are PrismAI, an intelligent meeting assistant. Answer questions about THIS meeting "
+                "using the transcript and parsed analysis provided below. Ground every answer in that "
+                "context — do not web-search or invent facts about the meeting when the answer is present. "
+                "If the meeting context genuinely doesn't cover something, say so plainly."
+            )
         if tools:
             system_content += (
                 "\n\nYou have access to tools that can take real actions — send emails, post to Slack, "
@@ -358,16 +553,32 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
 
         messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": req.message},
+            _build_user_turn(req.message, req.image_urls),
         ]
 
         if tools:
-            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings)
+            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings, workspace_id=active_ws)
+            # If the correction tool edited the meeting, re-read it (outside the LLM
+            # loop so the transcript never bloats the model context) and hand the
+            # fresh result + transcript back so the UI updates the cards AND the
+            # transcript view without a manual reload.
+            updated = None
+            if result.get("meeting_updated") and user_id and req.meeting_id and supabase:
+                try:
+                    row = (supabase.table("meetings").select("result, transcript")
+                           .eq("id", req.meeting_id).eq("user_id", user_id)
+                           .maybe_single().execute()).data
+                    if row:
+                        updated = {"result": row.get("result") or {}, "transcript": row.get("transcript") or ""}
+                except Exception as exc:
+                    print(f"[chat] post-correction re-read failed: {exc}")
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
                 "pending_confirmations": result.get("pending_confirmations", []),
                 "rag_context": result.get("rag_context"),
+                "meeting_updated": result.get("meeting_updated", False),
+                "updated": updated,
             }
         else:
             try:
@@ -467,11 +678,11 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
 
         messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": req.message},
+            _build_user_turn(req.message, req.image_urls),
         ]
 
         if tools:
-            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings)
+            result = await _tool_calling_loop(openai_client, messages, tools, user_id, user_settings, workspace_id=active_ws)
             return {
                 "response": result["reply"],
                 "tools_used": result.get("tools_used", []),
@@ -498,6 +709,12 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         if not entry:
             raise HTTPException(status_code=404, detail="Pending action not found or expired")
         user_settings = await _get_user_settings(user_id)
+        # Per-workspace routing (#2): route the confirmed action to the SAME workspace
+        # the request originated in (captured at _store_pending time).
+        ws_id = entry.get("workspace_id")
+        if ws_id:
+            from workspace_integrations import resolve_tool_settings
+            user_settings = await resolve_tool_settings(user_settings, user_id, ws_id)
         result = await confirm_and_execute(entry["tool"], entry["arguments"], user_settings=user_settings)
         return result
 

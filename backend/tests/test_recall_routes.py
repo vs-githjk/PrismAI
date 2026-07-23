@@ -201,6 +201,47 @@ class LeaveReasonTestCase(unittest.TestCase):
         self.assertEqual(bs["leave_sub_code"], "bot_received_leave_call")
         recall_routes.bot_store.pop("bot-sticky", None)
 
+    def _capture_posts(self):
+        """A fake httpx.AsyncClient that records .post() calls (message payloads)."""
+        posts = []
+
+        class _Cap:
+            async def __aenter__(self_inner):
+                return self_inner
+            async def __aexit__(self_inner, *_):
+                return False
+            async def post(self_inner, *_args, **kwargs):
+                posts.append(kwargs.get("json") or {})
+                return DummyResponse(200)
+
+        return posts, _Cap
+
+    def test_late_join_link_noop_before_intro(self):
+        # Intro not yet sent → initial roster is covered by the intro broadcast,
+        # so a late-join re-post must NOT fire.
+        recall_routes.bot_store["bot-lj1"] = {"status": "recording", "live_token": "tok1"}
+        posts, Cap = self._capture_posts()
+        with patch("recall_routes.httpx.AsyncClient", Cap):
+            asyncio.run(recall_routes.post_late_join_link("bot-lj1", "Sam"))
+        self.assertEqual(posts, [])
+
+    def test_late_join_link_posts_after_intro(self):
+        recall_routes.bot_store["bot-lj2"] = {"status": "recording", "live_token": "tok2", "intro_sent": True}
+        posts, Cap = self._capture_posts()
+        with patch("recall_routes.httpx.AsyncClient", Cap):
+            asyncio.run(recall_routes.post_late_join_link("bot-lj2", "Sam"))
+        self.assertEqual(len(posts), 1)
+        msg = posts[0].get("message", "")
+        self.assertIn("tok2", msg)      # the persistent live/notes link
+        self.assertIn("Sam", msg)       # personalized welcome
+
+    def test_late_join_link_noop_without_token(self):
+        recall_routes.bot_store["bot-lj3"] = {"status": "recording", "intro_sent": True}
+        posts, Cap = self._capture_posts()
+        with patch("recall_routes.httpx.AsyncClient", Cap):
+            asyncio.run(recall_routes.post_late_join_link("bot-lj3", "Sam"))
+        self.assertEqual(posts, [])
+
 
 class KeytermGroundingTestCase(unittest.TestCase):
     """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""
@@ -319,6 +360,53 @@ class KeytermGroundingTestCase(unittest.TestCase):
         with patch.object(recall_routes, "supabase", None):
             self.assertEqual(recall_routes._gather_keyterms("u", "w"), [])
 
+    def test_proper_nouns_from_content_ranks_strong_signals(self):
+        texts = [
+            "The pipeline uses Reciprocal Rank Fusion to merge results. "
+            "We also run CodeQL and KLEE on the code. Reciprocal Rank Fusion is key.",
+            "OpenSearch integrates CodeQL for static analysis. The team met to discuss it.",
+        ]
+        terms = recall_routes._proper_nouns_from_texts(texts, limit=10)
+        # Multi-word Title Case + camelCase are strong signals and kept.
+        self.assertIn("Reciprocal Rank Fusion", terms)
+        self.assertIn("CodeQL", terms)
+        self.assertIn("OpenSearch", terms)
+        # Sentence-initial common words are filtered (not surfaced as terms).
+        self.assertNotIn("The", terms)
+        self.assertNotIn("We", terms)
+
+    def test_gather_keyterms_mines_doc_content(self):
+        class _Resp:
+            def __init__(self, data): self.data = data
+
+        class _Query:
+            def __init__(self, data): self._data = data
+            def select(self, *_): return self
+            def eq(self, *_): return self
+            def in_(self, *_): return self
+            def is_(self, *_): return self
+            def gte(self, *_): return self
+            def order(self, *_, **__): return self
+            def limit(self, *_): return self
+            def execute(self): return _Resp(self._data)
+
+        class _SB:
+            def table(self, name):
+                if name == "knowledge_chunks":
+                    return _Query([
+                        {"content": "The system uses CodeQL and Reciprocal Rank Fusion. "
+                                    "Reciprocal Rank Fusion improves recall."},
+                    ])
+                return _Query([])
+
+        with patch.object(recall_routes, "supabase", _SB()), \
+             patch("caches.get_user_workspace_ids", return_value=["ws1"]):
+            terms = recall_routes._gather_keyterms("user-1", "ws1")
+
+        # Proper nouns from the doc BODY (not just titles) are grounded now.
+        self.assertIn("CodeQL", terms)
+        self.assertIn("Reciprocal Rank Fusion", terms)
+
 
 class BrandedBotTestCase(unittest.TestCase):
     """#4 — branded bot join: display name + logo camera tile."""
@@ -326,7 +414,7 @@ class BrandedBotTestCase(unittest.TestCase):
     def test_default_display_name_is_branded(self):
         body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
         self.assertEqual(body["bot_name"], recall_routes.BOT_DISPLAY_NAME)
-        self.assertEqual(recall_routes.BOT_DISPLAY_NAME, "PrismAI Notetaker")
+        self.assertEqual(recall_routes.BOT_DISPLAY_NAME, "PrismAI")
 
     def test_explicit_bot_name_wins(self):
         body = recall_routes._recall_bot_create_json(
@@ -405,6 +493,62 @@ class HumanWordCountTestCase(unittest.TestCase):
 
     def test_empty_transcript_is_zero(self):
         self.assertEqual(recall_routes._human_word_count(""), 0)
+
+
+class AnonymousSpeakerRecoveryTestCase(unittest.TestCase):
+    """deepgram_async diarization emits numeric speaker IDs with no participant names;
+    the two per-speaker agents (sentiment, speaker_coach) then analyse nameless speakers.
+    These guard the detection + name-recovery logic."""
+
+    def test_numeric_diarization_labels_are_anonymous(self):
+        transcript = "\n".join([
+            "500-1: So there's two important things.",
+            "100-0: Fine. What's this meeting for?",
+            "200-2: Hello.",
+        ])
+        self.assertTrue(recall_routes._speakers_anonymous(transcript))
+
+    def test_speaker_word_form_is_anonymous(self):
+        transcript = "speaker 0: hi\nspeaker 1: hey there"
+        self.assertTrue(recall_routes._speakers_anonymous(transcript))
+
+    def test_real_names_are_not_anonymous(self):
+        transcript = "\n".join([
+            "Vidyut Sriram: Let's spend the budget on screens.",
+            "Ishaan Narang: Sounds good to me.",
+            "Glow: I'll take notes.",
+        ])
+        self.assertFalse(recall_routes._speakers_anonymous(transcript))
+
+    def test_mixed_below_threshold_not_anonymous(self):
+        # One numeric line among real names stays under the 0.6 anon threshold.
+        transcript = "\n".join([
+            "Vidyut Sriram: hi",
+            "Ishaan Narang: hey",
+            "500-1: yeah",
+        ])
+        self.assertFalse(recall_routes._speakers_anonymous(transcript))
+
+    def test_relabel_by_overlap_recovers_names(self):
+        anon = [
+            {"speaker": "500-1", "start": 0.0, "end": 5.0, "text": "budget talk"},
+            {"speaker": "100-0", "start": 5.0, "end": 9.0, "text": "what's this for"},
+        ]
+        named = [
+            {"speaker": "Vidyut Sriram", "start": 0.2, "end": 4.8, "text": "budget"},
+            {"speaker": "Ishaan Narang", "start": 5.1, "end": 8.9, "text": "what for"},
+        ]
+        out = recall_routes._relabel_segments_by_overlap(anon, named)
+        self.assertEqual(out[0]["speaker"], "Vidyut Sriram")
+        self.assertEqual(out[1]["speaker"], "Ishaan Narang")
+        # Text (async wording) is preserved — only the label changes.
+        self.assertEqual(out[0]["text"], "budget talk")
+
+    def test_relabel_keeps_label_when_no_overlap(self):
+        anon = [{"speaker": "500-1", "start": 100.0, "end": 105.0, "text": "x"}]
+        named = [{"speaker": "Vidyut Sriram", "start": 0.0, "end": 5.0, "text": "y"}]
+        out = recall_routes._relabel_segments_by_overlap(anon, named)
+        self.assertEqual(out[0]["speaker"], "500-1")
 
 
 if __name__ == "__main__":

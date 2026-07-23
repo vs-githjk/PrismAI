@@ -6,7 +6,7 @@
 
 ## What Is PrismAI
 
-A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed to 8 parallel AI agents (LLaMA 3.3-70b via Groq) each producing a different output card. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into colors (agents).
+A meeting intelligence web app. User pastes a transcript, uploads audio, records live, or connects a bot to a live Zoom/Meet/Teams call. The transcript is routed through a two-tier parallel agent graph (LangGraph), with each agent producing a different output card. Inference runs on Claude Haiku 4.5 (agents/RAG, via `llm_call`) with GPT-4o-mini for chat/live-bot and cross-provider fallback — Groq was removed Jun 2026. The name "Prism" is intentional — white light (raw transcript) enters the prism (orchestrator) and splits into colors (agents).
 
 **Live URLs:**
 - Frontend: Vercel (`https://agentic-meeting-copilot.vercel.app/`)
@@ -23,7 +23,8 @@ A meeting intelligence web app. User pastes a transcript, uploads audio, records
 |---|---|
 | Frontend | React 18 + Vite + Tailwind CSS |
 | Backend | FastAPI + uvicorn (Python 3.11) |
-| AI | Groq API — LLaMA 3.3-70b (agents/chat) + Whisper large-v3 (transcription) |
+| AI | Claude Haiku 4.5 (agents/RAG, via `llm_call`) + GPT-4o-mini (chat/live-bot + fallback) · LangGraph orchestration |
+| Bot / transcription | Recall.ai meeting bot + Deepgram `nova-3` |
 | Auth | Supabase Auth — Google SSO via `supabase.auth.signInWithOAuth` |
 | Meeting Bot | Recall.ai (joins live calls, records, returns transcript) |
 | Database | Supabase (Postgres) — meetings + chats + user scoping |
@@ -419,7 +420,8 @@ Three layered WebGL effects sit behind landing content, stacked in DOM order whe
 
 | Var | Where | Purpose |
 |---|---|---|
-| `GROQ_API_KEY` | Render | All LLM calls + Whisper |
+| `ANTHROPIC_API_KEY` | Render | Agents + RAG + memory (primary LLM) |
+| `OPENAI_API_KEY` | Render | Chat + live bot + embeddings + fallback |
 | `RECALL_API_KEY` | Render | Recall.ai bot |
 | `WEBHOOK_BASE_URL` | Render | `https://meeting-copilot-api.onrender.com` |
 | `SUPABASE_URL` | Render | Supabase project URL |
@@ -568,11 +570,11 @@ Merged ~15K lines from Devaj on `fixed-changes`. Production-grade work covering 
 
 **Smart-RAG Phases 1–3** (Devaj):
 - **Phase 1 (cross-source unification)** — `knowledge_transcript.py` indexes every finished meeting's transcript into `knowledge_chunks` with `source_type='meeting_transcript'`. Lightweight inline preamble (`"From your meeting 'X' on YYYY-MM-DD"`) — transcripts have no headings so a Groq preamble would just repeat title+date. Triggered from `storage_routes.save_meeting` as a fire-and-forget background task. Meeting-transcript hits are capped to 2 in top-k.
-- **Phase 2 (contextual retrieval)** — `knowledge_ingest/context_preprocessor.py` generates a one-sentence preamble per chunk via Groq (`max_tokens=80`, temp=0). Concurrency capped at 8 via semaphore. Original chunk content preserved in `content`; preamble-augmented version stored in new `embedded_content` column for embedding. Anthropic-style technique — expects ~35–50% retrieval improvement.
+- **Phase 2 (contextual retrieval)** — `knowledge_ingest/context_preprocessor.py` generates a one-sentence preamble per chunk via `llm_call` (Claude Haiku 4.5; `max_tokens=80`, temp=0). Concurrency capped at 8 via semaphore. Original chunk content preserved in `content`; preamble-augmented version stored in new `embedded_content` column for embedding. Anthropic-style technique — expects ~35–50% retrieval improvement.
 - **Phase 3 (hybrid vector+BM25)** — `_rrf_merge` in `knowledge_service.py`. Vector + BM25 in parallel via `asyncio.gather(return_exceptions=True)`. Reciprocal Rank Fusion (1/(60+rank) summed) — rank-based, scale-invariant, beats min-max normalization. BM25 RPC failure degrades to vector-only; vector failure is fatal.
 
 **Smart-RAG Phases 4–5** (us, just shipped):
-- **Phase 4 (reranking)** — `knowledge_reranker.py`. Uses Groq Llama 3.3 70B instead of local BGE: no new vendor, no torch+transformers deps, no Render RAM pressure. Reranks top-30 fused candidates to top-k, robust JSON-array parsing with range/duplicate validation, 4s timeout, flag-gated by `PRISM_RERANKER_ENABLED`. Tags results with `match_type='reranked'`.
+- **Phase 4 (reranking)** — `knowledge_reranker.py`. Uses `llm_call` (Claude Haiku 4.5) instead of local BGE: no new vendor, no torch+transformers deps, no Render RAM pressure. Reranks top-30 fused candidates to top-k, robust JSON-array parsing with range/duplicate validation, 4s timeout, flag-gated by `PRISM_RERANKER_ENABLED`. Tags results with `match_type='reranked'`.
 - **Phase 5 (query rewriting)** — `knowledge_query_rewriter.py`. Heuristic gate: rewrite when <5 tokens OR contains follow-up signals (pronouns, "and X?", connectives). Otherwise skip the LLM call. 3s timeout + sanity guards (empty, echo, runaway length) all fall back. `PRISM_QUERY_REWRITE_ENABLED` flag.
 - Integration: `search_knowledge` gained `rerank`, `rewrite_query`, `conversation_history` kwargs (default OFF — proactive surfacing path unchanged at ~150ms). `tools/knowledge_lookup.py` (on-demand chat path) turns both ON.
 
@@ -791,12 +793,9 @@ Chat agent tracks named entities + ambiguous references across the conversation.
 `strip_fences` is in `backend/agents/utils.py`. Import it, don't redefine it:
 
 ```python
-import json, os
-from groq import AsyncGroq
-from fastapi import HTTPException
-from .utils import strip_fences
-
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+import json
+# llm_call: Claude Haiku 4.5 primary, gpt-4o-mini fallback. NEVER call a provider directly.
+from .utils import strip_fences, llm_call
 
 SYSTEM_PROMPT = (
     "You are a ___. ..."
@@ -804,22 +803,17 @@ SYSTEM_PROMPT = (
     "If the transcript contains a [User instruction: ...] line, follow it exactly."
 )
 
-async def run(transcript: str) -> dict:
+_DEFAULT = {"key": None}
+
+async def run(transcript: str) -> dict:          # Tier-2 agents also take `context: dict = {}`
     for attempt in range(2):
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Transcript:\n{transcript}"},
-            ],
-        )
-        raw = response.choices[0].message.content
         try:
+            raw = await llm_call(SYSTEM_PROMPT, f"Transcript:\n{transcript}")
             return json.loads(strip_fences(raw))
-        except json.JSONDecodeError:
+        except Exception:
             if attempt == 1:
-                raise HTTPException(status_code=500, detail="agentname: failed to parse JSON after retry")
+                return _DEFAULT
+    return _DEFAULT
 ```
 
 ### Adding a New Agent — Checklist
@@ -898,7 +892,8 @@ Add these in Render → `meeting-copilot-api` → Environment:
 
 | Variable | Required? | Where to get it | What it enables |
 |---|---|---|---|
-| `GROQ_API_KEY` | **Yes** | [console.groq.com](https://console.groq.com) | All LLM calls + Whisper transcription |
+| `ANTHROPIC_API_KEY` | **Yes** | [console.anthropic.com](https://console.anthropic.com) | Agents + RAG + memory (primary LLM) |
+| `OPENAI_API_KEY` | **Yes** | [platform.openai.com](https://platform.openai.com) | Chat + live bot + embeddings + fallback |
 | `RECALL_API_KEY` | **Yes** | [recall.ai dashboard](https://recall.ai) | Bot joining meetings |
 | `SUPABASE_URL` | **Yes** | Supabase → Settings → API | Database + auth |
 | `SUPABASE_KEY` | **Yes** | Supabase → Settings → API → `service_role` key | Backend DB access (never expose to frontend) |
@@ -955,7 +950,7 @@ Run in **Supabase SQL Editor** (in order, skip if already applied):
 1. User clicks "Join Meeting" → `POST /join-meeting` creates Recall.ai bot with `realtime_endpoints` webhook
 2. Recall.ai streams transcript chunks + chat messages to `POST /realtime-events` in real time
 3. `realtime_routes.py` watches for trigger phrase: **"Prism, ..."** or **"PrismAI, ..."**
-4. Detected command → LLM (Groq) picks tools from the user's available set → executes
+4. Detected command → LLM (gpt-4o-mini) picks tools from the user's available set → executes
 5. Response sent back via:
    - Meeting chat: `POST /bot/{id}/send_chat_message/` (always works)
    - Voice (if ElevenLabs configured): ElevenLabs TTS → `POST /bot/{id}/output_audio/`

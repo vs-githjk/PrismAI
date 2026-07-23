@@ -90,6 +90,10 @@ class PendingUtterance:
     first_word_mono: float = 0.0
     last_word_mono: float = 0.0
     last_word_abs: str = ""
+    # Recording-relative timestamps (seconds from recording start), from Recall's
+    # word start_timestamp.relative — used to build seekable transcript segments.
+    first_word_rel: Optional[float] = None
+    last_word_rel: Optional[float] = None
     word_count: int = 0
     chunk_count: int = 0
     punct_pending_since: Optional[float] = None
@@ -114,6 +118,9 @@ class FlushedUtterance:
     chunk_count: int
     duration_ms: int
     flush_reason: str
+    # Recording-relative start/end (seconds); None when Recall gave no word timing.
+    start_rel: Optional[float] = None
+    end_rel: Optional[float] = None
 
 
 class Accumulator:
@@ -149,6 +156,8 @@ class Accumulator:
         text: str,
         now_mono: Optional[float] = None,
         last_word_abs: str = "",
+        first_word_rel: Optional[float] = None,
+        last_word_rel: Optional[float] = None,
     ) -> None:
         """Append a chunk to the speaker's pending utterance. May trigger
         flushes:
@@ -190,6 +199,8 @@ class Accumulator:
                 speaker_name=speaker_name,
                 first_word_mono=now,
                 last_word_mono=now,
+                first_word_rel=first_word_rel,
+                last_word_rel=last_word_rel,
             )
             self.pending[speaker_id] = cur
 
@@ -209,6 +220,10 @@ class Accumulator:
                 cur.word_count = len(text.split())
             cur.last_word_mono = now
             cur.last_word_abs = last_word_abs or cur.last_word_abs
+            if last_word_rel is not None:
+                cur.last_word_rel = last_word_rel
+            if cur.first_word_rel is None and first_word_rel is not None:
+                cur.first_word_rel = first_word_rel
             cur.chunk_count += 1
             cur.punct_pending_since = now if _ends_in_terminal_punct(text) else None
             return
@@ -216,6 +231,10 @@ class Accumulator:
         cur.text = (cur.text + " " + text.strip()).strip() if cur.text else text.strip()
         cur.last_word_mono = now
         cur.last_word_abs = last_word_abs or cur.last_word_abs
+        if last_word_rel is not None:
+            cur.last_word_rel = last_word_rel
+        if cur.first_word_rel is None and first_word_rel is not None:
+            cur.first_word_rel = first_word_rel
         cur.word_count += len(text.split())
         # Track whether THIS chunk ended in a sentence terminator. Used
         # by tick() to decide between normal and extended pause windows.
@@ -291,6 +310,8 @@ class Accumulator:
             chunk_count=cur.chunk_count,
             duration_ms=int(max(0.0, cur.last_word_mono - cur.first_word_mono) * 1000),
             flush_reason=reason,
+            start_rel=cur.first_word_rel,
+            end_rel=cur.last_word_rel,
         )
         try:
             self.on_flush(flushed)

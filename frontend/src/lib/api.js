@@ -18,6 +18,11 @@ export async function apiFetch(path, options = {}) {
   }
 
   return fetch(`${API}${path}`, {
+    // Authed API reads must never be served from the browser HTTP cache: a stale
+    // /meetings response would keep showing an out-of-date meeting after a backend
+    // change (or another account's data) until the cache is manually cleared. Default
+    // to no-store; a caller can override via options.cache if it ever needs caching.
+    cache: 'no-store',
     ...rest,
     headers: requestHeaders,
   })

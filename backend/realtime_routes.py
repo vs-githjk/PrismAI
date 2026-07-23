@@ -161,6 +161,36 @@ def _stop_aliases_for_bot(bot_id: str) -> list[str]:
 # Seconds to wait for the command after a bare trigger word OR for an incomplete same-fragment command to finish
 PENDING_TRIGGER_WINDOW = 8
 
+# Late-joiner re-post grace: Recall replays a join event for everyone already in
+# the room the instant the bot enters. Joins within this window of the bot first
+# seeing the roster are that initial roster (already covered by the intro) and are
+# NOT re-posted to; only later arrivals are treated as genuine late-joiners.
+_ROSTER_GRACE_SEC = float(os.getenv("PRISM_ROSTER_GRACE_SEC", "20"))
+
+
+def _should_repost_late_join(state: dict, pid: str, is_bot_participant: bool, now: float | None = None) -> bool:
+    """Decide whether a participant.join warrants re-posting the live/notes link.
+
+    Only genuine late-joiners qualify. The bot fires its intro eagerly at
+    /join-meeting, so by the time the bot actually enters the room the intro is
+    already sent — and Recall then replays a join event for EVERYONE already
+    present. Those initial-roster events all land within a few seconds of the bot
+    first seeing the roster (`roster_epoch`); they already saw the intro link, so
+    they must NOT be re-posted to. Bots never qualify. De-duped once per human pid.
+    Mutates `state` (sets roster_epoch, records the notified pid)."""
+    now = now if now is not None else time.time()
+    if not state.get("roster_epoch"):
+        state["roster_epoch"] = now
+    if is_bot_participant:
+        return False
+    notified = state.setdefault("late_join_notified", set())
+    if pid in notified:
+        return False
+    if (now - state["roster_epoch"]) < _ROSTER_GRACE_SEC:
+        return False  # initial roster — already covered by the intro
+    notified.add(pid)
+    return True
+
 # An "utterance-complete" command ends with sentence-terminating punctuation
 # OR contains at least this many words. Until one of those holds, we treat
 # the captured command as an in-progress utterance and keep accumulating
@@ -207,7 +237,7 @@ def _looks_like_bot_participant(name: str, raw: dict) -> bool:
     nm = (name or "").strip().lower()
     if nm in _BOT_SELF_NAMES:
         return True
-    # Tolerate the branded display name ("PrismAI Notetaker") and stand-in names
+    # Tolerate the branded display name ("PrismAI") and stand-in names
     # ("<owner> (PrismAI stand-in)") — both are our bot, not a human.
     return nm.startswith("prismai") or "(prismai stand-in)" in nm
 
@@ -778,6 +808,34 @@ def _recent_turn_messages(recent_turns: list | None) -> list[dict]:
     return out
 
 
+# Live-bot vision (Part B): an image posted in the meeting chat (a pasted image URL,
+# or a Teams/Meet chat attachment) is captured so the bot can "see" it when answering.
+_IMG_URL_RE = re.compile(r'https?://\S+?\.(?:png|jpe?g|webp|gif)(?:\?\S*)?', re.IGNORECASE)
+
+
+def _extract_image_urls(text: str) -> list[str]:
+    return _IMG_URL_RE.findall(text or "")
+
+
+def _remember_chat_images(bot_id: str, urls: list[str]) -> None:
+    """Stash recent chat-image URLs on bot state (last 3, timestamped) so a following
+    command can be answered with the image in view."""
+    urls = [u for u in (urls or []) if u]
+    if not urls:
+        return
+    st = _get_bot_state(bot_id)
+    now = time.time()
+    recent = st.get("recent_image_urls") or []
+    recent.extend({"url": u, "ts": now} for u in urls)
+    st["recent_image_urls"] = recent[-3:]
+
+
+def _fresh_image_urls(state: dict, max_age: float = 300.0) -> list[str]:
+    """Image URLs from the meeting chat within the last few minutes (freshest first-capped)."""
+    now = time.time()
+    return [e["url"] for e in (state.get("recent_image_urls") or []) if now - e.get("ts", 0) <= max_age][-3:]
+
+
 def _build_command_messages(
     *,
     has_gmail: bool,
@@ -794,6 +852,7 @@ def _build_command_messages(
     owner_name: str = "",
     owner_email: str = "",
     recent_turns: list | None = None,
+    image_urls: list | None = None,
 ) -> list[dict]:
     """Build the messages list for the live-meeting LLM call.
 
@@ -811,7 +870,16 @@ def _build_command_messages(
         user_content = _wrap_participant_utterance(speaker, command, is_owner)
     else:
         user_content = f"{speaker}: {command}" if speaker else command
-    user_msg = {"role": "user", "content": user_content}
+    # If an image was shared in the meeting chat, attach it (OpenAI vision format) so the
+    # bot can actually see it. gpt-4o-mini is vision-capable — same shaping as app chat.
+    _imgs = [u for u in (image_urls or []) if u][:3]
+    if _imgs:
+        user_msg = {"role": "user", "content": (
+            [{"type": "text", "text": user_content}]
+            + [{"type": "image_url", "image_url": {"url": u}} for u in _imgs]
+        )}
+    else:
+        user_msg = {"role": "user", "content": user_content}
     history = _recent_turn_messages(recent_turns)
     if prompt_cache_on:
         return [
@@ -1055,6 +1123,15 @@ def _emit_utterance(state: dict, bot_id: str, u: "utterance_accumulator.FlushedU
         )
     # Durable full transcript (append-only; survives buffer trims + restart-resume).
     _append_realtime_line(bot_id, line)
+    # Seekable segment (recording-relative timing) so the player supports click-to-seek
+    # even for bot-spoke / realtime-buffer meetings where Recall gives no word timing.
+    if u.start_rel is not None:
+        _append_realtime_segment(bot_id, {
+            "speaker": u.speaker_name,
+            "start": float(u.start_rel),
+            "end": float(u.end_rel if u.end_rel is not None else u.start_rel),
+            "text": u.text,
+        })
     if state["meeting_start_ts"] is None:
         state["meeting_start_ts"] = time.time()
 
@@ -2533,6 +2610,18 @@ def _append_realtime_line(bot_id: str, line: str) -> None:
         del rt[: len(rt) - _RT_TRANSCRIPT_CAP]
 
 
+def _append_realtime_segment(bot_id: str, seg: dict) -> None:
+    """Append one seekable transcript segment ({speaker,start,end,text}) to bot_store.
+    Parallel to _append_realtime_line but carries recording-relative timing so the
+    recording player can click-to-seek. Capped alongside the line buffer."""
+    if bot_id not in bot_store:
+        return
+    segs = bot_store[bot_id].setdefault("realtime_segments", [])
+    segs.append(seg)
+    if len(segs) > _RT_TRANSCRIPT_CAP:
+        del segs[: len(segs) - _RT_TRANSCRIPT_CAP]
+
+
 async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
     """Record a human's in-meeting CHAT message into the transcript (buffer + durable),
     mirroring _record_bot_line for the bot's side. Recall only transcribes spoken AUDIO,
@@ -2567,7 +2656,13 @@ def _maybe_persist_transcript(bot_id: str, state: dict, force: bool = False) -> 
     if not force and len(rt_lines) - last < _TRANSCRIPT_PERSIST_EVERY:
         return
     state["_transcript_persist_len"] = len(rt_lines)
-    _db_save(bot_id, {"realtime_transcript": "\n".join(rt_lines)})
+    fields = {"realtime_transcript": "\n".join(rt_lines)}
+    # Persist the seekable segments too (staging column) so click-to-seek survives a
+    # mid-meeting restart, mirroring the transcript restore in _db_load.
+    rt_segments = bot_store.get(bot_id, {}).get("realtime_segments")
+    if rt_segments:
+        fields["transcript_segments"] = rt_segments
+    _db_save(bot_id, fields)
 
 
 def _record_bot_line(bot_id: str, state: dict, text: str, bot_name: str) -> None:
@@ -3108,6 +3203,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             owner_name=_owner_full,
             owner_email=_owner_email,
             recent_turns=state.get("recent_turns", []),
+            image_urls=_fresh_image_urls(state),
         )
 
         # ── Think+Loop artifact handoff ─────────────────────────────────────
@@ -3294,8 +3390,11 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                             "tool": result["external_ref"]["tool"],
                             "external_id": result["external_ref"]["external_id"],
                         }).execute()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # The external action already succeeded; only the tracking
+                        # row failed. Don't fail the user response — but log it, or
+                        # a successful action silently goes unrecorded.
+                        print(f"[realtime] action_ref persist failed (action already executed): {exc!r}")
                 tools_used.append(tc_name)
                 messages.append({
                     "role": "tool",
@@ -3941,12 +4040,17 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # The legacy 3s fuzzy dedup is subsumed by the accumulator's
             # intra-utterance re-emission detection.
             _last_word_abs = ""
+            _first_word_rel = None
+            _last_word_rel = None
             if isinstance(segment, dict):
                 _words_for_ts = segment.get("words") or []
                 if _words_for_ts:
                     _last_word_abs = (
                         (_words_for_ts[-1].get("start_timestamp") or {}).get("absolute", "") or ""
                     )
+                    # Recording-relative timing (seconds) for seekable segments.
+                    _first_word_rel = (_words_for_ts[0].get("start_timestamp") or {}).get("relative")
+                    _last_word_rel = (_words_for_ts[-1].get("start_timestamp") or {}).get("relative")
             # Compare mode: mirror to the parallel legacy buffer so the
             # two transcripts can be diffed offline. Runs BEFORE the
             # accumulator update so the simulation reflects what legacy
@@ -3960,6 +4064,8 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     speaker_name=speaker,
                     text=text,
                     last_word_abs=_last_word_abs,
+                    first_word_rel=_first_word_rel,
+                    last_word_rel=_last_word_rel,
                 )
             return {"ok": True}
 
@@ -4128,6 +4234,25 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
 
         print(f"[realtime] chat message sender={sender!r} text={message_text[:120]!r}")
 
+        # Live-bot vision (Part B): capture images shared in the meeting chat so the bot
+        # can see them when answering. Confident path = image URLs pasted in the text.
+        # Best-effort = an `attachments` array if the platform/Recall relays file uploads
+        # (Teams). We log the attachment shape so its real format can be verified live.
+        if not _looks_like_bot_participant(sender, {}):
+            _img_urls = _extract_image_urls(message_text)
+            _atts = chat_data.get("attachments") or action_obj.get("attachments") or []
+            if _atts:
+                print(f"[realtime] chat attachments present bot={bot_id[:8]}: {str(_atts)[:300]}")
+                for _a in _atts:
+                    if isinstance(_a, dict):
+                        _u = _a.get("url") or _a.get("file_url") or _a.get("src")
+                        _ct = (_a.get("content_type") or _a.get("type") or "")
+                        if _u and ("image" in _ct.lower() or _IMG_URL_RE.search(_u)):
+                            _img_urls.append(_u)
+            if _img_urls:
+                _remember_chat_images(bot_id, _img_urls)
+                print(f"[realtime] captured {len(_img_urls)} chat image(s) for bot {bot_id[:8]}")
+
         if message_text.strip():
             # Record the human's chat line into the transcript so chat-driven meetings
             # analyse to a real two-sided dialogue (Recall transcribes audio only).
@@ -4184,10 +4309,17 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             if is_leave:
                 parts.pop(pid, None)
             else:
+                is_bot_participant = _looks_like_bot_participant(pname, participant)
                 parts[pid] = {
                     "name": pname,
-                    "is_bot": _looks_like_bot_participant(pname, participant),
+                    "is_bot": is_bot_participant,
                 }
+                # Late-joiner notes link: re-post the live/notes link to anyone who
+                # joins AFTER the intro + initial-roster window. Introduces no new
+                # sharing — same link the intro posts. (See _should_repost_late_join.)
+                if _should_repost_late_join(state, pid, is_bot_participant):
+                    from recall_routes import post_late_join_link
+                    asyncio.create_task(post_late_join_link(bot_id, pname))
             state["participants_seen"] = True
             _note_human_count(state, _human_participant_count(state))
             print(

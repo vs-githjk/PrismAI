@@ -146,6 +146,36 @@ async def save_user_settings(settings: UserToolSettings, user_id: str = Depends(
     return {"ok": True}
 
 
+class IntegrationTestRequest(BaseModel):
+    provider: str  # 'jira' | 'linear'
+    jira_base_url: str | None = None
+    jira_email: str | None = None
+    jira_api_token: str | None = None
+    jira_project_key: str | None = None
+    linear_api_key: str | None = None
+
+
+@router.post("/integrations/test")
+async def test_integration(req: IntegrationTestRequest, user_id: str = Depends(require_user_id)):
+    """Validate ticket-integration credentials (Jira / Linear) BEFORE they're relied
+    on mid-meeting — so a bad token / project key surfaces here instead of a silent
+    filing failure later (Cluster B). Accepts just-typed creds so the user can test
+    before saving. Read-only: no writes to the external tool. Auth-gated."""
+    provider = (req.provider or "").strip().lower()
+    if provider == "jira":
+        from tools.jira import jira_validate
+        return await jira_validate({
+            "jira_base_url": req.jira_base_url,
+            "jira_email": req.jira_email,
+            "jira_api_token": req.jira_api_token,
+            "jira_project_key": req.jira_project_key,
+        })
+    if provider == "linear":
+        from tools.linear import linear_validate
+        return await linear_validate({"linear_api_key": req.linear_api_key})
+    return {"ok": False, "error": f"Unknown provider '{provider}'."}
+
+
 @router.get("/meetings")
 async def get_meetings(
     q: str = Query(default=""),
@@ -475,11 +505,92 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     return meeting
 
 
+def _mark_bot_deleted(client, recall_bot_id: str):
+    """Tombstone the bot so startup recovery can't resurrect the meeting. Both
+    recover_active_bots paths (backfill: status='done'; poller re-spawn: live states)
+    filter on meeting_bots.status, so 'deleted' makes them skip it. Best-effort."""
+    try:
+        client.table("meeting_bots").update({"status": "deleted"}) \
+            .eq("bot_id", recall_bot_id).execute()
+    except Exception as exc:
+        print(f"[delete] meeting_bots tombstone failed for {recall_bot_id}: {exc}")
+
+
+def _delete_meeting_transcript_rag(client, meeting_id: int, user_id: str):
+    """Drop the meeting's AUTO-INDEXED transcript from RAG so a deleted meeting can't be
+    cited in chat. Keyed by (meeting_id, user_id) + source_type='meeting_transcript' — so
+    it only touches the caller's own transcript doc, and leaves manually-uploaded/pinned
+    docs alone. Best-effort. Runs for every delete path (personal + workspace)."""
+    try:
+        docs = (client.table("knowledge_docs").select("id")
+                .eq("meeting_id", meeting_id).eq("user_id", user_id)
+                .eq("source_type", "meeting_transcript").execute())
+        for d in (docs.data or []):
+            client.table("knowledge_chunks").delete().eq("doc_id", d["id"]).execute()
+            client.table("knowledge_docs").delete().eq("id", d["id"]).execute()
+    except Exception as exc:
+        print(f"[delete] transcript RAG cleanup failed for meeting {meeting_id}: {exc}")
+
+
 @router.delete("/meetings/{meeting_id}")
 async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     client = _require_storage()
-    client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
-    return {"ok": True}
+
+    # Load the meeting by id ALONE. In workspace mode, GET /meetings dedups all members'
+    # copies and can hand the frontend a TEAMMATE's copy id (when the caller's own copy is
+    # at a different minute or missing) — so requiring `id AND user_id` here matched zero
+    # rows and the delete silently did nothing ('Delete matched 0 rows (not_found)'). We
+    # resolve the owner from the row instead and cascade by recall_bot_id, which works no
+    # matter which member's copy id was passed.
+    resp = (client.table("meetings")
+            .select("id,user_id,workspace_id,recorded_by_user_id,recall_bot_id,date")
+            .eq("id", meeting_id).limit(1).execute())
+    if not resp.data:
+        print(f"[delete] meeting {meeting_id} NOT FOUND (no row with this id)")
+        return {"ok": True, "scope": "not_found", "deleted": 0}
+    row = resp.data[0]
+    ws = row.get("workspace_id") or None
+    bot_id = row.get("recall_bot_id")
+    # The owner is the recorder; on the owner's OWN row recorded_by is unset, so fall back
+    # to that row's user_id.
+    meeting_owner = row.get("recorded_by_user_id") or row.get("user_id")
+    is_owner = (meeting_owner == user_id)
+
+    # Personal meeting: single row keyed by id + the caller (can't touch someone else's).
+    if not ws:
+        d = client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
+        _delete_meeting_transcript_rag(client, meeting_id, user_id)
+        if row.get("user_id") == user_id and bot_id:
+            _mark_bot_deleted(client, bot_id)
+        deleted = len(d.data or [])
+        print(f"[delete] meeting {meeting_id} scope=personal deleted={deleted} bot={bot_id}")
+        return {"ok": True, "scope": "personal", "deleted": deleted}
+
+    # Workspace meeting — must be a member.
+    if not is_workspace_member(client, user_id, ws):
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+    # Non-owner: remove ONLY the caller's own copy of this meeting.
+    if not is_owner:
+        q = client.table("meetings").delete().eq("user_id", user_id)
+        q = q.eq("recall_bot_id", bot_id) if bot_id else q.eq("workspace_id", ws).eq("date", row.get("date"))
+        d = q.execute()
+        deleted = len(d.data or [])
+        print(f"[delete] meeting {meeting_id} scope=own_copy deleted={deleted} ws={ws} bot={bot_id}")
+        return {"ok": True, "scope": "own_copy", "deleted": deleted}
+
+    # Owner → remove EVERY copy so it's gone for the whole workspace. Bot meetings share
+    # recall_bot_id; otherwise all copies share (workspace_id, date).
+    if bot_id:
+        d = client.table("meetings").delete().eq("recall_bot_id", bot_id).eq("workspace_id", ws).execute()
+    else:
+        d = client.table("meetings").delete().eq("workspace_id", ws).eq("date", row.get("date")).execute()
+    _delete_meeting_transcript_rag(client, meeting_id, user_id)
+    if bot_id:
+        _mark_bot_deleted(client, bot_id)
+    deleted = len(d.data or [])
+    print(f"[delete] meeting {meeting_id} scope=all_copies deleted={deleted} ws={ws} bot={bot_id}")
+    return {"ok": True, "scope": "all_copies", "deleted": deleted}
 
 
 @router.patch("/meetings/{meeting_id}")
@@ -495,6 +606,120 @@ async def patch_meeting(meeting_id: int, patch: MeetingPatch, user_id: str = Dep
     if update:
         client.table("meetings").update(update).eq("id", meeting_id).eq("user_id", user_id).execute()
     return {"ok": True}
+
+
+class MeetingMoveRequest(BaseModel):
+    # Target scope. Empty string / null = move back to Personal.
+    workspace_id: str | None = None
+
+
+def _rescope_meeting_transcript(client, meeting_id: int, user_id: str, workspace_id: str | None):
+    """Follow a moved meeting with its RAG transcript doc + chunks so retrieval stays
+    scoped to the meeting's new workspace. Only the caller's own transcript doc (indexed
+    under their user_id) is touched — mirrors the knowledge doc-move re-scope pattern."""
+    docs = (client.table("knowledge_docs").select("id")
+            .eq("meeting_id", meeting_id).eq("user_id", user_id)
+            .eq("source_type", "meeting_transcript").execute())
+    for d in (docs.data or []):
+        doc_id = d["id"]
+        client.table("knowledge_docs").update({"workspace_id": workspace_id}) \
+            .eq("id", doc_id).eq("user_id", user_id).execute()
+        client.table("knowledge_chunks").update({"workspace_id": workspace_id}) \
+            .eq("doc_id", doc_id).eq("user_id", user_id).execute()
+
+
+def _entry_from_row(row: dict) -> "MeetingEntry":
+    """Rebuild a MeetingEntry from a stored meetings row for re-fan-out, preserving the
+    recording-player fields (provider + segments) via the same __dict__ channel
+    _fan_out_to_workspace reads."""
+    entry = MeetingEntry(
+        id=row["id"],
+        date=row.get("date") or "",
+        title=row.get("title") or "",
+        score=row.get("score"),
+        transcript=row.get("transcript") or "",
+        result=row.get("result") or {},
+        share_token=row.get("share_token") or "",
+        workspace_id=row.get("workspace_id"),
+        recorded_by_user_id=row.get("recorded_by_user_id"),
+        persona_used=row.get("persona_used"),
+        recall_bot_id=row.get("recall_bot_id"),
+    )
+    entry.__dict__["_resolved_provider"] = row.get("recording_provider")
+    entry.__dict__["_resolved_segments"] = row.get("transcript_segments")
+    return entry
+
+
+def _delete_fanout_copies(client, row: dict, owner_id: str, workspace_id: str):
+    """Remove the teammates' fan-out copies of a meeting from a workspace (they exist
+    only to share it there). Matches by recall_bot_id when present, else recorder+date."""
+    q = client.table("meetings").delete().eq("workspace_id", workspace_id).neq("user_id", owner_id)
+    if row.get("recall_bot_id"):
+        q = q.eq("recall_bot_id", row["recall_bot_id"])
+    else:
+        q = q.eq("recorded_by_user_id", owner_id).eq("date", row.get("date"))
+    q.execute()
+
+
+@router.post("/meetings/{meeting_id}/move")
+async def move_meeting(meeting_id: int, req: MeetingMoveRequest, user_id: str = Depends(require_user_id)):
+    """Move a meeting between Personal and a workspace. Owner-only. Cascades to the whole
+    workspace: leaving a workspace removes teammates' fan-out copies; entering one re-fans
+    it out to that workspace's members. The RAG transcript follows the meeting."""
+    client = _require_storage()
+    target_ws = (req.workspace_id or "").strip() or None
+
+    # Load the caller's OWN full row (needed to re-fan-out) + enforce existence.
+    resp = (client.table("meetings").select("*")
+            .eq("id", meeting_id).eq("user_id", user_id).limit(1).execute())
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    row = resp.data[0]
+
+    # Owner-gate: only the meeting owner (recorder) may move it. A fan-out recipient
+    # (recorded_by_user_id points at someone else) must request the owner to move it —
+    # the request flow is deferred; for now they can't move it directly.
+    recorder = row.get("recorded_by_user_id")
+    if recorder and recorder != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the meeting owner can move this meeting. Ask them to move it.",
+        )
+
+    # Target validation: Personal is always allowed; a workspace requires membership.
+    if target_ws and not is_workspace_member(client, user_id, target_ws):
+        raise HTTPException(status_code=403, detail="You are not a member of the target workspace.")
+
+    source_ws = row.get("workspace_id") or None
+    if source_ws == target_ws:
+        return {"ok": True, "workspace_id": target_ws, "unchanged": True}
+
+    # 1. Leaving a workspace → drop teammates' fan-out copies (they only shared it there).
+    if source_ws:
+        try:
+            _delete_fanout_copies(client, row, user_id, source_ws)
+        except Exception as exc:
+            print(f"[move] source fan-out cleanup failed for meeting {meeting_id}: {exc}")
+
+    # 2. Move the owner's own copy.
+    client.table("meetings").update({"workspace_id": target_ws}) \
+        .eq("id", meeting_id).eq("user_id", user_id).execute()
+
+    # 3. Re-scope the RAG transcript so retrieval follows the meeting.
+    try:
+        _rescope_meeting_transcript(client, meeting_id, user_id, target_ws)
+    except Exception as exc:
+        print(f"[move] transcript re-scope failed for meeting {meeting_id}: {exc}")
+
+    # 4. Entering a workspace → re-fan-out to that workspace's members so they see it.
+    if target_ws:
+        try:
+            entry = _entry_from_row({**row, "workspace_id": target_ws})
+            await _fan_out_to_workspace(client, entry, user_id, target_ws)
+        except Exception as exc:
+            print(f"[move] fan-out to {target_ws} failed for meeting {meeting_id}: {exc}")
+
+    return {"ok": True, "workspace_id": target_ws}
 
 
 @router.post("/meetings/{meeting_id}/claim-email")

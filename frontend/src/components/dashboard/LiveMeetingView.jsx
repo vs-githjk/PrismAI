@@ -150,6 +150,8 @@ export default function LiveMeetingView({ token, onStatusChange }) {
       // apiFetch (not raw fetch) so a signed-in workspace member's Bearer token is
       // attached — the backend unlocks the members-only screenshare mirror URL for
       // them (anonymous link-holders still poll fine, just without a stream URL).
+      // apiFetch also sends cache:'no-store' — this endpoint is polled for live updates,
+      // so it must never be served stale from the browser HTTP cache.
       const res = await apiFetch(`/live/${token}`)
       if (res.status === 404) { setError('Live session not found or has expired.'); clearInterval(intervalRef.current); return }
       if (!res.ok) { onDisconnect(); return }

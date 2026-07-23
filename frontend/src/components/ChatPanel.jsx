@@ -6,14 +6,43 @@ import {
   Clock,
   FileText,
   History,
+  ImagePlus,
   ListChecks,
   MessagesSquare,
   Send,
   Sparkles,
   X,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { apiFetch } from '../lib/api'
 import PersonaChip from './PersonaChip'
+
+// Assistant replies come back as markdown (bold, numbered/bulleted lists, paragraphs).
+// Render it with real structure + breathing room instead of a cramped raw-text blob.
+function MarkdownMessage({ children }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ node, ...p }) => <p className="mb-2 last:mb-0 leading-relaxed" {...p} />,
+        ul: ({ node, ...p }) => <ul className="mb-2 last:mb-0 list-disc space-y-1 pl-4" {...p} />,
+        ol: ({ node, ...p }) => <ol className="mb-2 last:mb-0 list-decimal space-y-1 pl-4" {...p} />,
+        li: ({ node, ...p }) => <li className="leading-relaxed" {...p} />,
+        strong: ({ node, ...p }) => <strong className="font-semibold text-white" {...p} />,
+        a: ({ node, ...p }) => <a className="text-cyan-300 underline underline-offset-2" target="_blank" rel="noreferrer" {...p} />,
+        code: ({ node, inline, ...p }) => inline
+          ? <code className="rounded bg-white/10 px-1 py-0.5 text-[12px]" {...p} />
+          : <code className="block overflow-x-auto rounded-md bg-black/40 p-2 text-[12px]" {...p} />,
+        h1: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+        h2: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+        h3: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  )
+}
 
 // One grounding source behind a RAG answer — rendered from structured
 // rag_context (backend), never from the model's prose. Citations stay reliable.
@@ -78,6 +107,21 @@ function pickThree(pool, seed) {
     ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
   return arr.slice(0, 3)
+}
+
+// Deterministic "export the transcript" intent — download/save/export transcript as
+// PDF or text. Returns 'pdf' | 'txt' | null. Handled client-side (no model call).
+function detectTranscriptExportIntent(msg) {
+  const m = msg.toLowerCase()
+  if (!/\btranscript\b/.test(m)) return null
+  // Explicit format wins ("transcript as a pdf", "make the transcript a pdf").
+  if (/\b(txt|text file|\.txt|plain text)\b/.test(m)) return 'txt'
+  if (/\b(pdf|\.pdf|print)\b/.test(m)) return 'pdf'
+  // Strong export verb with no format → default to PDF ("download the transcript").
+  if (/\b(download|export|save|convert)\b/.test(m)) return 'pdf'
+  // Bare "show me / view the transcript" (no format, no export verb) is a content
+  // request — let it fall through to normal chat.
+  return null
 }
 
 function detectGlobalIntent(msg) {
@@ -148,6 +192,19 @@ function deepRename(value, from, to) {
   return walk(value)
 }
 
+// A message's content may be a plain string or an OpenAI vision array
+// ([{type:'text',text},{type:'image_url',…}]). Return a safe display string so
+// history previews and bubbles never render an object (blank/crash).
+function messageText(content) {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const textPart = content.find((p) => p && p.type === 'text')
+    if (textPart?.text) return textPart.text
+    return content.some((p) => p && p.type === 'image_url') ? '📎 Image' : ''
+  }
+  return ''
+}
+
 function formatSessionDate(value) {
   if (!value) return ''
   const parsed = new Date(value)
@@ -165,12 +222,15 @@ export default function ChatPanel({
   transcript,
   result,
   onResultUpdate,
+  onCorrectApplied,
   isSignedIn = false,
   personaPreset = 'default',
   personaCustomPrompt = '',
   workspaceDefaultPersona = null,
   onSavePersona,
   activeWorkspaceId = null,
+  onExportTranscriptPDF,
+  onDownloadTranscriptTxt,
 }) {
   // The live thread for this meeting is restored from its most recent saved
   // session (continuous per-meeting chat) — ChatPanel is keyed by meetingId so
@@ -181,6 +241,10 @@ export default function ChatPanel({
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingGlobal, setLoadingGlobal] = useState(false)
+  const [pendingImages, setPendingImages] = useState([])  // [{path, url}] staged before send
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [lightbox, setLightbox] = useState(null)  // url of image opened full-size
+  const fileInputRef = useRef(null)
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
   const prevResultRef = useRef(null)
@@ -199,13 +263,33 @@ export default function ChatPanel({
   // activeSession is usually null at mount). Only if the user hasn't started
   // typing into a fresh thread yet.
   const restoredRef = useRef(false)
+
+  // Restored chat images carry expired signed URLs — re-mint fresh ones from the
+  // stored paths so they display again.
+  const resignImages = async (msgs) => {
+    const paths = []
+    for (const m of msgs) for (const im of (m.images || [])) if (im.path) paths.push(im.path)
+    if (!paths.length) return msgs
+    try {
+      const res = await apiFetch('/chat/sign', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      })
+      if (!res.ok) return msgs
+      const { urls } = await res.json()
+      return msgs.map((m) => m.images
+        ? { ...m, images: m.images.map((im) => (im.path && urls[im.path]) ? { ...im, url: urls[im.path] } : im) }
+        : m)
+    } catch { return msgs }
+  }
+
   useEffect(() => {
     if (restoredRef.current) return
     if (activeSession?.id && activeSession.messages?.length && messagesRef.current.length === 0) {
       restoredRef.current = true
       sessionIdRef.current = activeSession.id
       skipNextSaveRef.current = true // don't re-save the restored thread
-      setMessages(activeSession.messages)
+      resignImages(activeSession.messages).then(setMessages)
     }
   }, [activeSession])
 
@@ -272,10 +356,12 @@ export default function ChatPanel({
   const send = async (text) => {
     if (viewingSession) return
     const msg = (text || input).trim()
-    if (!msg || loading) return
+    const imgs = pendingImages
+    if ((!msg && imgs.length === 0) || loading) return
 
-    setMessages((prev) => [...prev, { role: 'user', content: msg }])
+    setMessages((prev) => [...prev, { role: 'user', content: msg, images: imgs.length ? imgs : undefined }])
     setInput('')
+    setPendingImages([])
     setLoading(true)
 
     // Gate on `result` only — NOT transcript. Tier-2 agents (email, calendar, health)
@@ -283,12 +369,29 @@ export default function ChatPanel({
     // existing_items, so the raw transcript is optional. Requiring it meant a recovered
     // or reopened meeting (which often has no transcript in chat context) could never
     // run an agent — every "draft an email" fell through to ungrounded generic chat.
-    const rename = result ? detectRenameIntent(msg) : null
-    const agentIntent = !rename && result ? detectAgentIntent(msg) : null
+    // With images attached, skip the deterministic rename/agent intents (they don't
+    // handle images) and route to a vision-capable chat surface (/chat or /chat/global).
+    const imageUrls = imgs.map((i) => i.url).filter(Boolean)
+    // Transcript export — deterministic, client-side, no model call.
+    const transcriptExport = imgs.length === 0 ? detectTranscriptExportIntent(msg) : null
+    const rename = (imgs.length === 0 && result && !transcriptExport) ? detectRenameIntent(msg) : null
+    const agentIntent = (imgs.length === 0 && !rename && result) ? detectAgentIntent(msg) : null
     const globalIntent = !rename && !agentIntent && detectGlobalIntent(msg)
 
     try {
-      if (rename) {
+      if (transcriptExport) {
+        const ok = transcriptExport === 'txt'
+          ? onDownloadTranscriptTxt?.()
+          : onExportTranscriptPDF?.()
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: ok === false
+            ? "There's no transcript available for this meeting to export."
+            : transcriptExport === 'txt'
+              ? 'Downloading the transcript as a .txt file.'
+              : 'Opening the transcript as a print view — use your browser’s “Save as PDF”.',
+        }])
+      } else if (rename) {
         // Deterministic cross-card rename — no model call, no Linear ticket.
         prevResultRef.current = result
         onResultUpdate(deepRename(result, rename.from, rename.to))
@@ -343,13 +446,28 @@ export default function ChatPanel({
         }[agentIntent]
 
         if (agentKey && data[agentKey] !== undefined) {
-          prevResultRef.current = { [agentKey]: result[agentKey] }
-          onResultUpdate({ [agentKey]: data[agentKey] })
-          setMessages((prev) => [...prev, {
-            role: 'assistant',
-            content: `Done — I've updated the ${agentIntent.replace(/_/g, ' ')} card with your changes.`,
-            agentUpdated: agentIntent,
-          }])
+          // Only claim success when the card actually changed. A re-run can reproduce
+          // identical content (asking to change something already true, or the model
+          // ignoring the instruction) — reporting "updated" then is misleading and
+          // looks like a silent failure.
+          let changed = true
+          try {
+            changed = JSON.stringify(data[agentKey]) !== JSON.stringify(result[agentKey])
+          } catch { changed = true }
+          if (changed) {
+            prevResultRef.current = { [agentKey]: result[agentKey] }
+            onResultUpdate({ [agentKey]: data[agentKey] })
+            setMessages((prev) => [...prev, {
+              role: 'assistant',
+              content: `Done — I've updated the ${agentIntent.replace(/_/g, ' ')} card with your changes.`,
+              agentUpdated: agentIntent,
+            }])
+          } else {
+            setMessages((prev) => [...prev, {
+              role: 'assistant',
+              content: `The re-run came back with the same ${agentIntent.replace(/_/g, ' ')} — nothing changed. It may already reflect what you asked; try being more specific about what to change.`,
+            }])
+          }
         } else {
           throw new Error('No result')
         }
@@ -362,7 +480,7 @@ export default function ChatPanel({
         const res = await apiFetch('/chat/global', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg }),
+          body: JSON.stringify({ message: msg, image_urls: imageUrls }),
         })
         setLoadingGlobal(false)
         if (!res.ok) throw new Error('Global chat failed')
@@ -385,10 +503,18 @@ export default function ChatPanel({
             // for users who only set their default at the workspace level.
             ...(activeWorkspaceId ? { 'x-active-workspace': activeWorkspaceId } : {}),
           },
-          body: JSON.stringify({ message: msg, transcript }),
+          // Ship the parsed result too, so chat is grounded even when the browser
+          // has no raw transcript (bot-recorded meetings viewed live). meeting_id
+          // lets the correct_meeting_text tool edit THIS saved meeting in place.
+          body: JSON.stringify({ message: msg, transcript, result: result || {}, image_urls: imageUrls, meeting_id: meetingId ? Number(meetingId) : null }),
         })
         if (!res.ok) throw new Error('Chat failed')
         const data = await res.json()
+        // A chat correction edited the saved meeting — reflect the fresh result +
+        // transcript in the live view (cards + transcript) without a reload.
+        if (data.meeting_updated && data.updated) {
+          onCorrectApplied?.(data.updated)
+        }
         setMessages((prev) => [...prev, {
           role: 'assistant',
           content: data.response ?? 'No response from server.',
@@ -398,7 +524,13 @@ export default function ChatPanel({
         }])
       }
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Sorry, something went wrong.' }])
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: offline
+          ? "I can't reach the server — you appear to be offline. Reconnect and try again."
+          : 'Something went wrong with that message. Please try again in a moment — if it keeps happening, refresh the page.',
+      }])
     } finally {
       setLoading(false)
       setLoadingGlobal(false)
@@ -407,6 +539,47 @@ export default function ChatPanel({
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+  }
+
+  // --- Image attach / paste / drop ---
+  const MAX_IMAGES = 3
+  const uploadImageFile = async (file) => {
+    if (!isSignedIn || viewingSession) return
+    if (!file || !file.type?.startsWith('image/')) return
+    if (pendingImages.length >= MAX_IMAGES) return
+    if (file.size > 5 * 1024 * 1024) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'That image is over the 5MB limit.' }])
+      return
+    }
+    setUploadingImage(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await apiFetch('/chat/upload-image', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))).detail
+        throw new Error(detail || `upload failed (${res.status})`)
+      }
+      const data = await res.json()
+      if (data.url) setPendingImages((prev) => [...prev, { path: data.path, url: data.url }].slice(0, MAX_IMAGES))
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: `Couldn’t upload that image — ${err.message || 'try again.'}` }])
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+  const handlePickImages = (e) => {
+    const files = Array.from(e.target.files || [])
+    files.slice(0, MAX_IMAGES).forEach(uploadImageFile)
+    e.target.value = ''
+  }
+  const handlePaste = (e) => {
+    const imageItem = Array.from(e.clipboardData?.items || []).find((it) => it.type.startsWith('image/'))
+    if (imageItem) { const f = imageItem.getAsFile(); if (f) { e.preventDefault(); uploadImageFile(f) } }
+  }
+  const handleDrop = (e) => {
+    const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'))
+    if (files.length) { e.preventDefault(); files.slice(0, MAX_IMAGES).forEach(uploadImageFile) }
   }
 
   const handleDeletePastSession = (sessionId) => {
@@ -491,7 +664,7 @@ export default function ChatPanel({
               </button>
 
               {showHistory && (
-                <div className="absolute right-0 top-8 z-40 w-72 overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
+                <div className="absolute left-0 top-8 z-50 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between border-b border-[color:var(--db-border)] px-3 py-2">
                     <p className="text-[11px] font-semibold text-[color:var(--db-text)]">Past chats</p>
                     <p className="text-[10px] text-[color:var(--db-text-faint)]">{pastSessions.length} of 3</p>
@@ -500,6 +673,7 @@ export default function ChatPanel({
                     {pastSessions.map((session) => {
                       const msgs = session.messages || []
                       const firstUser = msgs.find((m) => m.role === 'user')
+                      const preview = firstUser ? messageText(firstUser.content) : ''
                       return (
                         <div
                           key={session.id}
@@ -510,9 +684,9 @@ export default function ChatPanel({
                             onClick={() => { setViewingSession(session); setShowHistory(false) }}
                             className="min-w-0 flex-1 px-3 py-2.5 text-left transition hover:bg-[var(--db-fill)]"
                           >
-                            <p className="text-[11px] text-[color:var(--db-text-faint)]">{formatSessionDate(session.created_at)}</p>
-                            {firstUser && (
-                              <p className="mt-0.5 truncate text-[12px] text-[color:var(--db-text)]">{firstUser.content}</p>
+                            <p className="text-[11px] text-[color:var(--db-text-faint)]">{formatSessionDate(session.created_at) || 'Saved chat'}</p>
+                            {preview && (
+                              <p className="mt-0.5 truncate text-[12px] text-[color:var(--db-text)]">{preview}</p>
                             )}
                             <p className="mt-1 text-[10px] text-[color:var(--db-text-faint)]">
                               {msgs.length} message{msgs.length !== 1 ? 's' : ''}
@@ -599,7 +773,22 @@ export default function ChatPanel({
                   : 'rounded-tl-sm border border-[color:var(--db-border)] bg-[#0d0e10] text-[color:var(--db-text-soft)]'
               }`}
             >
-              {msg.content}
+              {msg.images?.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {msg.images.map((img, ii) => (
+                    <img
+                      key={ii}
+                      src={img.url}
+                      alt="attached"
+                      onClick={() => img.url && setLightbox(img.url)}
+                      className="h-28 w-28 cursor-zoom-in rounded-lg border border-white/15 object-cover"
+                    />
+                  ))}
+                </div>
+              )}
+              {msg.role === 'assistant' && typeof msg.content === 'string'
+                ? <MarkdownMessage>{msg.content}</MarkdownMessage>
+                : messageText(msg.content)}
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {msg.toolsUsed.map((t, ti) => (
@@ -707,40 +896,89 @@ export default function ChatPanel({
       </div>
 
       {/* Composer */}
-      <div className="flex flex-shrink-0 items-center gap-2 border-t border-[color:var(--db-border)] px-4 py-3">
-        {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
-            the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
-        <textarea
-          rows={1}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          disabled={!!viewingSession}
-          name="prism-chat"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          data-1p-ignore
-          data-lpignore="true"
-          placeholder={
-            viewingSession
-              ? 'Viewing past chat — start a new chat to send messages'
-              : result
-              ? 'Ask or say "redraft email more formally"…'
-              : 'Ask a question…'
-          }
-          className="flex-1 resize-none rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <button
-          type="button"
-          onClick={() => send()}
-          disabled={!input.trim() || loading || !!viewingSession}
-          aria-label="Send message"
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-400 text-[#07040f] transition hover:from-cyan-400 hover:to-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <Send className="h-4 w-4" aria-hidden="true" />
-        </button>
+      <div
+        className="flex flex-shrink-0 flex-col gap-2 border-t border-[color:var(--db-border)] px-4 py-3"
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+      >
+        {/* Staged image thumbnails (before send) */}
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {pendingImages.map((img, ii) => (
+              <div key={ii} className="relative">
+                <img src={img.url} alt="attachment" className="h-14 w-14 rounded-lg border border-[color:var(--db-border-strong)] object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPendingImages((prev) => prev.filter((_, k) => k !== ii))}
+                  aria-label="Remove image"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] bg-[#0d0e10] text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)]"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            {uploadingImage && <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-[color:var(--db-border-strong)] text-[10px] text-[color:var(--db-text-faint)]">…</div>}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={handlePickImages} className="hidden" />
+          {isSignedIn && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!!viewingSession || pendingImages.length >= MAX_IMAGES || uploadingImage}
+              aria-label="Attach image"
+              title="Attach image (or paste / drop)"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] text-[color:var(--db-text-muted)] transition hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ImagePlus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
+              the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
+          <textarea
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKey}
+            onPaste={handlePaste}
+            disabled={!!viewingSession}
+            name="prism-chat"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            data-1p-ignore
+            data-lpignore="true"
+            placeholder={
+              viewingSession
+                ? 'Viewing past chat — start a new chat to send messages'
+                : result
+                ? 'Ask or say "redraft email more formally"…'
+                : 'Ask a question… (paste or drop an image)'
+            }
+            className="flex-1 resize-none rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => send()}
+            disabled={(!input.trim() && pendingImages.length === 0) || loading || !!viewingSession}
+            aria-label="Send message"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-400 text-[#07040f] transition hover:from-cyan-400 hover:to-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Send className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="full size" className="max-h-full max-w-full rounded-lg object-contain" />
+        </div>
+      )}
     </div>
   )
 }

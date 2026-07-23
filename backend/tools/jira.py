@@ -138,6 +138,39 @@ async def jira_create_issue(args: dict, user_settings: dict | None = None) -> di
     return {"error": f"Jira API error {resp.status_code}: {detail}"}
 
 
+async def jira_validate(user_settings: dict | None = None) -> dict:
+    """Cheap credential check (no writes): GET /myself, and validate the default
+    project key if one is set. Returns {ok, account_name, project_ok?, error?} so
+    the Integrations UI can confirm a Jira connection works BEFORE a ticket fails
+    silently mid-meeting. Accepts the same settings shape as jira_create_issue, so
+    it can test just-typed creds before they're saved."""
+    try:
+        base_url, email, token = _creds(user_settings or {})
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    headers = {"Authorization": _auth_header(email, token), "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            me = await client.get(f"{base_url}/rest/api/3/myself", headers=headers)
+            if me.status_code == 401:
+                return {"ok": False, "error": "Invalid email or API token (Jira returned 401)."}
+            if me.status_code == 403:
+                return {"ok": False, "error": "Token lacks permission (403). Check the API token's scopes."}
+            if me.status_code != 200:
+                return {"ok": False, "error": f"Jira returned {me.status_code}. Check the base URL."}
+            body = me.json() or {}
+            out = {"ok": True, "account_name": body.get("displayName") or body.get("emailAddress") or "your account"}
+            pk = ((user_settings or {}).get("jira_project_key") or "").strip()
+            if pk:
+                pr = await client.get(f"{base_url}/rest/api/3/project/{pk}", headers=headers)
+                out["project_ok"] = pr.status_code == 200
+                if pr.status_code != 200:
+                    out["error"] = f"Connected as {out['account_name']}, but project '{pk}' wasn't found (tickets need a valid default project)."
+            return out
+    except httpx.HTTPError as exc:
+        return {"ok": False, "error": f"Couldn't reach {base_url}: {exc}"}
+
+
 register_tool(
     name="jira_create_issue",
     description=(

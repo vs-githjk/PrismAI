@@ -131,38 +131,54 @@ Phase	What it is	Unlocks
 7	Context-aware chat	Quality/trust
 8	Personas	Delight/marketing
 -------------------------------------------------------------
-## CURRENT STATUS — updated May 20 2026
+## CURRENT STATUS — updated Jul 6 2026
 
-**Deployed & live** (main → Render + Vercel auto-deploy):
+**All 8 original phases shipped & live** (main → Render + Vercel auto-deploy). The original
+roadmap is essentially complete; the product has since grown well past it. Summary:
 
 | Phase | Status |
 |---|---|
-| Phase 1 — Workspace Layer | ✅ Done (CRUD, invites, switcher, attribution) |
-| Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) |
-| Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, streaming) |
-| Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out) |
-| Phase 5 — Knowledge Base / RAG | ✅ **Done & deployed.** Baseline (workspace-scoped + nav-mounted) + smart-RAG Phases 1–5 (cross-source meeting transcripts, contextual preamble, hybrid vector+BM25 with RRF, Groq LLM reranker, query rewriter). Spec `docs/specs/2026-05-20-smart-rag-additions.md`. |
-| Phase 8 — Personas | ✅ **Done & deployed.** 7 presets (default, concise, formal, cheeky, socratic, warm, analytical) + custom textarea (500-char cap), workspace default (preset-only), per-agent whitelist, contextvar isolation, PersonaChip UI in ChatPanel + workspace modal + account dropdown. **Live-bot persona wiring shipped Jun 2** (PR #5 / commit `b1ac47a`) — cached system-prefix injection, tool-aware wrapper, full personal→workspace→'' precedence. **Persona identity shipped Jun 3** (commit `7a57831`) — each preset renames the bot (Prism / Flash / Crystal / Glint / Echo / Glow / Spectrum), persona-flavored intro greeting, name carries into the cached system prefix, per-bot wake-word aliases ("Flash, summarize…"), removed the `✓ ` reply prefix, picker shows the names + per-persona lucide icons. |
-| Bonus — Recording Playback | ✅ **Done & deployed.** Recall.ai video_mixed_mp4 + audio_mixed_mp3, RecordingPlayer with synced transcript, fresh signed URL per request, all 5 reason codes documented. |
-| Bonus — Landing redesign (Devaj) | ✅ **Done & deployed.** HowItWorks rewrite + `PrismCapture` pipeline (`prism-loop.mp4` replaces the live ray-marched shader on landing for GPU savings) + returner-aware CTAs. `ProofSection` retired. |
-| **AWS migration** | ⏳ **Next major item.** Replace Render → ECS Fargate, Vercel → S3 + CloudFront. Supabase stays. Plan at `AWS_MIGRATION_PLAN.md` (untracked) — needs refresh before executing. |
-| Bonus — Notifications system | ⏳ **Drafted Jun 3, deferred until after AWS.** Plan at `docs/specs/2026-06-03-notifications-system-plan.md`. New Supabase `notifications` table + thin `notify()` backend helper + Realtime delivery + bell/dropdown/toast UI. Foundation for deferred bot-takeover (Option B), Phase 6, Phase 7. ~2-3 days of focused work. |
-| Phase 6 — Voice Identification | ⏳ Pending — voice pipeline plumbing exists (utterance accumulator, perception state) but Voice ID itself (audio capture + embedding + matching) is unbuilt. |
-| Phase 7 — Context-Aware Conversation | ⏳ Pending. |
+| Phase 1 — Workspace Layer | ✅ Done (CRUD, invites, switcher, attribution, per-workspace knowledge + personas) |
+| Phase 2 — Meeting Pattern Intelligence | ✅ Done (completion rate, decision velocity, owner load, unresolved themes) + **Calendar view** of history (Month/Week/Day, filters, insights rail) |
+| Phase 3 — LangGraph Orchestration | ✅ Done (two-tier StateGraph, deterministic router, 10 agents incl. `decision_linker` + `action_executor`) |
+| Phase 4 — Multi-User Bot Dedup | ✅ Done (workspace dedup + fan-out + liveness check + durable `meeting_bots`) |
+| Phase 5 — Knowledge Base / RAG | ✅ Done (workspace-scoped + smart-RAG Phases 1–5: cross-source transcripts, contextual preamble, hybrid vector+BM25 RRF, LLM reranker, query rewriter) |
+| Phase 6 — Voice Identification | 🔄 **Being built by another teammate** (off our plate). Voice/latency/wake/interrupt redo is the highest-impact item and is owned elsewhere. |
+| Phase 7 — Context-Aware Conversation | ◑ Partially covered (continuous per-meeting chat, RAG trust layer, live catch-up). Full disambiguation UI still pending. |
+| Phase 8 — Personas | ✅ Done (7 presets + custom, workspace default, per-bot identity/names/wake-words) |
 
-**Also shipped this session (not phases):**
-- Sentiment agent reworked — actionable vocabulary + rich `SentimentCard` (was just "neutral")
-- Workspace pre-meeting brief on upcoming meeting cards (`GET /workspaces/{id}/brief`)
-- Duplicate workspace meeting card fix (bot-dedup `recorded_by_user_id` flow)
-- Landing page `ProofSection` — animated stats + cursor glow + 3D tilt + aurora + magnetic CTAs
-- PR #4 merged — agent-pop animation, view crossfade, demo transcript prefill
+**Major features shipped SINCE the original 8 phases** (all on `main`):
+- **Custom domain** — app live at `meetprismai.com` (Vercel + Route 53), Supabase auth at `auth.meetprismai.com`.
+- **SSO-only sign-in** — Google + Microsoft (Azure); email/password dropped.
+- **Recording Playback** — Recall video/audio + synced click-to-seek transcript (gap: no click-to-seek on bot-active meetings — see backlog).
+- **Stand-in async proxy** (Feature A) + **Live catch-up "Ask Prism, just you"** (Feature B).
+- **Outbound integrations** — Jira (rich [Prism] tickets), Microsoft Teams recap, Outlook calendar, Slack, Notion, Linear, Gmail, Google Calendar. (Currently per-user; per-workspace routing is a backlog item.)
+- **Suggested Actions** — Tier-2 `action_executor` prepares owner's action items → approve-first execute.
+- **LLM migration** — Groq removed; agents/RAG on Claude Haiku 4.5, chat/bot on gpt-4o-mini, stand-in composer on gpt-4o.
+- **Live-bot polish** — branded "PrismAI Notetaker" join (name + logo tile), `/leave` command, solo free-flow, mute kill-switch, speak-short/chat-full, owner-POV email, bot-exit traceability (dismissable banner).
+- **Transcription grounding** — Deepgram nova-3 keyterms (KB + teammate names) + async batch re-transcription for bot-silent meetings.
+- **Move / delete meetings** (Jul 6) — owner-cascade across workspace fan-out copies; RAG transcript follows; delete tombstones the bot so recovery can't resurrect it.
+- **Image analysis in chat** (Jul 6, IN PROGRESS) — paste/drop images into per-meeting + global chat; gpt-4o-mini vision; private `chat-images` bucket + signed URLs.
 
-**Deferred debt (not phases):**
-- `bot_store` in-memory → lost on Render restart. Needs a `bots` Supabase table.
+**▶ CURRENT PRIORITY ORDER (Jul 6 2026):**
+1. **Image analysis — CLUBBED (IN PROGRESS):** (a) images in app chat (per-meeting + global `/chat`, `/chat/global`) — paste/drop/attach, gpt-4o-mini vision, private `chat-images` bucket + signed URLs; **(b) images posted in the live meeting chat** (Meet/Teams) — the bot "sees" them and can answer. Confident part = image **URLs** pasted in chat (Recall relays chat text → detect URL → feed to vision model). Attachment **files** in Teams chat depend on whether Recall's `chat_message` webhook includes the attachment URL — verify during build; fall back to URLs if not. Reuses the same vision message-shaping as (a).
+2. **★ LIVE-BOT SCREEN-SHARE VISION (DEFERRED — future feature):** the bot watches the shared *screen* (video feed) in real time — demos, slides, whiteboards. Deferred by user Jul 6. **Feasibility-gated when picked up:** verify Recall's real-time video-frame / screenshot API + design a frame-sampling strategy (cost/latency). Builds on the image-analysis vision pipeline.
+3. **Notifications system** — Supabase `notifications` table + event triggers + bell/unread UI (build on Devaj's StatusIsland). Plan at `docs/specs/2026-06-03-notifications-system-plan.md`.
+4. **Per-workspace integrations** — move Jira project / Slack channel / Teams webhook from per-user → per-workspace (unlocks per-workspace Jira routing + notes routing). Architectural, multi-day.
+5. **Timestamped-transcript click-to-seek** for bot-active meetings (emit segments from the realtime buffer's word timestamps).
+6. Smaller registered asks: summarizer "when the bot left" mention; grounding from doc *content* not just titles; Teams recap → workspace tasks.
+
+**Deferred / parked:**
+- **AWS migration** — parked until paying/regular users (restart-bug class mitigated via durable owner lookup + startup poller recovery). Plan at `AWS_MIGRATION_PLAN.md`.
+- **Browser extension** (impromptu capture) — scoped, Phase-1 ready, parked.
+- **Onboarding / guided tour** — parked.
+- **CRM (HubSpot)** — only if committing to a vertical; multi-day.
+- **Move/delete permission polish** — request-to-owner flow + true per-user "hide from my view" (non-owner delete is cosmetic-only today).
+- Bot auto-takeover on failure (Option B) — manual alert only for now.
+
+**Deferred debt:**
+- `bot_store` in-memory → lost on Render restart (mitigated by durable `meeting_bots` + startup recovery; full fix = the parked AWS/DB work).
 - Action item completion state is per-member; should be one shared state per workspace meeting.
-- Auto-takeover on bot failure (Option B) — currently manual alert only (Option C).
-
-**Next session picks up at:** AWS migration. Refresh `AWS_MIGRATION_PLAN.md` (untracked at project root — predates Phase 5/8/Recording/Landing) to reflect the current dep list (`openai`, `tiktoken`, `pymupdf`, `pytesseract`, `python-docx`, `notion-client`, `pysbd`, `langgraph`), env vars (`OPENAI_API_KEY`, `TAVILY_API_KEY`, plus the `PRISM_*` flag vars), 19 migrations, custom-domain pieces (Route 53 + 2 ACM certs: one in us-east-1 for CloudFront, one in the ALB's region). Then verify pre-migration checklist (AWS CLI + Docker installed locally) before kicking off Dockerization. Production gate pattern applies — pause before every step that affects production. After AWS: notifications phase, then Phase 6 Voice ID, then Phase 7 Context-Aware Chat.
 
 -------------------------------------------------------------
 Key files to know

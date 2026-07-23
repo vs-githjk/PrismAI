@@ -1,6 +1,14 @@
-import { Check, Clock, UserRound } from 'lucide-react'
+import { Check, Clock, UserRound, Video, ClipboardList, Sparkles, CalendarPlus } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
+import { dueInfo, dueLabel } from '../../lib/dueStatus'
+import { hasContentAnalysis, typeMeta } from '../../lib/meetingType'
+
+// Same due badge styling as MeetingView, so Home and the meeting agree.
+const DUE_STYLE = {
+  overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
+  soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
+}
 
 const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
 
@@ -8,8 +16,8 @@ const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
 const cardHeading = 'text-[22px] font-semibold tracking-[-0.015em] text-[color:var(--db-text)]'
 const emptyCopy = 'text-sm leading-6 text-[color:var(--db-text-muted)]'
 
-/** Top-left quadrant: static greeting, or a get-started prompt when history is empty. */
-function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
+/** Top-left quadrant: static greeting, or a get-started launcher when history is empty. */
+function Greeting({ isEmpty, onLoadSample, canLoadSample, onStartMeeting, onPasteTranscript, showConnectCalendar, onConnectCalendar }) {
   if (isEmpty) {
     return (
       <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
@@ -19,15 +27,49 @@ function Greeting({ isEmpty, onLoadSample, canLoadSample }) {
           started.
         </h1>
         <p className="mt-4 max-w-md text-base leading-7 text-[color:var(--db-text-muted)]">
-          Start a new meeting or upload a transcript with the&nbsp;+ in the sidebar.
+          Bring Prism into a live call, or paste a transcript to analyze.
         </p>
-        {canLoadSample && (
+        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+          {onStartMeeting && (
+            <button
+              type="button"
+              onClick={onStartMeeting}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 text-sm font-semibold text-[#04222a] shadow-sm transition-all hover:bg-cyan-300"
+            >
+              <Video className="h-4 w-4" aria-hidden="true" />
+              Start a meeting
+            </button>
+          )}
+          {onPasteTranscript && (
+            <button
+              type="button"
+              onClick={onPasteTranscript}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 text-sm font-medium text-white/85 transition-all hover:bg-white/[0.08]"
+            >
+              <ClipboardList className="h-4 w-4" aria-hidden="true" />
+              Paste a transcript
+            </button>
+          )}
+          {canLoadSample && (
+            <button
+              type="button"
+              onClick={onLoadSample}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/10 bg-transparent px-6 text-sm font-medium text-white/60 transition-all hover:bg-white/[0.05] hover:text-white/80"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              See a sample
+            </button>
+          )}
+        </div>
+        {showConnectCalendar && (
           <button
             type="button"
-            onClick={onLoadSample}
-            className="mt-6 inline-flex h-11 w-fit items-center justify-center gap-2 rounded-full border border-[#2f2f2f] bg-[#18181b] px-6 text-sm font-medium text-[#f2f2f2] shadow-xs transition-all hover:bg-[#27272a]"
+            onClick={onConnectCalendar}
+            className="group mt-5 inline-flex w-fit items-center gap-2 text-[13px] text-white/50 transition-colors hover:text-cyan-200"
           >
-            Load sample dashboard
+            <CalendarPlus className="h-4 w-4 text-white/40 transition-colors group-hover:text-cyan-300" aria-hidden="true" />
+            <span>Connect Google or Outlook calendar to auto-join meetings</span>
+            <span className="font-semibold text-cyan-300/80 group-hover:text-cyan-200">Connect →</span>
           </button>
         )}
       </section>
@@ -83,12 +125,25 @@ function ActionItemsCard({ actions, onOpen, onToggle }) {
                       <UserRound className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
                       <span className="truncate">{item.owner || 'Unowned'}</span>
                     </span>
-                    {item.due && (
-                      <span className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--db-text-faint)]">
-                        <Clock className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
-                        <span className="truncate">{item.due}</span>
-                      </span>
-                    )}
+                    {(() => {
+                      // Prefer the resolved status (matches MeetingView's badge); fall
+                      // back to the raw label only when there's no parseable date.
+                      const due = dueInfo(item)
+                      if (due.status === 'overdue' || due.status === 'soon') {
+                        return (
+                          <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${DUE_STYLE[due.status]}`}>
+                            {dueLabel(due)}
+                          </span>
+                        )
+                      }
+                      const label = due.status === 'later' ? dueLabel(due) : (item.due && item.due !== 'TBD' ? item.due : '')
+                      return label ? (
+                        <span className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--db-text-faint)]">
+                          <Clock className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
+                          <span className="truncate">{label}</span>
+                        </span>
+                      ) : null
+                    })()}
                     <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-cyan-200/15 bg-cyan-300/[0.06] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200/70">
                       <span className="max-w-[140px] truncate">{deriveDisplayTitle(entry)}</span>
                     </span>
@@ -114,10 +169,19 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
           <h2 className={`mb-4 ${cardHeading}`}>Recent meetings</h2>
           {history.length ? (
             <div className="space-y-2.5">
-              {history.map((entry) => {
-                const score = overallHealth(entry.result?.health_score)
+              {/* Newest-first — the fetched/merged history array isn't guaranteed to be
+                  date-ordered (a workspace re-fetch can land the newest meeting last),
+                  and this card, unlike the sidebar, would otherwise show raw order. */}
+              {[...history]
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .map((entry) => {
+                // Pitch / interview meetings score on their own rubric — show that
+                // (e.g. "PITCH 72") instead of the misleading health % for them.
+                const ca = hasContentAnalysis(entry.result) ? entry.result.content_analysis : null
+                const score = ca ? Number(ca.headline_score) : overallHealth(entry.result?.health_score)
                 const band = scoreBand(score)
                 const hasScore = Number.isFinite(Number(score))
+                const scoreLabel = ca ? typeMeta(ca.type).short : 'Health'
                 const isSelected = entry.id === selectedMeetingId
                 const summary =
                   entry.result?.summary || entry.result?.health_score?.verdict || 'No summary recorded.'
@@ -137,9 +201,9 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                     <div className="flex shrink-0 flex-col items-end justify-center pl-1">
                       <span className="font-bold leading-none tracking-tight" style={{ color: band.color }}>
                         <span className="text-[28px]">{hasScore ? score : '—'}</span>
-                        {hasScore && <span className="text-[15px]">%</span>}
+                        {hasScore && !ca && <span className="text-[15px]">%</span>}
                       </span>
-                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--db-text-faint)]">Health</span>
+                      <span className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--db-text-faint)]">{scoreLabel}</span>
                     </div>
                   </button>
                 )
@@ -159,6 +223,10 @@ export default function StatsCanvas({
   loadFromHistory,
   loadSample,
   canLoadSample = false,
+  onStartMeeting,
+  onPasteTranscript,
+  showConnectCalendar = false,
+  onConnectCalendar,
   selectedMeetingId = null,
   onToggleAction,
 }) {
@@ -180,7 +248,15 @@ export default function StatsCanvas({
 
   return (
     <div className="dashboard-home-grid">
-      <Greeting isEmpty={safeHistory.length === 0} onLoadSample={loadSample} canLoadSample={canLoadSample} />
+      <Greeting
+        isEmpty={safeHistory.length === 0}
+        onLoadSample={loadSample}
+        canLoadSample={canLoadSample}
+        onStartMeeting={onStartMeeting}
+        onPasteTranscript={onPasteTranscript}
+        showConnectCalendar={showConnectCalendar}
+        onConnectCalendar={onConnectCalendar}
+      />
       <ActionItemsCard actions={actions} onOpen={loadFromHistory} onToggle={onToggleAction} />
       <MeetingsCard history={safeHistory} onOpen={loadFromHistory} selectedMeetingId={selectedMeetingId} />
     </div>

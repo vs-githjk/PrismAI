@@ -3,6 +3,7 @@ import { Copy, Pencil, Plus, Send } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { notifyStatus } from '../../lib/statusNotify'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
+import { Button } from '../ui/button'
 
 export default function EmailCard({ email, gmailConnected = false, suggestedEmails = [], onSave, viewerName = '', meetingId, transcript = '', result = null }) {
   const [copied, setCopied] = useState(false)
@@ -199,14 +200,15 @@ export default function EmailCard({ email, gmailConnected = false, suggestedEmai
               >
                 Cancel
               </button>
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="inline"
                 onClick={handleSend}
                 disabled={sending || !toInput.trim()}
-                className="rounded-lg bg-cyan-400 px-3 py-1 text-[11px] font-semibold text-[#07040f] transition hover:bg-cyan-300 disabled:opacity-40"
+                className="disabled:opacity-40"
               >
                 {sending ? 'Sending…' : 'Send via Gmail'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -236,13 +238,9 @@ export default function EmailCard({ email, gmailConnected = false, suggestedEmai
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={saveEdit}
-              className="rounded-lg bg-cyan-400 px-3 py-1 text-[11px] font-semibold text-[#07040f] transition hover:bg-cyan-300"
-            >
+            <Button variant="primary" size="inline" onClick={saveEdit}>
               Save changes
-            </button>
+            </Button>
           </div>
         </div>
       ) : (

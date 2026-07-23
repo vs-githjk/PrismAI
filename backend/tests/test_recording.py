@@ -124,11 +124,17 @@ class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
              patch("realtime_routes.cleanup_bot_state"):
             asyncio.run(recall_routes._process_bot_transcript("bot-xyz"))
 
-        # Find the final "done" save and confirm segments were included
-        done_save = next((f for f in saved_fields if f.get("status") == "done"), None)
-        self.assertIsNotNone(done_save, "expected a status=done _db_save call")
-        self.assertIn("transcript_segments", done_save)
-        segs = done_save["transcript_segments"]
+        # Segments are persisted to bot_sessions BEFORE the status flips to "done"
+        # (race fix: the browser saves the instant it sees "done" and resolves
+        # segments server-side from bot_sessions, so they must land first).
+        seg_idx = next((i for i, f in enumerate(saved_fields) if "transcript_segments" in f), None)
+        done_idx = next((i for i, f in enumerate(saved_fields) if f.get("status") == "done"), None)
+        self.assertIsNotNone(seg_idx, "expected a _db_save call carrying transcript_segments")
+        self.assertIsNotNone(done_idx, "expected a status=done _db_save call")
+        self.assertLess(seg_idx, done_idx, "segments must be persisted before status flips to done")
+        seg_save = saved_fields[seg_idx]
+        self.assertNotIn("status", seg_save, "the segment save must not also flip status to done")
+        segs = seg_save["transcript_segments"]
         self.assertEqual(len(segs), 1)
         self.assertEqual(segs[0]["speaker"], "Alice")
         self.assertEqual(segs[0]["start"], 0.0)

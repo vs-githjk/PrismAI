@@ -25,6 +25,7 @@ import { supabase } from './lib/supabase'
 import { apiFetch } from './lib/api'
 import { notifyStatus } from './lib/statusNotify'
 import { readIntegrationStore, writeIntegrationStore, purgeLegacyGlobalIntegrationKeys } from './lib/integrationStore'
+import { prepareAudioForTranscription, isProbablyAudio, WHISPER_MAX_BYTES } from './lib/extractAudio'
 
 const ChatPanel = lazy(() => import('./components/ChatPanel'))
 const IntegrationsModal = lazy(() => import('./components/IntegrationsModal'))
@@ -340,6 +341,8 @@ const DEFAULT_RESULT = {
   calendar_suggestion: { recommended: false, reason: '', suggested_timeframe: '', resolved_date: '', resolved_day: '' },
   health_score: { score: 0, verdict: '', badges: [], breakdown: { clarity: 0, action_orientation: 0, engagement: 0 } },
   speaker_coach: { speakers: [], balance_score: 100 },
+  meeting_type: 'standard',
+  content_analysis: null,
   agents_run: [],
 }
 
@@ -524,6 +527,40 @@ function buildPrintHTML(result) {
     code{background:#f0f0f0;padding:2px 6px;border-radius:3px;font-size:.85em}
     p{margin:.5rem 0}
   </style></head><body>${body}</body></html>`
+}
+
+// Transcript-only print doc (for "Download transcript" → Save as PDF). Renders each
+// "Speaker: text" line with the speaker bolded; escapes HTML so raw transcript text
+// can't inject markup.
+function buildTranscriptPrintHTML(transcript, title = '') {
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const heading = title ? esc(title) : `Transcript — ${date}`
+  const lines = String(transcript || '').split('\n').map((raw) => {
+    const line = raw.trimEnd()
+    if (!line.trim()) return '<p class="blank"></p>'
+    const m = line.match(/^([^:]{1,40}):\s*(.*)$/)
+    return m
+      ? `<p><span class="spk">${esc(m[1])}:</span> ${esc(m[2])}</p>`
+      : `<p>${esc(line)}</p>`
+  }).join('')
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${heading}</title><style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:40px auto;color:#111;line-height:1.6}
+    h1{font-size:1.5rem;margin-bottom:1rem}
+    p{margin:.35rem 0}.blank{margin:.6rem 0}
+    .spk{font-weight:600;color:#0e7490}
+    .toolbar{position:fixed;top:16px;right:16px;display:flex;gap:8px}
+    .toolbar button{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px;
+      border:1px solid #0e7490;background:#0e7490;color:#fff;cursor:pointer}
+    .toolbar button.ghost{background:#fff;color:#0e7490}
+    @media print{.toolbar{display:none}}
+  </style></head><body>
+    <div class="toolbar">
+      <button onclick="window.print()">⬇ Save as PDF</button>
+      <button class="ghost" onclick="navigator.clipboard.writeText(document.body.innerText).then(()=>{this.textContent='Copied!'})">Copy text</button>
+    </div>
+    <h1>${heading}</h1>${lines}
+  </body></html>`
 }
 
 // ── Prism background ─────────────────────────────────────────────
@@ -808,6 +845,11 @@ export default function App() {
     !INITIAL_LIVE_TOKEN
   const [isDemoMode, setIsDemoMode] = useState(false)
   const [demoChatOpen, setDemoChatOpen] = useState(false)
+  // True while a REAL (non-test) signed-in user is viewing the in-memory sample
+  // dashboard. Drives the "Example data — not your history · Clear" banner and its
+  // exit back to the true empty Home. The sample is never persisted, so clearing it
+  // is a pure in-memory reset. (The test/demo account has its own demo affordances.)
+  const [viewingSample, setViewingSample] = useState(false)
 
   const enterDashboardTestRun = () => {
     sessionStorage.setItem(TEST_RUN_SESSION_KEY, '1')
@@ -839,13 +881,26 @@ export default function App() {
   const micSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 
   const [transcribing, setTranscribing] = useState(false)
+  const [transcribeStatus, setTranscribeStatus] = useState('')
+  const [transcribeError, setTranscribeError] = useState('')
   const fileInputRef = useRef(null)
+  // Document upload (.docx/.pdf/.txt → text) for the Paste tab — Article/Report input.
+  const [extractingDoc, setExtractingDoc] = useState(false)
+  const [docError, setDocError] = useState('')
+  const docInputRef = useRef(null)
 
   // Join Meeting state
   const [inputTab, setInputTab] = useState('join') // 'paste' | 'join'
+  // Content-analysis lens picked on the input surface. 'auto' = let the backend
+  // classify (default); an explicit pick skips the classifier. Sent on /analyze-stream.
+  const [meetingType, setMeetingType] = useState('auto')
   const [meetingUrl, setMeetingUrl] = useState('')
   const [joinMode, setJoinMode] = useState('utterance')  // pre-join response mode: 'utterance' | 'autonomous'
   const [botStatus, setBotStatus] = useState(null) // joining | recording | processing | done | error
+  // Workspace the live bot was JOINED under — snapshotted at join because the global
+  // activeWorkspaceId can change while a call is in progress. Drives the "Recording
+  // into X" indicator so the live surface shows where notes will actually be saved.
+  const [botWorkspaceId, setBotWorkspaceId] = useState(null)
   const [botError, setBotError] = useState(null)
   const [activeBotId, setActiveBotId] = useState(() => sessionStorage.getItem('prism_active_bot_id') || null)
   const [dedupBotInfo, setDedupBotInfo] = useState(null) // { botId, ownerUserId, ownerUserEmail }
@@ -966,6 +1021,28 @@ export default function App() {
     }
   }, [history]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep the OPEN meeting in sync with freshly-fetched history. The restore above only
+  // loads a meeting once (latched), so after that a newer copy arriving in history — a
+  // backend-side change, a teammate's edit, a re-fan-out — would stay invisible until
+  // the tab is dropped. Whenever history refreshes with a different copy of the meeting
+  // that's currently open, reconcile `result`/`shareToken` to it. Server/history is the
+  // source of truth for SAVED state (the three-copy invariant), and same-tab edits write
+  // result + history together, so for those the entry matches and this is a no-op. Skips
+  // while a fresh analysis is running so an in-flight run isn't clobbered.
+  useEffect(() => {
+    if (!meetingId || loading) return
+    const entry = history.find((e) => String(e.id) === String(meetingId))
+    if (!entry || !hasMeaningfulResult(entry.result)) return
+    setResult((cur) => {
+      try {
+        return JSON.stringify(cur) === JSON.stringify(entry.result) ? cur : entry.result
+      } catch {
+        return entry.result
+      }
+    })
+    if (entry.share_token) setShareToken((t) => t || entry.share_token)
+  }, [history, meetingId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const titleBackfillDone = useRef(false)
   useEffect(() => {
     if (!user || isTestAccount || history.length === 0 || titleBackfillDone.current) return
@@ -1047,6 +1124,13 @@ export default function App() {
 
   // Integrations
   const [showIntegrations, setShowIntegrations] = useState(false)
+  // Which tab the Integrations modal opens to. Lets the first-run calendar nudge deep-link
+  // to the Calendar tab (where both Google Calendar + Outlook are offered).
+  const [integrationsInitialTab, setIntegrationsInitialTab] = useState('Slack')
+  const openIntegrations = (tab = 'Slack') => {
+    setIntegrationsInitialTab(tab)
+    setShowIntegrations(true)
+  }
   // Integration tokens are loaded PER USER once auth resolves (see the effect below).
   // Start empty + purge the old global keys so a prior account's tokens can't bleed in.
   const [integrations, setIntegrations] = useState(() => {
@@ -1409,29 +1493,83 @@ export default function App() {
     }
   }, [inputTab, transcriptDrafts])
 
+  // Per-workspace integration routing (#2): the recap body ships NO creds; the
+  // personal fallback carries them. In a workspace scope we try the team's
+  // server-resolved config first (/workspaces/{id}/export/{provider}); a 404 means
+  // the workspace hasn't configured that provider, so we fall back to the caller's
+  // personal creds (the byte-for-byte-unchanged /export/{provider} path). In
+  // Personal scope (no activeWorkspaceId) we go straight to personal.
+  function _personalExportBody(provider, title, result) {
+    if (provider === 'slack') {
+      return integrations.slack_webhook
+        ? { webhook_url: integrations.slack_webhook, title, result } : null
+    }
+    if (provider === 'teams') {
+      return integrations.teams_webhook
+        ? { webhook_url: integrations.teams_webhook, title, result } : null
+    }
+    if (provider === 'notion') {
+      return integrations.notion_token && integrations.notion_page_id
+        ? { token: integrations.notion_token, parent_page_id: integrations.notion_page_id, title, result } : null
+    }
+    return null
+  }
+
+  // Returns { ok, url?, needConfig?, routedTo }. needConfig = neither the workspace
+  // nor the caller has that provider configured (surface "connect it" to the user).
+  async function sendRecap(provider, title, result) {
+    if (activeWorkspaceId) {
+      try {
+        const wres = await apiFetch(`/workspaces/${activeWorkspaceId}/export/${provider}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, result }),
+        })
+        if (wres.ok) {
+          const data = provider === 'notion' ? await wres.json().catch(() => ({})) : {}
+          return { ok: true, url: data.url, routedTo: 'workspace' }
+        }
+        // 404 = workspace has no config for this provider → fall through to personal.
+        // Any other status = a real failure of the workspace path.
+        if (wres.status !== 404) return { ok: false, routedTo: 'workspace' }
+      } catch {
+        return { ok: false, routedTo: 'workspace' }
+      }
+    }
+    const body = _personalExportBody(provider, title, result)
+    if (!body) return { needConfig: true }
+    try {
+      const res = await apiFetch(`/export/${provider}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) return { ok: false, routedTo: 'personal' }
+      const data = provider === 'notion' ? await res.json().catch(() => ({})) : {}
+      return { ok: true, url: data.url, routedTo: 'personal' }
+    } catch {
+      return { ok: false, routedTo: 'personal' }
+    }
+  }
+
   async function exportToSlack() {
     if (isTestAccount) {
       setIntegrationToast({ type: 'err', msg: 'Connect a real account to export to Slack.' })
       setTimeout(() => setIntegrationToast(null), 3000)
       return
     }
-    if (!integrations.slack_webhook) { setShowIntegrations(true); return }
     setExportingSlack(true)
     try {
-      const res = await apiFetch('/export/slack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          webhook_url: integrations.slack_webhook,
-          title: history.find(h => h.id === meetingId)?.title || 'Meeting',
-          result,
-        }),
-      })
-      if (!res.ok) throw new Error('Failed')
-      setIntegrationToast({ type: 'ok', msg: 'Sent to Slack!' })
-      notifyStatus({ kind: 'send', message: 'Sent to Slack' })
-    } catch {
-      setIntegrationToast({ type: 'err', msg: 'Slack export failed' })
+      const title = history.find(h => h.id === meetingId)?.title || 'Meeting'
+      const out = await sendRecap('slack', title, result)
+      if (out.needConfig) { setShowIntegrations(true); return }
+      if (out.ok) {
+        const where = out.routedTo === 'workspace' ? 'workspace Slack' : 'Slack'
+        setIntegrationToast({ type: 'ok', msg: `Sent to ${where}!` })
+        notifyStatus({ kind: 'send', message: `Sent to ${where}` })
+      } else {
+        setIntegrationToast({ type: 'err', msg: 'Slack export failed' })
+      }
     } finally {
       setExportingSlack(false)
       setTimeout(() => setIntegrationToast(null), 3000)
@@ -1450,59 +1588,22 @@ export default function App() {
     const delivered = []
     const failed = []
 
+    // Auto-send stays gated on the personal auto_send_* flags + personal creds, but
+    // routes through sendRecap so a workspace-configured provider is preferred (with
+    // the personal creds as the guaranteed fallback).
     if (integrations.auto_send_slack && integrations.slack_webhook) {
-      try {
-        const res = await apiFetch('/export/slack', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webhook_url: integrations.slack_webhook,
-            title: meetingTitle,
-            result: meetingResult,
-          }),
-        })
-        if (!res.ok) throw new Error('Slack failed')
-        delivered.push('Slack')
-      } catch {
-        failed.push('Slack')
-      }
+      const out = await sendRecap('slack', meetingTitle, meetingResult)
+      ;(out.ok ? delivered : failed).push('Slack')
     }
 
     if (integrations.auto_send_teams && integrations.teams_webhook) {
-      try {
-        const res = await apiFetch('/export/teams', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webhook_url: integrations.teams_webhook,
-            title: meetingTitle,
-            result: meetingResult,
-          }),
-        })
-        if (!res.ok) throw new Error('Teams failed')
-        delivered.push('Teams')
-      } catch {
-        failed.push('Teams')
-      }
+      const out = await sendRecap('teams', meetingTitle, meetingResult)
+      ;(out.ok ? delivered : failed).push('Teams')
     }
 
     if (integrations.auto_send_notion && integrations.notion_token && integrations.notion_page_id) {
-      try {
-        const res = await apiFetch('/export/notion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: integrations.notion_token,
-            parent_page_id: integrations.notion_page_id,
-            title: meetingTitle,
-            result: meetingResult,
-          }),
-        })
-        if (!res.ok) throw new Error('Notion failed')
-        delivered.push('Notion')
-      } catch {
-        failed.push('Notion')
-      }
+      const out = await sendRecap('notion', meetingTitle, meetingResult)
+      ;(out.ok ? delivered : failed).push('Notion')
     }
 
     if (delivered.length > 0) {
@@ -1528,28 +1629,18 @@ export default function App() {
       setTimeout(() => setIntegrationToast(null), 3000)
       return
     }
-    if (!integrations.notion_token || !integrations.notion_page_id) { setShowIntegrations(true); return }
     setExportingNotion(true)
     try {
-      const res = await apiFetch('/export/notion', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: integrations.notion_token,
-          parent_page_id: integrations.notion_page_id,
-          title: history.find(h => h.id === meetingId)?.title || 'Meeting Analysis',
-          result,
-        }),
-      })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        throw new Error(d.detail || 'Failed')
+      const title = history.find(h => h.id === meetingId)?.title || 'Meeting Analysis'
+      const out = await sendRecap('notion', title, result)
+      if (out.needConfig) { setShowIntegrations(true); return }
+      if (out.ok) {
+        const where = out.routedTo === 'workspace' ? 'workspace Notion' : 'Notion'
+        setIntegrationToast({ type: 'ok', msg: `Exported to ${where}!`, url: out.url })
+        notifyStatus({ kind: 'send', message: `Exported to ${where}` })
+      } else {
+        setIntegrationToast({ type: 'err', msg: 'Notion export failed' })
       }
-      const data = await res.json()
-      setIntegrationToast({ type: 'ok', msg: 'Exported to Notion!', url: data.url })
-      notifyStatus({ kind: 'send', message: 'Exported to Notion' })
-    } catch (e) {
-      setIntegrationToast({ type: 'err', msg: e.message || 'Notion export failed' })
     } finally {
       setExportingNotion(false)
       setTimeout(() => setIntegrationToast(null), 5000)
@@ -1625,6 +1716,7 @@ export default function App() {
     setBotTranscriptReady(false)
     setLiveCommands([])
     setBotStatus('joining')
+    setBotWorkspaceId(activeWorkspaceId || null)  // snapshot: where this bot records
     try {
       const res = await apiFetch('/join-meeting', {
         method: 'POST',
@@ -1813,6 +1905,7 @@ export default function App() {
     setBotError(null)
     setBotTranscriptReady(false)
     setBotStatus('joining')
+    setBotWorkspaceId(activeWorkspaceId || null)  // snapshot: where this bot records
     apiFetch('/join-meeting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1837,9 +1930,11 @@ export default function App() {
       })
   }
 
-  // Calendar polling — next-up banner + auto-join check, one fetch per 60s
+  // Calendar polling — next-up banner + auto-join check, one fetch per 60s.
+  // Covers BOTH Google and Outlook: whichever calendars are connected are polled,
+  // merged, and run through the same auto-join logic (one global auto-join setting).
   useEffect(() => {
-    if (!calendarConnected || !user) {
+    if (!user || (!calendarConnected && !outlookConnected)) {
       setNextUpcomingMeeting(null)
       return
     }
@@ -1848,11 +1943,28 @@ export default function App() {
 
     async function pollCalendarEvents() {
       try {
-        const res = await apiFetch('/calendar/events?days_ahead=1')
-        if (!res.ok) throw new Error()
-        const data = await res.json()
+        const reqs = []
+        if (calendarConnected) reqs.push(apiFetch('/calendar/events?days_ahead=1'))
+        if (outlookConnected) reqs.push(apiFetch('/ms-calendar/events?days_ahead=1'))
+        const settled = await Promise.allSettled(reqs)
         if (cancelled) return
-        const events = data?.events || []
+        // Merge events from every connected provider; a meeting on both calendars is
+        // deduped by link+start so it isn't joined twice.
+        let events = []
+        for (const s of settled) {
+          if (s.status !== 'fulfilled' || !s.value.ok) continue
+          const data = await s.value.json().catch(() => ({}))
+          events = events.concat(data?.events || [])
+        }
+        const seen = new Set()
+        events = events
+          .filter((e) => {
+            const key = `${e?.meeting_link || e?.id}|${e?.start || ''}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          .sort((a, b) => new Date(a?.start || 0) - new Date(b?.start || 0))
 
         setNextUpcomingMeeting(events.find((e) => e?.start) || null)
 
@@ -1885,7 +1997,7 @@ export default function App() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [calendarConnected, user?.id, autoJoinSetting])
+  }, [calendarConnected, outlookConnected, user?.id, autoJoinSetting])
 
   const mergeHistoryEntries = (entries) => {
     const seen = new Set()
@@ -1927,7 +2039,15 @@ export default function App() {
       // source of truth and will overwrite this on the next merge.
       recording_provider: recallBotId ? 'recall' : null,
     }
-    setHistory(prev => mergeHistoryEntries([entry, ...prev]))
+    // If the user was viewing the in-memory sample and just produced a REAL meeting,
+    // drop the sample entries (they were never persisted) so their history starts
+    // clean with this genuine first meeting — not mixed with example data.
+    if (viewingSample) {
+      setViewingSample(false)
+      setHistory([entry])
+    } else {
+      setHistory(prev => mergeHistoryEntries([entry, ...prev]))
+    }
     setMeetingId(id)
     setShareToken(share_token)
     notifyStatus({ kind: 'success', message: 'Meeting saved' })
@@ -1949,6 +2069,7 @@ export default function App() {
     cancelActiveAnalysis()
     sessionStorage.removeItem('prism_new_meeting')
     savedMeetingRef.current = entry.id
+    setError(null)  // clear any stale "Analysis failed" banner from a prior meeting/live run
     setTranscript(entry.transcript)
     setTranscriptDrafts((prev) => ({ ...prev, paste: entry.transcript || '' }))
     setResult(entry.result)
@@ -1962,6 +2083,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ share_token: token }),
       }).catch(() => {})
+      // Reflect the generated token in history — otherwise reopening this meeting
+      // sees no token and mints a NEW one, overwriting the DB and invalidating any
+      // share link already sent out.
+      setHistory((prev) => prev.map((e) => (e.id === entry.id ? { ...e, share_token: token } : e)))
     }
     setShareToken(token)
     setSessionId(s => s + 1)
@@ -2002,24 +2127,93 @@ export default function App() {
     const file = e.target.files[0]
     if (!file) return
     setTranscribing(true)
-    setError(null)
-    const formData = new FormData()
-    formData.append('file', file)
+    setTranscribeError('')
+    setTranscribeStatus('')
+
+    // Video / oversized audio: extract + compress the audio client-side so we only
+    // ever upload a small file under Whisper's 25MB cap. Small audio passes through.
+    let uploadFile = file
     try {
-      const res = await apiFetch('/transcribe', { method: 'POST', body: formData })
+      if (!isProbablyAudio(file) || file.size > WHISPER_MAX_BYTES) {
+        setTranscribeStatus(isProbablyAudio(file) ? 'Compressing audio…' : 'Extracting audio…')
+        uploadFile = await prepareAudioForTranscription(file, (stage) => {
+          if (stage.phase === 'loading') setTranscribeStatus('Loading converter…')
+          else if (stage.phase === 'converting') {
+            const pct = stage.progress != null ? ` ${Math.round(stage.progress * 100)}%` : ''
+            setTranscribeStatus(`Extracting audio…${pct}`)
+          }
+        })
+      }
+    } catch (err) {
+      console.error('[upload] audio prep failed:', err)
+      const detail = err?.message || err?.name || String(err) || ''
+      setTranscribeError(detail
+        ? `Could not prepare this file: ${detail}`
+        : 'Could not prepare this file for transcription (see browser console for details).')
+      setTranscribing(false)
+      setTranscribeStatus('')
+      e.target.value = ''
+      return
+    }
+
+    setTranscribeStatus('Transcribing…')
+    const formData = new FormData()
+    formData.append('file', uploadFile)
+    // Guard against a silent hang: abort after 3 min instead of spinning forever.
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 180000)
+    try {
+      const res = await apiFetch('/transcribe', { method: 'POST', body: formData, signal: controller.signal })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Transcription failed')
       const data = await res.json()
       setTranscriptForTab(data.transcript, 'upload')
     } catch (e) {
-      setError(e.message)
+      console.error('[upload] transcription failed:', e)
+      setTranscribeError(e.name === 'AbortError'
+        ? 'Transcription timed out. Try a shorter recording.'
+        : (e.message || 'Transcription failed'))
     } finally {
+      clearTimeout(timeout)
       setTranscribing(false)
+      setTranscribeStatus('')
+      e.target.value = ''
+    }
+  }
+
+  const handleDocumentUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setExtractingDoc(true)
+    setDocError('')
+    const formData = new FormData()
+    formData.append('file', file)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000)
+    try {
+      const res = await apiFetch('/extract-document', { method: 'POST', body: formData, signal: controller.signal })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Could not read the document')
+      const data = await res.json()
+      if (!data.transcript?.trim()) throw new Error('No readable text found in the document.')
+      // Extracted text flows into the same paste field → analyze like any transcript.
+      setTranscriptForTab(data.transcript, 'paste')
+    } catch (err) {
+      console.error('[upload] document extract failed:', err)
+      setDocError(err.name === 'AbortError'
+        ? 'Reading the document timed out — try a smaller file.'
+        : (err.message || 'Could not read the document'))
+    } finally {
+      clearTimeout(timeout)
+      setExtractingDoc(false)
       e.target.value = ''
     }
   }
 
   const handleAnalyzeClick = () => {
     if (!transcript.trim()) return
+    // An article/report is single-authored — skip speaker detection and the
+    // confirm-speakers modal (a report's colon-prefixed headings otherwise
+    // read as a dozen phantom "speakers").
+    if (meetingType === 'article') { runAnalysis([]); return }
     const detected = extractSpeakers(transcript)
     if (detected.length === 0) { runAnalysis([]); return }
     setSpeakers(detected)
@@ -2163,8 +2357,23 @@ export default function App() {
     setShareToken(entries[0].share_token)
     setInitialMessages([])
     setSessionId((s) => s + 1)
+    // Flag the sample for real users so the "Example data" banner + Clear show. The
+    // test account keeps its own demo flow, so don't mark it there.
+    setViewingSample(!isTestAccount)
     setWorkspaceToast('Loaded sample dashboard.')
     setTimeout(() => setWorkspaceToast(null), 2500)
+  }
+
+  // Exit the sample and return to the user's TRUE empty Home. The sample lives only in
+  // memory (loadDashboardSample never persisted it), so this is a clean reset — no DB
+  // write, no deletion. Distinct from exitDemoMode, which restores history[0] (that
+  // would circle back into the sample here, since history IS the sample).
+  const clearSample = () => {
+    setViewingSample(false)
+    clearWorkspaceState()
+    setHistory([])
+    setTranscriptDrafts((prev) => ({ ...prev, paste: '' }))
+    setShowHistory(false)
   }
 
   const cancelActiveAnalysis = () => {
@@ -2197,6 +2406,7 @@ export default function App() {
     sessionStorage.removeItem('prism_active_bot_id')
     setDemoChatOpen(false)
     setIsDemoMode(false)
+    setViewingSample(false)
     setHistory([])
     if (isTestAccount) {
       sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
@@ -2223,6 +2433,14 @@ export default function App() {
   }
 
   const runAnalysis = async (speakersParam, transcriptOverride, isDemo = false) => {
+    // Guard: never wipe a good, already-saved result to re-run on an empty transcript.
+    // Bot-recorded meetings transcribe server-side, so the browser holds no transcript —
+    // a Retry here would blank the view. Bail with a clear message instead.
+    const effectiveTranscript = (transcriptOverride ?? transcript) || ''
+    if (!effectiveTranscript.trim()) {
+      setError('No transcript in this view to re-analyze. This meeting was recorded by the bot — its analysis is already saved; reopen it from history to reload the transcript.')
+      return
+    }
     cancelActiveAnalysis()
     setShowSpeakerModal(false)
     setLoading(true)
@@ -2247,6 +2465,8 @@ export default function App() {
           transcript: t,
           speakers: validSpeakers,
           owner_name: authSession?.user?.user_metadata?.full_name || null,
+          // Content-analysis lens ('auto' → backend classifies; else explicit).
+          meeting_type: meetingType || 'auto',
           // Persona — resolved client-side because /analyze-stream is unauthenticated.
           persona_preset: personaPreset || 'default',
           persona_custom_prompt: personaPreset === 'custom' ? (personaCustomPrompt || '') : null,
@@ -2291,6 +2511,9 @@ export default function App() {
               const meetingTitle = entry?.title || accumulated.summary?.slice(0, 65) || 'Meeting Analysis'
               void deliverMeetingRecap(meetingTitle, accumulated, entry?.id)
             }
+            // Reset the lens to Auto so a forced type doesn't carry to the next
+            // meeting (the result can still be re-lensed from the meeting view).
+            setMeetingType('auto')
             streamDone = true
             break
           }
@@ -2335,13 +2558,17 @@ export default function App() {
     const updatedResult = { ...snapshot, action_items: updated }
     setResult(updatedResult)
     if (meetingId) {
+      // Sync the history entry too, or Home's open-action-items + reopening the
+      // meeting show the pre-toggle state (the Home-side toggle already does this).
+      setHistory((prev) => prev.map((e) => (String(e.id) === String(meetingId) ? { ...e, result: updatedResult } : e)))
       apiFetch(`/meetings/${meetingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ result: updatedResult }),
       }).catch(() => {
-        // Revert optimistic update if persist fails
+        // Revert optimistic update (both live + history) if persist fails
         setResult(snapshot)
+        setHistory((prev) => prev.map((e) => (String(e.id) === String(meetingId) ? { ...e, result: snapshot } : e)))
       })
     }
   }
@@ -2396,6 +2623,33 @@ export default function App() {
     const w = window.open(url, '_blank')
     w?.focus()
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+
+  // Transcript-only PDF: opens a clean print view the user saves as PDF (matches the
+  // exportPDF pattern — no PDF lib needed). Also invocable from chat ("download the
+  // transcript as a pdf"). Returns false when there's no transcript to export.
+  const exportTranscriptPDF = () => {
+    if (!transcript?.trim()) return false
+    const title = result ? deriveDisplayTitle({ result }) : ''
+    const html = buildTranscriptPrintHTML(transcript, title ? `Transcript — ${title}` : '')
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const w = window.open(url, '_blank')
+    w?.focus()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    return true
+  }
+
+  const downloadTranscriptTxt = () => {
+    if (!transcript?.trim()) return false
+    const blob = new Blob([transcript], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `transcript-${new Date().toISOString().slice(0, 10)}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+    return true
   }
 
   // Landing screen — shown to first-time visitors
@@ -2521,14 +2775,19 @@ export default function App() {
           isTestAccount={isTestAccount}
           signOut={signOut}
           loadDashboardSample={loadDashboardSample}
-          canLoadSample={isTestAccount}
+          canLoadSample={isTestAccount || !!user}
+          viewingSample={viewingSample && !!user && !isTestAccount}
+          clearSample={clearSample}
           selectedMeetingId={meetingId ?? history?.[0]?.id}
           isDemoMode={isDemoMode}
           exitDemoMode={exitDemoMode}
           inputTab={inputTab}
           setInputTab={setInputTab}
+          meetingType={meetingType}
+          setMeetingType={setMeetingType}
           inputModeMeta={inputModeMeta}
           transcript={transcript}
+          setTranscript={setTranscript}
           setTranscriptForTab={setTranscriptForTab}
           transcriptStats={transcriptStats}
           transcriptSpeakerCount={transcriptSpeakerCount}
@@ -2569,6 +2828,7 @@ export default function App() {
           cancelBot={cancelBot}
           rejoinMeeting={rejoinMeeting}
           botStatus={botStatus}
+          botWorkspaceId={botWorkspaceId}
           activeLiveToken={activeLiveToken}
           accessToken={authSession?.access_token || null}
           botError={botError}
@@ -2576,14 +2836,21 @@ export default function App() {
           botTranscriptReady={botTranscriptReady}
           liveCommands={liveCommands}
           calendarConnected={calendarConnected}
+          onOpenCalendarSetup={() => openIntegrations('Calendar')}
           nextUpcomingMeeting={nextUpcomingMeeting}
           recording={recording}
           startRecording={startRecording}
           stopRecording={stopRecording}
           micSupported={micSupported}
           transcribing={transcribing}
+          transcribeStatus={transcribeStatus}
+          transcribeError={transcribeError}
           fileInputRef={fileInputRef}
           handleAudioUpload={handleAudioUpload}
+          extractingDoc={extractingDoc}
+          docError={docError}
+          docInputRef={docInputRef}
+          handleDocumentUpload={handleDocumentUpload}
           shareToken={shareToken}
           shareCopied={shareCopied}
           setShareCopied={setShareCopied}
@@ -2591,6 +2858,8 @@ export default function App() {
           mdCopied={mdCopied}
           exportMarkdown={exportMarkdown}
           exportPDF={exportPDF}
+          exportTranscriptPDF={exportTranscriptPDF}
+          downloadTranscriptTxt={downloadTranscriptTxt}
           exportToSlack={exportToSlack}
           exportToNotion={exportToNotion}
           exportingSlack={exportingSlack}
@@ -2662,6 +2931,7 @@ export default function App() {
             <IntegrationsModal
               integrations={integrations}
               userId={user?.id}
+              initialTab={integrationsInitialTab}
               onSave={setIntegrations}
               onClose={() => setShowIntegrations(false)}
               calendarConnected={calendarConnected}

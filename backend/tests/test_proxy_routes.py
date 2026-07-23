@@ -33,6 +33,26 @@ class AuthorNamesTests(unittest.TestCase):
         self.assertEqual(pr._author_names("u1", "", ""), [])
 
 
+class FollowupBriefTests(unittest.TestCase):
+    """Close-the-loop: the absent author's action items are picked out for the brief."""
+
+    def test_action_items_for_matches_owner(self):
+        result = {"action_items": [
+            {"owner": "Alice", "task": "ship the API"},
+            {"owner": "Bob", "task": "write the doc"},
+            {"owner": "alice smith", "task": "review PR"},
+        ]}
+        names = ["Alice Smith", "Alice", "alice"]
+        got = pr._followup_action_items_for(result, names)
+        self.assertIn("ship the API", got)
+        self.assertIn("review PR", got)
+        self.assertNotIn("write the doc", got)
+
+    def test_action_items_for_empty(self):
+        self.assertEqual(pr._followup_action_items_for({}, ["Alice"]), [])
+        self.assertEqual(pr._followup_action_items_for({"action_items": []}, ["Alice"]), [])
+
+
 class BlockFormattingTests(unittest.TestCase):
     def test_items_block_open_and_done(self):
         items = {

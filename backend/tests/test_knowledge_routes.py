@@ -88,5 +88,30 @@ class KnowledgeRoutesTests(unittest.TestCase):
         self.assertEqual(fake_soft.called[0], "doc-id-abc")
 
 
+    def test_sibling_meeting_ids_unions_bot_copies(self):
+        # A pin on the owner's copy must surface on teammates' fan-out copies of the
+        # same logical meeting (matched by recall_bot_id). Original id is always included.
+        import asyncio as _asyncio
+        app, kr = self._app()
+        row = types.SimpleNamespace(
+            data=[{"recall_bot_id": "bot-1", "workspace_id": "ws", "date": "2026-07-13T02:14"}]
+        )
+        sib = types.SimpleNamespace(data=[{"id": 10}, {"id": 20}, {"id": 30}])
+        mock_sb = MagicMock()
+        with patch.object(kr, "_execute", new=AsyncMock(side_effect=[row, sib])):
+            out = _asyncio.run(kr._sibling_meeting_ids(mock_sb, 10))
+        self.assertEqual(set(out), {10, 20, 30})
+
+    def test_sibling_meeting_ids_falls_back_to_self(self):
+        # No matching meeting row → just the original id, never an empty set.
+        import asyncio as _asyncio
+        app, kr = self._app()
+        empty = types.SimpleNamespace(data=[])
+        mock_sb = MagicMock()
+        with patch.object(kr, "_execute", new=AsyncMock(side_effect=[empty])):
+            out = _asyncio.run(kr._sibling_meeting_ids(mock_sb, 42))
+        self.assertEqual(out, [42])
+
+
 if __name__ == "__main__":
     unittest.main()

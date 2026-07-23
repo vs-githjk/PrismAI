@@ -489,6 +489,124 @@ def _author_names(user_id: str, author_name: str, author_email: str) -> list[str
     return [n for n in names if n]
 
 
+# ── Stand-in follow-up brief (close the loop) ────────────────────────────────
+# After a stand-in meeting is analysed, brief the absent author on what happened
+# FOR THEM. Turns the stand-in from a one-way broadcast into a real delegate that
+# reports back. Fired (best-effort) from recall_routes._persist_bot_meeting.
+
+_FOLLOWUP_SYSTEM = (
+    "You are Prism, briefing a teammate who could NOT attend a meeting you stood in for. "
+    "Write a short, warm recap addressed to them as 'you'. Ground EVERYTHING in the "
+    "provided summary / decisions / transcript — never invent. Use only the sections "
+    "below that have real content, with these exact headers:\n"
+    "**What happened that affects you**\n"
+    "**Answers to what you asked** (match the questions your stand-in relayed to how the team responded)\n"
+    "**Now on your plate** (action items assigned to you)\n"
+    "**They need from you** (anything the team directed at or asked of you)\n"
+    "Omit any header with nothing real to say. If the meeting genuinely didn't touch you, "
+    "say so honestly in one line. Keep it tight and scannable — no preamble, no sign-off."
+)
+
+
+def _followup_action_items_for(result: dict, names: list[str]) -> list[str]:
+    """Action items whose owner matches the absent author (fuzzy name/first-name)."""
+    out: list[str] = []
+    ais = (result.get("action_items") or []) if isinstance(result, dict) else []
+    low = [n.lower() for n in names if n]
+    for ai in ais:
+        owner = (ai.get("owner") or "").lower() if isinstance(ai, dict) else ""
+        task = (ai.get("task") or "") if isinstance(ai, dict) else str(ai)
+        if owner and task and any(n in owner or owner in n for n in low):
+            out.append(task)
+    return out
+
+
+async def _build_followup_brief(rep: dict, result: dict, transcript: str) -> str:
+    author = rep.get("author_name") or "there"
+    relayed = (rep.get("approved_body") or rep.get("draft_body") or "").strip()
+    names = _author_names(
+        rep.get("author_user_id", ""), rep.get("author_name", ""), rep.get("author_email", "")
+    )
+    summary = (result.get("summary") or "") if isinstance(result, dict) else ""
+    decisions = result.get("decisions") or []
+    my_actions = _followup_action_items_for(result, names)
+    dec_lines = "\n".join(
+        f"- {(d.get('decision') if isinstance(d, dict) else d)}" for d in decisions[:8]
+    )
+    parts = [
+        f"Absent teammate: {author}",
+        "What their stand-in relayed on their behalf:\n"
+        + (relayed or "(a general stand-in — no specific message or questions)"),
+        f"Meeting summary:\n{summary[:1500]}",
+    ]
+    if dec_lines:
+        parts.append(f"Decisions:\n{dec_lines}")
+    if my_actions:
+        parts.append("Action items already tagged to them:\n" + "\n".join(f"- {t}" for t in my_actions))
+    if transcript:
+        parts.append(
+            "Transcript excerpt (ground any answers to what they asked in this):\n"
+            + transcript[:4000]
+        )
+    brief = (await _llm_reply(_FOLLOWUP_SYSTEM, [], "\n\n".join(parts))).strip()
+    return brief[:2000]
+
+
+async def _email_followup_brief(rep: dict, brief: str, meeting_label: str) -> bool:
+    """Best-effort: email the brief to the author from their own connected Gmail
+    (they own the stand-in bot). No-ops silently without an email / Gmail scope."""
+    to = (rep.get("author_email") or "").strip()
+    author_uid = rep.get("author_user_id")
+    if not to or not author_uid or not supabase:
+        return False
+    try:
+        s = supabase.table("user_settings").select("*").eq("user_id", author_uid).maybe_single().execute()
+        settings = (s.data if s else None) or {}
+    except Exception:
+        settings = {}
+    try:
+        from tools.gmail import gmail_send
+        res = await gmail_send({
+            "to": [to],
+            "subject": f"Your stand-in brief — {meeting_label or 'your meeting'}",
+            "body": brief + "\n\n— Prism · you couldn't attend, so I sat in and caught you up.",
+        }, user_settings=settings)
+        return not (isinstance(res, dict) and res.get("error"))
+    except Exception as exc:
+        print(f"[standin] followup email skipped: {exc!r}")
+        return False
+
+
+async def generate_standin_followups(bot_id: str, meeting_id, result: dict, transcript: str) -> None:
+    """Close the stand-in loop: brief each absent author this bot represented — what
+    happened for them, answers to what they asked, tasks now theirs — stamped on the
+    rep (in-app) and emailed (best-effort). Idempotent per rep (skips if already briefed)."""
+    if not supabase or not isinstance(result, dict):
+        return
+    try:
+        reps = (
+            supabase.table("proxy_representations").select("*")
+            .eq("delivered_bot_id", bot_id).eq("status", "delivered").execute()
+        )
+    except Exception as exc:
+        print(f"[standin] followup rep lookup failed bot={bot_id[:8]}: {exc!r}")
+        return
+    for rep in (reps.data or []):
+        if (rep.get("followup_brief") or "").strip():
+            continue
+        try:
+            brief = await _build_followup_brief(rep, result, transcript)
+            if not brief:
+                continue
+            update = {"followup_brief": brief, "followup_meeting_id": meeting_id}
+            if await _email_followup_brief(rep, brief, rep.get("meeting_label", "")):
+                update["followup_sent_at"] = datetime.now(timezone.utc).isoformat()
+            supabase.table("proxy_representations").update(update).eq("id", rep["id"]).execute()
+            print(f"[standin] briefed author for rep={rep.get('id')} emailed={'followup_sent_at' in update}")
+        except Exception as exc:
+            print(f"[standin] followup brief failed rep={rep.get('id')}: {exc!r}")
+
+
 # ── Requests ─────────────────────────────────────────────────────────────────
 class CreateRepRequest(BaseModel):
     meeting_url: str
