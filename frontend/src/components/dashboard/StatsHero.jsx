@@ -13,7 +13,7 @@ export default function StatsHero({ insights, workspaceName = null }) {
       <div className="flex flex-col gap-3 border-b border-white/[0.08] px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200/76">
-            {workspaceName ? `Team · ${workspaceName}` : 'Workspace overview'}
+            {workspaceName ? `Team · ${workspaceName}` : 'Personal overview'}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-white sm:text-3xl">
             {workspaceName ? 'Team intelligence' : 'Meeting intelligence'}
