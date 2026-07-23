@@ -2094,6 +2094,27 @@ export default function App() {
     // Active chat is ephemeral per visit — always start blank. Past sessions are surfaced
     // via the chat panel's per-meeting history dropdown (fetched in DashboardPage).
     setInitialMessages([])
+
+    // Lazy-hydrate the recording's seekable segments. The /meetings LIST is kept light
+    // and OMITS transcript_segments (they can be large), so a bot meeting opened from
+    // history has no click-to-seek data → "Timestamped transcript not available", even
+    // after a reload. Fetch the full row once (it includes transcript_segments) and
+    // merge it into history so MeetingView (which reads history.find(id).transcript_segments)
+    // renders the seekable transcript. Only for recall meetings that don't already have it.
+    if (entry.recall_bot_id && !entry.transcript_segments && user && !isTestAccount) {
+      apiFetch(`/meetings/${entry.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((full) => {
+          if (full?.transcript_segments?.length) {
+            setHistory((prev) => prev.map((e) => (
+              e.id === entry.id
+                ? { ...e, transcript_segments: full.transcript_segments, recording_provider: full.recording_provider || e.recording_provider }
+                : e
+            )))
+          }
+        })
+        .catch(() => {})
+    }
   }
 
   const startRecording = () => {

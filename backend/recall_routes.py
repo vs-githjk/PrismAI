@@ -1826,19 +1826,24 @@ async def _build_participant_name_map(bot_id: str) -> dict[str, str]:
             print(f"[recall] participant map: bot fetch {resp.status_code}")
             return {}
         bot_data = resp.json()
-        for p in (bot_data.get("meeting_participants") or []):
+        mp = bot_data.get("meeting_participants") or bot_data.get("participants") or []
+        for p in mp:
             _consider(p)
         # participant_events media shortcut → download + parse join events.
         pe_url = None
+        pe_shortcut_seen = False
         for rec in (bot_data.get("recordings") or []):
             shortcuts = rec.get("media_shortcuts") or {}
             pe = shortcuts.get("participant_events")
+            if pe is not None:
+                pe_shortcut_seen = True
             if isinstance(pe, dict):
                 pe_url = pe.get("download_url") or (pe.get("data") or {}).get("download_url")
             elif isinstance(pe, str):
                 pe_url = pe
             if pe_url:
                 break
+        pe_sample = None
         if pe_url:
             async with httpx.AsyncClient() as client:
                 pe_resp = await client.get(pe_url, timeout=30)
@@ -1847,12 +1852,17 @@ async def _build_participant_name_map(bot_id: str) -> dict[str, str]:
                 if isinstance(events, dict):
                     events = events.get("participant_events") or events.get("data") or []
                 if isinstance(events, list):
+                    pe_sample = str(events[0])[:300] if events else "[]"
                     for ev in events:
                         if isinstance(ev, dict):
                             _consider(ev.get("participant") or ev)
-        # One-line shape log so the unknown (2A source) can be verified on a live meeting.
+        # Rich shape log — pins WHY the map is empty (2A source unknown) on a live meeting:
+        # is meeting_participants present? is the participant_events shortcut/url there?
+        # what does an event look like? Drives whether we fix 2A's source or need 2B.
         print(f"[recall] participant map: {len(name_map)} named id(s) for bot {bot_id[:8]} "
-              f"(sample={list(name_map.items())[:3]})")
+              f"(sample={list(name_map.items())[:3]}) | bot_data_keys={list(bot_data.keys())} "
+              f"meeting_participants={len(mp)} pe_shortcut_seen={pe_shortcut_seen} pe_url={'yes' if pe_url else 'no'} "
+              f"pe_event_sample={pe_sample}")
     except Exception as exc:
         print(f"[recall] participant map build failed for {bot_id[:8]}: {exc}")
     return name_map
