@@ -64,7 +64,7 @@ class DispatchSetsContextvarPerAgent(unittest.TestCase):
 
         captured = {"persona_in_agent": None}
 
-        async def fake_summarizer(transcript):
+        async def fake_summarizer(transcript, meeting_type=""):
             captured["persona_in_agent"] = agent_utils._PERSONA_TEXT.get()
             return {"summary": "ok"}
 
@@ -120,7 +120,7 @@ class DispatchSetsContextvarPerAgent(unittest.TestCase):
 
         captured = {"persona_in_agent": None}
 
-        async def fake_summarizer(transcript):
+        async def fake_summarizer(transcript, meeting_type=""):
             captured["persona_in_agent"] = agent_utils._PERSONA_TEXT.get()
             return {"summary": "ok"}
 
@@ -183,7 +183,7 @@ class DispatchSetsContextvarPerAgent(unittest.TestCase):
 
         captured: dict[str, str] = {}
 
-        async def fake_summarizer(transcript):
+        async def fake_summarizer(transcript, meeting_type=""):
             # Read AFTER awaiting a sleep so the scheduler has a chance to
             # interleave with the other agent's coroutine.
             await asyncio.sleep(0.005)
