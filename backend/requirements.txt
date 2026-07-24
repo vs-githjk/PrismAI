@@ -29,3 +29,19 @@ google-auth>=2.30.0
 pysbd==0.3.4
 langgraph==1.2.0
 dateparser
+# groq: re-added Jul 2026 for the voice channel (Phase 3) — a tool-less streaming
+# talk brain where Groq's TTFT is the point. Removed Jun 2026 (bef49a3) when the
+# free-tier 100k-tok/day cap turned a runaway-analysis bug into an outage; that bug
+# is fixed and only the (low-volume) voice channel is on Groq now. SDK is
+# OpenAI-API-shaped, so the streaming call pattern is identical.
+groq>=0.11.0
+# Voice agent (Phase 2): the realtime audio loop — Deepgram Flux ears + Cartesia
+# mouth run inside a per-bot Pipecat pipeline (backend/voice/). Pinned to 1.5.0
+# (installed + validated; API confirmed via settings=).
+#
+# [silero] (Phase 5) pulls onnxruntime for the local VAD that owns barge-in — fork ④'s
+# "did someone start talking over us?" half. onnxruntime has no Python 3.14 wheels yet;
+# render.yaml pins PYTHON_VERSION 3.11.0, so prod gets it. On a 3.14 dev box the install
+# fails and the pipeline degrades on purpose (voice/pipeline._make_vad → Flux's own
+# interruption + transcript-timestamp politeness gap), so the backend still runs.
+pipecat-ai[deepgram,cartesia,silero]==1.5.0

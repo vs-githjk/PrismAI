@@ -13,6 +13,14 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: CARTESIA_API_KEY
+        sync: false
+      - key: CARTESIA_VOICE_ID
+        sync: false
       - key: RECALL_API_KEY
         sync: false
       - key: RECALL_WEBHOOK_SECRET

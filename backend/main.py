@@ -24,9 +24,23 @@ from knowledge_routes import router as knowledge_router
 from storage_routes import router as storage_router
 from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
+from voice.audio_routes import router as voice_router
 
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+
+def _build_groq_client():
+    """Voice-channel talk brain (Groq). None when GROQ_API_KEY / the groq package is
+    absent — the voice channel then falls back to gpt-4o-mini. Never crashes boot."""
+    if not os.getenv("GROQ_API_KEY"):
+        return None
+    try:
+        from groq import AsyncGroq
+    except ImportError:
+        print("WARNING [main] GROQ_API_KEY set but `groq` package missing; voice channel uses OpenAI")
+        return None
+    return AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 @asynccontextmanager
@@ -34,6 +48,7 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(run_migrations)
     app.state.http = httpx.AsyncClient(http2=True, timeout=DEFAULT_TIMEOUT)
     app.state.openai = openai_client
+    app.state.groq = _build_groq_client()
     bind_clients(app)
     # Re-attach lifecycle pollers for any bots left mid-flight by a previous process
     # (restart / cold start) so headless stand-ins still get delivered, analysed, and
@@ -67,6 +82,7 @@ app.include_router(actions_router)
 app.include_router(calendar_router)
 app.include_router(ms_calendar_router)
 app.include_router(realtime_router)
+app.include_router(voice_router)  # /voice/audio-in + /voice/speaker + /voice/speaker-page
 
 app.include_router(create_analysis_router(openai_client))
 app.include_router(create_chat_router(openai_client))

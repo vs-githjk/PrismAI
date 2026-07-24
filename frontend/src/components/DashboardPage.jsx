@@ -455,8 +455,8 @@ function NewMeetingPanel(props) {
                 <p className="text-[10.5px] font-medium uppercase tracking-wide text-white/40">Response mode</p>
                 <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
                   {[
-                    { id: 'utterance', label: 'Utterance', hint: 'Only responds when addressed ("Prism, …")' },
-                    { id: 'autonomous', label: 'Automatic', hint: 'Decides on its own when to chime in' },
+                    { id: 'auto', label: 'Auto', hint: 'Speaks when it judges a contribution is warranted' },
+                    { id: 'manual', label: 'Manual', hint: 'Only responds when addressed ("Prism, …")' },
                   ].map((m) => (
                     <button
                       key={m.id}
@@ -465,7 +465,7 @@ function NewMeetingPanel(props) {
                       title={m.hint}
                       onClick={() => props.setJoinMode?.(m.id)}
                       className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                        (props.joinMode || 'utterance') === m.id
+                        (props.joinMode || 'auto') === m.id
                           ? 'bg-cyan-400/[0.16] text-cyan-200'
                           : 'text-white/50 hover:text-white/75'
                       }`}
@@ -475,7 +475,7 @@ function NewMeetingPanel(props) {
                   ))}
                 </div>
                 <p className="text-[10px] text-white/30">
-                  {(props.joinMode || 'utterance') === 'autonomous'
+                  {(props.joinMode || 'auto') === 'auto'
                     ? 'Prism will proactively contribute throughout the meeting.'
                     : 'Prism stays silent until you address it by name.'}
                 </p>
