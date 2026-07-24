@@ -134,9 +134,22 @@ export default function IntelligenceView({
     : actionConnections.email ? 'email'
     : 'task'
   const threadActLabel = { task: 'Add as task', calendar: 'Add to calendar', email: 'Email reminder' }[threadActionType]
+
+  // Remember threads already turned into a task so the button flips to "Filed" and can't
+  // double-file. Keyed by thread text within the scope (personal / workspace); best-effort
+  // — a reworded thread on the next synthesis loses its mark, which is fine.
+  const actedStoreKey = `prism_acted_threads_${workspaceId || 'personal'}`
+  const [actedThreads, setActedThreads] = useState({})
+  useEffect(() => {
+    try { setActedThreads(JSON.parse(localStorage.getItem(actedStoreKey) || '{}') || {}) } catch { setActedThreads({}) }
+  }, [actedStoreKey])
+  const threadKey = (thread) => (thread?.thread || '').slice(0, 200)
+  const isThreadActed = useCallback((thread) => actedThreads[threadKey(thread)] || null, [actedThreads])
+
   const [threadAction, setThreadAction] = useState(null)
   const actOnThread = useCallback((thread) => {
     setThreadAction({
+      _key: threadKey(thread),
       action_type: threadActionType,
       title: (thread.suggested_next_step || thread.thread || '').slice(0, 200),
       body: [
@@ -147,6 +160,15 @@ export default function IntelligenceView({
       task: thread.thread,
     })
   }, [threadActionType])
+  const markThreadActed = useCallback((url) => {
+    const key = threadAction?._key
+    if (!key) return
+    setActedThreads((prev) => {
+      const next = { ...prev, [key]: { url: url || null, at: Date.now() } }
+      try { localStorage.setItem(actedStoreKey, JSON.stringify(next)) } catch { /* storage unavailable */ }
+      return next
+    })
+  }, [threadAction, actedStoreKey])
 
   return (
     <div className="space-y-3">
@@ -172,6 +194,7 @@ export default function IntelligenceView({
             onSelect={onSelectMeeting}
             onAct={actOnThread}
             actLabel={threadActLabel}
+            isActed={isThreadActed}
           />
           <DecisionEvolutionCard
             items={semantic?.decision_evolution || []}
@@ -213,7 +236,7 @@ export default function IntelligenceView({
           meetingId={null}
           teamsWebhook={teamsWebhook}
           workspaceId={workspaceId}
-          onExecuted={() => {}}
+          onExecuted={markThreadActed}
           onClose={() => setThreadAction(null)}
         />, document.body)}
     </div>

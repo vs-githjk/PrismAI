@@ -224,7 +224,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
       const res = await apiFetch('/actions/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool: resolved.tool, args, meeting_id: meetingId, task: action.task }),
+        body: JSON.stringify({ tool: resolved.tool, args, meeting_id: meetingId, task: action.task, workspace_id: workspaceId || null }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Action failed')

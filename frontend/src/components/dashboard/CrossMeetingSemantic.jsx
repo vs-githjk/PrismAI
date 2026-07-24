@@ -1,3 +1,4 @@
+import { Check, ExternalLink } from 'lucide-react'
 import { formatMeetingDate } from '../../lib/insights'
 import { Button } from '../ui/button'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
@@ -63,7 +64,7 @@ export function NarrativeBar({ narrative, loading }) {
   )
 }
 
-export function OpenThreadsCard({ threads = [], loading, resolveMeeting, onSelect, onAct, actLabel = 'Act on this' }) {
+export function OpenThreadsCard({ threads = [], loading, resolveMeeting, onSelect, onAct, actLabel = 'Act on this', isActed }) {
   return (
     <section className={`${glassCard} p-4`} style={cardGlowStyle}>
       <div className="mb-3">
@@ -85,11 +86,26 @@ export function OpenThreadsCard({ threads = [], loading, resolveMeeting, onSelec
               )}
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <MeetingChips ids={thread.meeting_ids} resolveMeeting={resolveMeeting} onSelect={onSelect} />
-                {onAct && (
-                  <Button variant="accent" size="inline" onClick={() => onAct(thread)} className="shrink-0">
-                    {actLabel}
-                  </Button>
-                )}
+                {onAct && (() => {
+                  const acted = isActed?.(thread)
+                  if (acted) {
+                    return (
+                      <span className="inline-flex shrink-0 items-center gap-1.5 text-[11.5px] font-medium text-emerald-300">
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" /> Filed
+                        {acted.url && (
+                          <a href={acted.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-cyan-300 hover:underline">
+                            Open <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                          </a>
+                        )}
+                      </span>
+                    )
+                  }
+                  return (
+                    <Button variant="accent" size="inline" onClick={() => onAct(thread)} className="shrink-0">
+                      {actLabel}
+                    </Button>
+                  )
+                })()}
               </div>
             </div>
           ))}
