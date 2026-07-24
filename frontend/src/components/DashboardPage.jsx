@@ -1570,7 +1570,11 @@ export default function DashboardPage(props) {
                 history={props.history}
                 crossMeetingInsights={props.crossMeetingInsights}
                 onSelectMeeting={handleSelectMeeting}
+                workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                actionConnections={actionConnections}
+                suggestedEmails={suggestedAttendeeEmails}
+                teamsWebhook={props.integrations?.teams_webhook || ''}
               />
             </Suspense>
           )}

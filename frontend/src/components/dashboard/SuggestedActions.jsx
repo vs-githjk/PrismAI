@@ -153,7 +153,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
   )
 }
 
-function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, workspaceId, onExecuted, onClose }) {
+export function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, workspaceId, onExecuted, onClose }) {
   const meta = TYPE_META[action.action_type]
   const resolved = resolveTool(action.action_type, connections)
   const [busy, setBusy] = useState(false)
