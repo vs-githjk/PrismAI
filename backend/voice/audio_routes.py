@@ -65,16 +65,41 @@ def _resolve_bot(token: str) -> str | None:
         return None
 
 
+def _wake_terms_for_bot(bot_id: str) -> list[str]:
+    """The bot's own wake words, so Flux is biased to hear its NAME correctly. Without
+    this, "Prism" transcribes as "presume"/"Below" and the wake-word gate never fires
+    in multi-person meetings (solo free-flow hid it — no wake word needed there)."""
+    terms = ["Prism", "PrismAI"]
+    try:
+        from realtime_routes import _BOT_WAKE_ALIAS
+        alias = (_BOT_WAKE_ALIAS.get(bot_id, "") or "").strip()  # persona name, or "" for default
+        if alias and alias.lower() not in (t.lower() for t in terms):
+            terms.append(alias)
+    except Exception:
+        pass
+    return terms
+
+
 def _keyterms_for_bot(bot_id: str) -> list[str]:
-    """Best-effort proper-noun grounding for Flux (custom_keyterms glossary + teammate
-    names + doc/meeting terms). Flux supports keyterm prompting; returns [] on any
-    failure so a DB hiccup never blocks the pipeline."""
+    """Best-effort proper-noun grounding for Flux (the bot's own wake words FIRST, then
+    the custom_keyterms glossary + teammate names + doc/meeting terms). Flux supports
+    keyterm prompting; returns the wake words alone on any DB failure so the bot can
+    always at least hear its own name."""
+    wake = _wake_terms_for_bot(bot_id)
     try:
         from recall_routes import bot_store, _gather_keyterms
         entry = bot_store.get(bot_id) or {}
-        return _gather_keyterms(entry.get("user_id"), entry.get("workspace_id"))
+        gathered = _gather_keyterms(entry.get("user_id"), entry.get("workspace_id")) or []
     except Exception:
-        return []
+        gathered = []
+    # Wake words first (highest priority), then de-duped grounding terms.
+    seen = {t.lower() for t in wake}
+    out = list(wake)
+    for t in gathered:
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out
 
 
 @router.get("/voice/speaker-page/{token}")

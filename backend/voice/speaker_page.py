@@ -24,18 +24,41 @@ rate before framing. Binary WS frames = audio; text WS frames = JSON control.
 
 from __future__ import annotations
 
+import base64
 import os
+from functools import lru_cache
 
 # Must match the pipeline's output sink resample target (voice/pipeline.py).
 SPEAKER_SAMPLE_RATE = int(os.getenv("PRISM_SPEAKER_SAMPLE_RATE", "24000"))
+
+# The original branded bot tile (three-triangle prism logo, 16:9) — the same asset
+# Recall's automatic_video_output used before Output Media took over the camera.
+# Rendered full-bleed here so the speaking bot looks identical to the original tile.
+_BOT_TILE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "assets", "bot_tile.jpg"
+)
+
+
+@lru_cache(maxsize=1)
+def _bot_tile_data_uri() -> str:
+    """base64 data: URI of the branded tile, or "" if the asset is missing (the page
+    then falls back to the CSS triangle — never a blank camera)."""
+    try:
+        with open(_BOT_TILE_PATH, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception:
+        return ""
 
 
 def speaker_page_html(token: str, sample_rate: int = SPEAKER_SAMPLE_RATE) -> str:
     """Return the full HTML document for the given bot token. `token` is echoed only
     into the WS URL; it is opaque to the page."""
     # token is URL-path-safe (token_urlsafe); embed it as a JS string literal.
-    return _TEMPLATE.replace("__SAMPLE_RATE__", str(sample_rate)).replace(
-        "__TOKEN__", token
+    return (
+        _TEMPLATE.replace("__SAMPLE_RATE__", str(sample_rate))
+        .replace("__TOKEN__", token)
+        .replace("__BOT_TILE__", _bot_tile_data_uri())
     )
 
 
@@ -48,27 +71,34 @@ _TEMPLATE = r"""<!doctype html>
 <style>
   html, body { margin: 0; height: 100%; background: #0a0f1e; overflow: hidden; }
   .stage {
-    width: 100vw; height: 100vh; display: flex; align-items: center;
-    justify-content: center; flex-direction: column; gap: 28px;
+    position: relative; width: 100vw; height: 100vh; overflow: hidden;
     background: radial-gradient(1200px 600px at 50% 40%, #12203f 0%, #0a0f1e 70%);
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     color: #e6f6ff;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 28px;
   }
-  .prism {
+  /* Fallback CSS triangle — shows only when the branded tile asset is missing. */
+  .prism-fallback {
     width: 0; height: 0; border-left: 70px solid transparent;
     border-right: 70px solid transparent; border-bottom: 120px solid #22d3ee;
     filter: drop-shadow(0 0 40px rgba(34,211,238,.55));
-    transition: transform .18s ease, filter .18s ease;
   }
-  .prism.speaking { transform: scale(1.06); filter: drop-shadow(0 0 70px rgba(103,232,249,.9)); }
-  .name { font-size: 44px; font-weight: 600; letter-spacing: .5px; }
-  .status { font-size: 20px; color: #7fb7cc; height: 24px; }
+  /* The original branded bot tile, rendered full-bleed as the bot's camera. */
+  .tile {
+    position: absolute; inset: 0; background-position: center; background-repeat: no-repeat;
+    background-size: cover; transition: filter .2s ease, transform .2s ease;
+  }
+  .tile.speaking { filter: brightness(1.18) drop-shadow(0 0 60px rgba(103,232,249,.55)); transform: scale(1.012); }
+  .status {
+    position: absolute; bottom: 18px; right: 22px; font-size: 15px;
+    color: #7fb7cc; opacity: .55; letter-spacing: .3px; z-index: 2;
+  }
 </style>
 </head>
 <body>
   <div class="stage">
-    <div class="prism" id="prism"></div>
-    <div class="name">PrismAI</div>
+    <div class="prism-fallback"></div>
+    <div class="tile" id="prism" style="background-image:url('__BOT_TILE__')"></div>
     <div class="status" id="status">connecting…</div>
   </div>
 <script>
