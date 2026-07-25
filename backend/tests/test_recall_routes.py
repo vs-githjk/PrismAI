@@ -356,9 +356,48 @@ class KeytermGroundingTestCase(unittest.TestCase):
         self.assertNotIn("Unassigned", terms)
         self.assertEqual(len(terms), len(set(t.lower() for t in terms)))
 
-    def test_gather_keyterms_returns_empty_without_supabase(self):
+    def test_gather_keyterms_always_grounds_the_wake_words(self):
+        """The bug this guards: the keyterm list had no "Prism" in it, so Flux had zero
+        bias toward the ONE word the wake-word gate depends on and heard "Prism, can you
+        summarize" as "Below, can you summarize". Solo meetings need no wake word, so this
+        only killed GROUP meetings — the bot sat there apparently deaf."""
         with patch.object(recall_routes, "supabase", None):
-            self.assertEqual(recall_routes._gather_keyterms("u", "w"), [])
+            # No DB context at all (the old early-return path) still grounds the name.
+            self.assertEqual(recall_routes._gather_keyterms("u", "w"), ["Prism", "PrismAI"])
+            self.assertEqual(recall_routes._gather_keyterms(None, None), ["Prism", "PrismAI"])
+
+    def test_wake_words_lead_the_list_and_survive_the_cap(self):
+        class _Resp:
+            def __init__(self, data): self.data = data
+
+        class _Query:
+            def __init__(self, data): self._data = data
+            def select(self, *_): return self
+            def eq(self, *_): return self
+            def in_(self, *_): return self
+            def is_(self, *_): return self
+            def gte(self, *_): return self
+            def order(self, *_, **__): return self
+            def limit(self, *_): return self
+            def execute(self): return _Resp(self._data)
+
+        class _SB:
+            def table(self, name):
+                if name == "knowledge_docs":
+                    # 60 doc titles — more than the ~40-term cap, so if the wake words
+                    # weren't added FIRST they'd be crowded out entirely.
+                    return _Query([{"name": f"Alpha{c}"} for c in "abcdefghijklmnopqrstuvwxyz"] * 3)
+                return _Query([])
+
+        with patch.object(recall_routes, "supabase", _SB()), \
+             patch("caches.get_user_workspace_ids", return_value=["ws1"]):
+            terms = recall_routes._gather_keyterms("user-1", "ws1")
+
+        self.assertEqual(terms[:2], ["Prism", "PrismAI"])
+        self.assertLessEqual(len(terms), 40)  # cap still honoured
+        # The stopword filter must still hold for MINED terms — the bypass is only for
+        # the bot's own name, not a hole in the filter.
+        self.assertNotIn("document", [t.lower() for t in terms])
 
     def test_proper_nouns_from_content_ranks_strong_signals(self):
         texts = [

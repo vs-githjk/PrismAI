@@ -65,16 +65,36 @@ def _resolve_bot(token: str) -> str | None:
         return None
 
 
-def _keyterms_for_bot(bot_id: str) -> list[str]:
-    """Best-effort proper-noun grounding for Flux (custom_keyterms glossary + teammate
-    names + doc/meeting terms). Flux supports keyterm prompting; returns [] on any
-    failure so a DB hiccup never blocks the pipeline."""
+async def _keyterms_for_bot(bot_id: str) -> list[str]:
+    """Best-effort proper-noun grounding for Flux (wake words + custom_keyterms glossary +
+    teammate names + doc/meeting terms). Flux supports keyterm prompting.
+
+    `_gather_keyterms` already leads with Prism/PrismAI. This adds the bot's PERSONA name
+    (Flash / Echo / Crystal / …) when one is set, since that is an equally valid wake word
+    (`_wake_patterns_for_alias`) and is just as easy for the STT to mangle. Falls back to
+    the bare wake words on any failure — never [], or a group meeting goes deaf."""
     try:
         from recall_routes import bot_store, _gather_keyterms
         entry = bot_store.get(bot_id) or {}
-        return _gather_keyterms(entry.get("user_id"), entry.get("workspace_id"))
-    except Exception:
-        return []
+        terms = _gather_keyterms(entry.get("user_id"), entry.get("workspace_id"))
+    except Exception as exc:
+        print(f"[voice] keyterms failed ({exc}) — grounding on wake words only")
+        terms = ["Prism", "PrismAI"]
+    try:
+        # Await the settings rather than reading _BOT_WAKE_ALIAS directly: the alias is
+        # filled by a background prefetch started at bot creation, and the keyterm list is
+        # built ONCE when this socket connects. Losing that race would silently ship a
+        # persona bot with no grounding for its own name. The call is cached (60s TTL).
+        from realtime_routes import _get_settings_for_bot, DEFAULT_BOT_NAME
+        alias = (await _get_settings_for_bot(bot_id)).get("bot_name") or ""
+        alias = "" if alias == DEFAULT_BOT_NAME else alias.strip()
+        # Prepend: the wake word matters more than any doc term, and the list is capped.
+        if alias and alias.lower() not in {t.lower() for t in terms}:
+            terms.insert(0, alias)
+    except Exception as exc:
+        print(f"[voice] persona wake alias unresolved ({exc}) — base wake words only")
+    print(f"[voice] flux keyterms bot={bot_id[:8]} n={len(terms)} wake={terms[:3]}")
+    return terms
 
 
 @router.get("/voice/speaker-page/{token}")
@@ -102,7 +122,7 @@ async def audio_in(ws: WebSocket, token: str) -> None:
     session.pipeline = VoicePipeline(
         bot_id, ws, session.connection,
         on_final=bridge.make_on_final(bot_id),
-        keyterms=_keyterms_for_bot(bot_id),
+        keyterms=await _keyterms_for_bot(bot_id),
     )
     try:
         await session.pipeline.run()  # blocks until Recall closes the socket

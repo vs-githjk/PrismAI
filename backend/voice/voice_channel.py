@@ -345,7 +345,8 @@ async def _stream_talk_or_dispatch(bot_id: str, command: str, speaker: str, from
     rr = _rr()
     speak_ok = not from_chat
     seg = StreamingSegmenter()
-    dispatcher = TtsDispatcher(min_chars=25)
+    # min_chars also bounds concurrent Cartesia contexts — see tuning.TTS_BATCH_MIN_CHARS.
+    dispatcher = TtsDispatcher(min_chars=tuning.TTS_BATCH_MIN_CHARS)
     full_parts: list[str] = []
     decided = None
     tail = ""

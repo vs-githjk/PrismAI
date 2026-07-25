@@ -246,9 +246,12 @@ def _solo_mode_active(state: dict) -> bool:
 def _solo_freeflow_text_eligible(text: str) -> bool:
     """Solo free-flow filter on raw text (legacy path has Deepgram finals, not
     FlushedUtterances). Drops backchannel/filler so the bot doesn't pounce on
-    'um, okay'; mute/stop phrases are owned by the barge-in layer."""
+    'um, okay'; mute/stop phrases are owned by the barge-in layer.
+
+    Phase 5: the word bar is a knob (`PRISM_SOLO_MIN_WORDS`) — at 3 the bot answers
+    pleasantries like "I'm doing well too", which reads as chatty in a real 1-on-1."""
     t = (text or "").strip()
-    if len(re.findall(r"\b\w+\b", t)) < 3:
+    if len(re.findall(r"\b\w+\b", t)) < _voice_tuning.SOLO_MIN_WORDS:
         return False
     if ambient_loop.detect_mute_command(t):
         return False
@@ -258,7 +261,7 @@ def _solo_freeflow_text_eligible(text: str) -> bool:
 def _solo_freeflow_eligible(u) -> bool:
     """Filter out backchannel/filler so the bot doesn't pounce on 'um, okay'.
     Stop/mute phrases are owned by the barge-in + interjection layers."""
-    if getattr(u, "word_count", 0) < 3:
+    if getattr(u, "word_count", 0) < _voice_tuning.SOLO_MIN_WORDS:
         return False
     return _solo_freeflow_text_eligible(u.text or "")
 

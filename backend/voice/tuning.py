@@ -77,6 +77,12 @@ VAD_START_SECS = _f("PRISM_VAD_START_SECS", 0.2)
 VAD_STOP_SECS = _f("PRISM_VAD_STOP_SECS", 0.2)
 VAD_MIN_VOLUME = _f("PRISM_VAD_MIN_VOLUME", 0.6)
 
+# ── Engagement (Phase 4's gate, tuned here) ──────────────────────────────────
+# In Auto+solo the bot converses without a wake word, so this is the only thing between
+# "a natural 1-on-1" and "it answers every 'yeah, sounds good'". Raise it if the bot feels
+# chatty; it only affects solo free-flow, never an explicitly addressed command.
+SOLO_MIN_WORDS = _i("PRISM_SOLO_MIN_WORDS", 3)
+
 # ── Politeness gap (§2) ──────────────────────────────────────────────────────
 # How long the room must be acoustically quiet before the bot starts an utterance, and
 # the never-hang cap if the room never goes quiet. Same values as the transcript-timestamp
@@ -116,6 +122,15 @@ TTS_VOLUME = _f("PRISM_TTS_VOLUME", 1.0)    # valid 0.5–2.0
 # talk. Leave unset and let Sonic-3 infer delivery from the words (Curio's finding).
 TTS_EMOTION = os.getenv("PRISM_TTS_EMOTION", "").strip() or None
 
+# How much text to accumulate before handing a chunk to TTS. This is ALSO the Cartesia
+# concurrency lever, which is not obvious: our brain sits outside Pipecat (Q1), so we feed
+# the mouth with TTSSpeakFrames — and pipecat opens a SEPARATE Cartesia context per
+# TTSSpeakFrame (its reuse-within-a-turn grouping only triggers on LLM-driven pipelines,
+# which we deliberately aren't). So chunks-per-reply == concurrent Cartesia contexts, and
+# on the free tier the ceiling is 2: a 3-sentence reply silently 429s partway through.
+# Raising this batches more text per context. Trade: slightly later first audio.
+TTS_BATCH_MIN_CHARS = _i("PRISM_TTS_BATCH_MIN_CHARS", 25)
+
 # Spoken-copy caps (the speak-short / chat-full rule, KRC item 21). The seed is the
 # pre-streaming value; §4 wants these re-picked once the streaming mouth is on real audio,
 # which needs a real meeting first — so they ship as knobs at the old value, not as a guess.
@@ -135,6 +150,7 @@ def summary() -> str:
     meeting's log says exactly what the bot was tuned to when the owner reports feel."""
     return (
         f"barge={'on' if BARGE_IN_ENABLED else 'off'}/{BARGE_MIN_SPEECH_MS}ms "
+        f"solo_min_words={SOLO_MIN_WORDS} "
         f"late_words={LATE_INTERRUPT_MIN_WORDS} gap={GAP_SILENCE_S}/{GAP_MAX_WAIT_S}s "
         f"eot={FLUX_EOT_THRESHOLD}@{FLUX_EOT_TIMEOUT_MS}ms eager={FLUX_EAGER_EOT_THRESHOLD} "
         f"tts={TTS_MODEL}/speed={TTS_SPEED}/vol={TTS_VOLUME}/emotion={TTS_EMOTION} "

@@ -545,14 +545,11 @@ def _proper_nouns_from_texts(texts: list[str], limit: int = 15) -> list[str]:
 
 def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]:
     """Best-effort proper-noun list to ground Deepgram nova-3 (keyterm prompting):
-    teammate names + knowledge-doc titles + knowledge-doc CONTENT proper nouns +
-    recent-meeting speaker/owner names.
+    THE BOT'S OWN WAKE WORDS + teammate names + knowledge-doc titles + knowledge-doc
+    CONTENT proper nouns + recent-meeting speaker/owner names.
     Capitalisation is preserved (Deepgram weights proper nouns by spelling) and the
-    list is bounded to ~40 terms. Returns [] on any failure so the bot-create config
-    stays exactly as before — grounding is a pure add-on, never a blocker."""
-    if not supabase or not (user_id or workspace_id):
-        return []
-
+    list is bounded to ~40 terms. Returns the wake words alone on any failure so the
+    grounding is still never a blocker — but is never EMPTY, which used to be the bug."""
     terms: list[str] = []
     seen: set[str] = set()
 
@@ -579,6 +576,28 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
             return
         seen.add(low)
         terms.append(t)
+
+    # -1. THE WAKE WORDS — first, unconditionally, before any DB work.
+    #     In a group meeting the wake word is the ONLY way to address the bot, so the one
+    #     word transcription must not fumble is its own name. Without this Flux had zero
+    #     bias toward it and heard "Prism, can you summarize" as "Below, can you
+    #     summarize" / "presume can you summarize" — the bot was deaf to being called.
+    #     (Solo free-flow needs no wake word, which is why only group meetings broke.)
+    #
+    #     Written straight into `terms`, NOT via _add: "prism"/"prismai" are in
+    #     _KEYTERM_STOPWORDS on purpose, to stop the app's own name being MINED out of doc
+    #     titles and speaker labels as filler. That filter is still right for mined
+    #     sources — it just must not apply to the bot's actual name. Hence the bypass
+    #     here and the stopword entry left intact below.
+    #
+    #     Also above the early-return: a bot with no user/workspace context still has a
+    #     name, and used to get [] back — no grounding whatsoever.
+    for _wake in ("Prism", "PrismAI"):
+        terms.append(_wake)
+        seen.add(_wake.lower())
+
+    if not supabase or not (user_id or workspace_id):
+        return terms
 
     try:
         from caches import get_user_workspace_ids
