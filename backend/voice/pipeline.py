@@ -109,9 +109,14 @@ class SpeakerConnection:
         # live time (t4 send-side proxy + real-playout close). Stashed, not acted on.
         self.last_playout: Optional[dict] = None
         self.last_pong: Optional[dict] = None
+        # One warning per disconnected run, not one per dropped frame (Cartesia sends
+        # hundreds). Re-armed on attach so a page that dies mid-meeting warns again.
+        self._warned_no_ws = False
 
     def attach(self, ws: WebSocket) -> None:
         self._ws = ws
+        self._warned_no_ws = False
+        print(f"[voice] speaker page attached bot={self.bot_id[:8]} — TTS audio has a mouth")
 
     def on_control(self, msg: dict) -> None:
         """Handle a JSON control frame from the speaker page ({"type": ...})."""
@@ -134,11 +139,20 @@ class SpeakerConnection:
     async def send_pcm(self, pcm: bytes) -> None:
         ws = self._ws
         if ws is None or not pcm:
+            # No speaker page = the bot is mute, and every other log line still says the
+            # reply succeeded (the brain answered, chat got it, the audio went nowhere).
+            # Say so once, loudly.
+            if ws is None and pcm and not self._warned_no_ws:
+                self._warned_no_ws = True
+                print(f"[voice] speaker page NOT connected bot={self.bot_id[:8]} — "
+                      f"dropping TTS audio; the bot is mute in the meeting")
             return
         try:
             await ws.send_bytes(pcm)
-        except Exception:
+        except Exception as exc:
             # Page went away mid-utterance; drop and let it reconnect.
+            print(f"[voice] speaker page dropped bot={self.bot_id[:8]} ({exc}) — "
+                  f"mute until it reconnects")
             self._ws = None
 
     async def send_json(self, obj: dict) -> None:

@@ -3589,6 +3589,15 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             if _gate_on():
                 from voice import gate
                 _speak, _cmd = await gate.decide(bot_id, state, text, speaker)
+                # The gate used to decide in total silence, which made "the bot didn't
+                # answer" indistinguishable from "the bot never heard a command" — one
+                # line here is the difference between a diagnosis and a guessing game.
+                # `armed` is the POST-decision state: True means a bare wake word just
+                # armed the next turn (so this turn correctly returned speak=False).
+                print(f"[gate] decide bot={bot_id[:8]} speak={_speak} "
+                      f"solo={_solo_mode_active(state)} muted={bool(state.get('muted'))} "
+                      f"armed={bool(state.get('_gate_armed_speaker'))} speaker={speaker!r} "
+                      f"text={text[:60]!r}")
                 if _speak:
                     _dispatch_command(state, bot_id, _cmd, speaker)
                 return {"ok": True}
