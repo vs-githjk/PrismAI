@@ -150,6 +150,15 @@ Flags this phase added are all operational per Q6 and stay: `PRISM_VOICE_BARGE_I
   concurrency lever** — it is back to being a pure latency/prosody dial and stays at 25;
   the earlier "raise it to ~200" mitigation is obsolete and should NOT be set.
   Regression test: `backend/tests/test_tts_utterance_grouping.py`.
+- **Speaker-page scheduling cushion (2026-07-25, from the first real listen).** The
+  opening ~5 words came out cluttered, then cleaned up for the rest of the reply. Cause:
+  `playPcm` resynced the Web Audio cursor to exactly `ctx.currentTime`, so at the start of
+  an utterance every buffer was scheduled with zero headroom — and Cartesia streams many
+  small frames, so a run of them each lost their leading samples until the stream got far
+  enough ahead that the cursor led the clock by itself. Now scheduled at `now + LEAD`
+  (`PRISM_SPEAKER_LEAD_MS`, default 150), which also covers a mid-stream catch-up. It is a
+  straight trade: first audio is 150ms later, the opening words are intact. Lower it in the
+  §6 loop if the delay reads worse than the clipping did.
 - **Not done, needs real audio:** the §6 loop itself; re-picking `_spoken_condense`'s
   3 sentences / 340 chars for a streaming mouth (§4 — the pacing constraint that set those
   numbers is gone, but there is no data to re-pick on, so they ship as knobs at the old

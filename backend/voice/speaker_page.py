@@ -31,6 +31,15 @@ from functools import lru_cache
 # Must match the pipeline's output sink resample target (voice/pipeline.py).
 SPEAKER_SAMPLE_RATE = int(os.getenv("PRISM_SPEAKER_SAMPLE_RATE", "24000"))
 
+# Scheduling headroom for the first buffer of an utterance (and any mid-stream
+# catch-up). Web Audio renders in fixed quantums, so a source started at exactly
+# `currentTime` is already late by the time the audio thread reaches it and loses its
+# leading samples. Cartesia streams many small frames, so without a cushion the first
+# few all clip and the opening words come out cluttered — then clean, once the stream
+# is far enough ahead that the cursor leads the clock on its own. This is the cost of
+# a clean start: it delays first audio by exactly this much.
+SPEAKER_LEAD_MS = int(os.getenv("PRISM_SPEAKER_LEAD_MS", "150"))
+
 # The original branded bot tile (three-triangle prism logo, 16:9) — the same asset
 # Recall's automatic_video_output used before Output Media took over the camera.
 # Rendered full-bleed here so the speaking bot looks identical to the original tile.
@@ -57,6 +66,7 @@ def speaker_page_html(token: str, sample_rate: int = SPEAKER_SAMPLE_RATE) -> str
     # token is URL-path-safe (token_urlsafe); embed it as a JS string literal.
     return (
         _TEMPLATE.replace("__SAMPLE_RATE__", str(sample_rate))
+        .replace("__LEAD_S__", str(SPEAKER_LEAD_MS / 1000))
         .replace("__TOKEN__", token)
         .replace("__BOT_TILE__", _bot_tile_data_uri())
     )
@@ -104,6 +114,7 @@ _TEMPLATE = r"""<!doctype html>
 <script>
 (function () {
   var SAMPLE_RATE = __SAMPLE_RATE__;
+  var LEAD = __LEAD_S__;     // scheduling headroom, seconds (see SPEAKER_LEAD_MS)
   var TOKEN = "__TOKEN__";
   var wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   var wsUrl = wsProto + "//" + location.host + "/voice/speaker/" + TOKEN;
@@ -156,7 +167,10 @@ _TEMPLATE = r"""<!doctype html>
     src.connect(ctx.destination);
 
     var now = ctx.currentTime;
-    if (cursor < now) cursor = now; // fell behind → resync to avoid a growing gap
+    // Starting (or resyncing) at exactly `now` means the audio thread is already past
+    // the start of this buffer, which clips its opening samples. Give every fresh start
+    // a cushion; mid-utterance the cursor is seconds ahead, so this is a no-op there.
+    if (cursor < now + LEAD) cursor = now + LEAD;
     // First audio of an utterance → tell the backend playout has begun (mix-hop t4).
     if (!utteranceOpen) {
       utteranceOpen = true;
