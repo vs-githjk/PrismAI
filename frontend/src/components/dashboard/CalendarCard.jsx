@@ -26,6 +26,19 @@ function timeFromMeetingDate(value) {
   return `${hh}:${mm}`
 }
 
+// "Same time as this meeting" is only a sane default for a follow-up when the SOURCE
+// meeting was itself at a reasonable hour. A late-night / very-early meeting (e.g. an
+// 11:52 PM test call) must NOT push the follow-up to that same odd time — that's the
+// bug where "tomorrow" resolved to 11:52 PM. Outside business hours (08:00–17:59),
+// fall back to the backend's sane default (10:00) instead of copying the odd hour.
+function reasonableMeetingTime(value) {
+  const t = timeFromMeetingDate(value)
+  if (!t) return ''
+  const hour = parseInt(t.slice(0, 2), 10)
+  if (Number.isNaN(hour) || hour < 8 || hour >= 18) return ''
+  return t
+}
+
 export default function CalendarCard({ suggestion, meetingDate = null, meetingTitle = '', readOnly = false, defaultEmails = [], suggestedEmails = [], meetingId = null }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -70,7 +83,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
   // prefer THIS meeting's own time — that's what "same time" means, and it's a saner
   // default than 10:00 for any follow-up. Only fall back to the backend guess when we
   // don't know this meeting's time (e.g. a pasted transcript).
-  const meetingTime = timeFromMeetingDate(meetingDate)
+  const meetingTime = reasonableMeetingTime(meetingDate)
   const effTime = suggestion.time_defaulted
     ? (meetingTime || suggestion.resolved_time || fallback.time)
     : (suggestion.resolved_time || fallback.time)
@@ -94,7 +107,7 @@ export default function CalendarCard({ suggestion, meetingDate = null, meetingTi
     setTitle(`Follow-up: ${meetingTitle || 'meeting'}`)
     setDate(effDate || today)
     // Time priority: what the meeting named → same time as this meeting → 10:00.
-    setTime(effTime || timeFromMeetingDate(meetingDate) || '10:00')
+    setTime(effTime || reasonableMeetingTime(meetingDate) || '10:00')
     setInvitees((defaultEmails || []).join(', '))
     setError('')
     setCreated(null)

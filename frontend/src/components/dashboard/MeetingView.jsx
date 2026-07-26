@@ -543,7 +543,9 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
       </div>
 
-      {!readOnly && <SentimentCard sentiment={sentiment} />}
+      {/* Sentiment is per-speaker tone — meaningless for a single-authored
+          article/report, so hide it there (covers auto-detected reports too). */}
+      {!readOnly && currentType !== 'article' && <SentimentCard sentiment={sentiment} />}
 
       {!readOnly && (result.suggested_actions?.length > 0) && (
         <SuggestedActions
@@ -580,7 +582,8 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       />
 
       {/* Secondary insight — kept low, just above the recording/transcript. */}
-      {!readOnly && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
+      {/* Talk-time / speaker coaching — N/A for a single-authored article/report. */}
+      {!readOnly && currentType !== 'article' && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
 
       {meeting?.id && meeting?.recording_provider === 'recall' && (
         <RecordingPlayer

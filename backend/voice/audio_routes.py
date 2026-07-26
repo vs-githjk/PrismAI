@@ -65,36 +65,51 @@ def _resolve_bot(token: str) -> str | None:
         return None
 
 
-async def _keyterms_for_bot(bot_id: str) -> list[str]:
-    """Best-effort proper-noun grounding for Flux (wake words + custom_keyterms glossary +
-    teammate names + doc/meeting terms). Flux supports keyterm prompting.
+async def _wake_terms_for_bot(bot_id: str) -> list[str]:
+    """The bot's own wake words, so Flux is biased to hear its NAME correctly. Without
+    this, "Prism" transcribes as "presume"/"Below" and the wake-word gate never fires
+    in multi-person meetings (solo free-flow hid it — no wake word needed there).
 
-    `_gather_keyterms` already leads with Prism/PrismAI. This adds the bot's PERSONA name
-    (Flash / Echo / Crystal / …) when one is set, since that is an equally valid wake word
-    (`_wake_patterns_for_alias`) and is just as easy for the STT to mangle. Falls back to
-    the bare wake words on any failure — never [], or a group meeting goes deaf."""
+    Built independently of `_gather_keyterms` on purpose: that path filters through
+    `_KEYTERM_STOPWORDS`, which contains "prism"/"prismai" (correctly — it stops the app's
+    own name being MINED out of doc titles as filler). The bot's real name must not be
+    subject to that filter."""
+    terms = ["Prism", "PrismAI"]
+    try:
+        # Await the settings rather than reading `_BOT_WAKE_ALIAS` directly: that dict is
+        # filled by a background prefetch started at bot creation, while this list is built
+        # ONCE when the audio socket connects. Losing that race would silently ship a
+        # persona bot with no grounding for its own name. The call is cached (60s TTL).
+        from realtime_routes import _get_settings_for_bot, DEFAULT_BOT_NAME
+        alias = ((await _get_settings_for_bot(bot_id)).get("bot_name") or "").strip()
+        if alias and alias != DEFAULT_BOT_NAME and alias.lower() not in (t.lower() for t in terms):
+            terms.append(alias)   # persona name (Flash / Echo / …) — equally a wake word
+    except Exception as exc:
+        print(f"[voice] persona wake alias unresolved ({exc}) — base wake words only")
+    return terms
+
+
+async def _keyterms_for_bot(bot_id: str) -> list[str]:
+    """Best-effort proper-noun grounding for Flux (the bot's own wake words FIRST, then
+    the custom_keyterms glossary + teammate names + doc/meeting terms). Flux supports
+    keyterm prompting; returns the wake words alone on any DB failure so the bot can
+    always at least hear its own name."""
+    wake = await _wake_terms_for_bot(bot_id)
     try:
         from recall_routes import bot_store, _gather_keyterms
         entry = bot_store.get(bot_id) or {}
-        terms = _gather_keyterms(entry.get("user_id"), entry.get("workspace_id"))
-    except Exception as exc:
-        print(f"[voice] keyterms failed ({exc}) — grounding on wake words only")
-        terms = ["Prism", "PrismAI"]
-    try:
-        # Await the settings rather than reading _BOT_WAKE_ALIAS directly: the alias is
-        # filled by a background prefetch started at bot creation, and the keyterm list is
-        # built ONCE when this socket connects. Losing that race would silently ship a
-        # persona bot with no grounding for its own name. The call is cached (60s TTL).
-        from realtime_routes import _get_settings_for_bot, DEFAULT_BOT_NAME
-        alias = (await _get_settings_for_bot(bot_id)).get("bot_name") or ""
-        alias = "" if alias == DEFAULT_BOT_NAME else alias.strip()
-        # Prepend: the wake word matters more than any doc term, and the list is capped.
-        if alias and alias.lower() not in {t.lower() for t in terms}:
-            terms.insert(0, alias)
-    except Exception as exc:
-        print(f"[voice] persona wake alias unresolved ({exc}) — base wake words only")
-    print(f"[voice] flux keyterms bot={bot_id[:8]} n={len(terms)} wake={terms[:3]}")
-    return terms
+        gathered = _gather_keyterms(entry.get("user_id"), entry.get("workspace_id")) or []
+    except Exception:
+        gathered = []
+    # Wake words first (highest priority), then de-duped grounding terms.
+    seen = {t.lower() for t in wake}
+    out = list(wake)
+    for t in gathered:
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    print(f"[voice] flux keyterms bot={bot_id[:8]} n={len(out)} wake={out[:3]}")
+    return out
 
 
 @router.get("/voice/speaker-page/{token}")

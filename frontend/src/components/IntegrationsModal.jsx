@@ -106,8 +106,11 @@ const AUTO_JOIN_OPTIONS = [
   { value: 'marked', label: 'Auto-join starred',  hint: 'Only auto-join meetings you\'ve starred in the panel.' },
 ]
 
-export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, outlookConnected = false, onConnectOutlook, onDisconnectOutlook, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false }) {
-  const [tab, setTab] = useState('Slack')
+export default function IntegrationsModal({ integrations, userId = null, onSave, onClose, calendarConnected, onConnectCalendar, onDisconnectCalendar, outlookConnected = false, onConnectOutlook, onDisconnectOutlook, autoJoinSetting = 'off', onAutoJoinChange, isSignedIn = false, isTestAccount = false, initialTab = 'Slack' }) {
+  // initialTab lets a caller deep-link (e.g. the first-run "Connect calendar" nudge
+  // opens straight to the Calendar tab). The modal remounts on each open, so this is
+  // read fresh every time it's shown.
+  const [tab, setTab] = useState(TABS.includes(initialTab) ? initialTab : 'Slack')
   const [slackWebhook, setSlackWebhook] = useState(integrations.slack_webhook || '')
   const [notionToken, setNotionToken] = useState(integrations.notion_token || '')
   const [notionPageId, setNotionPageId] = useState(integrations.notion_page_id || '')

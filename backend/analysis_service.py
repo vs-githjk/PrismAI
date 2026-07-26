@@ -180,8 +180,19 @@ def _make_tier1_node(agent_name: str):
         from agents.utils import _PERSONA_TEXT
         token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
         try:
-            result = await AGENT_MAP[agent_name](state["transcript"])
-        except Exception:
+            # The summarizer is lens-aware: an explicitly-chosen Article/Report needs a
+            # piece-framed title/summary (else the meeting prompt titles it "Not a Meeting").
+            # meeting_type is only known upfront for explicit picks — an auto-classified
+            # article is still meeting-framed here (the classifier runs in parallel Tier-1).
+            if agent_name == "summarizer":
+                result = await AGENT_MAP[agent_name](state["transcript"], state.get("meeting_type") or "")
+            else:
+                result = await AGENT_MAP[agent_name](state["transcript"])
+        except Exception as exc:
+            # An agent throwing → empty card. Log WHY (was silent) so a transient
+            # LLM overload/timeout/parse error on a big transcript is diagnosable
+            # instead of a mystery "sentiment/health just failed".
+            print(f"[analysis] tier1 agent '{agent_name}' FAILED: {exc!r}")
             result = {}
         finally:
             _PERSONA_TEXT.reset(token)
@@ -265,7 +276,8 @@ def _make_tier2_node(agent_name: str):
             else:
                 transcript_in = state["transcript"]
             result = await AGENT_MAP[agent_name](transcript_in, ctx)
-        except Exception:
+        except Exception as exc:
+            print(f"[analysis] tier2 agent '{agent_name}' FAILED: {exc!r}")
             result = {}
         finally:
             _PERSONA_TEXT.reset(token)

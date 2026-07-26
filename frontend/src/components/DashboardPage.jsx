@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
+  CalendarPlus,
   Check,
   Copy,
   Download,
@@ -270,13 +271,58 @@ function NewMeetingPanel(props) {
               <textarea
                 value={props.transcript || ''}
                 onChange={(e) => props.setTranscriptForTab(e.target.value, 'paste')}
-                placeholder="Paste your meeting transcript here..."
+                placeholder="Paste a transcript, article, or report…"
                 rows={7}
                 className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-sm text-white/90 outline-none placeholder:text-white/28 focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
               />
-              {props.transcriptStats?.words > 0 && (
-                <p className="text-[10.5px] text-white/38">
-                  {props.transcriptStats.words} words · {props.transcriptSpeakerCount || 0} speaker{props.transcriptSpeakerCount !== 1 ? 's' : ''}
+              {/* Upload a document instead of pasting — extracts text server-side
+                  (.docx/.pdf/.txt). Handy for the Article / Report lens. */}
+              <input
+                ref={props.docInputRef}
+                type="file"
+                accept=".docx,.pdf,.txt,.md,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={props.handleDocumentUpload}
+              />
+              <div className="flex items-center justify-between gap-2">
+                {props.transcriptStats?.words > 0 ? (
+                  <p className="text-[10.5px] text-white/38">
+                    {props.transcriptStats.words} words
+                    {/* Speaker count is meaningless for a single-authored article/report. */}
+                    {props.meetingType !== 'article' && ` · ${props.transcriptSpeakerCount || 0} speaker${props.transcriptSpeakerCount !== 1 ? 's' : ''}`}
+                  </p>
+                ) : <span />}
+                <button
+                  type="button"
+                  onClick={() => props.docInputRef?.current?.click()}
+                  disabled={props.extractingDoc}
+                  title="Upload a .docx, .pdf, or .txt"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[11px] font-medium text-white/55 transition hover:border-cyan-400/30 hover:bg-white/[0.06] hover:text-white/85 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {props.extractingDoc ? (
+                    <>
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+                        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                      </svg>
+                      Reading…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                        <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                        <path d="M12 18v-6" />
+                        <path d="m9.5 14.5 2.5-2.5 2.5 2.5" />
+                      </svg>
+                      Upload a document
+                    </>
+                  )}
+                </button>
+              </div>
+              {props.docError && (
+                <p className="rounded-lg border border-red-400/25 bg-red-400/[0.08] px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                  {props.docError}
                 </p>
               )}
               <AnalyzeButton {...props} />
@@ -378,6 +424,23 @@ function NewMeetingPanel(props) {
                     />
                   </Suspense>
                 </div>
+              )}
+              {!props.calendarConnected && props.user && !props.isTestAccount && (
+                // Calendar not connected → the upcoming-meetings list can't render, so
+                // fill that spot with the exact CTA the user needs here (auto-join is
+                // the highest-value setup step). Opens Integrations → Calendar tab, where
+                // both Google Calendar and Outlook are offered.
+                <button
+                  type="button"
+                  onClick={() => { props.onClose?.(); props.onOpenCalendarSetup?.() }}
+                  className="group flex w-full items-center gap-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2.5 text-left transition hover:bg-cyan-400/[0.11]"
+                >
+                  <CalendarPlus className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 text-[12px] leading-snug text-cyan-100/80">
+                    Connect Google or Outlook calendar to see your upcoming meetings and one-click join.
+                  </span>
+                  <span className="shrink-0 text-[12px] font-semibold text-cyan-200">Connect →</span>
+                </button>
               )}
               <input
                 type="url"
@@ -1441,12 +1504,32 @@ export default function DashboardPage(props) {
           }`}
         >
           <div key={activeView} className={`animate-fade-in-up ${activeView === 'home' ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+          {props.viewingSample && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.08] px-4 py-2.5">
+              <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-cyan-300" />
+              <p className="flex-1 text-[13px] text-cyan-100/90">
+                <span className="font-semibold">Example data</span>
+                <span className="text-cyan-100/60"> — this isn&rsquo;t your history. It&rsquo;s here so you can see what Prism produces.</span>
+              </p>
+              <button
+                type="button"
+                onClick={props.clearSample}
+                className="shrink-0 rounded-full border border-cyan-300/30 px-3 py-1 text-[12px] font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
               history={props.history}
               loadFromHistory={handleSelectMeeting}
               loadSample={props.loadDashboardSample}
               canLoadSample={props.canLoadSample}
+              onStartMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
+              onPasteTranscript={() => { props.setInputTab?.('paste'); setNewMeetingOpen(true) }}
+              showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
+              onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
               memberEmailMap={workspaceMemberMap}
               currentUserId={props.user?.id}
@@ -1487,7 +1570,11 @@ export default function DashboardPage(props) {
                 history={props.history}
                 crossMeetingInsights={props.crossMeetingInsights}
                 onSelectMeeting={handleSelectMeeting}
+                workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                actionConnections={actionConnections}
+                suggestedEmails={suggestedAttendeeEmails}
+                teamsWebhook={props.integrations?.teams_webhook || ''}
               />
             </Suspense>
           )}

@@ -23,6 +23,25 @@ const BLOCKER_KEYWORDS = [
   'degraded', 'preventable', 'missed', 'overcommit', 'overcommitting', 'dependency',
 ]
 
+// Placeholder / collective owner labels — mirror of cross_meeting_service.JUNK_OWNERS
+// so the client fallback (seed/offline) doesn't flag "Unassigned" as an owner either.
+const JUNK_OWNERS = new Set([
+  '', 'unassigned', 'unowned', 'tbd', 'tbc', 'none', 'n/a', 'na', 'null',
+  'team', 'everyone', 'all', 'attendees', 'group', 'someone', 'anyone',
+  'nobody', 'self', '-', '?',
+])
+
+function isRealOwner(name) {
+  const cleaned = (name || '').trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+  if (!cleaned || JUNK_OWNERS.has(cleaned)) return false
+  if (cleaned === 'the team' || cleaned.endsWith(' team')) return false
+  return true
+}
+
+function nameTokens(name) {
+  return (name || '').split(/\s+/).map(normalizeWord).filter((token) => token.length >= 3)
+}
+
 export function formatMeetingDate(value) {
   if (!value) return 'Unknown date'
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -75,6 +94,7 @@ export function deriveInsights(history = []) {
   const decisionMemory = []
   const blockerCounts = new Map()
   const hygieneMeetings = []
+  const nameWords = new Set()
   let tenseMeetings = 0
 
   meetings.forEach((entry) => {
@@ -87,9 +107,14 @@ export function deriveInsights(history = []) {
       tenseMeetings += 1
     }
 
+    ;(sentiment.speakers || []).forEach((speaker) => {
+      if (speaker?.name) nameTokens(speaker.name).forEach((token) => nameWords.add(token))
+    })
+
     items.forEach((item) => {
       const owner = (item.owner || '').trim()
-      if (owner) {
+      if (owner && isRealOwner(owner)) {
+        nameTokens(owner).forEach((token) => nameWords.add(token))
         ownerCounts.set(owner, (ownerCounts.get(owner) || 0) + 1)
         if (!ownerMeetingCounts.has(owner)) ownerMeetingCounts.set(owner, new Set())
         ownerMeetingCounts.get(owner).add(entry.id)
@@ -100,6 +125,15 @@ export function deriveInsights(history = []) {
 
       if (looksLikeBlocker(item.task || '')) {
         const snippet = buildBlockerSnippet(item.task || '')
+        if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
+      }
+    })
+
+    // Blockers from STRUCTURED signals only (action-item tasks above + carried-over
+    // tensions) — never summary/notes prose. Mirror of cross_meeting_service.
+    ;(sentiment.tension_moments || []).forEach((tension) => {
+      if (tension?.status === 'carried_over') {
+        const snippet = buildBlockerSnippet(tension.moment || '')
         if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
       }
     })
@@ -123,6 +157,7 @@ export function deriveInsights(history = []) {
         decisionThemeCounts.set(word, (decisionThemeCounts.get(word) || 0) + 1)
       })
 
+      if (isRealOwner(decision.owner || '')) nameTokens(decision.owner).forEach((token) => nameWords.add(token))
       const decisionEntry = {
         id: `${entry.id}-${decision.decision}`,
         meeting: entry,
@@ -140,16 +175,6 @@ export function deriveInsights(history = []) {
     })
 
     extractSignificantTerms(result.summary || '', 5).forEach((word) => themeCounts.set(word, (themeCounts.get(word) || 0) + 1))
-
-    if (looksLikeBlocker(result.summary || '')) {
-      const snippet = buildBlockerSnippet(result.summary)
-      if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
-    }
-
-    if (looksLikeBlocker(sentiment.notes || '')) {
-      const snippet = buildBlockerSnippet(sentiment.notes)
-      if (snippet) blockerCounts.set(snippet, (blockerCounts.get(snippet) || 0) + 1)
-    }
   })
 
   const topOwners = [...ownerCounts.entries()]
@@ -164,6 +189,7 @@ export function deriveInsights(history = []) {
     .slice(0, 4)
 
   const recurringThemes = [...themeCounts.entries()]
+    .filter(([theme]) => !nameWords.has(theme))
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([theme, count]) => ({ theme, count }))
@@ -247,6 +273,42 @@ export function deriveInsights(history = []) {
 export function normalizeInsights(insights = {}, history = []) {
   const derived = deriveInsights(history)
   const source = insights || {}
+  const byId = new Map((history || []).map((entry) => [entry.id, entry]))
+  const resolveMeeting = (id) => byId.get(id) || null
+
+  // The server (cross_meeting_service) emits snake_case and references meetings by
+  // *id*; the cards read camelCase and expect resolved meeting *objects*. Map the
+  // shapes here whenever the server provided the key — otherwise the cards showed
+  // blank titles ("Resurfaced in N meetings" with no text) and dead click-through.
+  const unresolvedDecisions = Array.isArray(source.unresolved_decisions)
+    ? source.unresolved_decisions.map((decision) => ({
+        key: decision.key,
+        count: decision.count,
+        latestTitle: decision.latest_title || decision.latestTitle || 'Decision thread',
+        latestOwner: decision.latest_owner || decision.latestOwner || '',
+        meetings: (decision.meeting_ids || decision.meetings || [])
+          .map((meeting) => (meeting && typeof meeting === 'object' ? meeting : resolveMeeting(meeting)))
+          .filter(Boolean),
+      }))
+    : (source.unresolvedDecisions ?? derived.unresolvedDecisions)
+
+  const recentDecisions = Array.isArray(source.recent_decisions)
+    ? source.recent_decisions.map((decision) => ({
+        ...decision,
+        meeting: decision.meeting || resolveMeeting(decision.meeting_id) || null,
+      }))
+    : (source.recentDecisions ?? derived.recentDecisions)
+
+  const recurringHygieneIssues = Array.isArray(source.recurring_hygiene_issues)
+    ? source.recurring_hygiene_issues
+        .map((issue) => ({
+          meeting: issue.meeting || resolveMeeting(issue.meeting_id),
+          missingOwners: issue.missing_owners ?? issue.missingOwners ?? 0,
+          missingDueDates: issue.missing_due_dates ?? issue.missingDueDates ?? 0,
+        }))
+        .filter((issue) => issue.meeting)
+    : (source.recurringHygieneIssues ?? derived.recurringHygieneIssues)
+
   return {
     meetingCount: source.meeting_count ?? source.meetingCount ?? derived.meetingCount,
     avgScore: source.avg_score ?? source.avgScore ?? derived.avgScore,
@@ -258,10 +320,10 @@ export function normalizeInsights(insights = {}, history = []) {
     recurringThemes: source.recurring_themes ?? source.recurringThemes ?? derived.recurringThemes,
     unresolvedThemes: source.unresolved_themes ?? source.unresolvedThemes ?? [],
     recurringBlockers: source.recurring_blockers ?? source.recurringBlockers ?? derived.recurringBlockers,
-    recurringHygieneIssues: source.recurring_hygiene_issues ?? source.recurringHygieneIssues ?? derived.recurringHygieneIssues,
+    recurringHygieneIssues,
     resurfacingDecisionThemes: source.resurfacing_decision_themes ?? source.resurfacingDecisionThemes ?? derived.resurfacingDecisionThemes,
-    unresolvedDecisions: source.unresolved_decisions ?? source.unresolvedDecisions ?? derived.unresolvedDecisions,
-    recentDecisions: source.recent_decisions ?? source.recentDecisions ?? derived.recentDecisions,
+    unresolvedDecisions,
+    recentDecisions,
     recommendedActions: source.recommended_actions ?? source.recommendedActions ?? derived.recommendedActions,
     completionRate: source.completion_rate ?? source.completionRate ?? null,
     decisionVelocity: source.decision_velocity ?? source.decisionVelocity ?? null,

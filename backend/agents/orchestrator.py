@@ -46,9 +46,16 @@ def run_orchestrator(transcript: str, meeting_type: str | None = None) -> list[s
     always routed (it self-gates on the resolved type, no LLM for standard).
     """
     agents = list(ALL_AGENTS)
-    if _count_speakers(transcript) < 2:
-        agents = [a for a in agents if a != "sentiment"]
     mt = (meeting_type or "").strip().lower()
+    if mt == "article":
+        # A single-authored article/report has no speakers → the interpersonal
+        # agents are meaningless (sentiment = per-speaker tone, speaker_coach =
+        # talk-time balance). The Article/Report lens (content_analyst) carries the
+        # analysis instead. Skipping them also avoids the "13 speakers" false read
+        # from a report's colon-prefixed headings ("Verdict:", "Weakest:", …).
+        agents = [a for a in agents if a not in ("sentiment", "speaker_coach")]
+    elif _count_speakers(transcript) < 2:
+        agents = [a for a in agents if a != "sentiment"]
     if mt in ("", "auto"):
         agents.append("meeting_classifier")
     return agents
