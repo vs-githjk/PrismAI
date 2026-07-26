@@ -17,6 +17,10 @@ SYSTEM_PROMPT = (
     "  - When listing action items or next steps, put each on its own line, prefixed with '- '.\n"
     "  - A blank line, then a sign-off on its own line (e.g. 'Best,'), then the sender's name on the next line.\n"
     "Keep it concise and scannable. Do NOT cram the greeting, body, and sign-off onto one line. "
+    "Write PLAIN TEXT like a person actually types in an email client — absolutely NO Markdown: "
+    "no **bold**, no *italics*, no ## or ** section headers, no backticks. If you want a section label "
+    "(e.g. 'Next steps'), write it as plain words on its own line, never wrapped in asterisks or hashes. "
+    "Asterisks and hashes in the visible text look robotic and must never appear. "
     'Return ONLY valid JSON: { "follow_up_email": { "subject": "", "body": "" } } — '
     "the body string must contain the \\n line breaks described above. "
     "If the transcript contains a [User instruction: ...] line, follow it exactly — "

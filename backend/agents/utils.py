@@ -1,6 +1,7 @@
 import asyncio
 import contextvars
 import os
+import random
 import re
 
 # Per-task persona text. Set by chat_routes / agent_routes / analysis_service
@@ -107,6 +108,24 @@ def _is_transient(exc: Exception) -> bool:
     )
 
 
+# The pipeline fans out 5 Tier-1 agents in parallel, then 4 Tier-2 — a burst that
+# reliably trips Haiku's per-minute rate limit, and then trips OpenAI's when all 9
+# fall over at once. Retrying with backoff+jitter (rather than failing to the
+# agent's _DEFAULT, which silently nulls a card) is what makes sentiment/health
+# survive the burst. Env-overridable so it can be tuned without a code change.
+_PRIMARY_ATTEMPTS = int(os.getenv("PRISM_LLM_PRIMARY_ATTEMPTS", "3"))
+_FALLBACK_ATTEMPTS = int(os.getenv("PRISM_LLM_FALLBACK_ATTEMPTS", "3"))
+_LLM_BACKOFF_BASE = float(os.getenv("PRISM_LLM_BACKOFF_BASE", "0.6"))
+_LLM_BACKOFF_CAP = float(os.getenv("PRISM_LLM_BACKOFF_CAP", "8.0"))
+
+
+async def _backoff_sleep(attempt: int) -> None:
+    """Exponential backoff with full jitter — spreads the parallel agents' retries
+    apart so they stop hammering the rate limit in lockstep."""
+    delay = min(_LLM_BACKOFF_CAP, _LLM_BACKOFF_BASE * (2 ** attempt))
+    await asyncio.sleep(random.uniform(0, delay))
+
+
 async def llm_call(
     system: str,
     user: str,
@@ -128,20 +147,28 @@ async def llm_call(
     anthropic_client = _get_anthropic()
     primary_exc = None
     if anthropic_client:
-        try:
-            resp = await anthropic_client.messages.create(
-                model=PRIMARY_MODEL,
-                max_tokens=out_tokens,
-                temperature=temp,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            return resp.content[0].text
-        except Exception as exc:
-            if not _is_transient(exc):
-                raise
-            primary_exc = exc
-            print(f"[agent] Claude failed ({exc!r}), falling back to {FALLBACK_MODEL}")
+        # Retry Haiku on transient errors (rate-limit/overload/5xx) with backoff
+        # before conceding to the fallback — a burst-induced 429 usually clears in
+        # a second or two, so retrying keeps the work on the primary model.
+        for attempt in range(_PRIMARY_ATTEMPTS):
+            try:
+                resp = await anthropic_client.messages.create(
+                    model=PRIMARY_MODEL,
+                    max_tokens=out_tokens,
+                    temperature=temp,
+                    system=system,
+                    messages=[{"role": "user", "content": user}],
+                )
+                return resp.content[0].text
+            except Exception as exc:
+                if not _is_transient(exc):
+                    raise
+                primary_exc = exc
+                if attempt < _PRIMARY_ATTEMPTS - 1:
+                    print(f"[agent] Claude transient ({exc!r}), retry {attempt + 1}/{_PRIMARY_ATTEMPTS - 1}")
+                    await _backoff_sleep(attempt)
+        print(f"[agent] Claude exhausted {_PRIMARY_ATTEMPTS} attempts ({primary_exc!r}), "
+              f"falling back to {FALLBACK_MODEL}")
 
     openai_client = _get_openai()
     if openai_client:
@@ -155,8 +182,22 @@ async def llm_call(
         }
         if max_tokens is not None:
             oai_kwargs["max_tokens"] = max_tokens
-        resp = await openai_client.chat.completions.create(**oai_kwargs)
-        return resp.choices[0].message.content
+        # Retry the fallback too: when Haiku rate-limits the whole 9-agent burst at
+        # once, they ALL land on OpenAI simultaneously and can rate-limit it in turn.
+        fallback_exc = None
+        for attempt in range(_FALLBACK_ATTEMPTS):
+            try:
+                resp = await openai_client.chat.completions.create(**oai_kwargs)
+                return resp.choices[0].message.content
+            except Exception as exc:
+                fallback_exc = exc
+                if not _is_transient(exc) or attempt == _FALLBACK_ATTEMPTS - 1:
+                    break
+                print(f"[agent] {FALLBACK_MODEL} transient ({exc!r}), retry {attempt + 1}/{_FALLBACK_ATTEMPTS - 1}")
+                await _backoff_sleep(attempt)
+        # Both providers failed — surface the most relevant error to the agent's
+        # try/except (which returns its _DEFAULT), now only after real retries.
+        raise fallback_exc or primary_exc or RuntimeError("LLM fallback failed")
     if primary_exc:
         raise primary_exc
     raise RuntimeError("No LLM provider configured: set ANTHROPIC_API_KEY or OPENAI_API_KEY")

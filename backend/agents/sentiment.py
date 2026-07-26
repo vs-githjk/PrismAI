@@ -46,6 +46,21 @@ SYSTEM_PROMPT = (
 _DEFAULT = {"sentiment": None}
 
 
+def _parse_json(raw: str) -> dict:
+    """Parse the model's JSON, tolerating prose it sometimes wraps around the object
+    (leading 'Here is…' / trailing commentary → json.loads 'Extra data'). Falls back to
+    slicing the outermost {...}. Sentiment's nested shape is the most parse-fragile of
+    the agents, and a raw json.loads failure here silently NULLs the card."""
+    txt = strip_fences(raw)
+    try:
+        return json.loads(txt)
+    except Exception:
+        start, end = txt.find("{"), txt.rfind("}")
+        if start != -1 and end > start:
+            return json.loads(txt[start:end + 1])
+        raise
+
+
 def _compute_talk_distribution(transcript: str) -> str:
     """Parse 'Speaker: text' lines and return a compact distribution like 'Mike 45%, Sarah 30%, ...'.
     This gives the LLM hard evidence to anchor 'draining' (one dominator) or 'collaborative' (balanced) labels."""
@@ -75,8 +90,9 @@ async def run(transcript: str) -> dict:
     for attempt in range(2):
         try:
             raw = await llm_call(SYSTEM_PROMPT, user_msg)
-            return json.loads(strip_fences(raw))
-        except Exception:
+            return _parse_json(raw)
+        except Exception as exc:
             if attempt == 1:
+                print(f"[sentiment] parse/LLM failed after 2 attempts: {exc!r}")
                 return _DEFAULT
     return _DEFAULT
