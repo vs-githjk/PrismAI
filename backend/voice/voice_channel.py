@@ -304,9 +304,11 @@ async def on_eager_turn(bot_id: str, transcript: str, speaker: str = "") -> None
     of the real decision; the gate stays the sole authority on whether we actually speak)
     and only on the two-channel path, which is the only consumer of a speculation."""
     transcript = (transcript or "").strip()
-    if not transcript or os.getenv("PRISM_TWO_CHANNEL", "0") != "1":
+    if not transcript:
         return
     rr = _rr()
+    if not rr._two_channel_on():  # one source of truth for the flag, not a second read
+        return
     state = rr._get_bot_state(bot_id)
     if state.get("muted"):
         return

@@ -368,18 +368,19 @@ def _owner_id_lock_on() -> bool:
 
 def _two_channel_on() -> bool:
     """Phase 3: route commands through the voice/agent split (bus + tiered dedup) instead
-    of the fused `_process_command`. Default OFF — the fused path stays the live default
-    until a real meeting validates the new one; flip PRISM_TWO_CHANNEL=1 for that first
-    live join, then it becomes the default and `_process_command` is demolished."""
-    return os.getenv("PRISM_TWO_CHANNEL") == "1"
+    of the fused `_process_command`. Default ON as of 2026-07-26 — the plan always said
+    "flip it for the first live join, then it becomes the default"; the fused path is
+    still here as the rollback until the §7 demolition ruling. PRISM_TWO_CHANNEL=0 in the
+    Render dashboard forces the old brain back without a deploy."""
+    return os.getenv("PRISM_TWO_CHANNEL", "1") != "0"
 
 
 def _gate_on() -> bool:
     """Phase 4: route engagement through the single `voice.gate` (Auto/Manual) instead of
-    the legacy wake-word + solo free-flow + ambient consent funnel. Default OFF — the
-    legacy detection stays the live path until a real meeting validates the gate; flip
-    PRISM_ENGAGEMENT_GATE=1 for that, then it becomes the default and the old paths die."""
-    return os.getenv("PRISM_ENGAGEMENT_GATE") == "1"
+    the legacy wake-word + solo free-flow + ambient consent funnel. Default ON as of
+    2026-07-26, same reasoning as `_two_channel_on`. PRISM_ENGAGEMENT_GATE=0 forces the
+    legacy wake/solo/ambient detection back."""
+    return os.getenv("PRISM_ENGAGEMENT_GATE", "1") != "0"
 
 
 def _accumulator_on() -> bool:
