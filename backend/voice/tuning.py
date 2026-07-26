@@ -122,13 +122,11 @@ TTS_VOLUME = _f("PRISM_TTS_VOLUME", 1.0)    # valid 0.5–2.0
 # talk. Leave unset and let Sonic-3 infer delivery from the words (Curio's finding).
 TTS_EMOTION = os.getenv("PRISM_TTS_EMOTION", "").strip() or None
 
-# How much text to accumulate before handing a chunk to TTS. This is ALSO the Cartesia
-# concurrency lever, which is not obvious: our brain sits outside Pipecat (Q1), so we feed
-# the mouth with TTSSpeakFrames — and pipecat opens a SEPARATE Cartesia context per
-# TTSSpeakFrame (its reuse-within-a-turn grouping only triggers on LLM-driven pipelines,
-# which we deliberately aren't). So chunks-per-reply == concurrent Cartesia contexts, and
-# on the free tier the ceiling is 2: a 3-sentence reply silently 429s partway through.
-# Raising this batches more text per context. Trade: slightly later first audio.
+# How much text to accumulate before handing a chunk to TTS. Purely a latency/prosody
+# dial now: lower = first audio sooner but choppier phrasing, higher = smoother but later.
+# It used to double as the Cartesia concurrency lever — a whole reply's chunks now share
+# ONE Cartesia context (see VoicePipeline.speak), so chunk count no longer costs
+# concurrency slots and this can stay small.
 TTS_BATCH_MIN_CHARS = _i("PRISM_TTS_BATCH_MIN_CHARS", 25)
 
 # Spoken-copy caps (the speak-short / chat-full rule, KRC item 21). The seed is the

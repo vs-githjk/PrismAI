@@ -10,8 +10,9 @@ WS, driven by a custom `SpeakerSink` (NOT `transport.output()`, which would writ
 to Recall's input socket). `audio_out_enabled=False` on the transport keeps it silent.
 
 Phase 2 keeps the OLD brain: `TranscriptCapture` hands each finished turn to
-`voice.bridge`, which runs today's dispatch path. Replies come back as
-`TTSSpeakFrame`s queued onto the task (`VoicePipeline.speak`) → Cartesia → speaker.
+`voice.bridge`, which runs today's dispatch path. Replies come back as text frames
+queued onto the task (`VoicePipeline.speak`) → Cartesia → speaker, bracketed into one
+utterance per reply so the whole reply shares a single Cartesia context (see `speak`).
 There is no LLM/aggregator inside this pipeline in Phase 2 — the brain split is Phase 3.
 
 Phase 5 adds the feel layer (see `voice/tuning.py` for every knob):
@@ -35,9 +36,11 @@ from starlette.websockets import WebSocket
 from pipecat.frames.frames import (
     Frame,
     InterruptionFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    TextFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
-    TTSSpeakFrame,
     TTSStoppedFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
@@ -47,6 +50,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
 from pipecat.services.deepgram.flux.stt import DeepgramFluxSTTService
+from pipecat.services.tts_service import TextAggregationMode
 from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
@@ -188,6 +192,9 @@ class SpeakerSink(FrameProcessor):
         self._conn = connection
         self._room = room
         self._turn = None  # current TurnStopwatch, set by VoicePipeline.speak
+        # True between the utterance's opening frame and its close. Lives here because
+        # this is the processor that sees the interruption that invalidates it.
+        self.speaking = False
 
     def set_turn(self, turn) -> None:
         self._turn = turn
@@ -223,6 +230,9 @@ class SpeakerSink(FrameProcessor):
             # poison the one measurement this phase is judged on. The page-side `stop` is
             # idempotent — the gate already sent one on the fast path.
             self._turn = None
+            # Pipecat drops the TTS turn context on interruption, so the next reply must
+            # open a fresh utterance rather than assume this one is still running.
+            self.speaking = False
             self._room.note_playout_stopped()
             await self._conn.send_json({"type": "stop"})
         await self.push_frame(frame, direction)
@@ -291,6 +301,14 @@ class VoicePipeline:
             sample_rate=SPEAKER_SAMPLE_RATE,  # so the sink can forward PCM as-is
             encoding="pcm_s16le",
             container="raw",
+            # We segment upstream (pysbd → TtsDispatcher), so pipecat's sentence
+            # aggregator would only re-buffer text we already know is complete — and it
+            # holds a finished sentence until the NEXT non-whitespace char arrives, which
+            # would delay every chunk's audio by one chunk. TOKEN = send what we send.
+            text_aggregation_mode=TextAggregationMode.TOKEN,
+            # Chunks arrive already stripped, so without this Cartesia gets
+            # "…done.Next thing…" across a chunk boundary.
+            append_trailing_space=True,
             settings=CartesiaTTSService.Settings(
                 voice=tuning.TTS_VOICE_ID or None,
                 model=tuning.TTS_MODEL,
@@ -333,10 +351,31 @@ class VoicePipeline:
         return self._sink.has_turn
 
     async def speak(self, text: str, turn=None) -> None:
-        """Render `text` out the mouth. `turn` (a TurnStopwatch) receives t3/t4."""
+        """Queue `text` as part of the CURRENT utterance, opening one if none is open.
+        `turn` (a TurnStopwatch) receives t3/t4.
+
+        Call `end_utterance()` when the reply is complete — that is what flushes the
+        Cartesia context. Chunks of one streamed reply must share ONE context: pipecat
+        mints a fresh context per `TTSSpeakFrame` (it deliberately nulls the turn context
+        for them) but reuses one across an LLM response, and Cartesia counts concurrent
+        contexts against a hard account limit — 2 on the free tier. Sending chunks as
+        standalone speak-frames made chunks-per-reply == concurrent contexts, so a
+        multi-sentence reply 429'd and died partway through.
+        """
         if turn is not None:
             self._sink.set_turn(turn)
-        await self._task.queue_frame(TTSSpeakFrame(text))
+        if not self._sink.speaking:
+            self._sink.speaking = True
+            await self._task.queue_frame(LLMFullResponseStartFrame())
+        await self._task.queue_frame(TextFrame(text))
+
+    async def end_utterance(self) -> None:
+        """Close the open utterance (flush its Cartesia context). No-op when none is
+        open, so one-shot callers and the streamed path can both call it blindly."""
+        if not self._sink.speaking:
+            return
+        self._sink.speaking = False
+        await self._task.queue_frame(LLMFullResponseEndFrame())
 
     async def stop(self) -> None:
         # run() awaits the runner directly, so cancelling the task ends the pipeline

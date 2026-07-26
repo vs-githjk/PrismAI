@@ -91,3 +91,13 @@ async def speak(bot_id: str, text: str, turn=None) -> bool:
     session.pipeline.room.note_speak_queued()
     await session.pipeline.speak(text, turn=turn)
     return True
+
+
+async def end_utterance(bot_id: str) -> None:
+    """Mark the reply complete so the mouth flushes it. Safe to call when nothing is
+    open or no pipeline is attached — the streamed path calls it from a `finally`."""
+    from voice.audio_routes import get_session
+
+    session = get_session(bot_id)
+    if session is not None and session.pipeline is not None:
+        await session.pipeline.end_utterance()

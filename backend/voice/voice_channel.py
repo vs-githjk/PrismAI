@@ -50,13 +50,18 @@ def _is_dispatch_reply(text: str) -> bool:
 
 # ── delivery helpers ──────────────────────────────────────────────────────────
 
-async def _speak(bot_id: str, text: str) -> None:
+async def _speak(bot_id: str, text: str, *, more: bool = False) -> None:
     """Politeness gap (§2) then mouth. `wait_for_gap` returns immediately when the bot is
-    already mid-utterance, so it gates the START of a reply, not each streamed chunk."""
+    already mid-utterance, so it gates the START of a reply, not each streamed chunk.
+
+    `more=True` means another chunk of the same reply follows, so the utterance stays
+    open and every chunk shares one Cartesia context (see `VoicePipeline.speak`)."""
     from voice import barge, bridge
     try:
         await barge.wait_for_gap(bot_id)
         await bridge.speak(bot_id, text)
+        if not more:
+            await bridge.end_utterance(bot_id)
     except Exception as exc:
         print(f"[voice] speak failed: {exc}")
 
@@ -141,7 +146,14 @@ async def handle_command(bot_id: str, command: str, speaker: str = "", from_chat
     if await _maybe_standin(bot_id, command, from_chat):
         return
 
-    decided, full = await _stream_talk_or_dispatch(bot_id, command, speaker, from_chat)
+    try:
+        decided, full = await _stream_talk_or_dispatch(bot_id, command, speaker, from_chat)
+    finally:
+        # The reply is over however it ended (spoken, cut short, leaked, raised) — close
+        # the utterance so the mouth flushes its one Cartesia context. No-op if nothing
+        # is open, which is every from_chat path.
+        from voice import bridge
+        await bridge.end_utterance(bot_id)
 
     if decided == "talk":
         reply = (full or "").strip() or f"Got it — {command}."
@@ -345,7 +357,6 @@ async def _stream_talk_or_dispatch(bot_id: str, command: str, speaker: str, from
     rr = _rr()
     speak_ok = not from_chat
     seg = StreamingSegmenter()
-    # min_chars also bounds concurrent Cartesia contexts — see tuning.TTS_BATCH_MIN_CHARS.
     dispatcher = TtsDispatcher(min_chars=tuning.TTS_BATCH_MIN_CHARS)
     full_parts: list[str] = []
     decided = None
@@ -353,9 +364,11 @@ async def _stream_talk_or_dispatch(bot_id: str, command: str, speaker: str, from
     seq0 = barge.interrupt_seq(bot_id)  # barge-in fired after this ⇒ stop mid-reply
 
     async def _emit(seg_text_chunks):
+        # more=True: every chunk here belongs to the reply still being generated, so the
+        # utterance stays open. handle_command closes it once the stream is done.
         for sent in seg_text_chunks:
             for chunk in dispatcher.push(sent):
-                await _speak(bot_id, chunk)
+                await _speak(bot_id, chunk, more=True)
 
     spec = _take_speculation(bot_id, command)
     try:
@@ -410,7 +423,7 @@ async def _stream_talk_or_dispatch(bot_id: str, command: str, speaker: str, from
     if speak_ok and not barge.interrupted_since(bot_id, seq0):
         await _emit(seg.flush())
         for chunk in dispatcher.flush():
-            await _speak(bot_id, chunk)
+            await _speak(bot_id, chunk, more=True)
     return "talk", acc_raw.strip()
 
 

@@ -131,6 +131,25 @@ Flags this phase added are all operational per Q6 and stay: `PRISM_VOICE_BARGE_I
   same instant on Flux — the semantic decision *is* the transcript), the voice channel marks
   t2 on its first token, the mouth claims the turn for t3/t4. An interrupted utterance drops
   its turn so the next one can't inherit a poisoned t3.
+- **One Cartesia context per reply (2026-07-25, post-meeting fix).** Live logs showed
+  `429: concurrency limit of 2` and multi-sentence replies dying mid-reply. Cause, not
+  the free tier: our brain sits outside Pipecat (Q1) so we fed the mouth `TTSSpeakFrame`s,
+  and pipecat deliberately nulls its turn context for those (`tts_service.py:758`) —
+  reuse only happens across an LLM response — so chunks-per-reply == concurrent Cartesia
+  contexts. The mouth now brackets a reply as `LLMFullResponseStart` → `TextFrame`×N →
+  `LLMFullResponseEnd`, which pipecat's own `reuse_context_id_within_turn` (default on)
+  collapses into ONE context regardless of chunk count. `VoicePipeline.speak` opens the
+  utterance on first chunk; `end_utterance()` closes it (idempotent) and `handle_command`
+  calls it from a `finally`, so a reply cut by barge-in, a leak-dispatch or an exception
+  still flushes. The sink clears its `speaking` flag on `InterruptionFrame` because
+  pipecat drops the turn context there, so the next reply must reopen. TTS runs in
+  `TextAggregationMode.TOKEN` (we already segment with pysbd; pipecat's sentence
+  aggregator holds a finished sentence until the next non-whitespace char arrives, which
+  would have delayed every chunk's audio by one chunk) with `append_trailing_space=True`
+  so chunk boundaries don't glue. **`PRISM_TTS_BATCH_MIN_CHARS` is no longer the
+  concurrency lever** — it is back to being a pure latency/prosody dial and stays at 25;
+  the earlier "raise it to ~200" mitigation is obsolete and should NOT be set.
+  Regression test: `backend/tests/test_tts_utterance_grouping.py`.
 - **Not done, needs real audio:** the §6 loop itself; re-picking `_spoken_condense`'s
   3 sentences / 340 chars for a streaming mouth (§4 — the pacing constraint that set those
   numbers is gone, but there is no data to re-pick on, so they ship as knobs at the old
