@@ -1621,6 +1621,14 @@ async def _fetch_transcript(bot_id: str, attempts: int = 12, prefer_async: bool 
 # durable transcript (more accurate than the live streaming pass). Killable via env.
 _ASYNC_TRANSCRIPT_ENABLED = os.getenv("PRISM_ASYNC_TRANSCRIPT", "1") != "0"
 
+# Jul 2026: when Recall returns a NAMED, word-timed transcript, use it as the spine
+# (correct per-participant attribution + timing) and MERGE IN the bot's own lines +
+# human chat lines (which Recall's audio transcript never contains) by their recording-
+# relative timestamp — instead of falling back wholesale to the Flux live buffer, which
+# mis-attributes speakers (stale last_speaker) and drops nothing but has no diarization.
+# Fixes speaker-misattribution AND "the bot is invisible in the recording" together.
+_MERGE_RECALL_TRANSCRIPT = os.getenv("PRISM_MERGE_RECALL_TRANSCRIPT", "1") != "0"
+
 
 async def _request_async_transcript(bot_id: str) -> bool:
     """Ask Recall to (re)transcribe this bot's recording with Deepgram async nova-3 +
@@ -2134,24 +2142,57 @@ async def _process_bot_transcript(bot_id: str):
             transcript = _transcript_from_recall_data(raw)
             segments = _segments_from_recall_data(raw)
 
-        # The realtime buffer interleaves the humans' utterances with the bot's
-        # own turns (recorded via _record_bot_line) in chronological order. When
-        # the bot actually spoke, prefer it as the transcript: Recall's audio
-        # transcript wouldn't contain the bot's chat replies, so it'd read as a
-        # monologue ("talking to myself" in a 1-on-1). Segments still come from
-        # Recall for the recording player. Otherwise it's a plain fallback when
-        # Recall returned nothing.
+        # The live buffer holds the humans' utterances interleaved with the bot's own
+        # turns (recorded via _record_bot_line). Used as the fallback spine below; the
+        # merge path prefers Recall's better-attributed word-timed transcript.
         rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
         bot_spoke = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in rt_lines)
-        if bot_spoke and rt_lines:
-            # Collapse the bot's two names (persona for replies, default for the stand-in
-            # delivery) into one so it isn't analysed as two separate speakers.
-            rt_lines = _normalize_bot_speaker(rt_lines, await _resolve_bot_persona_name(bot_id))
-            transcript = "\n".join(rt_lines)
-            print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
-        elif not transcript.strip() and rt_lines:
-            transcript = "\n".join(rt_lines)
-            print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
+
+        # PREFERRED: when Recall returned a NAMED, word-timed transcript, use it as the
+        # spine (correct per-participant attribution + timing — the Flux live buffer stamps
+        # a stale last_speaker on every turn, mis-attributing who said what) and MERGE IN
+        # the bot's own replies + humans' typed chat by their recording-relative timestamp
+        # (Recall's audio transcript contains neither). This is BOTH the transcript AND the
+        # seekable segments, so the recording player finally shows the bot too. Only taken
+        # when we won't lose the bot's contribution: it either said nothing, or we captured
+        # its turns as stamped segments to splice back in.
+        merged_ok = False
+        if _MERGE_RECALL_TRANSCRIPT and segments:
+            seg_text0 = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+            if not _speakers_anonymous(seg_text0):
+                extra = [
+                    s for s in (bot_store.get(bot_id, {}).get("realtime_segments") or [])
+                    if s.get("source") in ("bot", "chat") and (s.get("text") or "").strip()
+                ]
+                if extra or not bot_spoke:
+                    persona = await _resolve_bot_persona_name(bot_id)
+                    norm_extra = [
+                        ({**s, "speaker": persona}
+                         if (s.get("speaker") or "").startswith(_BOT_NAME_PREFIXES) else s)
+                        for s in extra
+                    ]
+                    segments = sorted(list(segments) + norm_extra,
+                                      key=lambda s: (s.get("start") or 0.0))
+                    transcript = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+                    merged_ok = True
+                    print(f"[recall] merged Recall word-timed transcript "
+                          f"({len(segments) - len(norm_extra)} human) + {len(norm_extra)} "
+                          f"bot/chat line(s) → {len(segments)} segments")
+
+        # The realtime buffer interleaves the humans' utterances with the bot's own turns
+        # (recorded via _record_bot_line) in chronological order. Fallback when Recall gave
+        # no usable named transcript: when the bot spoke, prefer the bot-inclusive live
+        # buffer so it doesn't read as a monologue; else a plain fallback if Recall was empty.
+        if not merged_ok:
+            if bot_spoke and rt_lines:
+                # Collapse the bot's two names (persona for replies, default for the stand-in
+                # delivery) into one so it isn't analysed as two separate speakers.
+                rt_lines = _normalize_bot_speaker(rt_lines, await _resolve_bot_persona_name(bot_id))
+                transcript = "\n".join(rt_lines)
+                print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
+            elif not transcript.strip() and rt_lines:
+                transcript = "\n".join(rt_lines)
+                print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
 
         # Seekable segments: Recall's word-timestamped transcript is preferred, but when
         # it's absent (bot spoke → live transcript used, or Recall returned no words) fall

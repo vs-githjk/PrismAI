@@ -1590,9 +1590,8 @@ async def stream_catchup_answer(
 
     try:
         stream = await openai_client.chat.completions.create(
-            model=LIVE_MODEL,
-            temperature=0.3,
-            max_tokens=450,
+            model=LIVE_MODEL,  # luna (GPT-5): no custom temperature; max_completion_tokens
+            max_completion_tokens=450,
             stream=True,
             messages=[
                 {"role": "system", "content": system},
@@ -2184,6 +2183,21 @@ def _append_realtime_segment(bot_id: str, seg: dict) -> None:
         del segs[: len(segs) - _RT_TRANSCRIPT_CAP]
 
 
+def _recording_elapsed_for_bot(bot_id: str) -> float | None:
+    """Recording-relative seconds (from the live voice pipeline's t0), used to stamp
+    a seekable timestamp onto non-audio lines — the bot's own replies and humans' typed
+    chat — so they can be merged into Recall's word-timed transcript in chronological
+    order. Best-effort: None when no pipeline is attached (older MP3-path bots)."""
+    try:
+        from voice.audio_routes import get_session
+        s = get_session(bot_id)
+        if s is not None and s.pipeline is not None:
+            return round(s.pipeline.recording_elapsed(), 2)
+    except Exception:
+        pass
+    return None
+
+
 async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
     """Record a human's in-meeting CHAT message into the transcript (buffer + durable),
     mirroring _record_bot_line for the bot's side. Recall only transcribes spoken AUDIO,
@@ -2202,6 +2216,15 @@ async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
             if len(buf) > meeting_memory.MAX_BUFFER_LINES:
                 st["transcript_buffer"] = buf[-meeting_memory.TRIM_TO:]
             _append_realtime_line(bot_id, line)
+            # Seekable segment (source="chat") so a human's TYPED message merges into
+            # Recall's word-timed transcript at the right point — Recall transcribes
+            # spoken audio only, so chat would otherwise vanish from a merged transcript.
+            _t = _recording_elapsed_for_bot(bot_id)
+            if _t is not None:
+                _append_realtime_segment(bot_id, {
+                    "speaker": sender or "Someone",
+                    "start": _t, "end": _t, "text": text, "source": "chat",
+                })
             _maybe_persist_transcript(bot_id, st)
     except Exception as exc:
         print(f"[realtime] chat-line record failed: {exc}")
@@ -2244,6 +2267,17 @@ def _record_bot_line(bot_id: str, state: dict, text: str, bot_name: str) -> None
     # Durable, append-only copy (survives trims + restart) so it lands in the
     # final saved transcript alongside the human lines, in chronological order.
     _append_realtime_line(bot_id, line)
+    # Seekable segment stamped with a recording-relative time so the bot's own words
+    # can be merged into Recall's word-timed transcript (Recall's audio never captures
+    # the bot's Output-Media speech / chat replies). source="bot" marks it as a line
+    # to KEEP when merging (Flux STT segments carry no source and are dropped in favour
+    # of Recall's better-attributed human segments).
+    _t = _recording_elapsed_for_bot(bot_id)
+    if _t is not None:
+        _append_realtime_segment(bot_id, {
+            "speaker": bot_name or DEFAULT_BOT_NAME,
+            "start": _t, "end": _t, "text": text, "source": "bot",
+        })
     _maybe_persist_transcript(bot_id, state)
 
 
@@ -2772,8 +2806,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
-            "model": LIVE_MODEL,
-            "temperature": 0.3,
+            "model": LIVE_MODEL,  # luna (GPT-5): default temperature only
             "messages": messages,
         }
         if tools:
@@ -3050,8 +3083,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # Tool loop exhausted without a text summary — ask LLM to summarise what was done
             try:
                 summary_resp = await openai_client.chat.completions.create(
-                    model=LIVE_MODEL,
-                    temperature=0.3,
+                    model=LIVE_MODEL,  # luna (GPT-5): default temperature only
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )
                 reply = summary_resp.choices[0].message.content or "Done."
