@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Awaitable, Callable, Optional
 
 from starlette.websockets import WebSocket
@@ -262,6 +263,10 @@ class VoicePipeline:
         self._connection = connection
         self._serializer = RecallFrameSerializer(bot_id)
         self.room = RoomAudio(bot_id)
+        # Wall-clock anchor for seekable transcript segments. Flux gives no word-level
+        # timings, so we stamp each finished turn with seconds-since-audio-start as a
+        # recording-relative proxy (the audio socket opens ~when Recall starts recording).
+        self._t0 = time.monotonic()
         print(f"[voice] pipeline bot={bot_id[:8]} tuning: {tuning.summary()}")
 
         transport = FastAPIWebsocketTransport(
@@ -357,6 +362,11 @@ class VoicePipeline:
         """Drive the pipeline until the Recall audio socket closes. Awaited by the
         /voice/audio-in route so the WS handler stays open for the socket's lifetime."""
         await self._runner.run(self._task)
+
+    def recording_elapsed(self) -> float:
+        """Seconds since the audio socket opened — a recording-relative proxy used to
+        stamp Flux turns for click-to-seek (Flux provides no word-level timing)."""
+        return max(0.0, time.monotonic() - self._t0)
 
     @property
     def has_open_turn(self) -> bool:

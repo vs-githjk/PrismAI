@@ -43,6 +43,26 @@ def make_on_final(bot_id: str) -> Callable[[str, str, str], Awaitable[None]]:
         if not text:
             return
         speaker = (speaker or "").strip() or "Speaker"
+
+        # Seekable transcript segment. Flux hands us finished-turn TEXT with no word-level
+        # timings, so the accumulator's segment path (which needs start_timestamp.relative)
+        # writes nothing → "Timestamped transcript not available." Stamp the turn here with
+        # a recording-relative time and append the segment DIRECTLY — independent of the
+        # PRISM_ACCUMULATOR flag, which is the only other thing that writes segments.
+        try:
+            from voice.audio_routes import get_session
+            from realtime_routes import _append_realtime_segment
+
+            _s = get_session(bot_id)
+            if _s is not None and _s.pipeline is not None:
+                _start = round(_s.pipeline.recording_elapsed(), 2)
+                _append_realtime_segment(
+                    bot_id,
+                    {"speaker": speaker, "start": _start, "end": _start, "text": text},
+                )
+        except Exception as _seg_exc:
+            print(f"[voice] seekable-segment stamp skipped bot={bot_id[:8]}: {_seg_exc!r}")
+
         payload = {
             "event": "transcript.data",
             "data": {
