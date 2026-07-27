@@ -47,6 +47,26 @@ def get_session(bot_id: str) -> VoiceSession | None:
     return _sessions.get(bot_id)
 
 
+async def stop_session(bot_id: str) -> None:
+    """Proactively tear down a bot's voice pipeline. Called on bot-leave, because Recall
+    does NOT reliably close the audio-in WS when the bot leaves the call — so `audio_in`'s
+    run() never returns, its `finally` never fires, and the Flux + Silero + Cartesia
+    pipeline LEAKS (the watchdog spins 'No audio received…' forever, and zombie pipelines
+    pile up across meetings → Render CPU/memory exhaustion). Idempotent; safe if the WS
+    later closes on its own (the finally's stop() is guarded)."""
+    s = _sessions.get(bot_id)
+    if s is None:
+        return
+    p, s.pipeline, s.audio_socket_active = s.pipeline, None, False
+    if p is not None:
+        try:
+            await p.stop()
+            print(f"[voice] pipeline torn down on leave bot={bot_id[:8]}")
+        except Exception as exc:
+            print(f"[voice] stop_session error bot={bot_id[:8]}: {exc!r}")
+    _sessions.pop(bot_id, None)
+
+
 def _session_for(bot_id: str) -> VoiceSession:
     s = _sessions.get(bot_id)
     if s is None:

@@ -324,6 +324,15 @@ def _record_leave_reason(bot_id: str, code: str, sub_code: str, message: str) ->
         _db_save(bot_id, {"leave_reason": reason})
     except Exception as exc:
         print(f"[recall] leave_reason persist skipped: {exc}")
+    # Tear down the live voice pipeline NOW — Recall doesn't reliably close the audio-in
+    # WS on leave, so without this the Flux/Silero/Cartesia pipeline leaks (watchdog spins
+    # forever) and zombie pipelines accumulate across meetings. Best-effort, needs a loop.
+    try:
+        import asyncio as _asyncio
+        from voice.audio_routes import stop_session as _stop_voice
+        _asyncio.get_running_loop().create_task(_stop_voice(bot_id))
+    except Exception as exc:
+        print(f"[recall] voice teardown on leave skipped bot={bot_id}: {exc!r}")
 
 
 def _normalize_meeting_url(url: str) -> str:
