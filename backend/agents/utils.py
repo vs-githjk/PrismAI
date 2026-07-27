@@ -64,6 +64,14 @@ FALLBACK_MODEL = "gpt-4o-mini"                # OpenAI — cross-provider fallba
 # calls along. Env-overridable so the model can be re-pinned without a redeploy.
 AGENT_MODEL = os.getenv("PRISM_AGENT_MODEL", "claude-sonnet-5")
 
+# The newest Anthropic models (Sonnet 5 family) DEPRECATE the `temperature` param —
+# passing it 400s ("`temperature` is deprecated for this model"), which is NOT transient,
+# so every agent used to hard-fail with no fallback → empty meeting. Omit temperature for
+# these. Haiku still accepts it. Substring match so dated variants are covered too.
+_NO_TEMPERATURE_MODELS = ("claude-sonnet-5",)
+def _accepts_temperature(model: str) -> bool:
+    return not any(m in (model or "") for m in _NO_TEMPERATURE_MODELS)
+
 # Set by the analysis-pipeline dispatch (analysis_service) + /agent re-run, read inside
 # llm_call to pick AGENT_MODEL for those calls only. Empty → llm_call uses PRIMARY_MODEL.
 _AGENT_MODEL: contextvars.ContextVar[str] = contextvars.ContextVar("agent_model", default="")
@@ -169,25 +177,35 @@ async def llm_call(
         # Retry the primary on transient errors (rate-limit/overload/5xx) with backoff
         # before conceding to the fallback — a burst-induced 429 usually clears in
         # a second or two, so retrying keeps the work on the primary model.
+        primary_kwargs = {
+            "model": primary_model,
+            "max_tokens": out_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if _accepts_temperature(primary_model):
+            primary_kwargs["temperature"] = temp
         for attempt in range(_PRIMARY_ATTEMPTS):
             try:
-                resp = await anthropic_client.messages.create(
-                    model=primary_model,
-                    max_tokens=out_tokens,
-                    temperature=temp,
-                    system=system,
-                    messages=[{"role": "user", "content": user}],
-                )
+                resp = await anthropic_client.messages.create(**primary_kwargs)
                 return resp.content[0].text
             except Exception as exc:
-                if not _is_transient(exc):
-                    raise
                 primary_exc = exc
+                # A NON-transient error (bad request, unsupported param, bad model id) won't
+                # clear on retry — stop retrying, but still fall through to the OpenAI fallback
+                # rather than raising here. Raising used to make every agent return its empty
+                # default (an all-blank meeting) on any primary incompatibility; degrading to
+                # the fallback keeps the meeting alive. Loud log so the incompatibility is seen.
+                if not _is_transient(exc):
+                    print(f"[agent] {primary_model} NON-transient error ({exc!r}) — "
+                          f"falling back to {FALLBACK_MODEL}")
+                    break
                 if attempt < _PRIMARY_ATTEMPTS - 1:
                     print(f"[agent] {primary_model} transient ({exc!r}), retry {attempt + 1}/{_PRIMARY_ATTEMPTS - 1}")
                     await _backoff_sleep(attempt)
-        print(f"[agent] {primary_model} exhausted {_PRIMARY_ATTEMPTS} attempts ({primary_exc!r}), "
-              f"falling back to {FALLBACK_MODEL}")
+        else:
+            print(f"[agent] {primary_model} exhausted {_PRIMARY_ATTEMPTS} attempts ({primary_exc!r}), "
+                  f"falling back to {FALLBACK_MODEL}")
 
     openai_client = _get_openai()
     if openai_client:
