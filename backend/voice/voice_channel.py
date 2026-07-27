@@ -31,7 +31,7 @@ from voice import stopwatch as _sw
 from voice.prompts import DISPATCH_TOKEN
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 
-_VOICE_MODEL = os.getenv("PRISM_VOICE_MODEL", "llama-3.3-70b-versatile")
+from clients import LIVE_MODEL as _VOICE_MODEL  # OpenAI gpt-5.6-luna (Groq removed Jul 2026)
 _ACK_DELAY_S = tuning.ACK_DELAY_S
 _DISPATCH_DECIDE_CHARS = len(DISPATCH_TOKEN) + 3  # buffer this many chars before deciding
 
@@ -222,16 +222,12 @@ async def _build_voice_messages(bot_id: str, command: str, speaker: str) -> list
 
 
 async def _open_deltas(messages: list[dict]):
-    """Open the voice-channel stream and yield content deltas. Groq when configured
-    (its time-to-first-token is the whole reason it's here), gpt-4o-mini otherwise."""
-    from clients import get_groq, get_openai
-    client = get_groq()
-    model = _VOICE_MODEL
-    if client is None:  # Groq not configured → fall back to gpt-4o-mini streaming.
-        client = get_openai()
-        model = "gpt-4o-mini"
+    """Open the voice-channel stream and yield content deltas — OpenAI gpt-5.6-luna
+    (streaming). Groq was removed Jul 2026; luna is the fast talk brain now."""
+    from clients import get_openai
+    client = get_openai()
     stream = await client.chat.completions.create(
-        model=model, temperature=0.4, messages=messages, stream=True,
+        model=_VOICE_MODEL, temperature=0.4, messages=messages, stream=True,
     )
     async for chunk in stream:
         if not chunk.choices:

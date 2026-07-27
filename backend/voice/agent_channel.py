@@ -110,7 +110,8 @@ async def run(bot_id: str, command: str, speaker: str = "") -> dict:
 
         tools_used = result["tools_used"]
         newly_blocked: list[str] = []
-        call_kwargs = {"model": "gpt-4o-mini", "temperature": 0.3, "messages": messages}
+        from clients import LIVE_MODEL
+        call_kwargs = {"model": LIVE_MODEL, "temperature": 0.3, "messages": messages}
         if tools:
             call_kwargs["tools"] = tools
             call_kwargs["tool_choice"] = "auto"
@@ -225,8 +226,9 @@ async def run(bot_id: str, command: str, speaker: str = "") -> dict:
             call_kwargs["messages"] = messages
         else:
             try:
+                from clients import LIVE_MODEL
                 summary_resp = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini", temperature=0.3,
+                    model=LIVE_MODEL, temperature=0.3,
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )
                 reply = summary_resp.choices[0].message.content or "Done."

@@ -41,7 +41,7 @@ _HANDLER: Optional[CommandHandler] = None
 _DEDUP_WINDOW_S = tuning.DEDUP_WINDOW_S
 _DEDUP_DROP_RATIO = tuning.DEDUP_DROP_RATIO   # ≥ this within the window → tier-1 drop
 _DEDUP_AMBIG_RATIO = tuning.DEDUP_AMBIG_RATIO  # [ambig, drop) → tier-2 model adjudicates
-_TIER2_MODEL = os.getenv("PRISM_DEDUP_TIER2_MODEL", "llama-3.1-8b-instant")
+_TIER2_MODEL = os.getenv("PRISM_DEDUP_TIER2_MODEL", "gpt-4o-mini")  # cheap judge (Groq removed)
 _QUEUE_MAX = 3  # depth cap — mirrors the old FIFO cap
 
 
@@ -162,12 +162,12 @@ async def submit(bot_id: str, command: str, speaker: str, from_chat: bool = Fals
 
 
 async def _tier2_same_request(a: str, b: str) -> bool:
-    """One yes/no from a small fast model: are these the same request re-heard, or two
-    distinct requests? Fails OPEN (→ not-a-dup / accept) when Groq is unavailable — the
-    old debounce erred toward dropping and swallowed real second questions; we'd rather
-    occasionally double-answer than silently ignore a participant."""
-    from clients import get_groq
-    client = get_groq()
+    """One yes/no from a small fast model (gpt-4o-mini): are these the same request
+    re-heard, or two distinct requests? Fails OPEN (→ not-a-dup / accept) when the client
+    is unavailable — the old debounce erred toward dropping and swallowed real second
+    questions; we'd rather occasionally double-answer than silently ignore a participant."""
+    from clients import get_openai
+    client = get_openai()
     if client is None:
         return False
     try:

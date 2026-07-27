@@ -51,7 +51,7 @@ def _join_at_ok(scheduled_for: str | None) -> bool:
 # The composer is a deliberate, low-volume path where reasoning quality matters
 # (it's representing a person in a meeting), so it runs on a stronger model than the
 # high-volume chat path. Override with PRISM_PROXY_MODEL.
-_DRAFT_MODEL = os.getenv("PRISM_PROXY_MODEL", "gpt-4o")
+_DRAFT_MODEL = os.getenv("PRISM_PROXY_MODEL", "gpt-5.6-luna")
 
 
 def _require_storage():

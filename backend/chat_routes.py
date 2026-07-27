@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from auth import require_user_id, supabase
+from clients import LIVE_MODEL  # OpenAI gpt-5.6-luna for dashboard chat (/chat, /chat/global)
 from analysis_service import AGENT_MAP, TIER2_AGENTS, _persona_text_for_agent
 from agents.utils import _PERSONA_TEXT, get_persona_suffix
 from personas import resolve_persona
@@ -331,7 +332,7 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
     max_iterations = 3
 
     call_kwargs = {
-        "model": "gpt-4o-mini",
+        "model": LIVE_MODEL,
         "temperature": 0.7,
         "messages": messages,
     }
@@ -451,6 +452,10 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
             "persona_custom_prompt": req.persona_custom_prompt or "",
         }
         _PERSONA_TEXT.set(_persona_text_for_agent(req.agent, fake_state))
+        # A /agent re-run IS an analysis agent → route it to Sonnet like the pipeline
+        # (contextvar dies with this request task, so no reset needed).
+        from agents.utils import _AGENT_MODEL, AGENT_MODEL
+        _AGENT_MODEL.set(AGENT_MODEL)
         augmented = req.transcript
         if req.existing_items is not None:
             try:
@@ -583,7 +588,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         else:
             try:
                 response = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model=LIVE_MODEL,
                     temperature=0.7,
                     messages=messages,
                 )
@@ -692,7 +697,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         else:
             try:
                 response = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model=LIVE_MODEL,
                     temperature=0.7,
                     messages=messages,
                 )

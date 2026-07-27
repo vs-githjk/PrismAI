@@ -19,7 +19,7 @@ import os
 import re
 from datetime import UTC, datetime
 
-from agents.utils import llm_call, strip_fences
+from agents.utils import llm_call, strip_fences, AGENT_MODEL
 from cross_meeting_service import has_meaningful_result
 
 try:
@@ -220,7 +220,8 @@ async def _run_synthesis(meetings: list[dict]) -> dict:
     digests = [build_digest(entry, i + 1) for i, entry in enumerate(meetings)]
     ref_to_id = {i + 1: entry.get("id") for i, entry in enumerate(meetings)}
     user = "Meeting digests (JSON):\n" + json.dumps(digests, ensure_ascii=False)
-    raw = await llm_call(_SYSTEM, user, temperature=0.2, max_tokens=2000)
+    # Quality-critical single pass over the whole scope → Sonnet (like the analysis agents).
+    raw = await llm_call(_SYSTEM, user, temperature=0.2, max_tokens=2000, model=AGENT_MODEL)
     return _parse_and_validate(raw, ref_to_id)
 
 

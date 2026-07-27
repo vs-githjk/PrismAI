@@ -53,8 +53,20 @@ def get_persona_suffix() -> str:
 _anthropic_client = None
 _openai_client = None
 
-PRIMARY_MODEL = "claude-haiku-4-5-20251001"   # Anthropic — agents + RAG + memory
+PRIMARY_MODEL = "claude-haiku-4-5-20251001"   # Anthropic — DEFAULT for llm_call: RAG helpers
+                                              # (rewriter/reranker/preamble) + meeting_memory.
+                                              # Kept fast/cheap because those are latency-critical.
 FALLBACK_MODEL = "gpt-4o-mini"                # OpenAI — cross-provider fallback
+# Post-meeting ANALYSIS agents (the 10 pipeline agents + cross-meeting synthesis + /agent
+# re-runs) route here instead — higher quality, latency-tolerant since it's post-meeting.
+# Selected per-call via the model= arg or the _AGENT_MODEL contextvar (set by the analysis
+# dispatch), so flipping agents to Sonnet does NOT drag the latency-critical RAG/memory
+# calls along. Env-overridable so the model can be re-pinned without a redeploy.
+AGENT_MODEL = os.getenv("PRISM_AGENT_MODEL", "claude-sonnet-5")
+
+# Set by the analysis-pipeline dispatch (analysis_service) + /agent re-run, read inside
+# llm_call to pick AGENT_MODEL for those calls only. Empty → llm_call uses PRIMARY_MODEL.
+_AGENT_MODEL: contextvars.ContextVar[str] = contextvars.ContextVar("agent_model", default="")
 
 
 def strip_fences(text: str) -> str:
@@ -131,9 +143,15 @@ async def llm_call(
     user: str,
     temperature: float = 0.3,
     max_tokens: int | None = None,
+    model: str | None = None,
 ) -> str:
-    """Call Claude Haiku 4.5 (primary). On rate-limit/overload/5xx, fall back to
+    """Call the primary Anthropic model. On rate-limit/overload/5xx, fall back to
     OpenAI gpt-4o-mini for cross-provider resilience.
+
+    model: explicit Anthropic model override. When unset, resolves to the _AGENT_MODEL
+    contextvar (Sonnet, set by the analysis dispatch) if present, else PRIMARY_MODEL
+    (Haiku) — so post-meeting agents get Sonnet while latency-critical RAG helpers +
+    meeting_memory keep Haiku, all through this one function.
 
     max_tokens: optional cap on response length. Useful for short, structured
     outputs (e.g. context preambles, reranker decisions, query rewrites) so
@@ -143,17 +161,18 @@ async def llm_call(
     # Anthropic caps temperature at 1.0; our agents stay ≤1 but clamp defensively.
     temp = min(temperature, 1.0)
     out_tokens = max_tokens if max_tokens is not None else 4096
+    primary_model = model or _AGENT_MODEL.get() or PRIMARY_MODEL
 
     anthropic_client = _get_anthropic()
     primary_exc = None
     if anthropic_client:
-        # Retry Haiku on transient errors (rate-limit/overload/5xx) with backoff
+        # Retry the primary on transient errors (rate-limit/overload/5xx) with backoff
         # before conceding to the fallback — a burst-induced 429 usually clears in
         # a second or two, so retrying keeps the work on the primary model.
         for attempt in range(_PRIMARY_ATTEMPTS):
             try:
                 resp = await anthropic_client.messages.create(
-                    model=PRIMARY_MODEL,
+                    model=primary_model,
                     max_tokens=out_tokens,
                     temperature=temp,
                     system=system,
@@ -165,9 +184,9 @@ async def llm_call(
                     raise
                 primary_exc = exc
                 if attempt < _PRIMARY_ATTEMPTS - 1:
-                    print(f"[agent] Claude transient ({exc!r}), retry {attempt + 1}/{_PRIMARY_ATTEMPTS - 1}")
+                    print(f"[agent] {primary_model} transient ({exc!r}), retry {attempt + 1}/{_PRIMARY_ATTEMPTS - 1}")
                     await _backoff_sleep(attempt)
-        print(f"[agent] Claude exhausted {_PRIMARY_ATTEMPTS} attempts ({primary_exc!r}), "
+        print(f"[agent] {primary_model} exhausted {_PRIMARY_ATTEMPTS} attempts ({primary_exc!r}), "
               f"falling back to {FALLBACK_MODEL}")
 
     openai_client = _get_openai()

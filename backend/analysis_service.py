@@ -177,8 +177,9 @@ def _route_tier1(state: AnalysisState) -> list[Send] | str:
 
 def _make_tier1_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
-        from agents.utils import _PERSONA_TEXT
+        from agents.utils import _PERSONA_TEXT, _AGENT_MODEL, AGENT_MODEL
         token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
+        mtoken = _AGENT_MODEL.set(AGENT_MODEL)  # analysis agents → Sonnet (RAG/memory stay Haiku)
         try:
             # The summarizer is lens-aware: an explicitly-chosen Article/Report needs a
             # piece-framed title/summary (else the meeting prompt titles it "Not a Meeting").
@@ -196,6 +197,7 @@ def _make_tier1_node(agent_name: str):
             result = {}
         finally:
             _PERSONA_TEXT.reset(token)
+            _AGENT_MODEL.reset(mtoken)
         return {"results": {agent_name: result}}
     return node
 
@@ -262,8 +264,9 @@ def _route_tier2(state: AnalysisState) -> list[Send] | str:
 
 def _make_tier2_node(agent_name: str):
     async def node(state: AnalysisState) -> dict:
-        from agents.utils import _PERSONA_TEXT
+        from agents.utils import _PERSONA_TEXT, _AGENT_MODEL, AGENT_MODEL
         token = _PERSONA_TEXT.set(_persona_text_for_agent(agent_name, state))
+        mtoken = _AGENT_MODEL.set(AGENT_MODEL)  # analysis agents → Sonnet
         try:
             ctx = state.get("context", {})
             # Token efficiency: agents in TIER2_CONTEXT_ONLY synthesize from
@@ -281,6 +284,7 @@ def _make_tier2_node(agent_name: str):
             result = {}
         finally:
             _PERSONA_TEXT.reset(token)
+            _AGENT_MODEL.reset(mtoken)
         return {"results": {agent_name: result}}
     return node
 

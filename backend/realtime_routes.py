@@ -34,7 +34,8 @@ router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # live-bot command path runs on gpt-4o-mini
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+from clients import LIVE_MODEL  # OpenAI gpt-5.6-luna — the live-bot command/catch-up model
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 
@@ -1589,7 +1590,7 @@ async def stream_catchup_answer(
 
     try:
         stream = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=LIVE_MODEL,
             temperature=0.3,
             max_tokens=450,
             stream=True,
@@ -2771,7 +2772,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
-            "model": "gpt-4o-mini",
+            "model": LIVE_MODEL,
             "temperature": 0.3,
             "messages": messages,
         }
@@ -3049,7 +3050,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # Tool loop exhausted without a text summary — ask LLM to summarise what was done
             try:
                 summary_resp = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model=LIVE_MODEL,
                     temperature=0.3,
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )
