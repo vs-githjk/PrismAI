@@ -268,7 +268,7 @@ async def run(bot_id: str, command: str, speaker: str = "") -> dict:
                         model="claude-haiku-4-5-20251001", max_tokens=256,
                         messages=[{"role": "user", "content": f"{speaker}: {command}" if speaker else command}],
                     )
-                    result["reply"] = haiku.content[0].text
+                    result["reply"] = "".join(getattr(b, "text", "") for b in haiku.content)
                     bus.emit_status(bot_id, "done", via="haiku_fallback")
                     return result
             except Exception as haiku_exc:

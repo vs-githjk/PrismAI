@@ -3192,7 +3192,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         system=system_text,
                         messages=[{"role": "user", "content": f"{speaker}: {command}" if speaker else command}],
                     )
-                    reply = haiku_resp.content[0].text
+                    reply = "".join(getattr(b, "text", "") for b in haiku_resp.content)
                     cmd_entry = {"command": command, "speaker": speaker, "tools": [], "reply": reply, "ts": time.time()}
                     if bot_id in bot_store:
                         bot_store[bot_id].setdefault("commands", []).append(cmd_entry)

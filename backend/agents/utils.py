@@ -188,7 +188,10 @@ async def llm_call(
         for attempt in range(_PRIMARY_ATTEMPTS):
             try:
                 resp = await anthropic_client.messages.create(**primary_kwargs)
-                return resp.content[0].text
+                # claude-sonnet-5 can emit a ThinkingBlock BEFORE the TextBlock, so
+                # content[0] isn't always the answer (content[0].text → AttributeError on
+                # the thinking block). Concatenate the text from every text block instead.
+                return "".join(getattr(block, "text", "") for block in resp.content)
             except Exception as exc:
                 primary_exc = exc
                 # A NON-transient error (bad request, unsupported param, bad model id) won't
