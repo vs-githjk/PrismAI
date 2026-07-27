@@ -227,7 +227,7 @@ async def _open_deltas(messages: list[dict]):
     from clients import get_openai
     client = get_openai()
     stream = await client.chat.completions.create(
-        model=_VOICE_MODEL, temperature=0.4, messages=messages, stream=True,
+        model=_VOICE_MODEL, messages=messages, stream=True,  # luna: default temp only (GPT-5)
     )
     async for chunk in stream:
         if not chunk.choices:

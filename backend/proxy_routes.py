@@ -471,7 +471,7 @@ async def _llm_reply(system: str, history: list[dict], user_msg: str | None) -> 
         messages.append({"role": "user", "content": user_msg})
     try:
         resp = await client.chat.completions.create(
-            model=_DRAFT_MODEL, temperature=0.4, max_tokens=400, messages=messages,
+            model=_DRAFT_MODEL, max_completion_tokens=400, messages=messages,
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception as exc:

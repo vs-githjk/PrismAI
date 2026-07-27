@@ -111,7 +111,7 @@ async def run(bot_id: str, command: str, speaker: str = "") -> dict:
         tools_used = result["tools_used"]
         newly_blocked: list[str] = []
         from clients import LIVE_MODEL
-        call_kwargs = {"model": LIVE_MODEL, "temperature": 0.3, "messages": messages}
+        call_kwargs = {"model": LIVE_MODEL, "messages": messages}  # luna: default temp only
         if tools:
             call_kwargs["tools"] = tools
             call_kwargs["tool_choice"] = "auto"
@@ -228,7 +228,7 @@ async def run(bot_id: str, command: str, speaker: str = "") -> dict:
             try:
                 from clients import LIVE_MODEL
                 summary_resp = await openai_client.chat.completions.create(
-                    model=LIVE_MODEL, temperature=0.3,
+                    model=LIVE_MODEL,  # luna: default temp only
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )
                 reply = summary_resp.choices[0].message.content or "Done."

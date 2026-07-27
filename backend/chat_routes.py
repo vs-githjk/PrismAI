@@ -333,7 +333,8 @@ async def _tool_calling_loop(openai_client: AsyncOpenAI, messages: list, tools: 
 
     call_kwargs = {
         "model": LIVE_MODEL,
-        "temperature": 0.7,
+        # gpt-5.6-luna (GPT-5 family) only supports the default temperature (1); passing
+        # a custom value 400s. Omit it — same trap for max_tokens → max_completion_tokens.
         "messages": messages,
     }
     if tools:
@@ -588,8 +589,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         else:
             try:
                 response = await openai_client.chat.completions.create(
-                    model=LIVE_MODEL,
-                    temperature=0.7,
+                    model=LIVE_MODEL,  # luna: no custom temperature (GPT-5 family)
                     messages=messages,
                 )
                 return {"response": response.choices[0].message.content}
@@ -697,8 +697,7 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
         else:
             try:
                 response = await openai_client.chat.completions.create(
-                    model=LIVE_MODEL,
-                    temperature=0.7,
+                    model=LIVE_MODEL,  # luna: no custom temperature (GPT-5 family)
                     messages=messages,
                 )
                 return {"response": response.choices[0].message.content}
