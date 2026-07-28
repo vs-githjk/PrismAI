@@ -44,3 +44,14 @@ playwright==1.61.0
 # auto-pause). Bump only after re-running backend/spikes/spike1_e2b_torture.py.
 e2b==2.31.0
 e2b-desktop==2.4.1
+# (groq removed Jul 2026 — live voice/agent channels moved to OpenAI gpt-5.6-luna.)
+# Voice agent (Phase 2): the realtime audio loop — Deepgram Flux ears + Cartesia
+# mouth run inside a per-bot Pipecat pipeline (backend/voice/). Pinned to 1.5.0
+# (installed + validated; API confirmed via settings=).
+#
+# [silero] (Phase 5) pulls onnxruntime for the local VAD that owns barge-in — fork ④'s
+# "did someone start talking over us?" half. onnxruntime has no Python 3.14 wheels yet;
+# render.yaml pins PYTHON_VERSION 3.11.0, so prod gets it. On a 3.14 dev box the install
+# fails and the pipeline degrades on purpose (voice/pipeline._make_vad → Flux's own
+# interruption + transcript-timestamp politeness gap), so the backend still runs.
+pipecat-ai[deepgram,cartesia,silero]==1.5.0

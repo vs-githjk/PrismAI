@@ -457,8 +457,8 @@ function NewMeetingPanel(props) {
                 <p className="text-[10.5px] font-medium uppercase tracking-wide text-[color:var(--db-text-faint)]">Response mode</p>
                 <div className="flex gap-1 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] p-1">
                   {[
-                    { id: 'utterance', label: 'Utterance', hint: 'Only responds when addressed ("Prism, …")' },
-                    { id: 'autonomous', label: 'Automatic', hint: 'Chimes in with relevant info — speaks only for high-value moments' },
+                    { id: 'auto', label: 'Auto', hint: 'Speaks when it judges a contribution is warranted' },
+                    { id: 'manual', label: 'Manual', hint: 'Only responds when addressed ("Prism, …")' },
                   ].map((m) => (
                     <button
                       key={m.id}
@@ -467,7 +467,7 @@ function NewMeetingPanel(props) {
                       title={m.hint}
                       onClick={() => props.setJoinMode?.(m.id)}
                       className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                        (props.joinMode || 'utterance') === m.id
+                        (props.joinMode || 'auto') === m.id
                           ? 'bg-cyan-400/[0.16] text-cyan-200'
                           : 'text-[color:var(--db-text-faint)] hover:text-[color:var(--db-text-soft)]'
                       }`}
@@ -477,8 +477,8 @@ function NewMeetingPanel(props) {
                   ))}
                 </div>
                 <p className="text-[10px] text-[color:var(--db-text-faint)]">
-                  {(props.joinMode || 'utterance') === 'autonomous'
-                    ? 'Prism shares relevant info in chat and speaks up only for high-value moments.'
+                  {(props.joinMode || 'auto') === 'auto'
+                    ? 'Prism will proactively contribute throughout the meeting.'
                     : 'Prism stays silent until you address it by name.'}
                 </p>
               </div>
@@ -1593,7 +1593,11 @@ export default function DashboardPage(props) {
                 history={props.history}
                 crossMeetingInsights={props.crossMeetingInsights}
                 onSelectMeeting={handleSelectMeeting}
+                workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
+                actionConnections={actionConnections}
+                suggestedEmails={suggestedAttendeeEmails}
+                teamsWebhook={props.integrations?.teams_webhook || ''}
               />
             </Suspense>
           )}

@@ -5,6 +5,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Quiet pipecat's default DEBUG logging (loguru). Left at DEBUG it emits several lines
+# PER SECOND per bot (every VAD start/stop, every turn boundary, every frame link) — a
+# flood that backs up Render's log pipe (observed: logs arriving ~3 min late) and burns
+# stdout I/O on a small instance. INFO keeps the useful reconnect/error lines and drops
+# the per-frame noise. Our own diagnostics use print(), not loguru, so they're unaffected.
+# Env-overridable back to DEBUG for a deep voice-pipeline debugging session.
+try:
+    import sys as _sys
+    from loguru import logger as _loguru_logger
+    _loguru_logger.remove()
+    _loguru_logger.add(_sys.stderr, level=os.getenv("PRISM_PIPECAT_LOG_LEVEL", "INFO"))
+except Exception as _log_exc:  # loguru absent / misconfigured must never block boot
+    print(f"WARNING [main] could not set pipecat log level: {_log_exc!r}")
+
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +41,7 @@ from storage_routes import router as storage_router
 from warmup import warm_external_connections
 from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
+from voice.audio_routes import router as voice_router
 
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -75,6 +90,7 @@ app.include_router(ms_calendar_router)
 app.include_router(realtime_router)
 app.include_router(sandbox_router)
 app.include_router(present_router)
+app.include_router(voice_router)  # /voice/audio-in + /voice/speaker + /voice/speaker-page
 
 app.include_router(create_analysis_router(openai_client))
 app.include_router(create_chat_router(openai_client))

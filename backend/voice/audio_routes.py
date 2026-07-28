@@ -1,0 +1,197 @@
+"""FastAPI surface for the voice loop — two WebSockets + the speaker page.
+
+  WS  /voice/audio-in/{token}   Recall → us. Raw per-participant PCM. Builds and runs
+                                the per-bot Pipecat pipeline (Flux ears). One socket per
+                                bot (ingress guard). Blocks until Recall disconnects.
+  WS  /voice/speaker/{token}    speaker page ↔ us. The page (loaded by Recall Output
+                                Media) attaches here; we push Cartesia PCM out and read
+                                its playout/pong control pings (stopwatch RTT loop).
+  GET /voice/speaker-page/{token}  the "rented speaker" HTML Recall renders as the
+                                bot's camera.
+
+The two sockets connect independently and in any order, so a `VoiceSession` (holding a
+late-bindable `SpeakerConnection`) is created on first contact and both sockets rendezvous
+on it. The token→bot_id map is the existing per-bot realtime token (`register_realtime_token`).
+
+Phase 2: only the ears are live-wired here (audio-in builds the pipeline, feeds finished
+turns to `voice.bridge` → the old brain). The mouth is driven when the old brain calls
+`voice.bridge.speak` (re-pointed in realtime_routes at live time — see phase-2 doc §5).
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+
+from voice import bridge
+from voice.pipeline import SpeakerConnection, VoicePipeline
+from voice.speaker_page import speaker_page_html
+
+router = APIRouter(tags=["voice"])
+
+
+class VoiceSession:
+    """Per-bot rendezvous for the audio-in and speaker sockets."""
+
+    def __init__(self, bot_id: str):
+        self.bot_id = bot_id
+        self.connection = SpeakerConnection(bot_id)
+        self.pipeline: VoicePipeline | None = None
+        self.audio_socket_active = False
+
+
+_sessions: dict[str, VoiceSession] = {}
+
+
+def get_session(bot_id: str) -> VoiceSession | None:
+    return _sessions.get(bot_id)
+
+
+async def stop_session(bot_id: str) -> None:
+    """Proactively tear down a bot's voice pipeline. Called on bot-leave, because Recall
+    does NOT reliably close the audio-in WS when the bot leaves the call — so `audio_in`'s
+    run() never returns, its `finally` never fires, and the Flux + Silero + Cartesia
+    pipeline LEAKS (the watchdog spins 'No audio received…' forever, and zombie pipelines
+    pile up across meetings → Render CPU/memory exhaustion). Idempotent; safe if the WS
+    later closes on its own (the finally's stop() is guarded)."""
+    s = _sessions.get(bot_id)
+    if s is None:
+        return
+    p, s.pipeline, s.audio_socket_active = s.pipeline, None, False
+    if p is not None:
+        try:
+            await p.stop()
+            print(f"[voice] pipeline torn down on leave bot={bot_id[:8]}")
+        except Exception as exc:
+            print(f"[voice] stop_session error bot={bot_id[:8]}: {exc!r}")
+    _sessions.pop(bot_id, None)
+
+
+def _session_for(bot_id: str) -> VoiceSession:
+    s = _sessions.get(bot_id)
+    if s is None:
+        s = VoiceSession(bot_id)
+        _sessions[bot_id] = s
+    return s
+
+
+def _resolve_bot(token: str) -> str | None:
+    """token → bot_id via realtime_routes' per-bot token registry (same token the
+    webhook door uses; reused for both voice sockets — see recall_routes bot-create)."""
+    try:
+        from realtime_routes import _realtime_token_index
+        return _realtime_token_index.get(token)
+    except Exception:
+        return None
+
+
+async def _wake_terms_for_bot(bot_id: str) -> list[str]:
+    """The bot's own wake words, so Flux is biased to hear its NAME correctly. Without
+    this, "Prism" transcribes as "presume"/"Below" and the wake-word gate never fires
+    in multi-person meetings (solo free-flow hid it — no wake word needed there).
+
+    Built independently of `_gather_keyterms` on purpose: that path filters through
+    `_KEYTERM_STOPWORDS`, which contains "prism"/"prismai" (correctly — it stops the app's
+    own name being MINED out of doc titles as filler). The bot's real name must not be
+    subject to that filter."""
+    terms = ["Prism", "PrismAI"]
+    try:
+        # Await the settings rather than reading `_BOT_WAKE_ALIAS` directly: that dict is
+        # filled by a background prefetch started at bot creation, while this list is built
+        # ONCE when the audio socket connects. Losing that race would silently ship a
+        # persona bot with no grounding for its own name. The call is cached (60s TTL).
+        from realtime_routes import _get_settings_for_bot, DEFAULT_BOT_NAME
+        alias = ((await _get_settings_for_bot(bot_id)).get("bot_name") or "").strip()
+        if alias and alias != DEFAULT_BOT_NAME and alias.lower() not in (t.lower() for t in terms):
+            terms.append(alias)   # persona name (Flash / Echo / …) — equally a wake word
+    except Exception as exc:
+        print(f"[voice] persona wake alias unresolved ({exc}) — base wake words only")
+    return terms
+
+
+async def _keyterms_for_bot(bot_id: str) -> list[str]:
+    """Best-effort proper-noun grounding for Flux (the bot's own wake words FIRST, then
+    the custom_keyterms glossary + teammate names + doc/meeting terms). Flux supports
+    keyterm prompting; returns the wake words alone on any DB failure so the bot can
+    always at least hear its own name."""
+    wake = await _wake_terms_for_bot(bot_id)
+    try:
+        from recall_routes import bot_store, _gather_keyterms
+        entry = bot_store.get(bot_id) or {}
+        gathered = _gather_keyterms(entry.get("user_id"), entry.get("workspace_id")) or []
+    except Exception:
+        gathered = []
+    # Wake words first (highest priority), then de-duped grounding terms.
+    seen = {t.lower() for t in wake}
+    out = list(wake)
+    for t in gathered:
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    print(f"[voice] flux keyterms bot={bot_id[:8]} n={len(out)} wake={out[:3]}")
+    return out
+
+
+@router.get("/voice/speaker-page/{token}")
+async def speaker_page(token: str) -> HTMLResponse:
+    # Token is opaque to the page — echoed only into its speaker-WS URL. An invalid
+    # token still serves the page; the speaker WS below rejects it (4404).
+    return HTMLResponse(speaker_page_html(token))
+
+
+@router.websocket("/voice/audio-in/{token}")
+async def audio_in(ws: WebSocket, token: str) -> None:
+    bot_id = _resolve_bot(token)
+    if not bot_id:
+        await ws.close(code=4404)
+        return
+    session = _session_for(bot_id)
+    if session.audio_socket_active:
+        # Ingress guard: exactly one audio socket per bot. A duplicate (Recall retry /
+        # rogue client) is rejected rather than racing two Flux streams.
+        await ws.close(code=4409)
+        return
+
+    await ws.accept()
+    session.audio_socket_active = True
+    session.pipeline = VoicePipeline(
+        bot_id, ws, session.connection,
+        on_final=bridge.make_on_final(bot_id),
+        keyterms=await _keyterms_for_bot(bot_id),
+    )
+    try:
+        await session.pipeline.run()  # blocks until Recall closes the socket
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        print(f"[voice] audio-in pipeline error bot={bot_id[:8]}: {exc}")
+    finally:
+        session.audio_socket_active = False
+        try:
+            await session.pipeline.stop()
+        except Exception:
+            pass
+        session.pipeline = None
+
+
+@router.websocket("/voice/speaker/{token}")
+async def speaker(ws: WebSocket, token: str) -> None:
+    bot_id = _resolve_bot(token)
+    if not bot_id:
+        await ws.close(code=4404)
+        return
+    session = _session_for(bot_id)
+    await ws.accept()
+    session.connection.attach(ws)
+    try:
+        while True:
+            # Control channel: {"type":"playout"|"pong", ...}. The stopwatch RTT loop
+            # consumes these at live time; here we drain them so the socket stays open.
+            msg = await ws.receive_json()
+            session.connection.on_control(msg)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        print(f"[voice] speaker socket error bot={bot_id[:8]}: {exc}")
+    finally:
+        session.connection.detach(ws)

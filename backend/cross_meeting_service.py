@@ -44,6 +44,31 @@ def looks_like_blocker(text: str) -> bool:
     return any(keyword in value for keyword in BLOCKER_KEYWORDS)
 
 
+# Placeholder / collective owner labels the LLM emits when no real person owns an
+# item. Counting these as "owners" made ownership metrics flag "Unassigned" as an
+# overloaded contributor — a hygiene gap masquerading as a person.
+JUNK_OWNERS = {
+    "", "unassigned", "unowned", "tbd", "tbc", "none", "n/a", "na", "null",
+    "team", "everyone", "all", "attendees", "group", "someone", "anyone",
+    "nobody", "self", "-", "?",
+}
+
+
+def is_real_owner(name: str) -> bool:
+    cleaned = re.sub(r"[^a-z0-9 ]", "", (name or "").strip().lower()).strip()
+    if not cleaned or cleaned in JUNK_OWNERS:
+        return False
+    if cleaned == "the team" or cleaned.endswith(" team"):
+        return False
+    return True
+
+
+def name_tokens(name: str) -> list[str]:
+    """Word tokens of a participant name (≥3 chars) to exclude from lexical themes
+    — a user's own name shouldn't top 'recurring language'."""
+    return [tok for tok in (normalize_word(w) for w in (name or "").split()) if len(tok) >= 3]
+
+
 def build_blocker_snippet(text: str) -> str:
     clean = re.sub(r"\s+", " ", text or "").strip()
     if not clean:
@@ -109,6 +134,7 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
     decision_memory = []
     tense_meetings = 0
     decision_words: set[str] = set()
+    name_words: set[str] = set()
     open_owner_counts: dict[str, dict[str, int]] = {}
 
     for entry in meetings:
@@ -120,9 +146,14 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         if (sentiment.get("overall") or "").lower() in {"tense", "unresolved", "conflicted"}:
             tense_meetings += 1
 
+        for speaker in (sentiment.get("speakers") or []):
+            if isinstance(speaker, dict):
+                name_words.update(name_tokens(speaker.get("name") or ""))
+
         for item in items:
             owner = (item.get("owner") or "").strip()
-            if owner:
+            if owner and is_real_owner(owner):
+                name_words.update(name_tokens(owner))
                 owner_counts[owner] += 1
                 owner_meeting_ids[owner].add(entry["id"])
                 if owner not in open_owner_counts:
@@ -161,11 +192,14 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
                 decision_theme_meeting_ids[word].add(entry["id"])
                 decision_words.add(word)
 
+            _dec_owner = decision.get("owner", "") or ""
+            if is_real_owner(_dec_owner):
+                name_words.update(name_tokens(_dec_owner))
             decision_entry = {
                 "id": f'{entry["id"]}-{text}',
                 "meeting_id": entry["id"],
                 "title": text or "Decision recorded",
-                "owner": decision.get("owner", "") or "",
+                "owner": _dec_owner,
                 "importance": int(decision.get("importance", 3) or 3),
                 "date": entry.get("date"),
             }
@@ -178,9 +212,13 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         for word in extract_significant_terms(summary_text, 5):
             theme_counts[word] += 1
 
-        for candidate in (summary_text, sentiment.get("notes") or ""):
-            if looks_like_blocker(candidate):
-                snippet = build_blocker_snippet(candidate)
+        # Blockers come from STRUCTURED signals ONLY — action-item tasks (above) and
+        # carried-over tension moments — never from summary / sentiment.notes prose,
+        # which surfaced meeting-description fragments ("The meeting, led by …") as
+        # "recurring blockers." Carried-over tensions are already structured + meaningful.
+        for tension in (sentiment.get("tension_moments") or []):
+            if isinstance(tension, dict) and tension.get("status") == "carried_over":
+                snippet = build_blocker_snippet(tension.get("moment", ""))
                 if snippet:
                     blocker_counts[snippet] += 1
                     blocker_meeting_ids[snippet].add(entry["id"])
@@ -215,7 +253,7 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
     unresolved_themes = [
         {"theme": theme, "count": count}
         for theme, count in sorted(theme_counts.items(), key=lambda item: item[1], reverse=True)
-        if theme not in decision_words
+        if theme not in decision_words and theme not in name_words
     ][:5]
     # --- End Phase 2 metrics ---
 
@@ -237,8 +275,9 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
 
     recurring_themes = [
         {"theme": theme, "count": count}
-        for theme, count in sorted(theme_counts.items(), key=lambda item: item[1], reverse=True)[:4]
-    ]
+        for theme, count in sorted(theme_counts.items(), key=lambda item: item[1], reverse=True)
+        if theme not in name_words
+    ][:4]
 
     recurring_blockers = [
         {

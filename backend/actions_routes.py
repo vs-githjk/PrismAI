@@ -34,6 +34,8 @@ class ActionExecuteRequest(BaseModel):
     args: dict
     meeting_id: str | None = None
     task: str | None = None      # the originating action-item text (for the audit ref)
+    workspace_id: str | None = None  # explicit workspace for actions with no single meeting
+                                     # (cross-meeting Trend "open thread" actions)
 
 
 def _meeting_workspace_id(meeting_id) -> str | None:
@@ -62,8 +64,11 @@ async def execute_action(req: ActionExecuteRequest, user_id: str = Depends(requi
     settings = await _get_user_settings(user_id) or {}
     # Per-workspace routing (#2): if this action came from a workspace meeting, overlay
     # the workspace's integration creds (per-provider, personal fallback) so the ticket/
-    # message lands in the TEAM's Jira/Slack, not the acting user's personal one.
-    workspace_id = _meeting_workspace_id(req.meeting_id)
+    # message lands in the TEAM's Jira/Slack, not the acting user's personal one. A
+    # cross-meeting Trend "open thread" action has no single meeting, so it passes the
+    # active workspace_id explicitly — resolve_tool_settings is membership-checked
+    # (fail-closed), so an arbitrary id can't leak another team's creds.
+    workspace_id = _meeting_workspace_id(req.meeting_id) or (req.workspace_id or "").strip() or None
     if workspace_id:
         from workspace_integrations import resolve_tool_settings
         settings = await resolve_tool_settings(settings, user_id, workspace_id)

@@ -51,7 +51,7 @@ def _join_at_ok(scheduled_for: str | None) -> bool:
 # The composer is a deliberate, low-volume path where reasoning quality matters
 # (it's representing a person in a meeting), so it runs on a stronger model than the
 # high-volume chat path. Override with PRISM_PROXY_MODEL.
-_DRAFT_MODEL = os.getenv("PRISM_PROXY_MODEL", "gpt-4o")
+_DRAFT_MODEL = os.getenv("PRISM_PROXY_MODEL", "gpt-5.6-luna")
 
 
 def _require_storage():
@@ -471,7 +471,7 @@ async def _llm_reply(system: str, history: list[dict], user_msg: str | None) -> 
         messages.append({"role": "user", "content": user_msg})
     try:
         resp = await client.chat.completions.create(
-            model=_DRAFT_MODEL, temperature=0.4, max_tokens=400, messages=messages,
+            model=_DRAFT_MODEL, max_completion_tokens=400, messages=messages,
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception as exc:

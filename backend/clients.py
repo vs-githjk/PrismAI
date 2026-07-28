@@ -8,6 +8,12 @@ from openai import AsyncOpenAI
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=3.0, read=30.0, write=10.0, pool=3.0)
 
+# The OpenAI model for ALL live-bot + interactive-chat paths (voice channel, agent
+# channel, live command loop, catch-up, dashboard chat). One place to re-pin if the
+# model name/tier changes. gpt-5.6-luna: fast tier, supports chat-completions streaming
+# + tool calling + vision (Jul 2026). Env-overridable.
+LIVE_MODEL = os.getenv("PRISM_LIVE_MODEL", "gpt-5.6-luna")
+
 _shared_http: Optional[httpx.AsyncClient] = None
 _shared_openai: Optional[AsyncOpenAI] = None
 

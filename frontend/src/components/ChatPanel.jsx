@@ -445,7 +445,19 @@ export default function ChatPanel({
           health_score: 'health_score',
         }[agentIntent]
 
-        if (agentKey && data[agentKey] !== undefined) {
+        // A failed agent re-run returns its default payload — null (sentiment/health)
+        // or an empty object — NOT undefined. Treat those as failure: never apply them
+        // (that would WIPE the card) and never claim success. Empty arrays stay valid
+        // (a legitimate "remove all" for action_items/decisions).
+        const payload = agentKey ? data[agentKey] : undefined
+        const isEmptyPayload = payload == null
+          || (typeof payload === 'object' && !Array.isArray(payload) && Object.keys(payload).length === 0)
+        if (agentKey && isEmptyPayload) {
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            content: `I couldn't redo the ${agentIntent.replace(/_/g, ' ')} — the analysis came back empty (a model hiccup). Your existing card is unchanged; please try again.`,
+          }])
+        } else if (agentKey && payload !== undefined) {
           // Only claim success when the card actually changed. A re-run can reproduce
           // identical content (asking to change something already true, or the model
           // ignoring the instruction) — reporting "updated" then is misleading and

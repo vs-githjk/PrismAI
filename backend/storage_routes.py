@@ -14,6 +14,7 @@ from urllib.parse import urlparse, parse_qs
 from auth import require_user_id, supabase
 from caches import is_workspace_member
 from cross_meeting_service import derive_cross_meeting_insights, has_meaningful_result
+from cross_meeting_synthesis import get_semantic_insights
 from calendar_routes import get_valid_token
 from knowledge_transcript import index_meeting_transcript
 from tools.gmail import gmail_send
@@ -231,13 +232,9 @@ async def get_meetings(
     return meaningful[:50]
 
 
-@router.get("/insights")
-async def get_cross_meeting_insights(
-    workspace_id: str = Query(default=""),
-    user_id: str = Depends(require_user_id),
-):
-    client = _require_storage()
-
+def _fetch_insight_meetings(client, user_id: str, workspace_id: str) -> list[dict]:
+    """The meeting set behind both /insights (cheap deterministic metrics) and
+    /insights/semantic (B2 synthesis) — one place so the two stay in sync."""
     if workspace_id.strip():
         if not is_workspace_member(client, user_id, workspace_id):
             raise HTTPException(status_code=403, detail="Not a member of this workspace")
@@ -260,20 +257,43 @@ async def get_cross_meeting_insights(
         for row in deduped:
             row.pop("user_id", None)
             row.pop("recorded_by_user_id", None)
-        res_data = deduped[:50]
-    else:
-        res = (
-            client.table("meetings")
-            .select("id,date,title,score,result")
-            .eq("user_id", user_id)
-            .is_("workspace_id", None)
-            .order("id", desc=True)
-            .limit(50)
-            .execute()
-        )
-        res_data = res.data
+        return deduped[:50]
 
+    res = (
+        client.table("meetings")
+        .select("id,date,title,score,result")
+        .eq("user_id", user_id)
+        .is_("workspace_id", None)
+        .order("id", desc=True)
+        .limit(50)
+        .execute()
+    )
+    return res.data or []
+
+
+@router.get("/insights")
+async def get_cross_meeting_insights(
+    workspace_id: str = Query(default=""),
+    user_id: str = Depends(require_user_id),
+):
+    client = _require_storage()
+    res_data = _fetch_insight_meetings(client, user_id, workspace_id)
     return derive_cross_meeting_insights(res_data, user_id=user_id)
+
+
+@router.get("/insights/semantic")
+async def get_semantic_cross_meeting_insights(
+    workspace_id: str = Query(default=""),
+    user_id: str = Depends(require_user_id),
+):
+    """B2 semantic block (narrative + topics + open_threads + decision_evolution).
+    Separate from /insights so the cheap metrics render instantly and only these
+    cards wait on the (cached) LLM synthesis. scope_id is prefixed so a user_id can
+    never collide with a workspace_id in the cache."""
+    client = _require_storage()
+    res_data = _fetch_insight_meetings(client, user_id, workspace_id)
+    scope_id = f"ws:{workspace_id.strip()}" if workspace_id.strip() else f"user:{user_id}"
+    return await get_semantic_insights(res_data, scope_id)
 
 
 def _fan_out_id(original_id: int, member_user_id: str) -> int:

@@ -324,6 +324,15 @@ def _record_leave_reason(bot_id: str, code: str, sub_code: str, message: str) ->
         _db_save(bot_id, {"leave_reason": reason})
     except Exception as exc:
         print(f"[recall] leave_reason persist skipped: {exc}")
+    # Tear down the live voice pipeline NOW — Recall doesn't reliably close the audio-in
+    # WS on leave, so without this the Flux/Silero/Cartesia pipeline leaks (watchdog spins
+    # forever) and zombie pipelines accumulate across meetings. Best-effort, needs a loop.
+    try:
+        import asyncio as _asyncio
+        from voice.audio_routes import stop_session as _stop_voice
+        _asyncio.get_running_loop().create_task(_stop_voice(bot_id))
+    except Exception as exc:
+        print(f"[recall] voice teardown on leave skipped bot={bot_id}: {exc!r}")
 
 
 def _normalize_meeting_url(url: str) -> str:
@@ -545,14 +554,11 @@ def _proper_nouns_from_texts(texts: list[str], limit: int = 15) -> list[str]:
 
 def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]:
     """Best-effort proper-noun list to ground Deepgram nova-3 (keyterm prompting):
-    teammate names + knowledge-doc titles + knowledge-doc CONTENT proper nouns +
-    recent-meeting speaker/owner names.
+    THE BOT'S OWN WAKE WORDS + teammate names + knowledge-doc titles + knowledge-doc
+    CONTENT proper nouns + recent-meeting speaker/owner names.
     Capitalisation is preserved (Deepgram weights proper nouns by spelling) and the
-    list is bounded to ~40 terms. Returns [] on any failure so the bot-create config
-    stays exactly as before — grounding is a pure add-on, never a blocker."""
-    if not supabase or not (user_id or workspace_id):
-        return []
-
+    list is bounded to ~40 terms. Returns the wake words alone on any failure so the
+    grounding is still never a blocker — but is never EMPTY, which used to be the bug."""
     terms: list[str] = []
     seen: set[str] = set()
 
@@ -579,6 +585,28 @@ def _gather_keyterms(user_id: str | None, workspace_id: str | None) -> list[str]
             return
         seen.add(low)
         terms.append(t)
+
+    # -1. THE WAKE WORDS — first, unconditionally, before any DB work.
+    #     In a group meeting the wake word is the ONLY way to address the bot, so the one
+    #     word transcription must not fumble is its own name. Without this Flux had zero
+    #     bias toward it and heard "Prism, can you summarize" as "Below, can you
+    #     summarize" / "presume can you summarize" — the bot was deaf to being called.
+    #     (Solo free-flow needs no wake word, which is why only group meetings broke.)
+    #
+    #     Written straight into `terms`, NOT via _add: "prism"/"prismai" are in
+    #     _KEYTERM_STOPWORDS on purpose, to stop the app's own name being MINED out of doc
+    #     titles and speaker labels as filler. That filter is still right for mined
+    #     sources — it just must not apply to the bot's actual name. Hence the bypass
+    #     here and the stopword entry left intact below.
+    #
+    #     Also above the early-return: a bot with no user/workspace context still has a
+    #     name, and used to get [] back — no grounding whatsoever.
+    for _wake in ("Prism", "PrismAI"):
+        terms.append(_wake)
+        seen.add(_wake.lower())
+
+    if not supabase or not (user_id or workspace_id):
+        return terms
 
     try:
         from caches import get_user_workspace_ids
@@ -709,7 +737,19 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
         # transcript) when the term list contained anything malformed. Keyterm grounding
         # stays ON only in the async batch re-transcription (_request_async_transcript),
         # where it's well-supported. Re-enable here only after live validation.
+        # Voice-agent note: the live ears move to Deepgram Flux (backend/voice) — Flux
+        # DOES support keyterm prompting (query param + mid-stream Configure), so the
+        # keyterm list is threaded into the Flux socket in voice/pipeline.py, not here.
         deepgram["keyterm"] = keyterms[:50]
+    # Voice agent (Phase 2): the live speech path is now raw PCM → our WS → Deepgram
+    # Flux, and TTS out via Recall Output Media rendering our speaker page. The token
+    # embedded in realtime_url is reused for both new sockets (Phase 2 §2). WS scheme
+    # mirrors WEBHOOK_BASE_URL's; the speaker page is loaded over HTTP(S) by Recall's
+    # renderer and opens the speaker WS back to us.
+    token = realtime_url.rstrip("/").rsplit("/", 1)[-1]
+    ws_base = WEBHOOK_BASE_URL.replace("https://", "wss://").replace("http://", "ws://")
+    audio_ws_url = f"{ws_base}/voice/audio-in/{token}"
+    speaker_page_url = f"{WEBHOOK_BASE_URL}/voice/speaker-page/{token}"
     # TODO(phase-3, spike-contingent): Recall's FAQ flags the default `web` variant
     # (250 millicores) as typically insufficient for Output Media screenshare; the
     # recommendation is `web_4_core` (+$0.10/hr), fixed at bot-create (no live
@@ -724,6 +764,13 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             "video_mixed_layout": "speaker_view",
             "video_mixed_mp4": {},
             "audio_mixed_mp3": {},
+            # Raw per-participant PCM (16kHz mono s16le) → our audio-in WS. Separate
+            # (not mixed) so each frame carries participant identity — that replaces
+            # the webhook diarization the retired transcript.data path gave us.
+            "audio_separate_raw": {},
+            # Kept: Recall still transcribes the RECORDING (deepgram_streaming) for the
+            # recording player + the post-meeting fallback transcript. We just stop
+            # SUBSCRIBING to live transcript.data — Flux is the live ears now.
             "transcript": {
                 "provider": {
                     "deepgram_streaming": deepgram
@@ -731,21 +778,36 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             },
             "realtime_endpoints": [
                 {
+                    # Speech path: raw audio to Pipecat/Flux. Only "websocket" is
+                    # supported for realtime audio data.
+                    "type": "websocket",
+                    "url": audio_ws_url,
+                    "events": ["audio_separate_raw.data"],
+                },
+                {
+                    # Chat + roster stay on the webhook door (Q2). transcript.data is
+                    # dropped — the ears moved to the audio WS above.
                     "type": "webhook",
                     "url": realtime_url,
                     "events": [
-                        "transcript.data",
                         "participant_events.chat_message",
                         "participant_events.join",
                         "participant_events.leave",
                     ],
-                }
+                },
             ],
         },
+        # The mouth: Recall's Output Media renderer loads our speaker page as the bot's
+        # camera and mixes its audio into the call. This SUPERSEDES automatic_video_output
+        # (both target the camera) — the speaker page owns the tile and renders branding
+        # itself, so we no longer set the static logo tile when Output Media is on.
+        "output_media": {
+            "camera": {
+                "kind": "webpage",
+                "config": {"url": speaker_page_url},
+            }
+        },
     }
-    tile = _bot_video_output()
-    if tile:
-        body["automatic_video_output"] = tile
     if join_at:
         body["join_at"] = join_at
     return body
@@ -1682,6 +1744,14 @@ async def _fetch_transcript(bot_id: str, attempts: int = 12, prefer_async: bool 
 # durable transcript (more accurate than the live streaming pass). Killable via env.
 _ASYNC_TRANSCRIPT_ENABLED = os.getenv("PRISM_ASYNC_TRANSCRIPT", "1") != "0"
 
+# Jul 2026: when Recall returns a NAMED, word-timed transcript, use it as the spine
+# (correct per-participant attribution + timing) and MERGE IN the bot's own lines +
+# human chat lines (which Recall's audio transcript never contains) by their recording-
+# relative timestamp — instead of falling back wholesale to the Flux live buffer, which
+# mis-attributes speakers (stale last_speaker) and drops nothing but has no diarization.
+# Fixes speaker-misattribution AND "the bot is invisible in the recording" together.
+_MERGE_RECALL_TRANSCRIPT = os.getenv("PRISM_MERGE_RECALL_TRANSCRIPT", "1") != "0"
+
 
 async def _request_async_transcript(bot_id: str) -> bool:
     """Ask Recall to (re)transcribe this bot's recording with Deepgram async nova-3 +
@@ -1771,6 +1841,40 @@ def _transcript_from_recall_data(raw) -> str:
     return ""
 
 
+def _word_rel_time(word: dict, kind: str) -> float:
+    """Recording-relative seconds for a word, across Recall's two transcript formats.
+    - Streaming: word['start_time'] / word['end_time'] (seconds float).
+    - deepgram_async (Lever B): word['start_timestamp']['relative'] (seconds float);
+      the async format nests timing, so reading the flat 'start_time' key returns 0 —
+      the bug that gave async (bot-silent group) meetings all-zero segment timing.
+    kind is 'start' or 'end'. Returns 0.0 when neither shape is present.
+    """
+    flat = word.get(f"{kind}_time")
+    if isinstance(flat, (int, float)):
+        return float(flat)
+    ts = word.get(f"{kind}_timestamp")
+    if isinstance(ts, dict) and isinstance(ts.get("relative"), (int, float)):
+        return float(ts["relative"])
+    return 0.0
+
+
+def _static_participant_id(participant: dict) -> str | None:
+    """The stable per-platform participant id Recall carries in extra_data, used to
+    map an async transcript's anonymous speaker segments back to real names. Google
+    Meet exposes it under extra_data.google_meet.static_participant_id; other platforms
+    nest it similarly. Best-effort — returns None when absent."""
+    extra = participant.get("extra_data") or {}
+    if not isinstance(extra, dict):
+        return None
+    for platform_key in ("google_meet", "zoom", "microsoft_teams", "teams", "slack"):
+        sub = extra.get(platform_key)
+        if isinstance(sub, dict) and sub.get("static_participant_id"):
+            return str(sub["static_participant_id"])
+    if extra.get("static_participant_id"):
+        return str(extra["static_participant_id"])
+    return None
+
+
 def _segments_from_recall_data(raw) -> list[dict] | None:
     """Normalize Recall's transcript response into Segment[] for video playback sync.
 
@@ -1779,6 +1883,9 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
     None is the sentinel for "no per-line timing available" — the realtime-buffer
     fallback transcript path also returns None so the player degrades to a plain
     transcript view.
+
+    Each segment carries a best-effort `static_participant_id` so an async transcript's
+    anonymous speaker labels can later be relabelled to real names by exact id match.
     """
     if not isinstance(raw, list) or not raw:
         return None
@@ -1787,9 +1894,10 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
         words = segment.get("words") or []
         if not words:
             continue
+        participant = segment.get("participant") or {}
         speaker = (
             segment.get("speaker")
-            or (segment.get("participant") or {}).get("name")
+            or participant.get("name")
             or "Speaker"
         )
         text = " ".join(w.get("text", "") for w in words).strip()
@@ -1797,9 +1905,10 @@ def _segments_from_recall_data(raw) -> list[dict] | None:
             continue
         segments.append({
             "speaker": speaker,
-            "start": words[0].get("start_time", 0.0),
-            "end": words[-1].get("end_time", 0.0),
+            "start": _word_rel_time(words[0], "start"),
+            "end": _word_rel_time(words[-1], "end"),
             "text": text,
+            "static_participant_id": _static_participant_id(participant),
         })
     return segments or None
 
@@ -1858,6 +1967,129 @@ def _relabel_segments_by_overlap(anon_segments: list[dict], named_segments: list
             new["speaker"] = best_name
         out.append(new)
     return out
+
+
+def _relabel_segments_by_participant_id(segments: list[dict], name_map: dict[str, str]) -> int:
+    """Rewrite each segment's anonymous speaker to the real name for its
+    static_participant_id (exact match, deterministic — no time-overlap guessing).
+    Mutates in place; returns how many segments were relabelled. Segments with no id or
+    no mapped name keep their original (anonymous) label so they stay seekable."""
+    if not name_map:
+        return 0
+    relabelled = 0
+    for seg in segments:
+        sid = seg.get("static_participant_id")
+        name = name_map.get(sid) if sid else None
+        if name and not _ANON_SPEAKER_RE.match(str(name)):
+            seg["speaker"] = name
+            relabelled += 1
+    return relabelled
+
+
+async def _build_participant_name_map(bot_id: str) -> dict[str, str]:
+    """Fix 2A: map static_participant_id -> real display name so an async transcript's
+    anonymous speaker segments can be relabelled by exact id. Sources (best-effort):
+      1. The bot's top-level `meeting_participants` (when Recall includes it).
+      2. The recording's `participant_events` media shortcut (join events carry name + id).
+    Bot / anonymous / blank names are skipped. Returns {} on any failure — the caller
+    then keeps timed-but-anonymous segments (still seekable, per the chosen fallback)."""
+    if not RECALL_API_KEY:
+        return {}
+    name_map: dict[str, str] = {}
+
+    def _consider(participant) -> None:
+        if not isinstance(participant, dict):
+            return
+        name = (participant.get("name") or "").strip()
+        sid = _static_participant_id(participant)
+        if not sid or not name or _ANON_SPEAKER_RE.match(name):
+            return
+        if name.startswith(_BOT_NAME_PREFIXES):
+            return
+        name_map.setdefault(sid, name)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RECALL_API_BASE}/bot/{bot_id}/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=30,
+            )
+        if resp.status_code != 200:
+            print(f"[recall] participant map: bot fetch {resp.status_code}")
+            return {}
+        bot_data = resp.json()
+        mp = bot_data.get("meeting_participants") or bot_data.get("participants") or []
+        for p in mp:
+            _consider(p)
+        # participant_events media shortcut → download + parse join events.
+        pe_url = None
+        pe_shortcut_seen = False
+        for rec in (bot_data.get("recordings") or []):
+            shortcuts = rec.get("media_shortcuts") or {}
+            pe = shortcuts.get("participant_events")
+            if pe is not None:
+                pe_shortcut_seen = True
+            if isinstance(pe, dict):
+                pe_url = pe.get("download_url") or (pe.get("data") or {}).get("download_url")
+            elif isinstance(pe, str):
+                pe_url = pe
+            if pe_url:
+                break
+        pe_sample = None
+        if pe_url:
+            async with httpx.AsyncClient() as client:
+                pe_resp = await client.get(pe_url, timeout=30)
+            if pe_resp.status_code == 200:
+                events = pe_resp.json()
+                if isinstance(events, dict):
+                    events = events.get("participant_events") or events.get("data") or []
+                if isinstance(events, list):
+                    pe_sample = str(events[0])[:300] if events else "[]"
+                    for ev in events:
+                        if isinstance(ev, dict):
+                            _consider(ev.get("participant") or ev)
+        # Rich shape log — pins WHY the map is empty (2A source unknown) on a live meeting:
+        # is meeting_participants present? is the participant_events shortcut/url there?
+        # what does an event look like? Drives whether we fix 2A's source or need 2B.
+        print(f"[recall] participant map: {len(name_map)} named id(s) for bot {bot_id[:8]} "
+              f"(sample={list(name_map.items())[:3]}) | bot_data_keys={list(bot_data.keys())} "
+              f"meeting_participants={len(mp)} pe_shortcut_seen={pe_shortcut_seen} pe_url={'yes' if pe_url else 'no'} "
+              f"pe_event_sample={pe_sample}")
+    except Exception as exc:
+        print(f"[recall] participant map build failed for {bot_id[:8]}: {exc}")
+    return name_map
+
+
+async def _fetch_streaming_named_segments(bot_id: str) -> list[dict]:
+    """Fix 2C: Recall's STREAMING transcript carries REAL participant names (from the
+    meeting platform) AND word timing — unlike the deepgram_async transcript, which
+    diarizes into anonymous acoustic clusters (200-0/100-0). When async speakers are
+    anonymous and we have no live segments, fetch the streaming transcript and use it as
+    the named+timed source to time-overlap-relabel the async segments. This is the
+    reliable name recovery (2A's post-meeting participant metadata is often absent /
+    URL-less; 2B's roster capture waits on the voice merge). Returns [] on any failure or
+    if the streaming transcript is itself anonymous (nothing to borrow)."""
+    if not RECALL_API_KEY:
+        return []
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RECALL_API_BASE}/bot/{bot_id}/transcript/",
+                headers={"Authorization": f"Token {RECALL_API_KEY}"},
+                timeout=30,
+            )
+        if resp.status_code != 200:
+            print(f"[recall] streaming segments: fetch {resp.status_code} for bot {bot_id[:8]}")
+            return []
+        segs = _segments_from_recall_data(resp.json()) or []
+        seg_text = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segs)
+        named = bool(segs) and not _speakers_anonymous(seg_text)
+        print(f"[recall] streaming segments: {len(segs)} ({'named' if named else 'anonymous'}) for bot {bot_id[:8]}")
+        return segs if named else []
+    except Exception as exc:
+        print(f"[recall] streaming segments fetch failed for {bot_id[:8]}: {exc}")
+        return []
 
 
 def _resolve_owner_workspace(bot_id: str) -> tuple[str | None, str | None]:
@@ -2033,24 +2265,57 @@ async def _process_bot_transcript(bot_id: str):
             transcript = _transcript_from_recall_data(raw)
             segments = _segments_from_recall_data(raw)
 
-        # The realtime buffer interleaves the humans' utterances with the bot's
-        # own turns (recorded via _record_bot_line) in chronological order. When
-        # the bot actually spoke, prefer it as the transcript: Recall's audio
-        # transcript wouldn't contain the bot's chat replies, so it'd read as a
-        # monologue ("talking to myself" in a 1-on-1). Segments still come from
-        # Recall for the recording player. Otherwise it's a plain fallback when
-        # Recall returned nothing.
+        # The live buffer holds the humans' utterances interleaved with the bot's own
+        # turns (recorded via _record_bot_line). Used as the fallback spine below; the
+        # merge path prefers Recall's better-attributed word-timed transcript.
         rt_lines = bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []
         bot_spoke = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in rt_lines)
-        if bot_spoke and rt_lines:
-            # Collapse the bot's two names (persona for replies, default for the stand-in
-            # delivery) into one so it isn't analysed as two separate speakers.
-            rt_lines = _normalize_bot_speaker(rt_lines, await _resolve_bot_persona_name(bot_id))
-            transcript = "\n".join(rt_lines)
-            print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
-        elif not transcript.strip() and rt_lines:
-            transcript = "\n".join(rt_lines)
-            print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
+
+        # PREFERRED: when Recall returned a NAMED, word-timed transcript, use it as the
+        # spine (correct per-participant attribution + timing — the Flux live buffer stamps
+        # a stale last_speaker on every turn, mis-attributing who said what) and MERGE IN
+        # the bot's own replies + humans' typed chat by their recording-relative timestamp
+        # (Recall's audio transcript contains neither). This is BOTH the transcript AND the
+        # seekable segments, so the recording player finally shows the bot too. Only taken
+        # when we won't lose the bot's contribution: it either said nothing, or we captured
+        # its turns as stamped segments to splice back in.
+        merged_ok = False
+        if _MERGE_RECALL_TRANSCRIPT and segments:
+            seg_text0 = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+            if not _speakers_anonymous(seg_text0):
+                extra = [
+                    s for s in (bot_store.get(bot_id, {}).get("realtime_segments") or [])
+                    if s.get("source") in ("bot", "chat") and (s.get("text") or "").strip()
+                ]
+                if extra or not bot_spoke:
+                    persona = await _resolve_bot_persona_name(bot_id)
+                    norm_extra = [
+                        ({**s, "speaker": persona}
+                         if (s.get("speaker") or "").startswith(_BOT_NAME_PREFIXES) else s)
+                        for s in extra
+                    ]
+                    segments = sorted(list(segments) + norm_extra,
+                                      key=lambda s: (s.get("start") or 0.0))
+                    transcript = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
+                    merged_ok = True
+                    print(f"[recall] merged Recall word-timed transcript "
+                          f"({len(segments) - len(norm_extra)} human) + {len(norm_extra)} "
+                          f"bot/chat line(s) → {len(segments)} segments")
+
+        # The realtime buffer interleaves the humans' utterances with the bot's own turns
+        # (recorded via _record_bot_line) in chronological order. Fallback when Recall gave
+        # no usable named transcript: when the bot spoke, prefer the bot-inclusive live
+        # buffer so it doesn't read as a monologue; else a plain fallback if Recall was empty.
+        if not merged_ok:
+            if bot_spoke and rt_lines:
+                # Collapse the bot's two names (persona for replies, default for the stand-in
+                # delivery) into one so it isn't analysed as two separate speakers.
+                rt_lines = _normalize_bot_speaker(rt_lines, await _resolve_bot_persona_name(bot_id))
+                transcript = "\n".join(rt_lines)
+                print(f"[recall] bot participated — using bot-inclusive live transcript: {len(rt_lines)} lines, {len(transcript)} chars")
+            elif not transcript.strip() and rt_lines:
+                transcript = "\n".join(rt_lines)
+                print(f"[recall] using realtime transcript buffer: {len(rt_lines)} lines, {len(transcript)} chars")
 
         # Seekable segments: Recall's word-timestamped transcript is preferred, but when
         # it's absent (bot spoke → live transcript used, or Recall returned no words) fall
@@ -2063,19 +2328,49 @@ async def _process_bot_transcript(bot_id: str):
                 print(f"[recall] using {len(rt_segments)} realtime-buffer segments for playback sync")
 
         # Speaker-name recovery: a deepgram_async (Lever B) transcript diarizes speakers as
-        # bare numeric IDs (e.g. "500-1") with no participant mapping — which reads fine in
-        # summary/action-items (owners come from spoken content) but breaks sentiment +
-        # speaker_coach (the per-speaker agents key off the prefix). Recall's live streaming
-        # transcript DOES carry real names. When the chosen transcript is anonymous:
-        #   1. If we have named live segments, relabel by time-overlap → keep async wording
-        #      + seekable timing + real names.
-        #   2. Else fall back to the named live transcript entirely (names >> marginal async
-        #      spelling gain). This also restores click-to-seek for those meetings.
+        # bare numeric IDs (e.g. "500-1"/"200-0") with no participant NAME — which reads fine
+        # in summary/action-items (owners come from spoken content) but breaks sentiment +
+        # speaker_coach (the per-speaker agents key off the prefix) AND the recording player's
+        # click-to-seek. Recover names, in priority order, when the transcript is anonymous:
+        #   1. (primary) Exact relabel by static_participant_id — Recall's async segments carry
+        #      the id; map id → real name from participant metadata. Deterministic, needs no
+        #      live segments (works even when realtime_segments is empty — the case that left
+        #      click-to-seek broken). Names land on the TIMED async segments → use them as both
+        #      the display transcript and the seekable segments (perfectly aligned).
+        #   2. Time-overlap relabel against named live segments (when we have them).
+        #   3. Fall back to the named live transcript for TEXT, and keep the best seekable
+        #      segments we have — named-live if present, else the TIMED-BUT-ANONYMOUS async
+        #      segments so click-to-seek still works (generic labels > no seek).
         if transcript.strip() and _speakers_anonymous(transcript):
             named_segs = bot_store.get(bot_id, {}).get("realtime_segments") or []
-            if segments and named_segs and _speakers_anonymous(
+            # No live segments captured? Borrow names+timing from Recall's STREAMING
+            # transcript (2C) — it carries real participant names, unlike the anonymous
+            # async one. This is the reliable named+timed source for the overlap relabel.
+            if not named_segs and segments:
+                named_segs = await _fetch_streaming_named_segments(bot_id)
+            # Strategy 1: participant-id relabel (only worth it when we have segments).
+            # Fix 2B (primary): the live participant_events.join handler captured a
+            # static_participant_id → real-name map onto bot_store as people joined —
+            # deterministic and present even when Recall's post-meeting sources are empty.
+            # Fall back to the (usually-empty) post-meeting fetch (2A) only when 2B is bare.
+            id_map: dict[str, str] = {}
+            if segments:
+                live_map = dict((bot_store.get(bot_id) or {}).get("participant_static_ids") or {})
+                if live_map:
+                    id_map = live_map
+                    print(f"[recall] 2B: using {len(live_map)} live-captured static-id name(s) for bot {bot_id[:8]}")
+                else:
+                    id_map = await _build_participant_name_map(bot_id)
+            id_relabelled = _relabel_segments_by_participant_id(segments, id_map) if segments else 0
+            seg_text = (
                 "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
-            ):
+                if segments else ""
+            )
+            if segments and id_relabelled and not _speakers_anonymous(seg_text):
+                transcript = seg_text
+                print(f"[recall] recovered speaker names via participant-id relabel "
+                      f"({id_relabelled}/{len(segments)} segments)")
+            elif segments and named_segs and _speakers_anonymous(seg_text):
                 segments = _relabel_segments_by_overlap(segments, named_segs)
                 transcript = "\n".join(f"{s.get('speaker')}: {s.get('text','')}" for s in segments)
                 print(f"[recall] recovered speaker names via time-overlap relabel ({len(segments)} segments)")
@@ -2083,7 +2378,10 @@ async def _process_bot_transcript(bot_id: str):
                 transcript = "\n".join(rt_lines)
                 if named_segs:
                     segments = named_segs
-                print(f"[recall] anonymous async speakers — fell back to named live transcript ({len(rt_lines)} lines)")
+                # else: keep the timed-but-anonymous async `segments` — seekable, generic labels.
+                seg_src = "live" if named_segs else ("timed-async" if segments else "none")
+                print(f"[recall] anonymous async: named live text; "
+                      f"segments={seg_src} ({len(segments or [])} segs)")
             else:
                 print("[recall] transcript has anonymous speakers but no named source to recover from")
 
@@ -2289,7 +2587,7 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         "owner_name": req.owner_name,
         "workspace_id": req.workspace_id,
         "realtime_token": realtime_token,
-        "initial_mode": req.mode if req.mode in ("utterance", "autonomous") else None,
+        "initial_mode": req.mode if req.mode in ("auto", "manual", "utterance", "autonomous") else None,
     }
     _live_token_index[live_token] = bot_id
     _db_save(bot_id, {"status": "joining", "user_id": user_id, "live_token": live_token,

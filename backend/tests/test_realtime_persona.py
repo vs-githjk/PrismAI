@@ -252,7 +252,10 @@ class ChatOnlyReplyTests(unittest.TestCase):
         rr._bot_state.pop("botChat", None)
 
     def test_chat_command_dispatched_with_from_chat(self):
+        """The rule is deterministic and brain-independent, so assert it on BOTH brains:
+        the two-channel bus (live default) and the fused path (the rollback)."""
         from unittest.mock import AsyncMock, patch
+        from voice import bus
         payload = {
             "event": "chat_message",
             "data": {"data": {
@@ -260,14 +263,17 @@ class ChatOnlyReplyTests(unittest.TestCase):
                 "data": {"text": "Prism, summarize the meeting"},
             }},
         }
-        with patch.object(rr, "_process_command", new=AsyncMock()) as proc, \
-             patch.object(rr, "_record_human_chat_line", new=AsyncMock()), \
-             patch.object(rr, "_detect_command", return_value="summarize the meeting"):
-            asyncio.run(rr._handle_realtime_payload(payload, verified_bot_id="botChat"))
+        for flag, holder, attr in (("1", bus, "submit"), ("0", rr, "_process_command")):
+            with self.subTest(two_channel=flag):
+                with patch.dict(os.environ, {"PRISM_TWO_CHANNEL": flag}), \
+                     patch.object(holder, attr, new=AsyncMock()) as dispatch, \
+                     patch.object(rr, "_record_human_chat_line", new=AsyncMock()), \
+                     patch.object(rr, "_detect_command", return_value="summarize the meeting"):
+                    asyncio.run(rr._handle_realtime_payload(payload, verified_bot_id="botChat"))
 
-        proc.assert_called_once()
-        self.assertTrue(proc.call_args.kwargs.get("from_chat"),
-                        "chat-typed command must dispatch with from_chat=True")
+                dispatch.assert_called_once()
+                self.assertTrue(dispatch.call_args.kwargs.get("from_chat"),
+                                "chat-typed command must dispatch with from_chat=True")
 
     def test_process_command_accepts_from_chat_kwarg(self):
         import inspect

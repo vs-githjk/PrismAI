@@ -29,6 +29,7 @@ from tools.registry import get_available_tools, get_tool, execute_tool, confirm_
 from tools.present_gate import presents_gate_matches, is_stop_sharing
 import presentation
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
+from voice import tuning as _voice_tuning  # Phase 5 feel knobs (pure os.getenv, no cycle)
 from tools.tts import text_to_speech
 from warmup import warm_external_connections
 from recall_routes import bot_store, _db_append_command, _db_save_memory, _db_save
@@ -39,7 +40,8 @@ router = APIRouter(tags=["realtime"])
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE = os.getenv("RECALL_API_BASE", "https://us-west-2.recall.ai/api/v1")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # live-bot command path runs on gpt-4o-mini
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+from clients import LIVE_MODEL  # OpenAI gpt-5.6-luna — the live-bot command/catch-up model
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 LINEAR_API_KEY = os.getenv("LINEAR_API_KEY", "")
 
@@ -268,9 +270,12 @@ def _solo_mode_active(state: dict) -> bool:
 def _solo_freeflow_text_eligible(text: str) -> bool:
     """Solo free-flow filter on raw text (legacy path has Deepgram finals, not
     FlushedUtterances). Drops backchannel/filler so the bot doesn't pounce on
-    'um, okay'; mute/stop phrases are owned by the barge-in layer."""
+    'um, okay'; mute/stop phrases are owned by the barge-in layer.
+
+    Phase 5: the word bar is a knob (`PRISM_SOLO_MIN_WORDS`) — at 3 the bot answers
+    pleasantries like "I'm doing well too", which reads as chatty in a real 1-on-1."""
     t = (text or "").strip()
-    if len(re.findall(r"\b\w+\b", t)) < 3:
+    if len(re.findall(r"\b\w+\b", t)) < _voice_tuning.SOLO_MIN_WORDS:
         return False
     if ambient_loop.detect_mute_command(t):
         return False
@@ -280,7 +285,7 @@ def _solo_freeflow_text_eligible(text: str) -> bool:
 def _solo_freeflow_eligible(u) -> bool:
     """Filter out backchannel/filler so the bot doesn't pounce on 'um, okay'.
     Stop/mute phrases are owned by the barge-in + interjection layers."""
-    if getattr(u, "word_count", 0) < 3:
+    if getattr(u, "word_count", 0) < _voice_tuning.SOLO_MIN_WORDS:
         return False
     return _solo_freeflow_text_eligible(u.text or "")
 
@@ -450,6 +455,23 @@ def _streamed_llm_on() -> bool:
 
 def _owner_id_lock_on() -> bool:
     return os.getenv("PRISM_OWNER_ID_LOCK") == "1"
+
+
+def _two_channel_on() -> bool:
+    """Phase 3: route commands through the voice/agent split (bus + tiered dedup) instead
+    of the fused `_process_command`. Default ON as of 2026-07-26 — the plan always said
+    "flip it for the first live join, then it becomes the default"; the fused path is
+    still here as the rollback until the §7 demolition ruling. PRISM_TWO_CHANNEL=0 in the
+    Render dashboard forces the old brain back without a deploy."""
+    return os.getenv("PRISM_TWO_CHANNEL", "1") != "0"
+
+
+def _gate_on() -> bool:
+    """Phase 4: route engagement through the single `voice.gate` (Auto/Manual) instead of
+    the legacy wake-word + solo free-flow + ambient consent funnel. Default ON as of
+    2026-07-26, same reasoning as `_two_channel_on`. PRISM_ENGAGEMENT_GATE=0 forces the
+    legacy wake/solo/ambient detection back."""
+    return os.getenv("PRISM_ENGAGEMENT_GATE", "1") != "0"
 
 
 def _accumulator_on() -> bool:
@@ -1654,8 +1676,19 @@ def _get_bot_state(bot_id: str) -> dict:
         # Seed the pre-join response mode (from /join-meeting) — a stable
         # choice for the whole meeting; changeable via POST /bot/{id}/mode.
         _initial_mode = (bot_store.get(bot_id) or {}).get("initial_mode")
-        if _initial_mode in ("utterance", "autonomous"):
+        if _initial_mode in ("auto", "manual"):
+            # Phase 4 vocabulary. Set the gate's mode + keep the legacy override
+            # consistent so the old path (gate off) behaves the same.
+            _bot_state[bot_id]["engagement_mode"] = _initial_mode
+            _legacy = "autonomous" if _initial_mode == "auto" else "utterance"
+            _bot_state[bot_id]["manual_mode"] = _legacy
+            _bot_state[bot_id]["mode"] = _legacy
+            _bot_state[bot_id]["mode_since_ts"] = time.time()
+        elif _initial_mode in ("utterance", "autonomous"):
+            _bot_state[bot_id]["manual_mode"] = _initial_mode
             _bot_state[bot_id]["mode"] = _initial_mode
+            _bot_state[bot_id]["engagement_mode"] = "manual" if _initial_mode == "utterance" else "auto"
+            _bot_state[bot_id]["mode_since_ts"] = time.time()
         # Build accumulator AFTER the state dict exists, so the on_flush
         # closure can capture the same state object.
         if _accumulator_on():
@@ -1834,6 +1867,17 @@ async def _send_chat_response(bot_id: str, message: str):
         print(f"[realtime] failed to send chat response: {exc}")
 
 
+async def _proactive_send(bot_id: str, state: dict, message: str) -> None:
+    """Proactive nudge sink (idea engine + proactive checker). Phase 4: routes through the
+    single engagement gate (mode/mute/quiet-window) when it's on, so the watchers no longer
+    decide on their own; falls back to a direct chat post when the gate is off."""
+    if _gate_on():
+        from voice import gate
+        await gate.propose(bot_id, state, message, kind="nudge")
+        return
+    await _send_chat_response(bot_id, message)
+
+
 # A typed "/leave" (optionally "/leave Prism") in the meeting chat tells the bot to
 # exit the call. Slash-prefixed so it never collides with a natural-language ask.
 _LEAVE_CMD_RE = re.compile(r"^\s*/leave\b", re.IGNORECASE)
@@ -1980,9 +2024,8 @@ async def stream_catchup_answer(
 
     try:
         stream = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=450,
+            model=LIVE_MODEL,  # luna (GPT-5): no custom temperature; max_completion_tokens
+            max_completion_tokens=450,
             stream=True,
             messages=[
                 {"role": "system", "content": system},
@@ -2050,12 +2093,20 @@ def _spoken_version(text: str) -> str:
 _LIST_LINE_RE = re.compile(r"(^|\n)\s*([-*•]|\d+[.)])\s+", re.M)
 
 
-def _spoken_condense(text: str, max_sentences: int = 3, max_chars: int = 340) -> str:
+def _spoken_condense(text: str, max_sentences: int = 0, max_chars: int = 0) -> str:
     """The SPOKEN copy of a reply, length-capped. Each spoken sentence blocks the next for
     its real playback duration (so multiple voices don't overlap), which means a long reply
     — a 6-bullet outline read aloud — stalls every queued command behind it. That's the #1
     source of live-conversation lag. So we speak a tight lead and push the rest to chat
-    (which already gets the FULL reply). Short, non-list replies are spoken verbatim."""
+    (which already gets the FULL reply). Short, non-list replies are spoken verbatim.
+
+    Phase 5 §4: the caps are now knobs (`voice.tuning.SPOKEN_MAX_*`, 0 = use the knob).
+    The streaming mouth removes the pacing constraint above — audio starts immediately
+    instead of being uploaded clip-by-clip — so the ceiling is now "don't monologue", not
+    "don't overlap". Re-picking the numbers needs real-meeting feel, so they ship at the
+    old value and get turned in the §6 loop rather than guessed at now."""
+    max_sentences = max_sentences or _voice_tuning.SPOKEN_MAX_SENTENCES
+    max_chars = max_chars or _voice_tuning.SPOKEN_MAX_CHARS
     if not (text or "").strip():
         return text
     m = _LIST_LINE_RE.search(text)
@@ -2073,30 +2124,16 @@ def _spoken_condense(text: str, max_sentences: int = 3, max_chars: int = 340) ->
     return f"{lead} I've put the rest in the chat."
 
 
-_GAP_SILENCE_S = float(os.getenv("PRISM_GAP_SILENCE_S", "1.2"))
-_GAP_MAX_WAIT_S = float(os.getenv("PRISM_GAP_MAX_WAIT_S", "4.0"))
-
-
 async def _wait_for_speech_gap(state: dict) -> None:
-    """Politeness gate for the wake-word command path: wait for a brief lull before
-    the bot speaks so it doesn't talk over someone. Uses the SAME shared gap check
-    and bot-excluded `last_audio_ts` as the autonomous lane
-    (`ambient_loop.speech_gap_clear`) — quiet + no pending partial + complete
-    thought — so the two paths can't drift (and the bot never waits on its own TTS).
-    Returns as soon as the gap is clear, after _GAP_MAX_WAIT_S regardless so it never
-    hangs, or if the speaking session was cancelled (mute / "stop"). Disable with
-    PRISM_GAP_WAIT=0."""
-    if os.getenv("PRISM_GAP_WAIT", "1") == "0":
-        return
-    deadline = time.time() + _GAP_MAX_WAIT_S
-    while time.time() < deadline:
-        sess = perception_state.get_session(state)
-        if sess is not None and sess.is_cancelled:
-            return
-        if ambient_loop.speech_gap_clear(state, time.time(), quiet_s=_GAP_SILENCE_S,
-                                         require_terminal=False):
-            return
-        await asyncio.sleep(0.2)
+    """Politeness gate: before the bot speaks, wait for a brief lull so it doesn't talk
+    over someone mid-sentence.
+
+    Phase 5 §2 re-homed the implementation onto acoustic truth — `voice.barge` reads
+    Silero VAD silence when a live pipeline is attached (`state["voice_room"]`), and falls
+    back to the old transcript-timestamp estimate otherwise. Knobs, the cancel bail-out
+    (mute / "stop") and `PRISM_GAP_WAIT=0` all live there now."""
+    from voice import barge as _voice_barge
+    await _voice_barge.wait_for_gap(state=state)
 
 
 def _cancel_ack(state: dict) -> None:
@@ -2135,6 +2172,14 @@ async def _send_voice_response(bot_id: str, text: str):
     Buffered (default) path: one TTS call, one upload."""
     if not RECALL_API_KEY:
         return
+    # Voice agent (Phase 2): if a live Flux/Cartesia pipeline is attached to this bot,
+    # speak through it (Cartesia → Output Media page) instead of the MP3 upload path.
+    # Leak-guarded like the streamed path; falls through to MP3 when no pipeline exists
+    # (the MP3 path is deleted in the Phase 2 demolition commit once this is proven live).
+    if "<function=" not in text:
+        from voice.bridge import speak as _voice_speak
+        if await _voice_speak(bot_id, text):
+            return
     audio_bytes = await text_to_speech(text)
     if not audio_bytes:
         print(f"[realtime] TTS produced no audio for bot {bot_id}, skipping voice")
@@ -2416,6 +2461,13 @@ async def _send_voice_response_streamed(bot_id: str, text: str, cmd_detected_ts:
             print(f"[realtime] function_tag_leak_detected bot={bot_id[:8]}; aborting streamed voice")
             return
 
+    # Voice agent (Phase 2): hand the whole (leak-checked) reply to the live pipeline —
+    # Cartesia does its own streaming TTS and the sink stamps the t3→t4 mix-hop stopwatch.
+    # Falls back to the MP3 chunk loop below when no pipeline is attached.
+    from voice.bridge import speak as _voice_speak
+    if await _voice_speak(bot_id, text):
+        return
+
     state = _get_bot_state(bot_id)
     print(f"[realtime] chunker_sentences_emitted={len(chunks)} bot={bot_id[:8]}")
 
@@ -2622,6 +2674,21 @@ def _append_realtime_segment(bot_id: str, seg: dict) -> None:
         del segs[: len(segs) - _RT_TRANSCRIPT_CAP]
 
 
+def _recording_elapsed_for_bot(bot_id: str) -> float | None:
+    """Recording-relative seconds (from the live voice pipeline's t0), used to stamp
+    a seekable timestamp onto non-audio lines — the bot's own replies and humans' typed
+    chat — so they can be merged into Recall's word-timed transcript in chronological
+    order. Best-effort: None when no pipeline is attached (older MP3-path bots)."""
+    try:
+        from voice.audio_routes import get_session
+        s = get_session(bot_id)
+        if s is not None and s.pipeline is not None:
+            return round(s.pipeline.recording_elapsed(), 2)
+    except Exception:
+        pass
+    return None
+
+
 async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
     """Record a human's in-meeting CHAT message into the transcript (buffer + durable),
     mirroring _record_bot_line for the bot's side. Recall only transcribes spoken AUDIO,
@@ -2640,6 +2707,15 @@ async def _record_human_chat_line(bot_id: str, sender: str, text: str) -> None:
             if len(buf) > meeting_memory.MAX_BUFFER_LINES:
                 st["transcript_buffer"] = buf[-meeting_memory.TRIM_TO:]
             _append_realtime_line(bot_id, line)
+            # Seekable segment (source="chat") so a human's TYPED message merges into
+            # Recall's word-timed transcript at the right point — Recall transcribes
+            # spoken audio only, so chat would otherwise vanish from a merged transcript.
+            _t = _recording_elapsed_for_bot(bot_id)
+            if _t is not None:
+                _append_realtime_segment(bot_id, {
+                    "speaker": sender or "Someone",
+                    "start": _t, "end": _t, "text": text, "source": "chat",
+                })
             _maybe_persist_transcript(bot_id, st)
     except Exception as exc:
         print(f"[realtime] chat-line record failed: {exc}")
@@ -2682,6 +2758,17 @@ def _record_bot_line(bot_id: str, state: dict, text: str, bot_name: str) -> None
     # Durable, append-only copy (survives trims + restart) so it lands in the
     # final saved transcript alongside the human lines, in chronological order.
     _append_realtime_line(bot_id, line)
+    # Seekable segment stamped with a recording-relative time so the bot's own words
+    # can be merged into Recall's word-timed transcript (Recall's audio never captures
+    # the bot's Output-Media speech / chat replies). source="bot" marks it as a line
+    # to KEEP when merging (Flux STT segments carry no source and are dropped in favour
+    # of Recall's better-attributed human segments).
+    _t = _recording_elapsed_for_bot(bot_id)
+    if _t is not None:
+        _append_realtime_segment(bot_id, {
+            "speaker": bot_name or DEFAULT_BOT_NAME,
+            "start": _t, "end": _t, "text": text, "source": "bot",
+        })
     _maybe_persist_transcript(bot_id, state)
 
 
@@ -2791,7 +2878,7 @@ async def _maybe_generate_idea(bot_id: str, state: dict) -> None:
                 return
 
         prefix = _IDEA_TYPE_PREFIX.get(idea_type, "💡")
-        await _send_chat_response(bot_id, f"{prefix} {message}")
+        await _proactive_send(bot_id, state, f"{prefix} {message}")
 
         # Feature 1: Record gap category so it won't be re-flagged this meeting.
         if idea_type == "gap":
@@ -2872,8 +2959,8 @@ async def _run_proactive_checker(bot_id: str):
         if elapsed_min >= 30 and state["decisions_detected"] == 0 and not state["sent_30min_nudge"]:
             state["sent_30min_nudge"] = True
             state["intervention_last_ts"] = now
-            await _send_chat_response(
-                bot_id,
+            await _proactive_send(
+                bot_id, state,
                 f"📋 30 minutes in — no decisions logged yet. Say '{bot_name}, summarize what's been decided' to capture them.",
             )
             continue
@@ -2887,8 +2974,8 @@ async def _run_proactive_checker(bot_id: str):
         ):
             state["sent_no_owners_nudge"] = True
             state["intervention_last_ts"] = now
-            await _send_chat_response(
-                bot_id,
+            await _proactive_send(
+                bot_id, state,
                 f"👤 Some action items may not have clear owners yet. Say '{bot_name}, who owns what?' to clarify.",
             )
             continue
@@ -2897,8 +2984,8 @@ async def _run_proactive_checker(bot_id: str):
         if elapsed_min >= 55 and not state["sent_55min_nudge"]:
             state["sent_55min_nudge"] = True
             state["intervention_last_ts"] = now
-            await _send_chat_response(
-                bot_id,
+            await _proactive_send(
+                bot_id, state,
                 f"⏱️ Meeting approaching 1 hour. Say '{bot_name}, list the action items so far' to make sure everything is captured before wrapping up.",
             )
             continue
@@ -3226,8 +3313,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
         tools_used = []
         valid_tool_names = {t["function"]["name"] for t in tools}
         call_kwargs = {
-            "model": "gpt-4o-mini",
-            "temperature": 0.3,
+            "model": LIVE_MODEL,  # luna (GPT-5): default temperature only
             "messages": messages,
         }
         if tools:
@@ -3544,8 +3630,7 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
             # Tool loop exhausted without a text summary — ask LLM to summarise what was done
             try:
                 summary_resp = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    temperature=0.3,
+                    model=LIVE_MODEL,  # luna (GPT-5): default temperature only
                     messages=messages + [{"role": "user", "content": "Summarise in one sentence what you just did."}],
                 )
                 reply = summary_resp.choices[0].message.content or "Done."
@@ -3682,7 +3767,9 @@ async def _process_command(bot_id: str, command: str, speaker: str = "", ambient
                         system=system_text,
                         messages=[{"role": "user", "content": f"{speaker}: {command}" if speaker else command}],
                     )
-                    reply = haiku_resp.content[0].text
+                    # Extract text from ALL content blocks (sonnet-5 ThinkingBlock
+                    # hotfix — content[0] may be a thinking block, not the reply).
+                    reply = "".join(getattr(b, "text", "") for b in haiku_resp.content)
                     # Same SILENT no-op as the main path: a bare SILENT means "say
                     # nothing" — skip voice, chat, transcript line, command log.
                     if _is_silent_reply(reply):
@@ -3736,7 +3823,16 @@ def _dispatch_command(state: dict, bot_id: str, command: str, speaker: str) -> N
       people asking consecutively are BOTH answered in order rather than the
       second being dropped. The current answer is NOT cut off — to interrupt
       explicitly, say "Prism, stop" or hit mute.
+
+    Phase 3: when PRISM_TWO_CHANNEL=1, the command goes to the voice/agent bus
+    (tiered dedup + serial drain) instead — the queue+debounce below are the
+    thing the bus replaces (item 10).
     """
+    if _two_channel_on():
+        from voice import voice_channel  # noqa: F401 — import registers the bus handler
+        from voice import bus
+        asyncio.create_task(bus.submit(bot_id, command, speaker))
+        return
     if not state.get("processing"):
         asyncio.create_task(_process_command(bot_id, command, speaker))
         return
@@ -3961,12 +4057,22 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
         # silent no-op.
         if _barge_in_on() and isinstance(segment, dict):
             _words = segment.get("words") or []
-            _stop_text = " ".join(w.get("text", "") for w in _words)
+            # Flux delivers a whole finished turn with no word list (bridge sets words=[]),
+            # so the word-join is empty on the voice-agent path — fall back to the segment
+            # text or "stop" stops being detectable at all once the ears are swapped.
+            _stop_text = " ".join(w.get("text", "") for w in _words) or (segment.get("text") or "")
             if perception_state.is_stop_command(_stop_text):
                 _stop_speaker = (segment.get("participant") or {}).get("name", "") or "Speaker"
                 _stop_speaker_id = str((segment.get("participant") or {}).get("id") or "").strip()
                 _stop_sess = perception_state.get_session(state)
                 _detected_mono = perception_state._now_mono()
+                # Phase 5 §1: "stop" is an instant kill, pre-gate — it also drops the live
+                # TTS turn and the audio already queued in the speaker page.
+                try:
+                    from voice import barge as _voice_barge
+                    await _voice_barge.hard_stop(bot_id, "stop_command")
+                except Exception as _exc:
+                    print(f"[realtime] voice hard-stop failed: {_exc}")
                 if _stop_sess is not None and not _stop_sess.is_cancelled:
                     _stop_sess.cancel()
                     perception_state.bump(state, "stop_command_fired")
@@ -4120,6 +4226,27 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             # Compression acquires the memory lock internally for its own
             # mutations — see _compress_and_persist below.
             asyncio.create_task(_compress_and_persist(bot_id, state))
+
+            # ── Engagement gate (Phase 4) ─────────────────────────────────────
+            # One decision point for "speak now?" — absorbs wake-word + solo + ambient.
+            # Flux hands complete turns, so no fragment-gluing is needed here (that dead
+            # half is the legacy block below). Behind PRISM_ENGAGEMENT_GATE until a live
+            # meeting validates it; the legacy detection stays as the fallback.
+            if _gate_on():
+                from voice import gate
+                _speak, _cmd = await gate.decide(bot_id, state, text, speaker)
+                # The gate used to decide in total silence, which made "the bot didn't
+                # answer" indistinguishable from "the bot never heard a command" — one
+                # line here is the difference between a diagnosis and a guessing game.
+                # `armed` is the POST-decision state: True means a bare wake word just
+                # armed the next turn (so this turn correctly returned speak=False).
+                print(f"[gate] decide bot={bot_id[:8]} speak={_speak} "
+                      f"solo={_solo_mode_active(state)} muted={bool(state.get('muted'))} "
+                      f"armed={bool(state.get('_gate_armed_speaker'))} speaker={speaker!r} "
+                      f"text={text[:60]!r}")
+                if _speak:
+                    _dispatch_command(state, bot_id, _cmd, speaker)
+                return {"ok": True}
 
             # ── Command detection & utterance gating ──────────────────────────
             # The transcript provider may finalize an utterance mid-sentence, e.g.
@@ -4287,7 +4414,12 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
             if command:
                 print(f"[realtime] chat command={command!r} from={sender!r} (chat-only reply)")
                 # Typed in chat → answer in chat only, never speak into the meeting.
-                asyncio.create_task(_process_command(bot_id, command, sender, from_chat=True))
+                if _two_channel_on():
+                    from voice import voice_channel  # noqa: F401 — registers the bus handler
+                    from voice import bus
+                    asyncio.create_task(bus.submit(bot_id, command, sender, from_chat=True))
+                else:
+                    asyncio.create_task(_process_command(bot_id, command, sender, from_chat=True))
 
     elif event_type in (
         "participant_events.join",
@@ -4314,6 +4446,26 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                     "name": pname,
                     "is_bot": is_bot_participant,
                 }
+                # Fix 2B: capture the stable static_participant_id → real name from the
+                # LIVE join event so the post-meeting deepgram_async transcript's anonymous
+                # speaker segments (200-0/100-0) can be relabelled deterministically by
+                # exact id. Recall exposes no clean post-meeting name map (2A's pe_url is
+                # absent), so the live roster is the only reliable source. Stored on
+                # bot_store (read by recall_routes._process_bot_transcript at analysis time,
+                # since _bot_state is realtime-private), accumulate-only so it survives a
+                # participant leaving. Humans only. [coordinated with the voice merge —
+                # keep additive; the robust names+seek path is realtime_segments post-merge.]
+                if pname and not is_bot_participant and bot_id in bot_store:
+                    try:
+                        from recall_routes import _static_participant_id as _static_pid
+                        _sid = _static_pid(participant)
+                    except Exception:
+                        _sid = None
+                    if _sid:
+                        _smap = bot_store[bot_id].setdefault("participant_static_ids", {})
+                        if _smap.get(_sid) != pname:
+                            _smap[_sid] = pname
+                            print(f"[realtime] 2B captured static id for {pname!r} (bot={bot_id[:8]})")
                 # Late-joiner notes link: re-post the live/notes link to anyone who
                 # joins AFTER the intro + initial-roster window. Introduces no new
                 # sharing — same link the intro posts. (See _should_repost_late_join.)
@@ -4333,17 +4485,31 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
 
 @router.post("/bot/{bot_id}/mode")
 async def set_bot_mode(bot_id: str, body: dict):
-    """Switch the live bot's mode. body={"mode": "utterance"|"autonomous"}.
-    Unauthenticated like the other bot endpoints (see CLAUDE.md Known Limitations)."""
+    """Set the live bot's engagement mode. Unauthenticated like the other bot endpoints.
+
+    Phase 4 vocabulary: body={"mode": "auto"|"manual"} — Auto (speaks when warranted) or
+    Manual (wake-word only). Legacy body={"mode": "utterance"|"autonomous"|null} is still
+    accepted and mapped (autonomous→auto, utterance/null→the legacy override) so the old
+    dashboard control keeps working during the Phase-4 rollout."""
     mode = body.get("mode")
-    if mode not in ("utterance", "autonomous"):
-        return {"error": "mode must be 'utterance' or 'autonomous'"}
+    if mode in ("auto", "manual"):
+        state = _get_bot_state(bot_id)
+        from voice import gate
+        gate.set_mode(state, mode)
+        # Keep the legacy state machine consistent so the old path (gate off) still behaves.
+        state["manual_mode"] = "autonomous" if mode == "auto" else "utterance"
+        ambient_loop.update_mode(state, "", "", time.time())
+        print(f"[gate] engagement mode bot={bot_id[:8]} -> {mode!r}")
+        return {"mode": mode, "engagement_mode": mode}
+    if mode not in (None, "utterance", "autonomous"):
+        return {"error": "mode must be 'auto', 'manual', 'utterance', 'autonomous', or null"}
     state = _get_bot_state(bot_id)
-    state["mode"] = mode
-    if mode == "utterance":
-        state["pending_question"] = None
-    print(f"[ambient] mode set via API bot={bot_id[:8]} -> {mode!r}")
-    return {"mode": state["mode"]}
+    state["manual_mode"] = mode
+    if mode in ("utterance", "autonomous"):
+        ambient_loop.update_mode(state, "", "", time.time())
+        state["engagement_mode"] = "manual" if mode == "utterance" else "auto"
+    print(f"[ambient] manual mode override bot={bot_id[:8]} -> {mode!r}")
+    return {"mode": state.get("mode"), "manual_mode": state.get("manual_mode")}
 
 
 @router.post("/bot/{bot_id}/mute")
@@ -4363,6 +4529,13 @@ async def set_bot_mute(bot_id: str, body: dict):
         sess = perception_state.get_session(state)
         if sess is not None and not sess.is_cancelled:
             sess.cancel()
+        # Voice agent (Phase 5 §1): mute is pre-gate — kill the Cartesia turn and drop
+        # the audio already scheduled in the speaker page, don't wait it out.
+        try:
+            from voice import barge as _voice_barge
+            await _voice_barge.hard_stop(bot_id, "mute")
+        except Exception as exc:
+            print(f"[realtime] voice hard-stop failed: {exc}")
     print(f"[ambient] mute via API bot={bot_id[:8]} muted={muted}")
     return {"muted": state.get("muted")}
 
@@ -4429,6 +4602,13 @@ def cleanup_bot_state(bot_id: str) -> None:
     _BOT_WAKE_ALIAS.pop(bot_id, None)
     unregister_realtime_token(bot_id)
     perception_state.cleanup_bot(bot_id)
+    try:
+        from voice import barge as _voice_barge, bus as _voice_bus, voice_channel as _voice_ch
+        _voice_bus.cleanup_bot(bot_id)
+        _voice_barge.cleanup_bot(bot_id)   # VAD gate + room state
+        _voice_ch.cleanup_bot(bot_id)      # any in-flight speculative call
+    except Exception:
+        pass
     if state is not None:
         # Cancel the tick task (its `finally` block also runs flush_all
         # as a backstop). Best-effort — cancellation may race with the

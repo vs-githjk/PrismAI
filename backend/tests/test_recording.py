@@ -47,8 +47,8 @@ class TestSegmentsFromRecallData(unittest.TestCase):
         ]
         segments = _segments_from_recall_data(raw)
         self.assertEqual(segments, [
-            {"speaker": "Alice", "start": 0.5, "end": 1.6, "text": "Hello world"},
-            {"speaker": "Bob", "start": 2.0, "end": 2.3, "text": "Hi"},
+            {"speaker": "Alice", "start": 0.5, "end": 1.6, "text": "Hello world", "static_participant_id": None},
+            {"speaker": "Bob", "start": 2.0, "end": 2.3, "text": "Hi", "static_participant_id": None},
         ])
 
     def test_skips_segments_with_no_words(self):
@@ -57,7 +57,7 @@ class TestSegmentsFromRecallData(unittest.TestCase):
             {"speaker": "Bob", "words": [{"text": "ok", "start_time": 1.0, "end_time": 1.2}]},
         ]
         segments = _segments_from_recall_data(raw)
-        self.assertEqual(segments, [{"speaker": "Bob", "start": 1.0, "end": 1.2, "text": "ok"}])
+        self.assertEqual(segments, [{"speaker": "Bob", "start": 1.0, "end": 1.2, "text": "ok", "static_participant_id": None}])
 
     def test_returns_none_for_empty_list(self):
         self.assertIsNone(_segments_from_recall_data([]))
@@ -73,14 +73,49 @@ class TestSegmentsFromRecallData(unittest.TestCase):
             "words": [{"text": "yo", "start_time": 0.1, "end_time": 0.3}],
         }]
         self.assertEqual(_segments_from_recall_data(raw), [
-            {"speaker": "Carol", "start": 0.1, "end": 0.3, "text": "yo"},
+            {"speaker": "Carol", "start": 0.1, "end": 0.3, "text": "yo", "static_participant_id": None},
         ])
 
     def test_falls_back_to_unknown_speaker_label(self):
         raw = [{"words": [{"text": "hi", "start_time": 0.0, "end_time": 0.2}]}]
         self.assertEqual(_segments_from_recall_data(raw), [
-            {"speaker": "Speaker", "start": 0.0, "end": 0.2, "text": "hi"},
+            {"speaker": "Speaker", "start": 0.0, "end": 0.2, "text": "hi", "static_participant_id": None},
         ])
+
+    def test_async_nested_timestamp_format(self):
+        # deepgram_async nests timing under start_timestamp.relative (not start_time).
+        # Before the fix this produced start=0/end=0 for every async segment.
+        raw = [{
+            "participant": {
+                "name": "200-0",
+                "extra_data": {"google_meet": {"static_participant_id": "ABC123"}},
+            },
+            "words": [
+                {"text": "Hello", "start_timestamp": {"relative": 98.0, "absolute": None},
+                 "end_timestamp": {"relative": 98.4, "absolute": None}},
+                {"text": "there", "start_timestamp": {"relative": 98.4, "absolute": None},
+                 "end_timestamp": {"relative": 98.9, "absolute": None}},
+            ],
+        }]
+        self.assertEqual(_segments_from_recall_data(raw), [
+            {"speaker": "200-0", "start": 98.0, "end": 98.9, "text": "Hello there",
+             "static_participant_id": "ABC123"},
+        ])
+
+    def test_participant_id_relabel(self):
+        from recall_routes import _relabel_segments_by_participant_id
+        segments = [
+            {"speaker": "200-0", "start": 1.0, "end": 2.0, "text": "hi", "static_participant_id": "A"},
+            {"speaker": "100-0", "start": 2.0, "end": 3.0, "text": "yo", "static_participant_id": "B"},
+            {"speaker": "300-0", "start": 3.0, "end": 4.0, "text": "ok", "static_participant_id": "C"},
+        ]
+        n = _relabel_segments_by_participant_id(segments, {"A": "Alice", "B": "Bob"})
+        self.assertEqual(n, 2)
+        self.assertEqual(segments[0]["speaker"], "Alice")
+        self.assertEqual(segments[1]["speaker"], "Bob")
+        self.assertEqual(segments[2]["speaker"], "300-0")  # unmapped id keeps anon label
+        # Empty map is a no-op.
+        self.assertEqual(_relabel_segments_by_participant_id(segments, {}), 0)
 
 
 import asyncio

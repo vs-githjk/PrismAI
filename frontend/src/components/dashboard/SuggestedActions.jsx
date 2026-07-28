@@ -153,7 +153,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
   )
 }
 
-function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, workspaceId, onExecuted, onClose }) {
+export function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWebhook, workspaceId, onExecuted, onClose }) {
   const meta = TYPE_META[action.action_type]
   const resolved = resolveTool(action.action_type, connections)
   const [busy, setBusy] = useState(false)
@@ -224,7 +224,7 @@ function ActionModal({ action, connections, suggestedEmails, meetingId, teamsWeb
       const res = await apiFetch('/actions/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool: resolved.tool, args, meeting_id: meetingId, task: action.task }),
+        body: JSON.stringify({ tool: resolved.tool, args, meeting_id: meetingId, task: action.task, workspace_id: workspaceId || null }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || 'Action failed')
