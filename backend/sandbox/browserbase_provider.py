@@ -20,9 +20,13 @@ PERSISTENCE MODEL — differs from E2B (see SandboxRef):
                      live session handle (session_id + connect_url + live_url).
     pause          → release (kill) the Session; the Context persists. Removes
                      idle cost entirely (there is no billed idle VM to snapshot).
-    view_url /     → the Session's debugger_fullscreen_url (+?navbar=false). The
-    interactive_url  same interactive URL for now — a view-only variant is a
-                     LATER wrapper concern (ADR 0003, "Phase 2 re-pointed").
+    view_url /     → the Session's debugger_fullscreen_url. view_url hides the
+    interactive_url  devtools chrome (?navbar=false) for the meeting-facing
+                     surface; interactive_url KEEPS the navbar — the setup/login
+                     flow needs the URL bar (a fresh session opens on
+                     about:blank; without a URL bar the tab is an unnavigable
+                     white page). A true view-only variant is a LATER wrapper
+                     concern (ADR 0003, "Phase 2 re-pointed").
     screenshot/act → driven over CDP with Playwright (connect_over_cdp).
     is_alive       → does the Context still exist (running OR resumable).
 
@@ -72,6 +76,10 @@ T = TypeVar("T")
 
 # = Recall's output_media render surface (matches the E2B adapter + the spike).
 _VIEWPORT = {"width": 1280, "height": 720}
+
+# A fresh session opens on about:blank — a white void in the live view. New
+# keep-alive sessions are landed here so the tab never opens onto nothing.
+_START_URL = "https://www.google.com"
 
 # Frankfurt is the nearest region to a Dubai user (no ME compute region exists —
 # ADR 0003). Overridable, but clamped to the SDK's known region literals.
@@ -276,14 +284,16 @@ class BrowserbaseProvider:
     # ----------------------------------------------------------------- urls
 
     def view_url(self, ref: SandboxRef) -> str:
-        # For now the same interactive live-view (ADR 0003: a view-only variant
-        # is a later wrapper concern). Lazily ensures a session so callers that
-        # skip resume() still get a live URL.
-        return self._ensure_session(ref).live_url
+        # Meeting-facing watch surface: devtools chrome hidden (ADR 0003: a true
+        # view-only variant is a later wrapper concern). Lazily ensures a
+        # session so callers that skip resume() still get a live URL.
+        return self._with_navbar_false(self._ensure_session(ref).live_url)
 
     def interactive_url(self, ref: SandboxRef) -> str:
         # The responsive login surface: debugger_fullscreen_url is fully
         # interactive (type/click), which is exactly the once-ever login flow.
+        # Navbar KEPT: the user must navigate to github.com etc. themselves,
+        # and a fresh session opens on about:blank.
         return self._ensure_session(ref).live_url
 
     # -------------------------------------------------------------- actions
@@ -409,13 +419,28 @@ class BrowserbaseProvider:
                     "(a richer tier was rejected; persistent login + keep-alive "
                     "need the Developer tier, $20/mo, ADR 0003)."
                 )
-            return _Session(
+            live = _Session(
                 session_id=session.id,
                 connect_url=session.connect_url,
                 live_url=self._live_url(session.id),
                 persisted=persisted,
                 keep_alive=keep_alive,
             )
+            if keep_alive:
+                # Land the fresh about:blank page on a start page, best-effort.
+                # keep_alive only: on a free-tier session the CDP disconnect
+                # after goto would END the session we're about to hand out.
+                try:
+                    self._with_page(
+                        live,
+                        lambda page: page.goto(
+                            _START_URL, wait_until="domcontentloaded"
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[browserbase] start-page load skipped: "
+                          f"{type(exc).__name__}")
+            return live
         raise RuntimeError(
             f"Browserbase session create failed at every tier: {last_exc}"
         )
@@ -429,10 +454,11 @@ class BrowserbaseProvider:
 
     def _live_url(self, session_id: str) -> str:
         # debugger_fullscreen_url is the clean, interactive, embeddable viewport
-        # (spike-verified: 200, no X-Frame-Options/CSP). ?navbar=false hides the
-        # devtools chrome. NEVER logged — it's a live capability.
+        # (spike-verified: 200, no X-Frame-Options/CSP). Stored RAW (navbar
+        # visible); view_url() appends ?navbar=false for the meeting surface.
+        # NEVER logged — it's a live capability.
         dbg = self._client().sessions.debug(session_id)
-        return self._with_navbar_false(dbg.debugger_fullscreen_url)
+        return dbg.debugger_fullscreen_url
 
     @staticmethod
     def _with_navbar_false(url: str) -> str:

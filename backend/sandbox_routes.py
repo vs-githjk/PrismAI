@@ -233,8 +233,8 @@ async def sandbox_setup(user_id: str = Depends(require_user_id)):
 
     # The URL getters are provider calls too: for Browserbase they mint/inspect a
     # Session (network I/O), so keep them off the event loop like every other
-    # provider call. interactive_url is the responsive WebRTC login surface;
-    # view_url is the (for now identical) watch URL — see the provider adapter.
+    # provider call. interactive_url is the responsive login surface (navbar/URL
+    # bar kept); view_url is the chromeless watch URL — see the provider adapter.
     interactive_url = await asyncio.to_thread(provider.interactive_url, ref)
     view_url = await asyncio.to_thread(provider.view_url, ref)
     return {
