@@ -111,12 +111,20 @@ function printMarkdownAsPdf(md) {
     'p{margin:.6em 0}ul,ol{margin:.6em 0;padding-left:1.4em}li{margin:.25em 0}' +
     'code{background:#f1f2f4;border-radius:4px;padding:.1em .35em;font-size:.9em}' +
     'pre{background:#f5f5f7;border-radius:8px;padding:12px;overflow:auto}pre code{background:none;padding:0}' +
-    'a{color:#0369a1}@media print{body{margin:0}}' +
-    '</style></head><body>' + mdToHtml(md) + '</body></html>'
+    'a{color:#0369a1}' +
+    // Persistent toolbar so dismissing the print dialog isn't a dead end — the user can
+    // re-trigger Save-as-PDF anytime. Hidden in the actual print output.
+    '.pv-bar{position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:10}' +
+    '.pv-bar button{cursor:pointer;border:1px solid #d0d3d8;background:#fff;border-radius:8px;padding:8px 14px;font:600 14px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#14171a;box-shadow:0 2px 10px rgba(0,0,0,.10)}' +
+    '.pv-bar button.primary{background:#0e7490;border-color:#0e7490;color:#fff}' +
+    '@media print{.pv-bar{display:none!important}body{margin:0}}' +
+    '</style></head><body>' +
+    '<div class="pv-bar"><button class="primary" onclick="window.print()">Save as PDF</button><button onclick="window.close()">Close</button></div>' +
+    mdToHtml(md) + '</body></html>'
   )
   w.document.close()
   w.focus()
-  setTimeout(() => w.print(), 300)  // let layout settle before the print dialog
+  setTimeout(() => w.print(), 400)  // auto-open the dialog; the button re-opens it if dismissed
 }
 
 // Per-reply actions — turn any substantial answer into a real document instead of
@@ -151,7 +159,7 @@ function MessageActions({ content, onSaveToKb }) {
       if (ok) setTimeout(() => setKb('idle'), 2500)
     } catch { setKb('error') }
   }
-  const btn = 'flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-white/45 transition hover:bg-white/[0.06] hover:text-white/80 disabled:opacity-50'
+  const btn = 'flex items-center gap-1.5 rounded-md border border-white/[0.14] bg-white/[0.05] px-2 py-1 text-[11px] font-medium text-white/75 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.10] hover:text-cyan-200 disabled:opacity-50'
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-1.5">
       <button type="button" onClick={copy} title="Copy" className={btn}>
