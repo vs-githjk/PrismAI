@@ -347,6 +347,18 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
 async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_id)):
     client = _require_storage()
 
+    # Authz on the body-supplied workspace_id (IDOR guard). `workspace_id` comes
+    # from the client, and below it drives fan-out into EVERY member's history —
+    # so an unchecked value would let any user inject meetings into a workspace
+    # they don't belong to. If the caller isn't a member, drop the association
+    # and save it as a personal meeting (same graceful-degradation stance as the
+    # bot-ownership check below) rather than 403.
+    if entry.workspace_id and not is_workspace_member(client, user_id, entry.workspace_id):
+        print(f"[storage] non-member {user_id} tried to save into workspace "
+              f"{entry.workspace_id} — saving as personal")
+        entry.workspace_id = None
+        entry.recorded_by_user_id = None
+
     # Server-side enrichment from bot_sessions — the trust boundary.
     # The frontend sends recall_bot_id as a reference; we look up the structured
     # transcript segments server-side and only attach them if the caller owns the

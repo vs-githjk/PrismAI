@@ -20,6 +20,11 @@ from analysis_service import build_analysis_transcript, run_full_analysis
 from auth import supabase, require_user_id
 from cross_meeting_service import looks_like_blocker, build_blocker_snippet
 from personas import persona_identity_resolved, persona_greeting_from_preset, DEFAULT_BOT_NAME, PERSONA_NAMES
+from ratelimit import enforce as rate_limit
+
+# /join-meeting dispatches a real (paid) Recall bot — cap joins per IP so an
+# anonymous caller can't rack up bot-join spend. Generous enough for normal use.
+_JOIN_PER_MINUTE = 10
 
 # Line prefixes that mark a transcript line as the bot's own turn (recorded by
 # realtime_routes._record_bot_line). Covers every persona display name + the
@@ -2370,6 +2375,8 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         raise HTTPException(status_code=500, detail="Recall.ai API key not configured")
     if not req.meeting_url.strip():
         raise HTTPException(status_code=400, detail="Meeting URL cannot be empty")
+    rate_limit(request, "join-meeting", _JOIN_PER_MINUTE,
+               detail="Too many join requests — try again in a minute.")
 
     # Optionally link bot to authenticated user (enables live tool access)
     user_id = await _optional_user_id(request)
@@ -2616,7 +2623,19 @@ async def bot_status(bot_id: str):
     entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None, "commands": []})
     # Don't let Recall's "done" override our internal "processing"
     entry["status"] = our_status if entry.get("status") not in ("done", "error", "processing") else entry["status"]
-    return entry
+    # Whitelist the response. This endpoint is unauthenticated by design (the
+    # bot_id is the capability), but the raw bot_store entry also holds internal
+    # state — notably `user_id` and `live_token` (a SEPARATE access capability
+    # that grants live-share). Returning only the fields the client actually
+    # reads stops a bot_id holder from harvesting the live_token or owner id.
+    return {
+        "status": entry.get("status"),
+        "result": entry.get("result"),
+        "transcript": entry.get("transcript"),
+        "error": entry.get("error"),
+        "leave_reason": entry.get("leave_reason"),
+        "commands": entry.get("commands", []),
+    }
 
 
 @router.get("/live/{live_token}")

@@ -117,7 +117,11 @@ function printMarkdownAsPdf(md) {
     '.pv-bar{position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:10}' +
     '.pv-bar button{cursor:pointer;border:1px solid #d0d3d8;background:#fff;border-radius:8px;padding:8px 14px;font:600 14px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#14171a;box-shadow:0 2px 10px rgba(0,0,0,.10)}' +
     '.pv-bar button.primary{background:#0e7490;border-color:#0e7490;color:#fff}' +
-    '@media print{.pv-bar{display:none!important}body{margin:0}}' +
+    // @page margin:0 tells the browser to drop its auto headers/footers (the
+    // date, the tab title, "about:blank", and page numbers). We put the real
+    // page margins back on the body so text isn't jammed against the edge.
+    '@page{margin:0}' +
+    '@media print{.pv-bar{display:none!important}body{margin:0 auto;padding:14mm 16mm}}' +
     '</style></head><body>' +
     '<div class="pv-bar"><button class="primary" onclick="window.print()">Save as PDF</button><button onclick="window.close()">Close</button></div>' +
     mdToHtml(md) + '</body></html>'

@@ -20,8 +20,9 @@ except Exception as _log_exc:  # loguru absent / misconfigured must never block 
     print(f"WARNING [main] could not set pipecat log level: {_log_exc!r}")
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
 
 from analysis_routes import create_analysis_router
@@ -72,6 +73,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Coarse global body-size backstop. Set ABOVE the largest legit upload (knowledge
+# = 50MB + multipart overhead) so it only rejects absurd bodies; the per-route
+# caps (25MB /transcribe, 50MB /upload) still do the fine-grained enforcement.
+# Best-effort: relies on Content-Length (absent on chunked bodies).
+_MAX_BODY_BYTES = 60 * 1024 * 1024
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    cl = request.headers.get("content-length")
+    if cl:
+        try:
+            if int(cl) > _MAX_BODY_BYTES:
+                return JSONResponse(status_code=413, content={"detail": "Request body too large."})
+        except ValueError:
+            pass
+    response = await call_next(request)
+    # Defense-in-depth response headers. This is a JSON API (plus a couple of
+    # small server-rendered pages); a strict CSP isn't set here to avoid breaking
+    # those — the SPA's CSP belongs on the frontend host.
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    return response
+
 app.include_router(storage_router)
 app.include_router(proxy_router)
 app.include_router(knowledge_router)
