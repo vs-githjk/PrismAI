@@ -222,7 +222,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                       onClick={(e) => { e.stopPropagation(); dismissItem(n) }}
                       aria-label="Dismiss notification"
                       title="Dismiss"
-                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/25 opacity-70 transition hover:bg-white/10 hover:text-cyan-300 group-hover:opacity-100"
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/55 transition hover:bg-cyan-400/15 hover:text-cyan-300 group-hover:text-white/75"
                     >
                       <Check className="h-4 w-4" />
                     </button>
