@@ -232,7 +232,9 @@ _TOOLS: dict[str, dict] = {
             "recent meetings — personal and workspace. Use this to answer 'what do "
             "I owe' / 'what are my open tasks'. Each item includes the owner, due "
             "date, the meeting it came from, and a `workspace` label ('Personal' or "
-            "the workspace name) — surface the workspace when listing them."
+            "the workspace name). ALWAYS attribute each item to its source meeting "
+            "(by meeting_title + meeting_date) and its workspace in your answer, so "
+            "the user can trace where it came from — do not present tasks unattributed."
         ),
         "inputSchema": {
             "type": "object",
@@ -247,7 +249,9 @@ _TOOLS: dict[str, dict] = {
         "description": (
             "Semantic search across the user's meetings and knowledge base. Use for "
             "'what did we decide about X', 'find the meeting where we discussed Y'. "
-            "Returns the most relevant snippets with their source meeting."
+            "Returns the most relevant snippets with their source. ALWAYS cite the "
+            "source (meeting_title / doc name) for each snippet you use — answers must "
+            "be traceable to where the information came from, never unattributed."
         ),
         "inputSchema": {
             "type": "object",
