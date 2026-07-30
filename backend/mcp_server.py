@@ -210,6 +210,53 @@ async def _tool_get_meeting(user_id: str, args: dict) -> dict:
     }
 
 
+async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 8000, max_docs: int = 10) -> list[dict]:
+    """Load the knowledge docs PINNED to a meeting (e.g. a PRD the user saved from
+    chat) with their text. Matches by MEETING_ID (incl. fan-out siblings), never by
+    doc name — so an untitled/oddly-named PRD is still found. Caller must have
+    already authorized meeting access. Scoped to the caller's own + workspace docs.
+    Returns [] on any failure (best-effort)."""
+    from knowledge_routes import _coerce_meeting_id, _sibling_meeting_ids
+    mid = _coerce_meeting_id(meeting_id)
+    if mid is None:
+        return []
+    try:
+        sib_ids = await _sibling_meeting_ids(supabase, mid)
+        ws_ids = get_user_workspace_ids(supabase, user_id)
+        q = (
+            supabase.table("knowledge_docs")
+            .select("id, name, source_type, user_id, workspace_id")
+            .is_("deleted_at", "null").in_("meeting_id", sib_ids)
+        )
+        # Scope to the caller's own docs OR their workspaces' docs.
+        if ws_ids:
+            q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
+        else:
+            q = q.eq("user_id", user_id)
+        docs = q.execute().data or []
+    except Exception:
+        return []
+
+    out = []
+    for d in docs[:max_docs]:
+        doc_id = d.get("id")
+        try:
+            chunks = (
+                supabase.table("knowledge_chunks").select("content, chunk_index")
+                .eq("doc_id", doc_id).order("chunk_index").execute()
+            )
+            text = "".join(c.get("content", "") for c in (chunks.data or []))[:char_cap]
+        except Exception:
+            text = ""
+        out.append({
+            "doc_id": str(doc_id),
+            "name": d.get("name"),
+            "source_type": d.get("source_type"),
+            "content": text,
+        })
+    return out
+
+
 async def _tool_get_meeting_documents(user_id: str, args: dict) -> dict:
     """Read the knowledge docs PINNED to a meeting (e.g. a PRD the user saved from
     chat) with their text — so the assistant can actually read them."""
@@ -228,45 +275,7 @@ async def _tool_get_meeting_documents(user_id: str, args: dict) -> dict:
         if not ws or not is_workspace_member(supabase, user_id, ws):
             raise _ToolError("meeting not found")
 
-    # Pinned docs live on any sibling (fan-out) copy of the meeting.
-    from knowledge_routes import _coerce_meeting_id, _sibling_meeting_ids
-    mid = _coerce_meeting_id(meeting_id)
-    if mid is None:
-        return {"documents": [], "count": 0}
-    try:
-        sib_ids = await _sibling_meeting_ids(supabase, mid)
-        ws_ids = get_user_workspace_ids(supabase, user_id)
-        q = (
-            supabase.table("knowledge_docs")
-            .select("id, name, source_type, user_id, workspace_id")
-            .is_("deleted_at", "null").in_("meeting_id", sib_ids)
-        )
-        # Scope to the caller's own docs OR their workspaces' docs.
-        if ws_ids:
-            q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
-        else:
-            q = q.eq("user_id", user_id)
-        docs = q.execute().data or []
-    except Exception as exc:
-        raise _ToolError(f"could not load pinned documents: {exc}")
-
-    out = []
-    for d in docs[:10]:
-        doc_id = d.get("id")
-        try:
-            chunks = (
-                supabase.table("knowledge_chunks").select("content, chunk_index")
-                .eq("doc_id", doc_id).order("chunk_index").execute()
-            )
-            text = "".join(c.get("content", "") for c in (chunks.data or []))[:8000]
-        except Exception:
-            text = ""
-        out.append({
-            "doc_id": str(doc_id),
-            "name": d.get("name"),
-            "source_type": d.get("source_type"),
-            "content": text,
-        })
+    out = await _fetch_pinned_docs(user_id, meeting_id)
     return {"documents": out, "count": len(out)}
 
 
@@ -296,14 +305,29 @@ _CODING_TASK_SYSTEM = (
     "You are a senior software engineer turning a meeting into a precise, "
     "self-contained coding task that a developer can hand DIRECTLY to an AI coding "
     "agent (e.g. Claude Code) to start implementing. Ground everything STRICTLY in "
-    "the meeting — never invent requirements; if a section lacks detail in the "
-    "meeting, say so in one line rather than guessing. Output markdown with exactly "
-    "these sections:\n"
+    "the meeting and any PINNED DOCUMENTS provided (e.g. a PRD or spec the user "
+    "attached to the meeting) — the pinned documents are the authoritative "
+    "specification; prefer them over conversational transcript when they conflict, "
+    "and pull concrete requirements, constraints, and acceptance criteria from them. "
+    "Never invent requirements; if a section lacks detail in the meeting or docs, "
+    "say so in one line rather than guessing. Output markdown with exactly these "
+    "sections:\n"
     "## Title\n## Context (why this is needed)\n## Scope (what to build or change)\n"
     "## Acceptance criteria (a checklist)\n## Decisions & constraints (from the meeting)\n"
     "## Out of scope / open questions\n"
     "Be concrete and implementation-ready. Do NOT write the code itself."
 )
+
+
+def _pinned_docs_block(docs: list[dict], *, char_cap: int = 6000) -> str:
+    """Format pinned docs for the coding-task prompt (bounded per-doc)."""
+    parts = []
+    for d in docs:
+        text = (d.get("content") or "").strip()
+        if not text:
+            continue
+        parts.append(f"--- PINNED DOCUMENT: {d.get('name') or 'Untitled'} ---\n{text[:char_cap]}")
+    return "\n\n".join(parts)
 
 
 async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
@@ -327,6 +351,7 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
 
     result = row.get("result") or {}
     focus = str(args.get("focus") or "").strip()
+    include_documents = args.get("include_documents", True)
     # Ground the model in the analysis + the raw transcript (capped for cost).
     transcript = (row.get("transcript") or "")[:20000]
     context = {
@@ -334,11 +359,20 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
         "decisions": result.get("decisions", []),
         "action_items": result.get("action_items", []),
     }
+    # Pinned docs (e.g. a PRD) are the authoritative spec — fold them in, matched by
+    # meeting_id not name. Best-effort: if it fails/empty, the task still drafts.
+    docs = await _fetch_pinned_docs(user_id, meeting_id, char_cap=6000, max_docs=5) if include_documents else []
+    docs_block = _pinned_docs_block(docs)
+    docs_section = (
+        f"\n\nPINNED DOCUMENTS (authoritative spec — ground the task in these):\n{docs_block}"
+        if docs_block else ""
+    )
     user_prompt = (
         f"Meeting title: {row.get('title') or 'Untitled'}\n"
         f"Focus for the task: {focus or 'the primary engineering work discussed'}\n\n"
         f"Meeting analysis (summary / decisions / action items):\n"
-        f"{json.dumps(context, ensure_ascii=False, default=str)}\n\n"
+        f"{json.dumps(context, ensure_ascii=False, default=str)}"
+        f"{docs_section}\n\n"
         f"Transcript (may be truncated):\n{transcript}"
     )
     from agents.utils import llm_call, AGENT_MODEL
@@ -351,6 +385,7 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
         "title": row.get("title"),
         "focus": focus or None,
         "task_brief": brief,
+        "grounded_documents": [d.get("name") for d in docs if (d.get("content") or "").strip()],
         "url": _meeting_url(row.get("id")),
     }
 
@@ -437,17 +472,20 @@ _TOOLS: dict[str, dict] = {
         "description": (
             "Turn a meeting into a self-contained, implementation-ready CODING TASK "
             "brief that can be handed directly to an AI coding agent (like Claude Code). "
-            "Does a deep pass over the meeting's full transcript + decisions to produce "
-            "Title / Context / Scope / Acceptance criteria / Constraints / Out-of-scope. "
-            "Use when the user wants to act on engineering work from a meeting ('turn "
-            "the auth discussion into a coding task'). Pass `focus` to scope it to one "
-            "feature or action item. It drafts the task only — it never writes code."
+            "Does a deep pass over the meeting's full transcript + decisions AND any "
+            "documents PINNED to the meeting (e.g. a PRD/spec the user saved to it — "
+            "used as the authoritative spec) to produce Title / Context / Scope / "
+            "Acceptance criteria / Constraints / Out-of-scope. Use when the user wants "
+            "to act on engineering work from a meeting ('turn the auth discussion into "
+            "a coding task'). Pass `focus` to scope it to one feature or action item. "
+            "It drafts the task only — it never writes code."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "meeting_id": {"type": "string", "description": "The meeting to derive the task from (from list/search)."},
                 "focus": {"type": "string", "description": "Optional. Scope the task to a specific feature, bug, or action item discussed."},
+                "include_documents": {"type": "boolean", "description": "Optional (default true). Fold the meeting's pinned documents (e.g. a PRD) into the task as the authoritative spec."},
             },
             "required": ["meeting_id"],
         },

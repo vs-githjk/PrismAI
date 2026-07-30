@@ -119,6 +119,9 @@ def test_draft_coding_task_happy_path(monkeypatch):
         "transcript": "We need OAuth with PKCE and refresh rotation.",
         "result": {"summary": "Auth", "decisions": [], "action_items": []},
     }))
+    async def no_docs(*a, **k):
+        return []
+    monkeypatch.setattr(mcp, "_fetch_pinned_docs", no_docs)
     import agents.utils as au
     async def fake_llm(system, user, **kw):
         assert "coding task" in system.lower()
@@ -129,7 +132,55 @@ def test_draft_coding_task_happy_path(monkeypatch):
     assert out["meeting_id"] == "42"
     assert out["focus"] == "OAuth"
     assert "Auth revamp" in out["task_brief"]
+    assert out["grounded_documents"] == []
     assert out["url"].endswith("/dashboard?meeting=42")
+
+
+def test_draft_coding_task_grounds_in_pinned_docs(monkeypatch):
+    """The pinned PRD text must reach the LLM prompt, and its name must surface."""
+    import asyncio
+    import mcp_server as mcp
+    monkeypatch.setattr(mcp, "supabase", _OneRowSupabase({
+        "id": 42, "title": "Auth revamp", "workspace_id": None, "user_id": "u1",
+        "transcript": "We need OAuth.",
+        "result": {"summary": "Auth", "decisions": [], "action_items": []},
+    }))
+    async def one_doc(uid, mid, **k):
+        assert uid == "u1" and mid == "42"
+        return [{"doc_id": "d1", "name": "alltr-strategic-analysis",
+                 "source_type": "chat_export", "content": "MUST support SSO and DCR."}]
+    monkeypatch.setattr(mcp, "_fetch_pinned_docs", one_doc)
+    seen = {}
+    import agents.utils as au
+    async def fake_llm(system, user, **kw):
+        seen["user"] = user
+        return "## Title\nAuth"
+    monkeypatch.setattr(au, "llm_call", fake_llm)
+
+    out = asyncio.run(mcp._tool_draft_coding_task("u1", {"meeting_id": "42"}))
+    assert "MUST support SSO and DCR." in seen["user"]
+    assert "alltr-strategic-analysis" in seen["user"]
+    assert out["grounded_documents"] == ["alltr-strategic-analysis"]
+
+
+def test_draft_coding_task_include_documents_false_skips_fetch(monkeypatch):
+    import asyncio
+    import mcp_server as mcp
+    monkeypatch.setattr(mcp, "supabase", _OneRowSupabase({
+        "id": 42, "title": "X", "workspace_id": None, "user_id": "u1",
+        "transcript": "t", "result": {},
+    }))
+    async def boom(*a, **k):
+        raise AssertionError("should not fetch docs when include_documents=false")
+    monkeypatch.setattr(mcp, "_fetch_pinned_docs", boom)
+    import agents.utils as au
+    async def fake_llm(s, u, **kw):
+        return "## Title\nX"
+    monkeypatch.setattr(au, "llm_call", fake_llm)
+
+    out = asyncio.run(mcp._tool_draft_coding_task(
+        "u1", {"meeting_id": "42", "include_documents": False}))
+    assert out["grounded_documents"] == []
 
 
 def test_draft_coding_task_non_member_denied(monkeypatch):
