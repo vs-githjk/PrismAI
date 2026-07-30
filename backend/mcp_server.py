@@ -210,7 +210,15 @@ async def _tool_get_meeting(user_id: str, args: dict) -> dict:
     }
 
 
-async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 8000, max_docs: int = 10) -> list[dict]:
+def _clip_on_word(text: str, cap: int) -> tuple[str, bool]:
+    """Clip to cap chars on a word boundary (no mid-word cut). Returns (text, truncated)."""
+    if len(text) <= cap:
+        return text, False
+    clipped = text[:cap].rsplit(" ", 1)[0].rstrip()
+    return clipped + " …[truncated]", True
+
+
+async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 16000, max_docs: int = 10) -> list[dict]:
     """Load the knowledge docs PINNED to a meeting (e.g. a PRD the user saved from
     chat) with their text. Matches by MEETING_ID (incl. fan-out siblings), never by
     doc name — so an untitled/oddly-named PRD is still found. Caller must have
@@ -240,12 +248,14 @@ async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 8
     out = []
     for d in docs[:max_docs]:
         doc_id = d.get("id")
+        truncated = False
         try:
             chunks = (
                 supabase.table("knowledge_chunks").select("content, chunk_index")
                 .eq("doc_id", doc_id).order("chunk_index").execute()
             )
-            text = "".join(c.get("content", "") for c in (chunks.data or []))[:char_cap]
+            full = "".join(c.get("content", "") for c in (chunks.data or []))
+            text, truncated = _clip_on_word(full, char_cap)
         except Exception:
             text = ""
         out.append({
@@ -253,6 +263,7 @@ async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 8
             "name": d.get("name"),
             "source_type": d.get("source_type"),
             "content": text,
+            "truncated": truncated,
         })
     return out
 
@@ -312,21 +323,28 @@ _CODING_TASK_SYSTEM = (
     "Never invent requirements; if a section lacks detail in the meeting or docs, "
     "say so in one line rather than guessing. Output markdown with exactly these "
     "sections:\n"
-    "## Title\n## Context (why this is needed)\n## Scope (what to build or change)\n"
+    "## Title\n## Context (why this is needed)\n"
+    "## Product principles & design constraints\n## Scope (what to build or change)\n"
     "## Acceptance criteria (a checklist)\n## Decisions & constraints (from the meeting)\n"
     "## Out of scope / open questions\n"
-    "Be concrete and implementation-ready. Do NOT write the code itself."
+    "The 'Product principles & design constraints' section is REQUIRED and often the "
+    "most important: capture the load-bearing product thesis and design philosophy — "
+    "the non-obvious 'why it is built this way' that changes HOW an engineer builds, "
+    "not just what they build. A competent implementation that satisfies the scope "
+    "but ignores these principles would be the WRONG build; state them so that cannot "
+    "happen. Be concrete and implementation-ready. Do NOT write the code itself."
 )
 
 
-def _pinned_docs_block(docs: list[dict], *, char_cap: int = 6000) -> str:
-    """Format pinned docs for the coding-task prompt (bounded per-doc)."""
+def _pinned_docs_block(docs: list[dict]) -> str:
+    """Format pinned docs for the coding-task prompt. Content is already bounded by
+    _fetch_pinned_docs' char_cap, so don't re-truncate here."""
     parts = []
     for d in docs:
         text = (d.get("content") or "").strip()
         if not text:
             continue
-        parts.append(f"--- PINNED DOCUMENT: {d.get('name') or 'Untitled'} ---\n{text[:char_cap]}")
+        parts.append(f"--- PINNED DOCUMENT: {d.get('name') or 'Untitled'} ---\n{text}")
     return "\n\n".join(parts)
 
 
@@ -361,7 +379,7 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
     }
     # Pinned docs (e.g. a PRD) are the authoritative spec — fold them in, matched by
     # meeting_id not name. Best-effort: if it fails/empty, the task still drafts.
-    docs = await _fetch_pinned_docs(user_id, meeting_id, char_cap=6000, max_docs=5) if include_documents else []
+    docs = await _fetch_pinned_docs(user_id, meeting_id, char_cap=16000, max_docs=5) if include_documents else []
     docs_block = _pinned_docs_block(docs)
     docs_section = (
         f"\n\nPINNED DOCUMENTS (authoritative spec — ground the task in these):\n{docs_block}"
@@ -377,7 +395,7 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
     )
     from agents.utils import llm_call, AGENT_MODEL
     try:
-        brief = await llm_call(_CODING_TASK_SYSTEM, user_prompt, model=AGENT_MODEL, max_tokens=1500)
+        brief = await llm_call(_CODING_TASK_SYSTEM, user_prompt, model=AGENT_MODEL, max_tokens=4000)
     except Exception as exc:
         raise _ToolError(f"could not draft the task: {exc}")
     return {

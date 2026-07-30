@@ -183,6 +183,19 @@ def test_draft_coding_task_include_documents_false_skips_fetch(monkeypatch):
     assert out["grounded_documents"] == []
 
 
+def test_clip_on_word_no_midword_cut():
+    import mcp_server as mcp
+    text = "alpha bravo charlie delta echo foxtrot"
+    out, trunc = mcp._clip_on_word(text, 20)
+    assert trunc is True
+    assert "[truncated]" in out
+    # No partial word before the marker.
+    assert out.split(" …")[0] in ("alpha bravo charlie", "alpha bravo")
+    assert not out.split(" …")[0].endswith(("cha", "charli"))
+    # Short text is returned intact, untruncated.
+    assert mcp._clip_on_word("hi", 20) == ("hi", False)
+
+
 def test_draft_coding_task_non_member_denied(monkeypatch):
     import asyncio
     import mcp_server as mcp
