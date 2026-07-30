@@ -126,18 +126,28 @@ _live_token_index: dict = {}
 def _notify_bot_issue(bot_id: str, message: str) -> None:
     """Best-effort 'your meeting bot had a problem' notification to the bot's owner
     (empty transcript / no-show / analysis error). Deduped per bot so the same
-    failure surfaced by webhook + poll notifies once. Never raises."""
+    failure surfaced by webhook + poll notifies once. Prefers Recall's SPECIFIC
+    leave diagnostic ('never admitted from the waiting room…') over the generic
+    message when one was captured. Never raises."""
     from notifications import create_notification
-    uid = (bot_store.get(bot_id, {}) or {}).get("user_id")
-    if not uid and supabase:
+    store = bot_store.get(bot_id, {}) or {}
+    uid = store.get("user_id")
+    reason = store.get("leave_reason")
+    if (not uid or not reason) and supabase:
         try:
-            r = supabase.table("bot_sessions").select("user_id").eq("bot_id", bot_id).limit(1).execute()
-            uid = (r.data or [{}])[0].get("user_id")
+            r = supabase.table("bot_sessions").select("user_id, leave_reason").eq("bot_id", bot_id).limit(1).execute()
+            row = (r.data or [{}])[0]
+            uid = uid or row.get("user_id")
+            reason = reason or row.get("leave_reason")
         except Exception:
-            uid = None
-    if uid:
-        create_notification(uid, "bot_issue", "Meeting bot issue", body=message,
-                            dedup_key=f"botissue:{bot_id}")
+            pass
+    if not uid:
+        return
+    # Use Recall's reason only when it's specific — the generic fallbacks all start
+    # with "Prism left (…)" and are less useful than our own message.
+    body = reason if (reason and not reason.startswith("Prism left")) else message
+    create_notification(uid, "bot_issue", "Meeting bot issue", body=body,
+                        dedup_key=f"botissue:{bot_id}")
 
 # Tracks bots whose proactive checker has been re-spawned after a server restart,
 # so repeated /bot-status polls don't keep creating new tasks.
