@@ -294,6 +294,42 @@ async def calendar_status(user_id: str = Depends(require_user_id)):
     return {"connected": connected}
 
 
+async def list_upcoming_events_for_user(user_id: str, minutes_ahead: int = 15) -> list[dict]:
+    """Best-effort upcoming timed events for the reminder scanner (background loop).
+    Returns [{id, title, start}] or [] on any failure — never raises. All-day
+    events are skipped (no start time to remind against)."""
+    try:
+        access_token = await get_valid_token(user_id)
+    except Exception:
+        return []
+    if not access_token:
+        return []
+    now = datetime.now(timezone.utc)
+    time_max = now + timedelta(minutes=minutes_ahead)
+    try:
+        async with get_http() as client:
+            resp = await client.get(
+                f"{GOOGLE_CALENDAR_API}/calendars/primary/events",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={
+                    "timeMin": now.isoformat(), "timeMax": time_max.isoformat(),
+                    "singleEvents": "true", "orderBy": "startTime", "maxResults": "10",
+                    "fields": "items(id,summary,start)",
+                }, timeout=15,
+            )
+        if resp.status_code != 200:
+            return []
+        out = []
+        for item in resp.json().get("items", []):
+            start = (item.get("start") or {}).get("dateTime")
+            if not start:  # skip all-day
+                continue
+            out.append({"id": item.get("id"), "title": item.get("summary") or "Upcoming meeting", "start": start})
+        return out
+    except Exception:
+        return []
+
+
 @router.get("/calendar/events")
 async def calendar_events(
     days_ahead: int = 7,

@@ -44,6 +44,7 @@ import DashboardSidebar from './dashboard/DashboardSidebar'
 import DashboardTopbar from './dashboard/DashboardTopbar'
 import LiveMeetingView from './dashboard/LiveMeetingView'
 import { deriveStatus } from './dashboard/StatusIsland'
+import NotificationBell from './dashboard/NotificationBell'
 import { useStatusNotification, notifyStatus } from '../lib/statusNotify'
 import WorkspaceIsland from './dashboard/WorkspaceIsland'
 
@@ -1412,6 +1413,7 @@ export default function DashboardPage(props) {
         signedOut={signedOut}
         onLockedFeature={requestSignIn}
         onMenu={signedOut ? null : () => setMobileNavOpen(true)}
+        bell={<NotificationBell onOpenMeeting={handleOpenMeetingById} signedOut={signedOut} />}
         onBack={activeView === 'meeting' ? goBackFromMeeting : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (

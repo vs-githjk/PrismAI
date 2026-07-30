@@ -29,6 +29,9 @@ google-auth>=2.30.0
 pysbd==0.3.4
 langgraph==1.2.0
 dateparser
+# pywebpush: VAPID Web Push for the #9 meeting_soon out-of-app reminder
+# (webpush.py). Pulls http-ece + py-vapid; degrades gracefully if absent.
+pywebpush>=2.0.0
 # (groq removed Jul 2026 — live voice/agent channels moved to OpenAI gpt-5.6-luna.)
 # Voice agent (Phase 2): the realtime audio loop — Deepgram Flux ears + Cartesia
 # mouth run inside a per-bot Pipecat pipeline (backend/voice/). Pinned to 1.5.0

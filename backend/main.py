@@ -41,6 +41,7 @@ from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
 from voice.audio_routes import router as voice_router
 from pat_routes import router as pat_router
+from notifications_routes import router as notifications_router
 
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -57,6 +58,10 @@ async def lifespan(app: FastAPI):
     # promoted to the dashboard without a browser or webhook. Best-effort, non-blocking.
     from recall_routes import recover_active_bots
     asyncio.create_task(recover_active_bots())
+    # #9: server-side meeting_soon reminder scanner (fires 5-min-before even with
+    # the tab closed). Opted-in users only; no-op when no push subscriptions exist.
+    from reminders import reminder_loop
+    asyncio.create_task(reminder_loop())
     try:
         yield
     finally:
@@ -114,6 +119,7 @@ app.include_router(ms_calendar_router)
 app.include_router(realtime_router)
 app.include_router(voice_router)  # /voice/audio-in + /voice/speaker + /voice/speaker-page
 app.include_router(pat_router)  # /account/tokens — MCP connector credentials
+app.include_router(notifications_router)  # /notifications — #9 notification center + Web Push
 from mcp_server import router as mcp_router
 app.include_router(mcp_router)  # POST /mcp — Claude/ChatGPT connector (Streamable HTTP)
 from oauth_routes import router as oauth_router

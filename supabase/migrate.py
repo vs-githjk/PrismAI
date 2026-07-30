@@ -50,6 +50,7 @@ MIGRATION_ORDER = [
     "meeting_bots_workspace_migration.sql",      # meeting_bots.workspace_id (durable server-side persist)
     "personal_access_tokens_migration.sql",      # MCP connector API keys (Claude/ChatGPT)
     "oauth_migration.sql",                        # OAuth 2.1 AS for the MCP connector (Claude)
+    "notifications_migration.sql",                # #9 notifications + push_subscriptions
 ]
 
 migrations_dir = Path(__file__).parent
