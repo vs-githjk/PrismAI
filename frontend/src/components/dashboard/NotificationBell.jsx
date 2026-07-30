@@ -45,7 +45,6 @@ function timeAgo(iso) {
 export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState([])
-  const [storedUnread, setStoredUnread] = useState(0)
   const [dismissed, setDismissed] = useState(loadDismissed)
   const [pushState, setPushState] = useState('unsupported') // unsupported|denied|subscribed|default
   const [pushBusy, setPushBusy] = useState(false)
@@ -58,7 +57,6 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
       if (!r.ok) return
       const data = await r.json()
       setItems(data.notifications || [])
-      setStoredUnread(data.unread_count || 0)
     } catch { /* offline — keep last */ }
   }, [signedOut])
 
@@ -101,15 +99,10 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
 
   if (signedOut) return null
 
+  // Model: the bell shows everything that needs attention. Badge = how many are
+  // in the list. Tick removes one; "Clear all" empties it. No read/unread state.
   const visible = items.filter((n) => !(n.synthesized && dismissed.has(n.id)))
-  const synthUnread = visible.filter((n) => n.synthesized).length
-  const badge = storedUnread + synthUnread
-
-  const markStoredRead = async (id) => {
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
-    setStoredUnread((c) => Math.max(0, c - 1))
-    try { await apiFetch(`/notifications/${id}/read`, { method: 'POST' }) } catch { /* ignore */ }
-  }
+  const badge = visible.length
 
   const dismissSynth = (id) => {
     setDismissed((prev) => { const next = new Set(prev); next.add(id); saveDismissed(next); return next })
@@ -117,29 +110,29 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
 
   const clickItem = (n) => {
     if (n.synthesized) dismissSynth(n.id)
-    else if (!n.read) markStoredRead(n.id)
+    else { setItems((prev) => prev.filter((x) => x.id !== n.id)); apiFetch(`/notifications/${n.id}`, { method: 'DELETE' }).catch(() => {}) }
     if (n.meeting_id != null && onOpenMeeting) onOpenMeeting(n.meeting_id)
     setOpen(false)
   }
 
-  // Clear a single item without opening it (the per-row tick).
+  // Clear a single item (the per-row tick). Stored notifications are DELETED
+  // server-side so they don't reappear on the next poll; synthesized action_due
+  // items are dismissed via localStorage (they're recomputed each fetch).
   const dismissItem = async (n) => {
     if (n.synthesized) { dismissSynth(n.id); return }
-    if (!n.read) setStoredUnread((c) => Math.max(0, c - 1))
     setItems((prev) => prev.filter((x) => x.id !== n.id))
-    try { await apiFetch(`/notifications/${n.id}/read`, { method: 'POST' }) } catch { /* ignore */ }
+    try { await apiFetch(`/notifications/${n.id}`, { method: 'DELETE' }) } catch { /* ignore */ }
   }
 
-  const markAllRead = async () => {
-    setItems((prev) => prev.map((n) => (n.synthesized ? n : { ...n, read: true })))
-    setStoredUnread(0)
-    // Also clear synthesized from the badge by dismissing them.
+  const clearAll = async () => {
+    // Dismiss synthesized (localStorage) + delete all stored (server).
     setDismissed((prev) => {
       const next = new Set(prev)
       visible.forEach((n) => { if (n.synthesized) next.add(n.id) })
       saveDismissed(next); return next
     })
-    try { await apiFetch('/notifications/read-all', { method: 'POST' }) } catch { /* ignore */ }
+    setItems([])
+    try { await apiFetch('/notifications/clear-all', { method: 'POST' }) } catch { /* ignore */ }
   }
 
   return (
@@ -152,23 +145,23 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
       >
         <Bell className="h-[19px] w-[19px]" aria-hidden="true" />
         {badge > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-[18px] text-white ring-2 ring-[#0b1120]">
+          <span className="absolute -right-0.5 -top-0.5 flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-[18px] text-white ring-2 ring-[#0e0f13]">
             {badge > 9 ? '9+' : badge}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.10] bg-[#0d1526]/95 shadow-2xl backdrop-blur-xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.10] bg-[#0e0f13]/97 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
             <span className="text-[13px] font-semibold text-white/85">Notifications</span>
             {badge > 0 && (
               <button
                 type="button"
-                onClick={markAllRead}
-                className="flex items-center gap-1 text-[11px] font-medium text-cyan-300/80 transition hover:text-cyan-200"
+                onClick={clearAll}
+                className="flex items-center gap-1 text-[11px] font-medium text-white/45 transition hover:text-white/80"
               >
-                <Check className="h-3.5 w-3.5" /> Mark all read
+                <Check className="h-3.5 w-3.5" /> Clear all
               </button>
             )}
           </div>
@@ -180,7 +173,6 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
               visible.map((n) => {
                 const meta = META[n.type] || META.meeting_ready
                 const { Icon } = meta
-                const unread = n.synthesized || !n.read
                 // Synthesized action_due: the TASK is the headline; the timing
                 // ("Overdue" / "Due in 2d") is an urgency-colored badge, no timestamp.
                 // Stored events: title headline + body subline + real time-ago.
@@ -193,7 +185,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                 return (
                   <div
                     key={n.id}
-                    className={`group flex items-start gap-2 border-b border-white/[0.04] pl-4 pr-2 py-3 transition hover:bg-white/[0.04] ${unread ? 'bg-white/[0.02]' : ''}`}
+                    className="group flex items-start gap-2 border-b border-white/[0.04] pl-4 pr-2 py-3 transition hover:bg-white/[0.04]"
                   >
                     <button
                       type="button"
@@ -204,10 +196,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                         <Icon className={`h-[17px] w-[17px] ${meta.color}`} aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate text-[13px] font-semibold text-white/90">{headline}</span>
-                          {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" />}
-                        </span>
+                        <span className="block truncate text-[13px] font-semibold text-white/90">{headline}</span>
                         {badge && (
                           <span className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${overdue ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
                             {badge}
@@ -222,7 +211,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                       onClick={(e) => { e.stopPropagation(); dismissItem(n) }}
                       aria-label="Dismiss notification"
                       title="Dismiss"
-                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/55 transition hover:bg-cyan-400/15 hover:text-cyan-300 group-hover:text-white/75"
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white group-hover:text-white/75"
                     >
                       <Check className="h-4 w-4" />
                     </button>

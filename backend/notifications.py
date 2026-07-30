@@ -100,13 +100,27 @@ def mark_read(user_id: str, notif_id: int) -> bool:
         return False
 
 
-def mark_all_read(user_id: str) -> None:
+def delete_notification(user_id: str, notif_id: int) -> bool:
+    """Permanently remove one stored notification (the per-row dismiss tick). Scoped
+    to the caller so a user can only delete their own."""
+    if not supabase or not user_id:
+        return False
+    try:
+        supabase.table(_TABLE).delete().eq("user_id", str(user_id)).eq("id", notif_id).execute()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[notifications] delete failed uid={str(user_id)[:8]}: {exc!r}")
+        return False
+
+
+def delete_all(user_id: str) -> None:
+    """Clear all stored notifications for the user (the 'Clear all' action)."""
     if not supabase or not user_id:
         return
     try:
-        supabase.table(_TABLE).update({"read": True}).eq("user_id", str(user_id)).eq("read", False).execute()
+        supabase.table(_TABLE).delete().eq("user_id", str(user_id)).execute()
     except Exception as exc:  # noqa: BLE001
-        print(f"[notifications] mark_all_read failed uid={str(user_id)[:8]}: {exc!r}")
+        print(f"[notifications] delete_all failed uid={str(user_id)[:8]}: {exc!r}")
 
 
 # ── action_due synthesis (fresh at GET, never stored) ─────────────────────────

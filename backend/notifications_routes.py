@@ -39,9 +39,15 @@ async def read_one(notif_id: int, user_id: str = Depends(require_user_id)):
     return {"ok": True}
 
 
-@router.post("/read-all")
-async def read_all(user_id: str = Depends(require_user_id)):
-    notif.mark_all_read(user_id)
+@router.post("/clear-all")
+async def clear_all(user_id: str = Depends(require_user_id)):
+    notif.delete_all(user_id)
+    return {"ok": True}
+
+
+@router.delete("/{notif_id}")
+async def delete_one(notif_id: int, user_id: str = Depends(require_user_id)):
+    notif.delete_notification(user_id, notif_id)
     return {"ok": True}
 
 
