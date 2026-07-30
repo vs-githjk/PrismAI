@@ -148,12 +148,15 @@ def test_draft_coding_task_grounds_in_pinned_docs(monkeypatch):
     async def one_doc(uid, mid, **k):
         assert uid == "u1" and mid == "42"
         return [{"doc_id": "d1", "name": "alltr-strategic-analysis",
-                 "source_type": "chat_export", "content": "MUST support SSO and DCR."}]
+                 "source_type": "chat_export", "content": "MUST support SSO and DCR.",
+                 "truncated": False}]
     monkeypatch.setattr(mcp, "_fetch_pinned_docs", one_doc)
     seen = {}
     import agents.utils as au
     async def fake_llm(system, user, **kw):
         seen["user"] = user
+        # The fidelity rule must reach the model.
+        assert "verbatim" in system.lower()
         return "## Title\nAuth"
     monkeypatch.setattr(au, "llm_call", fake_llm)
 
@@ -161,6 +164,10 @@ def test_draft_coding_task_grounds_in_pinned_docs(monkeypatch):
     assert "MUST support SSO and DCR." in seen["user"]
     assert "alltr-strategic-analysis" in seen["user"]
     assert out["grounded_documents"] == ["alltr-strategic-analysis"]
+    # Grounding is inspectable: raw source text is returned, not just the name.
+    assert out["source_documents"][0]["name"] == "alltr-strategic-analysis"
+    assert out["source_documents"][0]["content"] == "MUST support SSO and DCR."
+    assert out["note"] and "authoritative" in out["note"]
 
 
 def test_draft_coding_task_include_documents_false_skips_fetch(monkeypatch):

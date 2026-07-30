@@ -332,7 +332,17 @@ _CODING_TASK_SYSTEM = (
     "the non-obvious 'why it is built this way' that changes HOW an engineer builds, "
     "not just what they build. A competent implementation that satisfies the scope "
     "but ignores these principles would be the WRONG build; state them so that cannot "
-    "happen. Be concrete and implementation-ready. Do NOT write the code itself."
+    "happen.\n"
+    "FIDELITY RULE — do not flatten specifics into principles: when the meeting or a "
+    "pinned document names a concrete mechanism, preserve it VERBATIM as a buildable "
+    "requirement, not a paraphrase. This includes named multi-step processes/loops "
+    "(keep every step name), specific UI affordances or actions (keep their exact "
+    "names), enumerated categories or intent classes (keep the full list), named "
+    "data-model / logging structures, and any EXPLICIT WARNING against a particular "
+    "approach (state the warning outright — never silently spec the thing it warns "
+    "against). An engineer needs the specific mechanism; the philosophy behind it "
+    "they can infer. If in doubt, keep the concrete detail.\n"
+    "Be concrete and implementation-ready. Do NOT write the code itself."
 )
 
 
@@ -398,12 +408,27 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
         brief = await llm_call(_CODING_TASK_SYSTEM, user_prompt, model=AGENT_MODEL, max_tokens=4000)
     except Exception as exc:
         raise _ToolError(f"could not draft the task: {exc}")
+    grounded = [d for d in docs if (d.get("content") or "").strip()]
     return {
         "meeting_id": str(row.get("id")),
         "title": row.get("title"),
         "focus": focus or None,
         "task_brief": brief,
-        "grounded_documents": [d.get("name") for d in docs if (d.get("content") or "").strip()],
+        "grounded_documents": [d.get("name") for d in grounded],
+        # The RAW source the brief was synthesized from, so the grounding is
+        # inspectable (not just asserted) and the consuming model can catch any
+        # place the brief compressed a specific mechanism into a soft principle —
+        # without a second get_meeting_documents call.
+        "source_documents": [
+            {"name": d.get("name"), "content": d.get("content"), "truncated": d.get("truncated", False)}
+            for d in grounded
+        ],
+        "note": (
+            "task_brief is a synthesized summary; source_documents is the raw pinned-doc "
+            "text it was grounded in. Treat source_documents as authoritative — if the "
+            "brief omits or softens a specific named mechanism, affordance, list, or "
+            "warning present in the source, prefer the source and correct the brief."
+        ) if grounded else None,
         "url": _meeting_url(row.get("id")),
     }
 
@@ -496,7 +521,11 @@ _TOOLS: dict[str, dict] = {
             "Acceptance criteria / Constraints / Out-of-scope. Use when the user wants "
             "to act on engineering work from a meeting ('turn the auth discussion into "
             "a coding task'). Pass `focus` to scope it to one feature or action item. "
-            "It drafts the task only — it never writes code."
+            "It drafts the task only — it never writes code. The response includes "
+            "`source_documents` (the raw pinned-doc text the brief was grounded in): "
+            "review it and, where the brief has softened a specific named mechanism, "
+            "affordance, list, or warning from the source, correct the brief before "
+            "presenting it — the source is authoritative."
         ),
         "inputSchema": {
             "type": "object",
