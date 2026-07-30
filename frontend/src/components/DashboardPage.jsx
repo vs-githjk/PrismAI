@@ -1174,6 +1174,23 @@ export default function DashboardPage(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.history])
 
+  // Deep-link: open a meeting when the dashboard is loaded with ?meeting=<id>
+  // (used by the Claude/ChatGPT connector's click-through links so a user can
+  // jump from a cited meeting straight to it in PrismAI to verify). Runs once;
+  // cleans the param so a refresh doesn't re-trigger.
+  const deepLinkHandledRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    const mid = params.get('meeting')
+    if (!mid) return
+    deepLinkHandledRef.current = true
+    handleOpenMeetingById(mid)
+    params.delete('meeting')
+    const qs = params.toString()
+    window.history.replaceState({}, '', `${window.location.pathname}${qs ? '?' + qs : ''}${window.location.hash}`)
+  }, [handleOpenMeetingById])
+
   // Find the currently loaded meeting metadata (for MeetingView title/date)
   const currentMeeting = useMemo(
     () => (props.meetingId ? (props.history || []).find((m) => m.id === props.meetingId) || null : null),

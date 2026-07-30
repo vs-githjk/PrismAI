@@ -17,6 +17,7 @@ auth on first data pull) — this mirrors how MCP clients probe a server.
 """
 
 import json
+import os
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -32,6 +33,15 @@ from ratelimit import enforce as rate_limit
 _DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 _SERVER_INFO = {"name": "PrismAI", "version": "1.0.0"}
 _MAX_ITEMS = 50  # hard cap so tool results stay well under the ~150k-char limit
+
+# App origin for click-through deep-links back into PrismAI (trust: the user can
+# open the exact source meeting to verify). Matches oauth_routes' APP_BASE.
+APP_BASE = os.getenv("APP_BASE_URL", "https://www.meetprismai.com").rstrip("/")
+
+
+def _meeting_url(meeting_id) -> str:
+    return f"{APP_BASE}/dashboard?meeting={meeting_id}"
+
 
 router = APIRouter(tags=["mcp"])
 
@@ -127,6 +137,7 @@ async def _tool_list_recent_meetings(user_id: str, args: dict) -> dict:
             "date": r.get("date"),
             "score": r.get("score"),
             "workspace": _label_for(r.get("workspace_id"), labels),
+            "url": _meeting_url(r.get("id")),
         })
         if len(out) >= limit:
             break
@@ -155,6 +166,7 @@ async def _tool_list_open_action_items(user_id: str, args: dict) -> dict:
                 "meeting_title": r.get("title") or "Untitled meeting",
                 "meeting_date": r.get("date"),
                 "workspace": _label_for(r.get("workspace_id"), labels),
+                "url": _meeting_url(r.get("id")),
             })
             if len(items) >= limit:
                 break
@@ -189,6 +201,7 @@ async def _tool_get_meeting(user_id: str, args: dict) -> dict:
         "date": row.get("date"),
         "score": row.get("score"),
         "workspace": _label_for(row.get("workspace_id"), _workspace_labels(user_id)),
+        "url": _meeting_url(row.get("id")),
         "summary": result.get("summary", ""),
         "tldr": result.get("tldr", ""),
         "decisions": result.get("decisions", []),
@@ -232,9 +245,10 @@ _TOOLS: dict[str, dict] = {
             "recent meetings — personal and workspace. Use this to answer 'what do "
             "I owe' / 'what are my open tasks'. Each item includes the owner, due "
             "date, the meeting it came from, and a `workspace` label ('Personal' or "
-            "the workspace name). ALWAYS attribute each item to its source meeting "
-            "(by meeting_title + meeting_date) and its workspace in your answer, so "
-            "the user can trace where it came from — do not present tasks unattributed."
+            "the workspace name) and a `url` linking to the meeting in PrismAI. "
+            "ALWAYS attribute each item to its source meeting (link the meeting_title "
+            "to its `url`) and note its workspace, so the user can click through and "
+            "verify — do not present tasks unattributed."
         ),
         "inputSchema": {
             "type": "object",
@@ -282,7 +296,8 @@ _TOOLS: dict[str, dict] = {
         "description": (
             "List the user's recent meetings (title, date, id) across personal and "
             "workspace. Each carries a `workspace` label ('Personal' or the workspace "
-            "name) — group or note it when listing. Use to orient before get_meeting."
+            "name) and a `url` — link each title to its `url` and note the workspace. "
+            "Use to orient before get_meeting."
         ),
         "inputSchema": {
             "type": "object",
