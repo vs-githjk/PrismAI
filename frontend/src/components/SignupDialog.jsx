@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { Loader2, MailCheck, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from '../lib/sessionKeys'
 
@@ -27,20 +27,25 @@ function MicrosoftIcon() {
   )
 }
 
-function GitHubIcon() {
+function AuthField({ id, label, ...props }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M12 1C5.92 1 1 5.92 1 12c0 4.87 3.15 8.99 7.52 10.45.55.1.75-.24.75-.53v-1.86c-3.06.67-3.71-1.47-3.71-1.47-.5-1.28-1.22-1.62-1.22-1.62-1-.68.08-.67.08-.67 1.1.08 1.68 1.13 1.68 1.13.98 1.68 2.57 1.2 3.2.92.1-.71.38-1.2.69-1.47-2.44-.28-5.01-1.22-5.01-5.43 0-1.2.43-2.18 1.13-2.95-.11-.28-.49-1.4.11-2.91 0 0 .92-.3 3.02 1.13a10.5 10.5 0 0 1 5.5 0c2.1-1.42 3.02-1.13 3.02-1.13.6 1.51.22 2.63.11 2.91.7.77 1.13 1.75 1.13 2.95 0 4.22-2.58 5.15-5.03 5.42.39.34.74 1.01.74 2.04v3.03c0 .29.2.64.76.53C19.85 20.99 23 16.87 23 12 23 5.92 18.08 1 12 1z" />
-    </svg>
+    <div className="signup-field">
+      <label htmlFor={id}>{label}</label>
+      <input id={id} className="signup-input" {...props} />
+    </div>
   )
 }
 
-// SSO-only sign-in: Google + Microsoft. Email/password + username were dropped — SSO
-// handles both signup and login, so there's no separate mode toggle anymore.
-export default function SignupDialog({ onClose }) {
+export default function SignupDialog({ mode = 'signup', onModeChange, onClose }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [loading, setLoading] = useState(false)
-  const dashboardUrl = typeof window !== 'undefined' ? `${window.location.origin}${DASHBOARD_PATH}` : DASHBOARD_PATH
+  const [verificationSent, setVerificationSent] = useState(false)
+  const isSignup = mode === 'signup'
+  const dashboardUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${DASHBOARD_PATH}`
+    : DASHBOARD_PATH
 
   const signInWith = async (provider, options = {}) => {
     setSubmitError('')
@@ -62,6 +67,54 @@ export default function SignupDialog({ onClose }) {
     }
   }
 
+  const goToDashboard = () => {
+    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
+    sessionStorage.setItem(VISITED_KEY, '1')
+    sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+    window.location.assign(DASHBOARD_PATH)
+  }
+
+  const switchMode = (nextMode) => {
+    setPassword('')
+    setSubmitError('')
+    setVerificationSent(false)
+    onModeChange?.(nextMode)
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setSubmitError('')
+    if (!supabase) {
+      setSubmitError('Supabase auth is not configured yet.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      if (isSignup) {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { emailRedirectTo: dashboardUrl },
+        })
+        if (error) throw error
+        if (data.session) goToDashboard()
+        else setVerificationSent(true)
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
+        if (error) throw error
+        goToDashboard()
+      }
+    } catch (error) {
+      setSubmitError(error.message || 'Something went wrong. Try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="signup-overlay" onMouseDown={onClose}>
       <div
@@ -75,38 +128,90 @@ export default function SignupDialog({ onClose }) {
           <X aria-hidden="true" />
         </button>
 
-        <p className="signup-kicker">PrismAI account</p>
-        <h2 id="auth-dialog-title" className="signup-title">Sign in to PrismAI.</h2>
-        <p className="signup-body">
-          Continue with your Google, Microsoft, or GitHub account. Your meeting history and dashboard open right after.
-        </p>
+        {verificationSent ? (
+          <div className="signup-verification">
+            <div className="signup-verification-icon" aria-hidden="true"><MailCheck /></div>
+            <p className="signup-kicker">Verify your email</p>
+            <h2 id="auth-dialog-title" className="signup-title">Check your inbox.</h2>
+            <p className="signup-body">
+              We sent a verification link to <strong>{email.trim()}</strong>.
+              After you confirm, you will be sent to the dashboard.
+            </p>
+            <button type="button" className="signup-submit" onClick={onClose}>Done</button>
+          </div>
+        ) : (
+          <>
+            <p className="signup-kicker">PrismAI account</p>
+            <h2 id="auth-dialog-title" className="signup-title">
+              {isSignup ? 'Create your account.' : 'Welcome back.'}
+            </h2>
+            <p className="signup-body">
+              {isSignup
+                ? 'Save meeting history and open your dashboard after signup.'
+                : 'Log in to continue to your dashboard.'}
+            </p>
 
-        <div className="signup-social-row">
-          <button type="button" className="signup-provider-button" onClick={() => signInWith('google')} disabled={loading}>
-            <GoogleIcon />
-            Google
-          </button>
-          <button type="button" className="signup-provider-button" onClick={() => signInWith('azure', { scopes: 'email' })} disabled={loading}>
-            <MicrosoftIcon />
-            Microsoft
-          </button>
-          <button type="button" className="signup-provider-button" onClick={() => signInWith('github')} disabled={loading}>
-            <GitHubIcon />
-            GitHub
-          </button>
-        </div>
+            <div className="signup-social-row">
+              <button type="button" className="signup-provider-button" onClick={() => signInWith('google')} disabled={loading}>
+                <GoogleIcon />
+                Google
+              </button>
+              <button type="button" className="signup-provider-button" onClick={() => signInWith('azure', { scopes: 'email' })} disabled={loading}>
+                <MicrosoftIcon />
+                Microsoft
+              </button>
+            </div>
 
-        {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
+            <div className="signup-divider"><span>or</span></div>
 
-        <p className="signup-mode-note">
-          No password needed — single sign-on keeps your account secure.
-        </p>
+            <form className="signup-form" onSubmit={handleSubmit}>
+              <AuthField
+                id="auth-email"
+                label="Email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value)
+                  setSubmitError('')
+                }}
+              />
+              <AuthField
+                id="auth-password"
+                label="Password"
+                type="password"
+                autoComplete={isSignup ? 'new-password' : 'current-password'}
+                required
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value)
+                  setSubmitError('')
+                }}
+              />
 
-        <p className="signup-consent">
-          By continuing, you agree to our{' '}
-          <a href="#terms" onClick={onClose}>Terms of Service</a> and{' '}
-          <a href="#privacy" onClick={onClose}>Privacy Policy</a>.
-        </p>
+              {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
+
+              <button type="submit" className="signup-submit" disabled={loading}>
+                {loading && <Loader2 className="signup-spinner" aria-hidden="true" />}
+                {isSignup ? 'Sign up' : 'Log in'}
+              </button>
+            </form>
+
+            <p className="signup-mode-note">
+              {isSignup ? 'Already have an account?' : 'New to PrismAI?'}
+              <button type="button" onClick={() => switchMode(isSignup ? 'login' : 'signup')}>
+                {isSignup ? 'Log in' : 'Sign up'}
+              </button>
+            </p>
+
+            <p className="signup-consent">
+              By continuing, you agree to our{' '}
+              <a href="#terms" onClick={onClose}>Terms of Service</a> and{' '}
+              <a href="#privacy" onClick={onClose}>Privacy Policy</a>.
+            </p>
+          </>
+        )}
       </div>
     </div>
   )
