@@ -186,6 +186,11 @@ class TranscriptCapture(FrameProcessor):
                 speaker = (getattr(frame, "transport_source", None)
                            or getattr(frame, "user_id", None)
                            or self._serializer.last_speaker or "")
+                # Phase 2 — what Deepgram ACTUALLY heard. Nothing logged this before, so a
+                # misheard wake word ("Visum" for "Prism") was indistinguishable downstream
+                # from the human never addressing the bot.
+                # ponytail: finals only — interims are ~per-word and would flood.
+                print(f"[trace] 2-flux bot={self._bot_id[:8]} speaker={speaker!r} text={text[:160]!r}")
                 ts = getattr(frame, "timestamp", "") or ""
                 # Start this turn's stopwatch here: t0/t1 (speech end + transcript) are
                 # the same instant on Flux, and the mouth claims the turn when it speaks.
