@@ -232,6 +232,69 @@ async def _tool_search_meetings(user_id: str, args: dict) -> dict:
     return {"results": out, "count": len(out)}
 
 
+_CODING_TASK_SYSTEM = (
+    "You are a senior software engineer turning a meeting into a precise, "
+    "self-contained coding task that a developer can hand DIRECTLY to an AI coding "
+    "agent (e.g. Claude Code) to start implementing. Ground everything STRICTLY in "
+    "the meeting — never invent requirements; if a section lacks detail in the "
+    "meeting, say so in one line rather than guessing. Output markdown with exactly "
+    "these sections:\n"
+    "## Title\n## Context (why this is needed)\n## Scope (what to build or change)\n"
+    "## Acceptance criteria (a checklist)\n## Decisions & constraints (from the meeting)\n"
+    "## Out of scope / open questions\n"
+    "Be concrete and implementation-ready. Do NOT write the code itself."
+)
+
+
+async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    if not meeting_id:
+        raise _ToolError("meeting_id is required")
+    if not supabase:
+        raise _ToolError("storage not configured")
+    res = (
+        supabase.table("meetings")
+        .select("id, title, workspace_id, user_id, transcript, result")
+        .eq("id", meeting_id).limit(1).execute()
+    )
+    row = (res.data or [None])[0]
+    if not row:
+        raise _ToolError("meeting not found")
+    if row.get("user_id") != user_id:  # authz: owner OR workspace member
+        ws = row.get("workspace_id")
+        if not ws or not is_workspace_member(supabase, user_id, ws):
+            raise _ToolError("meeting not found")
+
+    result = row.get("result") or {}
+    focus = str(args.get("focus") or "").strip()
+    # Ground the model in the analysis + the raw transcript (capped for cost).
+    transcript = (row.get("transcript") or "")[:20000]
+    context = {
+        "summary": result.get("summary", ""),
+        "decisions": result.get("decisions", []),
+        "action_items": result.get("action_items", []),
+    }
+    user_prompt = (
+        f"Meeting title: {row.get('title') or 'Untitled'}\n"
+        f"Focus for the task: {focus or 'the primary engineering work discussed'}\n\n"
+        f"Meeting analysis (summary / decisions / action items):\n"
+        f"{json.dumps(context, ensure_ascii=False, default=str)}\n\n"
+        f"Transcript (may be truncated):\n{transcript}"
+    )
+    from agents.utils import llm_call, AGENT_MODEL
+    try:
+        brief = await llm_call(_CODING_TASK_SYSTEM, user_prompt, model=AGENT_MODEL, max_tokens=1500)
+    except Exception as exc:
+        raise _ToolError(f"could not draft the task: {exc}")
+    return {
+        "meeting_id": str(row.get("id")),
+        "title": row.get("title"),
+        "focus": focus or None,
+        "task_brief": brief,
+        "url": _meeting_url(row.get("id")),
+    }
+
+
 class _ToolError(Exception):
     """Raised by a tool handler → surfaced to the client as an isError result."""
 
@@ -287,6 +350,26 @@ _TOOLS: dict[str, dict] = {
             "type": "object",
             "properties": {
                 "meeting_id": {"type": "string", "description": "The meeting id (from list_recent_meetings / search results)."},
+            },
+            "required": ["meeting_id"],
+        },
+    },
+    "draft_coding_task": {
+        "handler": _tool_draft_coding_task,
+        "description": (
+            "Turn a meeting into a self-contained, implementation-ready CODING TASK "
+            "brief that can be handed directly to an AI coding agent (like Claude Code). "
+            "Does a deep pass over the meeting's full transcript + decisions to produce "
+            "Title / Context / Scope / Acceptance criteria / Constraints / Out-of-scope. "
+            "Use when the user wants to act on engineering work from a meeting ('turn "
+            "the auth discussion into a coding task'). Pass `focus` to scope it to one "
+            "feature or action item. It drafts the task only — it never writes code."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "meeting_id": {"type": "string", "description": "The meeting to derive the task from (from list/search)."},
+                "focus": {"type": "string", "description": "Optional. Scope the task to a specific feature, bug, or action item discussed."},
             },
             "required": ["meeting_id"],
         },

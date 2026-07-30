@@ -45,6 +45,7 @@ def test_tools_list_is_unauthenticated_and_readonly(client):
     tools = r.json()["result"]["tools"]
     assert {t["name"] for t in tools} == {
         "list_open_action_items", "search_meetings", "get_meeting", "list_recent_meetings",
+        "draft_coding_task",
     }
     assert all(t["annotations"]["readOnlyHint"] for t in tools)
 
@@ -86,3 +87,58 @@ def test_ping(client):
 def test_unknown_method_is_method_not_found(client):
     r = _call(client, {"jsonrpc": "2.0", "id": 7, "method": "foo/bar"})
     assert r.json()["error"]["code"] == -32601
+
+
+# ── draft_coding_task handler (the v1.1 hero) ──
+class _OneRowSupabase:
+    """Minimal fake: meetings.select(...).eq('id',x).limit(1).execute() -> [row]."""
+    def __init__(self, row):
+        self._row = row
+
+    def table(self, _name):
+        return self
+
+    def select(self, *_a, **_k):
+        return self
+
+    def eq(self, *_a, **_k):
+        return self
+
+    def limit(self, *_a, **_k):
+        return self
+
+    def execute(self):
+        return type("R", (), {"data": [self._row] if self._row else []})
+
+
+def test_draft_coding_task_happy_path(monkeypatch):
+    import asyncio
+    import mcp_server as mcp
+    monkeypatch.setattr(mcp, "supabase", _OneRowSupabase({
+        "id": 42, "title": "Auth revamp", "workspace_id": None, "user_id": "u1",
+        "transcript": "We need OAuth with PKCE and refresh rotation.",
+        "result": {"summary": "Auth", "decisions": [], "action_items": []},
+    }))
+    import agents.utils as au
+    async def fake_llm(system, user, **kw):
+        assert "coding task" in system.lower()
+        return "## Title\nAuth revamp\n## Scope\nAdd OAuth"
+    monkeypatch.setattr(au, "llm_call", fake_llm)
+
+    out = asyncio.run(mcp._tool_draft_coding_task("u1", {"meeting_id": "42", "focus": "OAuth"}))
+    assert out["meeting_id"] == "42"
+    assert out["focus"] == "OAuth"
+    assert "Auth revamp" in out["task_brief"]
+    assert out["url"].endswith("/dashboard?meeting=42")
+
+
+def test_draft_coding_task_non_member_denied(monkeypatch):
+    import asyncio
+    import mcp_server as mcp
+    monkeypatch.setattr(mcp, "supabase", _OneRowSupabase({
+        "id": 7, "title": "X", "workspace_id": "ws-other", "user_id": "someone-else",
+        "transcript": "…", "result": {},
+    }))
+    monkeypatch.setattr(mcp, "is_workspace_member", lambda *a, **k: False)
+    with __import__("pytest").raises(mcp._ToolError):
+        asyncio.run(mcp._tool_draft_coding_task("u1", {"meeting_id": "7"}))
