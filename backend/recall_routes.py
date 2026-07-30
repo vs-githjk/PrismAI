@@ -2422,6 +2422,10 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = error_msg
             _db_save(bot_id, {"status": "error", "error": error_msg})
+            # Mark the bot TERMINAL in meeting_bots too, else startup recovery keeps
+            # re-spawning its poller on every deploy → the same failure + notification
+            # fires again and again (the no-show / crash paths already do this).
+            _mb_update_status(bot_id, "error")
             _notify_bot_issue(bot_id, "Your meeting had no transcript — it may have been too short or had no speech.")
             print(f"[recall] ERROR: empty transcript")
             return
