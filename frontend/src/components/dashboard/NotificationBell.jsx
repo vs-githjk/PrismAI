@@ -152,7 +152,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.10] bg-[#0e0f13]/97 shadow-2xl backdrop-blur-xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.10] bg-[#0e0f13] shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
             <span className="text-[13px] font-semibold text-white/85">Notifications</span>
             {badge > 0 && (
