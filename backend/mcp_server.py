@@ -1,0 +1,379 @@
+"""Minimal MCP (Model Context Protocol) server over Streamable HTTP.
+
+Exposes a PrismAI user's meeting data as read-only tools that Claude and ChatGPT
+can PULL on demand. One stateless `POST /mcp` endpoint speaks JSON-RPC 2.0:
+`initialize`, `tools/list`, `tools/call`, `ping`.
+
+Why hand-rolled instead of the fastmcp SDK: fastmcp 3.x requires starlette >=1.0,
+which is incompatible with our FastAPI (starlette <0.48). The read-only-tools
+surface is small enough that a direct JSON-RPC handler is simpler AND gives us
+clean control over the PAT auth header + rate limiting, with no dependency clash.
+
+Auth: every `tools/call` goes through `pat.resolve_mcp_user(request)` → user_id.
+Missing/invalid credential → HTTP 401 with a WWW-Authenticate hint (Milestone B
+will point that at OAuth protected-resource metadata). `initialize`/`tools/list`
+are unauthenticated (the tool list is identical for everyone; discovery first,
+auth on first data pull) — this mirrors how MCP clients probe a server.
+"""
+
+import json
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+
+from auth import supabase
+from caches import get_user_workspace_ids, is_workspace_member
+from cross_meeting_service import has_meaningful_result
+from pat import resolve_mcp_user
+from ratelimit import enforce as rate_limit
+
+# We accept whatever protocol version the client requests (forward/backward
+# compatible for a tools-only server); this is the fallback we advertise.
+_DEFAULT_PROTOCOL_VERSION = "2025-06-18"
+_SERVER_INFO = {"name": "PrismAI", "version": "1.0.0"}
+_MAX_ITEMS = 50  # hard cap so tool results stay well under the ~150k-char limit
+
+router = APIRouter(tags=["mcp"])
+
+
+# ─────────────────────────── data helpers ───────────────────────────
+
+def _dedup_by_minute(rows: list[dict], caller_user_id: str) -> list[dict]:
+    """Collapse workspace fan-out copies: two rows at the same minute are the same
+    logical meeting. Prefer the caller's own copy (its id opens in their history)."""
+    by_key: dict[str, dict] = {}
+    for r in rows:
+        key = (r.get("date") or "")[:16]
+        cur = by_key.get(key)
+        if cur is None:
+            by_key[key] = r
+        elif r.get("user_id") == caller_user_id and cur.get("user_id") != caller_user_id:
+            by_key[key] = r
+    return list(by_key.values())
+
+
+def _fetch_user_meetings(user_id: str, columns: str, workspace_id: str = "") -> list[dict]:
+    """A user's meetings across personal + all their workspaces (or one workspace
+    when `workspace_id` is given, membership-checked). Deduped, newest first.
+
+    `workspace_id`: "" = all (personal + every workspace), "personal" = personal
+    only, or a specific workspace id (must be a member)."""
+    if not supabase:
+        return []
+    rows: list[dict] = []
+
+    want_personal = workspace_id in ("", "personal")
+    if want_personal:
+        res = (
+            supabase.table("meetings").select(columns)
+            .eq("user_id", user_id).is_("workspace_id", "null")
+            .order("date", desc=True).limit(_MAX_ITEMS).execute()
+        )
+        rows.extend(res.data or [])
+
+    if workspace_id not in ("personal",):
+        member_ws = get_user_workspace_ids(supabase, user_id)
+        target = [workspace_id] if workspace_id else member_ws
+        for ws in target:
+            if ws not in member_ws:  # membership guard (IDOR)
+                continue
+            res = (
+                supabase.table("meetings").select(columns)
+                .eq("workspace_id", ws)
+                .order("date", desc=True).limit(_MAX_ITEMS).execute()
+            )
+            rows.extend(res.data or [])
+
+    rows = _dedup_by_minute(rows, user_id)
+    rows.sort(key=lambda r: r.get("date") or "", reverse=True)
+    return rows
+
+
+# ─────────────────────────── tools ───────────────────────────
+
+async def _tool_list_recent_meetings(user_id: str, args: dict) -> dict:
+    limit = min(int(args.get("limit") or 20), _MAX_ITEMS)
+    ws = (args.get("workspace_id") or "").strip()
+    rows = _fetch_user_meetings(user_id, "id, title, date, score, workspace_id, user_id, result", ws)
+    out = []
+    for r in rows:
+        if not has_meaningful_result(r.get("result") or {}):
+            continue
+        out.append({
+            "meeting_id": str(r.get("id")),
+            "title": r.get("title") or "Untitled meeting",
+            "date": r.get("date"),
+            "score": r.get("score"),
+            "workspace_id": r.get("workspace_id") or "",
+        })
+        if len(out) >= limit:
+            break
+    return {"meetings": out, "count": len(out)}
+
+
+async def _tool_list_open_action_items(user_id: str, args: dict) -> dict:
+    limit = min(int(args.get("limit") or 30), _MAX_ITEMS)
+    ws = (args.get("workspace_id") or "").strip()
+    rows = _fetch_user_meetings(user_id, "id, title, date, workspace_id, user_id, result", ws)
+    items = []
+    for r in rows:
+        result = r.get("result") or {}
+        if not has_meaningful_result(result):
+            continue
+        for it in (result.get("action_items") or []):
+            if it.get("completed"):
+                continue
+            items.append({
+                "task": it.get("task", ""),
+                "owner": it.get("owner", ""),
+                "due": it.get("due", ""),
+                "due_date": it.get("due_date"),
+                "meeting_id": str(r.get("id")),
+                "meeting_title": r.get("title") or "Untitled meeting",
+                "meeting_date": r.get("date"),
+            })
+            if len(items) >= limit:
+                break
+        if len(items) >= limit:
+            break
+    return {"open_action_items": items, "count": len(items)}
+
+
+async def _tool_get_meeting(user_id: str, args: dict) -> dict:
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    if not meeting_id:
+        raise _ToolError("meeting_id is required")
+    if not supabase:
+        raise _ToolError("storage not configured")
+    res = (
+        supabase.table("meetings")
+        .select("id, title, date, score, workspace_id, user_id, result")
+        .eq("id", meeting_id).limit(1).execute()
+    )
+    row = (res.data or [None])[0]
+    if not row:
+        raise _ToolError("meeting not found")
+    # Authz: owner OR workspace member (mirrors GET /meetings/{id}).
+    if row.get("user_id") != user_id:
+        ws = row.get("workspace_id")
+        if not ws or not is_workspace_member(supabase, user_id, ws):
+            raise _ToolError("meeting not found")  # don't reveal existence
+    result = row.get("result") or {}
+    return {
+        "meeting_id": str(row.get("id")),
+        "title": row.get("title"),
+        "date": row.get("date"),
+        "score": row.get("score"),
+        "summary": result.get("summary", ""),
+        "tldr": result.get("tldr", ""),
+        "decisions": result.get("decisions", []),
+        "action_items": result.get("action_items", []),
+        "sentiment": result.get("sentiment", {}),
+    }
+
+
+async def _tool_search_meetings(user_id: str, args: dict) -> dict:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        raise _ToolError("query is required")
+    limit = min(int(args.get("limit") or 5), 10)
+    from knowledge_service import search_knowledge  # local import: heavy deps
+    try:
+        hits = await search_knowledge(query, user_id, k=limit)
+    except Exception as exc:
+        raise _ToolError(f"search failed: {exc}")
+    out = []
+    for h in hits or []:
+        out.append({
+            "snippet": (h.get("content") or "")[:500],
+            "source": h.get("doc_name") or h.get("meeting_title") or "",
+            "meeting_title": h.get("meeting_title"),
+            "score": h.get("score"),
+            "source_type": h.get("source_type"),
+        })
+    return {"results": out, "count": len(out)}
+
+
+class _ToolError(Exception):
+    """Raised by a tool handler → surfaced to the client as an isError result."""
+
+
+# name → (handler, description, inputSchema). All read-only.
+_TOOLS: dict[str, dict] = {
+    "list_open_action_items": {
+        "handler": _tool_list_open_action_items,
+        "description": (
+            "List the user's OPEN (not-yet-completed) action items across their "
+            "recent meetings — personal and workspace. Use this to answer 'what do "
+            "I owe' / 'what are my open tasks'. Each item includes the owner, due "
+            "date, and the meeting it came from."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string", "description": "Optional. Limit to one workspace id, or 'personal' for personal meetings only. Omit for all."},
+                "limit": {"type": "integer", "description": "Max items (default 30, max 50)."},
+            },
+        },
+    },
+    "search_meetings": {
+        "handler": _tool_search_meetings,
+        "description": (
+            "Semantic search across the user's meetings and knowledge base. Use for "
+            "'what did we decide about X', 'find the meeting where we discussed Y'. "
+            "Returns the most relevant snippets with their source meeting."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for."},
+                "limit": {"type": "integer", "description": "Max results (default 5, max 10)."},
+            },
+            "required": ["query"],
+        },
+    },
+    "get_meeting": {
+        "handler": _tool_get_meeting,
+        "description": (
+            "Get the full detail of ONE meeting by id — summary, decisions, action "
+            "items, and sentiment. Use after search_meetings or list_recent_meetings "
+            "to drill into a specific meeting."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "meeting_id": {"type": "string", "description": "The meeting id (from list_recent_meetings / search results)."},
+            },
+            "required": ["meeting_id"],
+        },
+    },
+    "list_recent_meetings": {
+        "handler": _tool_list_recent_meetings,
+        "description": (
+            "List the user's recent meetings (title, date, id) across personal and "
+            "workspace. Use to orient before calling get_meeting on a specific one."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string", "description": "Optional. Limit to one workspace id, or 'personal'. Omit for all."},
+                "limit": {"type": "integer", "description": "Max meetings (default 20, max 50)."},
+            },
+        },
+    },
+}
+
+
+def _tool_defs() -> list[dict]:
+    return [
+        {
+            "name": name,
+            "description": t["description"],
+            "inputSchema": t["inputSchema"],
+            "annotations": {"readOnlyHint": True},
+        }
+        for name, t in _TOOLS.items()
+    ]
+
+
+# ─────────────────────────── JSON-RPC plumbing ───────────────────────────
+
+def _rpc_result(req_id, result) -> dict:
+    return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+
+def _rpc_error(req_id, code: int, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+
+
+def _unauthorized() -> JSONResponse:
+    # MCP does auth at the HTTP layer: 401 + WWW-Authenticate. The resource_metadata
+    # hint is where Milestone B's OAuth discovery will live.
+    return JSONResponse(
+        status_code=401,
+        content={"error": "invalid_token", "error_description": "A valid PrismAI access token is required."},
+        headers={"WWW-Authenticate": 'Bearer realm="PrismAI MCP", error="invalid_token"'},
+    )
+
+
+async def _handle_one(request: Request, msg: dict):
+    """Handle a single JSON-RPC message. Returns a response dict, or None for
+    notifications (no id). May return a JSONResponse for HTTP-level auth failures."""
+    if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0":
+        return _rpc_error(msg.get("id") if isinstance(msg, dict) else None, -32600, "Invalid Request")
+    method = msg.get("method")
+    req_id = msg.get("id")
+    is_notification = "id" not in msg
+    params = msg.get("params") or {}
+
+    if method == "initialize":
+        client_version = params.get("protocolVersion") or _DEFAULT_PROTOCOL_VERSION
+        return _rpc_result(req_id, {
+            "protocolVersion": client_version,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": _SERVER_INFO,
+        })
+
+    if method in ("notifications/initialized", "notifications/cancelled"):
+        return None  # notification — no response
+
+    if method == "ping":
+        return _rpc_result(req_id, {})
+
+    if method == "tools/list":
+        return _rpc_result(req_id, {"tools": _tool_defs()})
+
+    if method == "tools/call":
+        # Data access → require auth.
+        user_id = resolve_mcp_user(request)
+        if not user_id:
+            return _unauthorized()
+        name = params.get("name")
+        args = params.get("arguments") or {}
+        tool = _TOOLS.get(name)
+        if not tool:
+            return _rpc_error(req_id, -32602, f"Unknown tool: {name}")
+        try:
+            data = await tool["handler"](user_id, args)
+            text = json.dumps(data, ensure_ascii=False, default=str)
+            return _rpc_result(req_id, {"content": [{"type": "text", "text": text}], "isError": False})
+        except _ToolError as exc:
+            return _rpc_result(req_id, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
+        except Exception as exc:
+            print(f"[mcp] tool {name} failed: {exc}")
+            return _rpc_result(req_id, {"content": [{"type": "text", "text": "Internal error running the tool."}], "isError": True})
+
+    if is_notification:
+        return None
+    return _rpc_error(req_id, -32601, f"Method not found: {method}")
+
+
+@router.post("/mcp")
+async def mcp_endpoint(request: Request):
+    # Public endpoint (auth is per-tool-call via the token) → rate-limit by IP.
+    rate_limit(request, "mcp", 120, detail="Too many MCP requests — slow down.")
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content=_rpc_error(None, -32700, "Parse error"))
+
+    # JSON-RPC batch (list) or single message.
+    if isinstance(body, list):
+        responses = []
+        for m in body:
+            r = await _handle_one(request, m)
+            if isinstance(r, JSONResponse):
+                return r  # auth failure short-circuits the batch
+            if r is not None:
+                responses.append(r)
+        # All-notifications batch → 202 with no body.
+        if not responses:
+            return JSONResponse(status_code=202, content=None)
+        return JSONResponse(content=responses)
+
+    r = await _handle_one(request, body)
+    if isinstance(r, JSONResponse):
+        return r
+    if r is None:
+        return JSONResponse(status_code=202, content=None)
+    return JSONResponse(content=r)
