@@ -35,9 +35,11 @@ Linear, Notion), which are governed by their own privacy policies.
 
 ## 3. Information we collect
 
-**a. Account & identity.** When you sign in with Google or Microsoft SSO, we receive
-your email address and a unique account identifier. We do not receive or store your
-Google/Microsoft password.
+**a. Account & identity.** Regardless of sign-in method, we receive your email
+address and a unique account identifier. When you use Google or Microsoft SSO,
+we do not receive or store your Google/Microsoft password. When you create an
+account with email and password, Supabase Auth processes the credentials on our
+behalf. PrismAI does not receive or store your plaintext password.
 
 **b. Meeting content.** Depending on how you use the Service, we process and store:
 - **Transcripts** of meetings (from pasted text, uploaded audio, or our meeting bot).
