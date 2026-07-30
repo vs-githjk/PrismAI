@@ -38,6 +38,27 @@ router = APIRouter(tags=["mcp"])
 
 # ─────────────────────────── data helpers ───────────────────────────
 
+def _workspace_labels(user_id: str) -> dict[str, str]:
+    """{workspace_id -> name} for the user's workspaces, so tool results can label
+    where each meeting lives ("Personal" vs a named workspace) instead of a raw id."""
+    if not supabase:
+        return {}
+    ids = get_user_workspace_ids(supabase, user_id)
+    if not ids:
+        return {}
+    try:
+        res = supabase.table("workspaces").select("id, name").in_("id", ids).execute()
+    except Exception:
+        return {}
+    return {str(r.get("id")): (r.get("name") or "Workspace") for r in (res.data or [])}
+
+
+def _label_for(ws_id, labels: dict[str, str]) -> str:
+    if not ws_id:
+        return "Personal"
+    return labels.get(str(ws_id), "Workspace")
+
+
 def _dedup_by_minute(rows: list[dict], caller_user_id: str) -> list[dict]:
     """Collapse workspace fan-out copies: two rows at the same minute are the same
     logical meeting. Prefer the caller's own copy (its id opens in their history)."""
@@ -95,6 +116,7 @@ async def _tool_list_recent_meetings(user_id: str, args: dict) -> dict:
     limit = min(int(args.get("limit") or 20), _MAX_ITEMS)
     ws = (args.get("workspace_id") or "").strip()
     rows = _fetch_user_meetings(user_id, "id, title, date, score, workspace_id, user_id, result", ws)
+    labels = _workspace_labels(user_id)
     out = []
     for r in rows:
         if not has_meaningful_result(r.get("result") or {}):
@@ -104,7 +126,7 @@ async def _tool_list_recent_meetings(user_id: str, args: dict) -> dict:
             "title": r.get("title") or "Untitled meeting",
             "date": r.get("date"),
             "score": r.get("score"),
-            "workspace_id": r.get("workspace_id") or "",
+            "workspace": _label_for(r.get("workspace_id"), labels),
         })
         if len(out) >= limit:
             break
@@ -115,6 +137,7 @@ async def _tool_list_open_action_items(user_id: str, args: dict) -> dict:
     limit = min(int(args.get("limit") or 30), _MAX_ITEMS)
     ws = (args.get("workspace_id") or "").strip()
     rows = _fetch_user_meetings(user_id, "id, title, date, workspace_id, user_id, result", ws)
+    labels = _workspace_labels(user_id)
     items = []
     for r in rows:
         result = r.get("result") or {}
@@ -131,6 +154,7 @@ async def _tool_list_open_action_items(user_id: str, args: dict) -> dict:
                 "meeting_id": str(r.get("id")),
                 "meeting_title": r.get("title") or "Untitled meeting",
                 "meeting_date": r.get("date"),
+                "workspace": _label_for(r.get("workspace_id"), labels),
             })
             if len(items) >= limit:
                 break
@@ -164,6 +188,7 @@ async def _tool_get_meeting(user_id: str, args: dict) -> dict:
         "title": row.get("title"),
         "date": row.get("date"),
         "score": row.get("score"),
+        "workspace": _label_for(row.get("workspace_id"), _workspace_labels(user_id)),
         "summary": result.get("summary", ""),
         "tldr": result.get("tldr", ""),
         "decisions": result.get("decisions", []),
@@ -206,7 +231,8 @@ _TOOLS: dict[str, dict] = {
             "List the user's OPEN (not-yet-completed) action items across their "
             "recent meetings — personal and workspace. Use this to answer 'what do "
             "I owe' / 'what are my open tasks'. Each item includes the owner, due "
-            "date, and the meeting it came from."
+            "date, the meeting it came from, and a `workspace` label ('Personal' or "
+            "the workspace name) — surface the workspace when listing them."
         ),
         "inputSchema": {
             "type": "object",
@@ -251,7 +277,8 @@ _TOOLS: dict[str, dict] = {
         "handler": _tool_list_recent_meetings,
         "description": (
             "List the user's recent meetings (title, date, id) across personal and "
-            "workspace. Use to orient before calling get_meeting on a specific one."
+            "workspace. Each carries a `workspace` label ('Personal' or the workspace "
+            "name) — group or note it when listing. Use to orient before get_meeting."
         ),
         "inputSchema": {
             "type": "object",

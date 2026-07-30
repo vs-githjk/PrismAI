@@ -128,6 +128,24 @@ permissions you grant:
 You can disconnect any integration at any time in the app, which removes the stored
 credentials for that integration.
 
+### AI assistant connectors (Claude, ChatGPT)
+
+You may connect a third-party AI assistant — such as Anthropic's Claude or OpenAI's
+ChatGPT — to your PrismAI account using our connector. When you authorize a connection:
+- You grant that assistant **read-only** access to your meeting data — your open action
+  items, meeting summaries and decisions, and search results across your meetings and
+  knowledge base (including the workspaces you belong to). The connector **cannot**
+  modify, delete, or send anything.
+- Access is granted per-account via a standard authorization flow; you authenticate and
+  approve on a PrismAI consent screen, and PrismAI issues a revocable access credential
+  to that assistant.
+- Once you connect, the data you retrieve through the assistant is processed by **that
+  assistant's provider under its own privacy policy and terms** (e.g. Anthropic's or
+  OpenAI's), which are outside PrismAI's control.
+- You can **revoke** a connection at any time from Integrations → Claude / ChatGPT in
+  PrismAI (and/or from the assistant's own connector settings), which immediately stops
+  further access.
+
 ### Google API Limited Use disclosure
 
 PrismAI's use and transfer of information received from Google APIs adheres to the
