@@ -45,7 +45,7 @@ def test_tools_list_is_unauthenticated_and_readonly(client):
     tools = r.json()["result"]["tools"]
     assert {t["name"] for t in tools} == {
         "list_open_action_items", "search_meetings", "get_meeting", "list_recent_meetings",
-        "draft_coding_task",
+        "draft_coding_task", "get_meeting_documents",
     }
     assert all(t["annotations"]["readOnlyHint"] for t in tools)
 

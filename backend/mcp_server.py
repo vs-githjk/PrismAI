@@ -210,6 +210,66 @@ async def _tool_get_meeting(user_id: str, args: dict) -> dict:
     }
 
 
+async def _tool_get_meeting_documents(user_id: str, args: dict) -> dict:
+    """Read the knowledge docs PINNED to a meeting (e.g. a PRD the user saved from
+    chat) with their text — so the assistant can actually read them."""
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    if not meeting_id:
+        raise _ToolError("meeting_id is required")
+    if not supabase:
+        raise _ToolError("storage not configured")
+    # Authz via meeting access (owner OR workspace member).
+    mres = supabase.table("meetings").select("id, workspace_id, user_id").eq("id", meeting_id).limit(1).execute()
+    mrow = (mres.data or [None])[0]
+    if not mrow:
+        raise _ToolError("meeting not found")
+    if mrow.get("user_id") != user_id:
+        ws = mrow.get("workspace_id")
+        if not ws or not is_workspace_member(supabase, user_id, ws):
+            raise _ToolError("meeting not found")
+
+    # Pinned docs live on any sibling (fan-out) copy of the meeting.
+    from knowledge_routes import _coerce_meeting_id, _sibling_meeting_ids
+    mid = _coerce_meeting_id(meeting_id)
+    if mid is None:
+        return {"documents": [], "count": 0}
+    try:
+        sib_ids = await _sibling_meeting_ids(supabase, mid)
+        ws_ids = get_user_workspace_ids(supabase, user_id)
+        q = (
+            supabase.table("knowledge_docs")
+            .select("id, name, source_type, user_id, workspace_id")
+            .is_("deleted_at", "null").in_("meeting_id", sib_ids)
+        )
+        # Scope to the caller's own docs OR their workspaces' docs.
+        if ws_ids:
+            q = q.or_(f"user_id.eq.{user_id},workspace_id.in.({','.join(ws_ids)})")
+        else:
+            q = q.eq("user_id", user_id)
+        docs = q.execute().data or []
+    except Exception as exc:
+        raise _ToolError(f"could not load pinned documents: {exc}")
+
+    out = []
+    for d in docs[:10]:
+        doc_id = d.get("id")
+        try:
+            chunks = (
+                supabase.table("knowledge_chunks").select("content, chunk_index")
+                .eq("doc_id", doc_id).order("chunk_index").execute()
+            )
+            text = "".join(c.get("content", "") for c in (chunks.data or []))[:8000]
+        except Exception:
+            text = ""
+        out.append({
+            "doc_id": str(doc_id),
+            "name": d.get("name"),
+            "source_type": d.get("source_type"),
+            "content": text,
+        })
+    return {"documents": out, "count": len(out)}
+
+
 async def _tool_search_meetings(user_id: str, args: dict) -> dict:
     query = str(args.get("query") or "").strip()
     if not query:
@@ -337,6 +397,24 @@ _TOOLS: dict[str, dict] = {
                 "limit": {"type": "integer", "description": "Max results (default 5, max 10)."},
             },
             "required": ["query"],
+        },
+    },
+    "get_meeting_documents": {
+        "handler": _tool_get_meeting_documents,
+        "description": (
+            "Read the documents PINNED to a specific meeting — files, notes, or a PRD "
+            "the user attached to that meeting in PrismAI — WITH their full text. Use "
+            "whenever the user references a doc tied to a meeting ('read the PRD from "
+            "the X meeting', 'what's in the spec we saved to that meeting'). Returns "
+            "each pinned doc's name, type, and content. Pair with get_meeting for the "
+            "meeting's own summary/decisions."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "meeting_id": {"type": "string", "description": "The meeting whose pinned documents to read."},
+            },
+            "required": ["meeting_id"],
         },
     },
     "get_meeting": {
