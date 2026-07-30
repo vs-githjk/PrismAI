@@ -203,6 +203,51 @@ def test_clip_on_word_no_midword_cut():
     assert mcp._clip_on_word("hi", 20) == ("hi", False)
 
 
+def test_fetch_pinned_docs_total_budget(monkeypatch):
+    """Per-doc cap keeps a normal doc whole; total_cap bounds many big docs."""
+    import asyncio
+    import mcp_server as mcp
+
+    class _DocsSupabase:
+        def table(self, name):
+            self._t = name
+            return self
+        def select(self, *a, **k):
+            return self
+        def is_(self, *a, **k):
+            return self
+        def in_(self, *a, **k):
+            return self
+        def eq(self, *a, **k):
+            return self
+        def or_(self, *a, **k):
+            return self
+        def order(self, *a, **k):
+            return self
+        def execute(self):
+            if self._t == "knowledge_docs":
+                return type("R", (), {"data": [
+                    {"id": "a", "name": "big-A", "source_type": "x", "user_id": "u1", "workspace_id": None},
+                    {"id": "b", "name": "big-B", "source_type": "x", "user_id": "u1", "workspace_id": None},
+                ]})
+            return type("R", (), {"data": [{"content": "x" * 90000, "chunk_index": 0}]})
+
+    monkeypatch.setattr(mcp, "supabase", _DocsSupabase())
+    monkeypatch.setattr(mcp, "get_user_workspace_ids", lambda *a, **k: [])
+    import knowledge_routes as kr
+    monkeypatch.setattr(kr, "_coerce_meeting_id", lambda x: 42)
+    async def sibs(*a, **k):
+        return [42]
+    monkeypatch.setattr(kr, "_sibling_meeting_ids", sibs)
+
+    out = asyncio.run(mcp._fetch_pinned_docs("u1", "42", char_cap=60000, total_cap=100000))
+    # Doc A gets its 60k cap; B gets only the remaining 40k of the shared budget.
+    assert out[0]["truncated"] is True and len(out[0]["content"]) <= 60000 + 20
+    assert out[1]["truncated"] is True
+    total = sum(len(d["content"]) for d in out)
+    assert total <= 100000 + 40  # + tiny slack for truncation markers
+
+
 def test_draft_coding_task_non_member_denied(monkeypatch):
     import asyncio
     import mcp_server as mcp

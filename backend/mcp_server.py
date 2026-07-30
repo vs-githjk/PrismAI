@@ -218,12 +218,17 @@ def _clip_on_word(text: str, cap: int) -> tuple[str, bool]:
     return clipped + " …[truncated]", True
 
 
-async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 16000, max_docs: int = 10) -> list[dict]:
+async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 60000,
+                             max_docs: int = 10, total_cap: int = 110000) -> list[dict]:
     """Load the knowledge docs PINNED to a meeting (e.g. a PRD the user saved from
     chat) with their text. Matches by MEETING_ID (incl. fan-out siblings), never by
     doc name — so an untitled/oddly-named PRD is still found. Caller must have
     already authorized meeting access. Scoped to the caller's own + workspace docs.
-    Returns [] on any failure (best-effort)."""
+    Returns [] on any failure (best-effort).
+
+    Two bounds: `char_cap` per doc (a full strategic doc / PRD fits whole at 60k),
+    and `total_cap` across all returned docs, so a meeting with many big docs can't
+    blow the MCP ~150k-char response budget. Each doc carries a `truncated` flag."""
     from knowledge_routes import _coerce_meeting_id, _sibling_meeting_ids
     mid = _coerce_meeting_id(meeting_id)
     if mid is None:
@@ -246,6 +251,7 @@ async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 1
         return []
 
     out = []
+    remaining = total_cap
     for d in docs[:max_docs]:
         doc_id = d.get("id")
         truncated = False
@@ -255,7 +261,13 @@ async def _fetch_pinned_docs(user_id: str, meeting_id: str, *, char_cap: int = 1
                 .eq("doc_id", doc_id).order("chunk_index").execute()
             )
             full = "".join(c.get("content", "") for c in (chunks.data or []))
-            text, truncated = _clip_on_word(full, char_cap)
+            # Bound by the per-doc cap AND the remaining shared budget.
+            cap = max(0, min(char_cap, remaining))
+            if cap <= 0:
+                text, truncated = "", bool(full)
+            else:
+                text, truncated = _clip_on_word(full, cap)
+            remaining -= len(text)
         except Exception:
             text = ""
         out.append({
@@ -389,7 +401,9 @@ async def _tool_draft_coding_task(user_id: str, args: dict) -> dict:
     }
     # Pinned docs (e.g. a PRD) are the authoritative spec — fold them in, matched by
     # meeting_id not name. Best-effort: if it fails/empty, the task still drafts.
-    docs = await _fetch_pinned_docs(user_id, meeting_id, char_cap=16000, max_docs=5) if include_documents else []
+    # Generous per-doc cap so a full strategic doc / PRD reaches both the synthesis
+    # pass and the returned source_documents; total_cap keeps the response bounded.
+    docs = await _fetch_pinned_docs(user_id, meeting_id, char_cap=60000, max_docs=5, total_cap=100000) if include_documents else []
     docs_block = _pinned_docs_block(docs)
     docs_section = (
         f"\n\nPINNED DOCUMENTS (authoritative spec — ground the task in these):\n{docs_block}"
