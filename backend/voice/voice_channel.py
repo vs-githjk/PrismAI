@@ -155,6 +155,12 @@ async def handle_command(bot_id: str, command: str, speaker: str = "", from_chat
         from voice import bridge
         await bridge.end_utterance(bot_id)
 
+    # Phase 5 — which brain answered. A dispatch that finds nothing and a talk reply that
+    # came back empty both looked identical from the outside (chat gets something, the
+    # meeting hears nothing).
+    print(f"[trace] 5-voice bot={bot_id[:8]} decided={decided} chars={len((full or '').strip())} "
+          f"from_chat={from_chat}")
+
     if decided == "talk":
         reply = (full or "").strip() or f"Got it — {command}."
         await rr._send_chat_response(bot_id, reply)
@@ -451,6 +457,7 @@ if __name__ == "__main__":
         def _has_trigger_word(self, text, bot_id): return "prism" in text.lower()
         def _solo_mode_active(self, state): return True
         def _solo_freeflow_text_eligible(self, text): return len(text.split()) >= 3
+        def _two_channel_on(self): return True  # on_eager_turn reads it; fake lagged behind
     sys.modules["realtime_routes"] = _FakeRR("realtime_routes")
 
     _built: list[str] = []

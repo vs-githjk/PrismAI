@@ -94,6 +94,10 @@ async def speak(bot_id: str, text: str, turn=None) -> bool:
 
     session = get_session(bot_id)
     if session is None or session.pipeline is None:
+        # Phase 6 — the mouth isn't there. Returning False silently made this the one
+        # failure with no trace at all: every upstream line says the reply succeeded.
+        print(f"[trace] 6-mouth bot={bot_id[:8]} NO PIPELINE "
+              f"(session={'yes' if session else 'no'}) — reply not spoken: {text[:60]!r}")
         return False
     if turn is None:
         # Claim the turn the ears opened at EndOfTurn, so t0→t4 is one real timeline.

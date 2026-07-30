@@ -57,6 +57,13 @@ class RecallFrameSerializer(FrameSerializer):
         # turn-based meeting one person speaks at a time, so "last admitted speaker"
         # is a faithful proxy; overlapping speech is a Phase-5 tuning concern.
         self.last_speaker: str = ""
+        # Splice metric (phase 1): N participants stream separately but land in ONE
+        # mono frame sequence here, so with 2+ humans the other person's frames can
+        # interleave INTO a word ("Prism" → "Visum"). switches-per-100-frames is the
+        # number that says whether that's happening. Summarised, not per-switch —
+        # a per-switch line would be ~10/s.
+        self._frames = 0
+        self._switches = 0
 
     async def setup(self, frame: StartFrame) -> None:
         # No handshake with Recall — the socket is already open when frames arrive.
@@ -94,6 +101,14 @@ class RecallFrameSerializer(FrameSerializer):
             return None
         if not pcm:
             return None
+
+        self._frames += 1
+        if speaker and self.last_speaker and speaker != self.last_speaker:
+            self._switches += 1
+        if self._frames % 100 == 0:
+            print(f"[trace] 1-audio bot={self._bot_id[:8]} per100frames switches={self._switches} "
+                  f"speaker={speaker!r}")
+            self._switches = 0
 
         if speaker:
             self.last_speaker = speaker

@@ -4240,7 +4240,13 @@ async def _handle_realtime_payload(payload: dict, verified_bot_id: str | None = 
                 # line here is the difference between a diagnosis and a guessing game.
                 # `armed` is the POST-decision state: True means a bare wake word just
                 # armed the next turn (so this turn correctly returned speak=False).
-                print(f"[gate] decide bot={bot_id[:8]} speak={_speak} "
+                # `wake` separates "the wake word never matched" (the fuzzy-transcription
+                # failure) from "it matched and something downstream refused" — the two
+                # explanations for a silent bot that speak=False alone can't tell apart.
+                # ponytail: re-runs the regex for the log; it's a compiled search on one line.
+                _wake = ("cmd" if _detect_command(text, bot_id)
+                         else "bare" if _has_trigger_word(text, bot_id) else "none")
+                print(f"[gate] decide bot={bot_id[:8]} speak={_speak} wake={_wake} "
                       f"solo={_solo_mode_active(state)} muted={bool(state.get('muted'))} "
                       f"armed={bool(state.get('_gate_armed_speaker'))} speaker={speaker!r} "
                       f"text={text[:60]!r}")

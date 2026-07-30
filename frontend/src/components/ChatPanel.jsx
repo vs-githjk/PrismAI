@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   ClipboardList,
   Clock,
+  Copy,
+  Download,
   FileText,
   History,
   ImagePlus,
+  Library,
   ListChecks,
   MessagesSquare,
   Send,
@@ -41,6 +45,144 @@ function MarkdownMessage({ children }) {
     >
       {children}
     </ReactMarkdown>
+  )
+}
+
+// "Make me a doc" — turn an assistant reply into a portable document. Derives a
+// filename from the first heading (or first line), then downloads the markdown as a
+// real .md file. Client-side only; no model call, no backend.
+function docFilename(md) {
+  const heading = (md.match(/^#+\s+(.+)$/m) || [])[1]
+  const base = (heading || md.replace(/[#*`>_[\]]/g, '').trim().split('\n')[0] || 'prism-doc')
+    .slice(0, 60)
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .toLowerCase()
+  return `${base || 'prism-doc'}.md`
+}
+
+// Minimal markdown → HTML for the print view (headings, bold/italic, inline + fenced
+// code, ordered/unordered lists, links, paragraphs). Escapes HTML first. Not a full
+// parser — good enough to print a chat reply as a clean, formatted document.
+function mdToHtml(md) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2">$1</a>')
+  const lines = md.replace(/\r\n/g, '\n').split('\n')
+  let html = '', inUl = false, inOl = false, inCode = false, code = []
+  const closeLists = () => { if (inUl) { html += '</ul>'; inUl = false } if (inOl) { html += '</ol>'; inOl = false } }
+  for (const line of lines) {
+    if (/^```/.test(line)) {
+      if (inCode) { html += `<pre><code>${esc(code.join('\n'))}</code></pre>`; code = []; inCode = false }
+      else { closeLists(); inCode = true }
+      continue
+    }
+    if (inCode) { code.push(line); continue }
+    const h = line.match(/^(#{1,6})\s+(.+)$/)
+    if (h) { closeLists(); const lvl = Math.min(h[1].length, 4); html += `<h${lvl}>${inline(h[2])}</h${lvl}>`; continue }
+    const ul = line.match(/^\s*[-*]\s+(.+)$/)
+    if (ul) { if (!inUl) { closeLists(); html += '<ul>'; inUl = true } html += `<li>${inline(ul[1])}</li>`; continue }
+    const ol = line.match(/^\s*\d+\.\s+(.+)$/)
+    if (ol) { if (!inOl) { closeLists(); html += '<ol>'; inOl = true } html += `<li>${inline(ol[1])}</li>`; continue }
+    if (!line.trim()) { closeLists(); continue }
+    closeLists(); html += `<p>${inline(line)}</p>`
+  }
+  if (inCode) html += `<pre><code>${esc(code.join('\n'))}</code></pre>`
+  closeLists()
+  return html
+}
+
+// PDF via the browser's print-to-PDF (matches the transcript export — no PDF lib).
+// Opens a clean, formatted print view; the user picks "Save as PDF".
+function printMarkdownAsPdf(md) {
+  const title = docFilename(md).replace(/\.md$/, '').replace(/-/g, ' ') || 'Prism document'
+  const w = window.open('', '_blank')
+  if (!w) return
+  w.document.write(
+    `<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/[<>]/g, '')}</title>` +
+    '<style>' +
+    'body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#14171a;max-width:720px;margin:40px auto;padding:0 24px}' +
+    'h1,h2,h3,h4{line-height:1.25;margin:1.4em 0 .5em;font-weight:650}' +
+    'h1{font-size:1.7em}h2{font-size:1.35em}h3{font-size:1.12em}h4{font-size:1em}' +
+    'p{margin:.6em 0}ul,ol{margin:.6em 0;padding-left:1.4em}li{margin:.25em 0}' +
+    'code{background:#f1f2f4;border-radius:4px;padding:.1em .35em;font-size:.9em}' +
+    'pre{background:#f5f5f7;border-radius:8px;padding:12px;overflow:auto}pre code{background:none;padding:0}' +
+    'a{color:#0369a1}' +
+    // Persistent toolbar so dismissing the print dialog isn't a dead end — the user can
+    // re-trigger Save-as-PDF anytime. Hidden in the actual print output.
+    '.pv-bar{position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:10}' +
+    '.pv-bar button{cursor:pointer;border:1px solid #d0d3d8;background:#fff;border-radius:8px;padding:8px 14px;font:600 14px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#14171a;box-shadow:0 2px 10px rgba(0,0,0,.10)}' +
+    '.pv-bar button.primary{background:#0e7490;border-color:#0e7490;color:#fff}' +
+    // @page margin:0 tells the browser to drop its auto headers/footers (the
+    // date, the tab title, "about:blank", and page numbers). We put the real
+    // page margins back on the body so text isn't jammed against the edge.
+    '@page{margin:0}' +
+    '@media print{.pv-bar{display:none!important}body{margin:0 auto;padding:14mm 16mm}}' +
+    '</style></head><body>' +
+    '<div class="pv-bar"><button class="primary" onclick="window.print()">Save as PDF</button><button onclick="window.close()">Close</button></div>' +
+    mdToHtml(md) + '</body></html>'
+  )
+  w.document.close()
+  w.focus()
+  setTimeout(() => w.print(), 400)  // auto-open the dialog; the button re-opens it if dismissed
+}
+
+// Per-reply actions — turn any substantial answer into a real document instead of
+// leaving it stuck in a chat bubble: copy, download (.md), print/Save-as-PDF, and
+// (signed-in) save into the Knowledge Base so it becomes RAG-searchable.
+function MessageActions({ content, onSaveToKb }) {
+  const [copied, setCopied] = useState(false)
+  const [kb, setKb] = useState('idle') // idle | saving | saved | error
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* clipboard blocked — no-op */ }
+  }
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/markdown;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = docFilename(content)
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+  const saveKb = async () => {
+    if (!onSaveToKb || kb === 'saving') return
+    setKb('saving')
+    try {
+      const ok = await onSaveToKb(content)
+      setKb(ok ? 'saved' : 'error')
+      if (ok) setTimeout(() => setKb('idle'), 2500)
+    } catch { setKb('error') }
+  }
+  const btn = 'flex items-center gap-1.5 rounded-md border border-white/[0.14] bg-white/[0.05] px-2 py-1 text-[11px] font-medium text-white/75 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.10] hover:text-cyan-200 disabled:opacity-50'
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-1.5">
+      <button type="button" onClick={copy} title="Copy" className={btn}>
+        {copied ? <Check className="h-3 w-3 text-cyan-300" /> : <Copy className="h-3 w-3" />}
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      <button type="button" onClick={download} title="Download as a document (.md)" className={btn}>
+        <Download className="h-3 w-3" /> Save as doc
+      </button>
+      <button type="button" onClick={() => printMarkdownAsPdf(content)} title="Print / Save as PDF" className={btn}>
+        <FileText className="h-3 w-3" /> PDF
+      </button>
+      {onSaveToKb && (
+        <button type="button" onClick={saveKb} disabled={kb === 'saving'} title="Save to your Knowledge Base (becomes searchable)" className={btn}>
+          {kb === 'saved' ? <Check className="h-3 w-3 text-cyan-300" /> : <Library className="h-3 w-3" />}
+          {kb === 'saving' ? 'Saving…' : kb === 'saved' ? 'Saved to KB' : kb === 'error' ? 'Failed — retry' : 'Save to KB'}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -245,6 +387,33 @@ export default function ChatPanel({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [lightbox, setLightbox] = useState(null)  // url of image opened full-size
   const fileInputRef = useRef(null)
+  const inputRef = useRef(null)
+
+  // Auto-grow the composer as you type/paste — a fixed 1-row box feels cramped for
+  // anything longer than a sentence (and useless for pasting a big block of text).
+  // Grows with content up to a cap, then scrolls inside the box.
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 260)}px`
+  }, [input])
+
+  // "Save to KB" — turn an assistant reply into a Knowledge Base doc (RAG-searchable).
+  // Reuses the existing /knowledge/upload endpoint by posting the markdown as a .md
+  // file, scoped to the active workspace + meeting. Returns true on success.
+  const saveReplyToKb = async (content) => {
+    try {
+      const fd = new FormData()
+      fd.append('file', new Blob([content], { type: 'text/markdown' }), docFilename(content))
+      if (activeWorkspaceId) fd.append('workspace_id', activeWorkspaceId)
+      if (meetingId) fd.append('meeting_id', String(meetingId))
+      const res = await apiFetch('/knowledge/upload', { method: 'POST', body: fd })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
   const [showHistory, setShowHistory] = useState(false)
   const [viewingSession, setViewingSession] = useState(null)
   const prevResultRef = useRef(null)
@@ -801,6 +970,9 @@ export default function ChatPanel({
               {msg.role === 'assistant' && typeof msg.content === 'string'
                 ? <MarkdownMessage>{msg.content}</MarkdownMessage>
                 : messageText(msg.content)}
+              {msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.trim().length > 120 && (
+                <MessageActions content={msg.content} onSaveToKb={isSignedIn ? saveReplyToKb : undefined} />
+              )}
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {msg.toolsUsed.map((t, ti) => (
@@ -933,7 +1105,7 @@ export default function ChatPanel({
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-end gap-2">
           <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={handlePickImages} className="hidden" />
           {isSignedIn && (
             <button
@@ -948,8 +1120,10 @@ export default function ChatPanel({
             </button>
           )}
           {/* A <textarea> (not <input>) so Chrome won't pop saved-email autofill over
-              the chat box. rows=1 + resize-none keeps it looking like a single-line input. */}
+              the chat box. Starts at 1 row and auto-grows with content (see the effect
+              above) up to a cap, then scrolls — roomy for pasting large text. */}
           <textarea
+            ref={inputRef}
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -969,7 +1143,7 @@ export default function ChatPanel({
                 ? 'Ask or say "redraft email more formally"…'
                 : 'Ask a question… (paste or drop an image)'
             }
-            className="flex-1 resize-none rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 resize-none overflow-y-auto rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             type="button"

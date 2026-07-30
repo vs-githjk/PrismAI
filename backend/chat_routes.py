@@ -11,6 +11,12 @@ from openai import AsyncOpenAI
 
 from auth import require_user_id, supabase
 from clients import LIVE_MODEL  # OpenAI gpt-5.6-luna for dashboard chat (/chat, /chat/global)
+from ratelimit import enforce as rate_limit
+
+# Unauthenticated LLM endpoints — cap per IP (cost-DoS). /chat runs anonymous
+# in the demo; /agent re-runs a Sonnet analysis agent.
+_CHAT_PER_MINUTE = 20
+_AGENT_PER_MINUTE = 15
 from analysis_service import AGENT_MAP, TIER2_AGENTS, _persona_text_for_agent
 from agents.utils import _PERSONA_TEXT, get_persona_suffix
 from personas import resolve_persona
@@ -443,7 +449,9 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
     local_router = APIRouter(tags=["chat"])
 
     @local_router.post("/agent")
-    async def run_agent(req: AgentRequest):
+    async def run_agent(req: AgentRequest, request: Request):
+        rate_limit(request, "agent", _AGENT_PER_MINUTE,
+                   detail="Too many agent requests — try again in a minute.")
         if req.agent not in AGENT_MAP:
             raise HTTPException(status_code=400, detail=f"Unknown agent: {req.agent}")
         # Apply per-agent whitelist + set the contextvar so llm_call appends
@@ -496,6 +504,8 @@ def create_chat_router(openai_client: AsyncOpenAI) -> APIRouter:
 
     @local_router.post("/chat")
     async def chat(req: ChatRequest, request: Request):
+        rate_limit(request, "chat", _CHAT_PER_MINUTE,
+                   detail="Too many chat requests — try again in a minute.")
         user_id = await _optional_user_id(request)
         # Active workspace (persona + per-workspace integration routing). Defined
         # unconditionally so both the persona block and the integration overlay can

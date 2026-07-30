@@ -20,6 +20,11 @@ from analysis_service import build_analysis_transcript, run_full_analysis
 from auth import supabase, require_user_id
 from cross_meeting_service import looks_like_blocker, build_blocker_snippet
 from personas import persona_identity_resolved, persona_greeting_from_preset, DEFAULT_BOT_NAME, PERSONA_NAMES
+from ratelimit import enforce as rate_limit
+
+# /join-meeting dispatches a real (paid) Recall bot — cap joins per IP so an
+# anonymous caller can't rack up bot-join spend. Generous enough for normal use.
+_JOIN_PER_MINUTE = 10
 
 # Line prefixes that mark a transcript line as the bot's own turn (recorded by
 # realtime_routes._record_bot_line). Covers every persona display name + the
@@ -116,6 +121,33 @@ bot_store: dict = {}
 
 # live_token → bot_id index for public live-share lookups
 _live_token_index: dict = {}
+
+
+def _notify_bot_issue(bot_id: str, message: str) -> None:
+    """Best-effort 'your meeting bot had a problem' notification to the bot's owner
+    (empty transcript / no-show / analysis error). Deduped per bot so the same
+    failure surfaced by webhook + poll notifies once. Prefers Recall's SPECIFIC
+    leave diagnostic ('never admitted from the waiting room…') over the generic
+    message when one was captured. Never raises."""
+    from notifications import create_notification
+    store = bot_store.get(bot_id, {}) or {}
+    uid = store.get("user_id")
+    reason = store.get("leave_reason")
+    if (not uid or not reason) and supabase:
+        try:
+            r = supabase.table("bot_sessions").select("user_id, leave_reason").eq("bot_id", bot_id).limit(1).execute()
+            row = (r.data or [{}])[0]
+            uid = uid or row.get("user_id")
+            reason = reason or row.get("leave_reason")
+        except Exception:
+            pass
+    if not uid:
+        return
+    # Use Recall's reason only when it's specific — the generic fallbacks all start
+    # with "Prism left (…)" and are less useful than our own message.
+    body = reason if (reason and not reason.startswith("Prism left")) else message
+    create_notification(uid, "bot_issue", "Meeting bot issue", body=body,
+                        dedup_key=f"botissue:{bot_id}")
 
 # Tracks bots whose proactive checker has been re-spawned after a server restart,
 # so repeated /bot-status polls don't keep creating new tasks.
@@ -2390,6 +2422,7 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = error_msg
             _db_save(bot_id, {"status": "error", "error": error_msg})
+            _notify_bot_issue(bot_id, "Your meeting had no transcript — it may have been too short or had no speech.")
             print(f"[recall] ERROR: empty transcript")
             return
 
@@ -2409,6 +2442,7 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["error"] = error_msg
             _db_save(bot_id, {"status": "error", "error": error_msg})
             _mb_update_status(bot_id, "no_show")
+            _notify_bot_issue(bot_id, "Your meeting bot joined but nobody spoke — no meeting was saved.")
             print(f"[recall] no-show: {human_words} human words < {_MIN_HUMAN_WORDS}, skipping persist for bot {bot_id}")
             from realtime_routes import cleanup_bot_state
             cleanup_bot_state(bot_id)
@@ -2472,6 +2506,7 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["error"] = str(exc)
         _db_save(bot_id, {"status": "error", "error": str(exc)})
         _mb_update_status(bot_id, "error")
+        _notify_bot_issue(bot_id, "Something went wrong analysing your meeting. Please try again.")
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
@@ -2493,6 +2528,8 @@ async def join_meeting(req: JoinMeetingRequest, request: Request):
         raise HTTPException(status_code=500, detail="Recall.ai API key not configured")
     if not req.meeting_url.strip():
         raise HTTPException(status_code=400, detail="Meeting URL cannot be empty")
+    rate_limit(request, "join-meeting", _JOIN_PER_MINUTE,
+               detail="Too many join requests — try again in a minute.")
 
     # Optionally link bot to authenticated user (enables live tool access)
     user_id = await _optional_user_id(request)
@@ -2739,7 +2776,19 @@ async def bot_status(bot_id: str):
     entry = bot_store.get(bot_id, {"status": our_status, "result": None, "error": None, "commands": []})
     # Don't let Recall's "done" override our internal "processing"
     entry["status"] = our_status if entry.get("status") not in ("done", "error", "processing") else entry["status"]
-    return entry
+    # Whitelist the response. This endpoint is unauthenticated by design (the
+    # bot_id is the capability), but the raw bot_store entry also holds internal
+    # state — notably `user_id` and `live_token` (a SEPARATE access capability
+    # that grants live-share). Returning only the fields the client actually
+    # reads stops a bot_id holder from harvesting the live_token or owner id.
+    return {
+        "status": entry.get("status"),
+        "result": entry.get("result"),
+        "transcript": entry.get("transcript"),
+        "error": entry.get("error"),
+        "leave_reason": entry.get("leave_reason"),
+        "commands": entry.get("commands", []),
+    }
 
 
 async def _caller_is_bot_member(bot_id: str, request: Request) -> bool:

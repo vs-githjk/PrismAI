@@ -8,6 +8,10 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from analysis_service import AGENT_RESULT_KEY, _GRAPH, build_analysis_transcript, run_full_analysis
+from ratelimit import enforce as rate_limit
+
+# Unauthenticated LLM endpoints spend real tokens per call — cap per IP (cost-DoS).
+_ANALYZE_PER_MINUTE = 10
 
 # Simple IP-based rate limit for /transcribe (paid Whisper call, no auth required for demo)
 _transcribe_log: dict[str, list[float]] = defaultdict(list)
@@ -36,7 +40,9 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
     router = APIRouter(tags=["analysis"])
 
     @router.post("/analyze")
-    async def analyze(req: AnalyzeRequest):
+    async def analyze(req: AnalyzeRequest, request: Request):
+        rate_limit(request, "analyze", _ANALYZE_PER_MINUTE,
+                   detail="Too many analysis requests — try again in a minute.")
         if not req.transcript.strip():
             raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
@@ -50,7 +56,9 @@ def create_analysis_router(openai_client: AsyncOpenAI) -> APIRouter:
         )
 
     @router.post("/analyze-stream")
-    async def analyze_stream(req: AnalyzeRequest):
+    async def analyze_stream(req: AnalyzeRequest, request: Request):
+        rate_limit(request, "analyze", _ANALYZE_PER_MINUTE,
+                   detail="Too many analysis requests — try again in a minute.")
         if not req.transcript.strip():
             raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 

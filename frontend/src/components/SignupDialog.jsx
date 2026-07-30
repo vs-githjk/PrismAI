@@ -89,6 +89,12 @@ export default function SignupDialog({ onClose }) {
         <p className="signup-mode-note">
           No password needed — single sign-on keeps your account secure.
         </p>
+
+        <p className="signup-consent">
+          By continuing, you agree to our{' '}
+          <a href="#terms" onClick={onClose}>Terms of Service</a> and{' '}
+          <a href="#privacy" onClick={onClose}>Privacy Policy</a>.
+        </p>
       </div>
     </div>
   )

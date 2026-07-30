@@ -104,8 +104,10 @@ class TranscriptGuardTests(unittest.TestCase):
             def _drop(c):
                 if hasattr(c, "close"):
                     c.close()
-            with patch("storage_routes.index_meeting_transcript", index_mock), \
-                 patch("storage_routes.asyncio.create_task", side_effect=_drop):
+            with patch("storage_routes.is_workspace_member", return_value=True), \
+                 patch("storage_routes.index_meeting_transcript", index_mock), \
+                 patch.object(storage_routes, "asyncio",
+                              types.SimpleNamespace(create_task=_drop)):
                 client = self._make_client(user_id=user_id)
                 resp = client.post("/meetings", json=self._payload(recorded_by_user_id=recorded_by_user_id))
         finally:

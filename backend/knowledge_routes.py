@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 
 from auth import require_user_id, supabase as auth_supabase
-from caches import get_user_workspace_ids
+from caches import get_user_workspace_ids, is_workspace_member
 from knowledge_service import (
     ingest_doc,
     soft_delete_doc,
@@ -118,6 +118,15 @@ async def _insert_doc_row(sb, *, user_id: str, name: str, source_type: str,
                           size_bytes: Optional[int] = None, meeting_id: Optional[str] = None,
                           workspace_id: Optional[str] = None,
                           sensitivity: str = "internal") -> str:
+    # Authz on the body-supplied workspace_id (IDOR guard). A workspace doc lands
+    # in that workspace's SHARED library (readable by all members), so a non-member
+    # must not be able to publish into it. Drop to personal rather than 403 — the
+    # user still gets their doc, just unshared. All three write paths (upload /
+    # upload-url / connect-source) funnel through here, so this covers them all.
+    if workspace_id and not is_workspace_member(sb, user_id, workspace_id):
+        print(f"[knowledge] non-member {user_id} tried to publish into workspace "
+              f"{workspace_id} — storing as personal")
+        workspace_id = None
     doc_id = str(uuid.uuid4())
     await _execute(
         sb.table("knowledge_docs").insert({
@@ -338,8 +347,16 @@ async def update_doc(doc_id: str, req: UpdateDocRequest, user_id: str = Depends(
     if "meeting_id" in update:
         update["meeting_id"] = _coerce_meeting_id(update["meeting_id"])
     # Empty-string workspace_id means "move back to personal" → store NULL.
+    # Authz (IDOR guard): a user may only move their own doc INTO a workspace they
+    # belong to — otherwise they could inject it into any team's shared library.
+    # Unauthorized target silently becomes personal (NULL).
     if "workspace_id" in update:
-        update["workspace_id"] = update["workspace_id"] or None
+        target_ws = update["workspace_id"] or None
+        if target_ws and not is_workspace_member(sb, user_id, target_ws):
+            print(f"[knowledge] non-member {user_id} tried to move doc {doc_id} into "
+                  f"workspace {target_ws} — storing as personal")
+            target_ws = None
+        update["workspace_id"] = target_ws
     sb.table("knowledge_docs").update(update).eq("id", doc_id).eq("user_id", user_id).execute()
     # Chunks denormalize workspace_id for retrieval scoping — keep them in sync.
     if "workspace_id" in update:

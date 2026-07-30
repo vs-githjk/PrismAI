@@ -18,6 +18,7 @@ from cross_meeting_synthesis import get_semantic_insights
 from calendar_routes import get_valid_token
 from knowledge_transcript import index_meeting_transcript
 from tools.gmail import gmail_send
+from notifications import create_notification
 
 
 def parse_expires_hint(url: str | None) -> int | None:
@@ -304,6 +305,13 @@ def _fan_out_id(original_id: int, member_user_id: str) -> int:
 async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id: str, workspace_id: str):
     """Write a copy of this meeting to every other workspace member's history."""
     try:
+        # Workspace name for a friendlier "New meeting in <name>" notification.
+        ws_name = ""
+        try:
+            wsr = client.table("workspaces").select("name").eq("id", workspace_id).limit(1).execute()
+            ws_name = (wsr.data or [{}])[0].get("name") or ""
+        except Exception:
+            ws_name = ""
         members = (
             client.table("workspace_members")
             .select("user_id")
@@ -339,6 +347,14 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
                 "transcript_segments": entry.__dict__.get("_resolved_segments"),
             }).execute()
             print(f"[fanout] wrote meeting {fan_id} to member {member_id} in workspace {workspace_id}")
+            # Tell the teammate a new meeting landed in their shared workspace history.
+            # meeting_id = their fan-out copy so click-through opens in their dashboard.
+            create_notification(
+                member_id, "workspace_activity",
+                f"New meeting in {ws_name}" if ws_name else "New workspace meeting",
+                body=entry.title, meeting_id=fan_id, workspace_id=workspace_id,
+                dedup_key=f"wsact:{fan_id}",
+            )
     except Exception as exc:
         print(f"[fanout] failed for meeting {entry.id}: {exc}")
 
@@ -346,6 +362,18 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
 @router.post("/meetings")
 async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_id)):
     client = _require_storage()
+
+    # Authz on the body-supplied workspace_id (IDOR guard). `workspace_id` comes
+    # from the client, and below it drives fan-out into EVERY member's history —
+    # so an unchecked value would let any user inject meetings into a workspace
+    # they don't belong to. If the caller isn't a member, drop the association
+    # and save it as a personal meeting (same graceful-degradation stance as the
+    # bot-ownership check below) rather than 403.
+    if entry.workspace_id and not is_workspace_member(client, user_id, entry.workspace_id):
+        print(f"[storage] non-member {user_id} tried to save into workspace "
+              f"{entry.workspace_id} — saving as personal")
+        entry.workspace_id = None
+        entry.recorded_by_user_id = None
 
     # Server-side enrichment from bot_sessions — the trust boundary.
     # The frontend sends recall_bot_id as a reference; we look up the structured
@@ -415,6 +443,18 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "recording_provider": recording_provider,
         "transcript_segments": transcript_segments,
     }).execute()
+
+    # Notify the owner their bot meeting finished analysing (async — they may have
+    # left the tab). Only for BOT meetings (paste/upload are synchronous + on-screen)
+    # and only the primary recorder (a dedup'd teammate gets workspace_activity from
+    # the fan-out below instead). Deduped by meeting id, so a browser save + a
+    # server-recovery save notify once. Best-effort — never blocks the save.
+    if recall_bot_id and entry.recorded_by_user_id in (None, "", user_id):
+        create_notification(
+            user_id, "meeting_ready", "Meeting ready",
+            body=entry.title, meeting_id=entry.id,
+            workspace_id=entry.workspace_id or None, dedup_key=f"ready:{entry.id}",
+        )
 
     # Fan out to all other workspace members when a workspace is set.
     # actual_recorder is the bot owner (if the saver's bot was dedup'd) or the saver themselves —
