@@ -3,7 +3,7 @@ import {
   Bell, CheckCircle2, Clock, AlertTriangle, Users, CalendarClock, Check, BellRing,
 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
-import { pushSupported, getPushState, subscribePush } from '../../lib/push'
+import { pushSupported, getPushState, subscribePush, unsubscribePush } from '../../lib/push'
 
 // Persistent notification center (#9). Polls GET /notifications, shows an unread
 // badge, and a dropdown list with click-through to the source meeting. Distinct
@@ -81,6 +81,16 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
     setPushBusy(true)
     try {
       await subscribePush()
+      setPushState(await getPushState())
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const disablePush = async () => {
+    setPushBusy(true)
+    try {
+      await unsubscribePush()
       setPushState(await getPushState())
     } finally {
       setPushBusy(false)
@@ -235,8 +245,16 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
             </button>
           )}
           {pushState === 'subscribed' && (
-            <div className="flex items-center justify-center gap-1.5 border-t border-white/[0.07] px-4 py-2.5 text-[11px] text-white/40">
-              <BellRing className="h-3.5 w-3.5" /> Meeting reminders on
+            <div className="flex items-center justify-between border-t border-white/[0.07] px-4 py-2.5 text-[11px] text-white/40">
+              <span className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" /> Meeting reminders on</span>
+              <button
+                type="button"
+                onClick={disablePush}
+                disabled={pushBusy}
+                className="font-medium text-white/45 transition hover:text-white/80 disabled:opacity-50"
+              >
+                {pushBusy ? 'Turning off…' : 'Turn off'}
+              </button>
             </div>
           )}
         </div>
