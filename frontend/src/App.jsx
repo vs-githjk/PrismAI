@@ -10,6 +10,7 @@ import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
 import SignupDialog from './components/SignupDialog'
 import LegalPage from './components/LegalPage'
+import OAuthConsent from './components/OAuthConsent'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -594,6 +595,11 @@ const INITIAL_LEGAL = (() => {
   const m = window.location.hash.match(/^#(privacy|terms)$/)
   return m ? m[1] : null
 })()
+
+// Detect the OAuth consent screen (#oauth-consent?...) — the MCP connector flow.
+// It's entered by a full-page redirect (from our AS or after Supabase sign-in),
+// so a module-load check is sufficient.
+const INITIAL_OAUTH_CONSENT = (window.location.hash || '').startsWith('#oauth-consent')
 
 // Detect an in-progress calendar OAuth callback synchronously (Google or Microsoft).
 // The provider redirects back to the ROOT (redirect_uri = origin) with ?code=&state=,
@@ -1240,7 +1246,7 @@ export default function App() {
           window.location.replace(`/dashboard#invite/${pendingInvite}`)
           return
         }
-        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH) {
+        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH && !INITIAL_OAUTH_CONSENT) {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard')
@@ -1252,7 +1258,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard) return
+    if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard || INITIAL_OAUTH_CONSENT) return
     if (sessionStorage.getItem(UI_SCREEN_KEY) === 'landing') return
     // Don't navigate away while a calendar OAuth exchange is in flight on this page —
     // a full navigation cancels the exchange fetch. The exchange effect navigates to
@@ -2689,6 +2695,12 @@ export default function App() {
     a.click()
     URL.revokeObjectURL(url)
     return true
+  }
+
+  // OAuth consent (#oauth-consent) — the MCP connector authorization screen.
+  // Highest priority: intercept on any path, even for signed-in users.
+  if (INITIAL_OAUTH_CONSENT) {
+    return <OAuthConsent />
   }
 
   // Legal pages (#privacy / #terms) — intercepts on any path.

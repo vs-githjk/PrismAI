@@ -151,11 +151,17 @@ def _bearer_or_apikey(request: Request) -> str | None:
 def resolve_mcp_user(request: Request) -> str | None:
     """The single auth seam for MCP tools. Returns the caller's user_id or None.
 
-    v1: resolves a PrismAI Personal Access Token.
-    Milestone B will extend this to also accept an OAuth 2.1 bearer token —
-    without changing any tool that calls it.
+    Accepts either a PrismAI Personal Access Token (`prism_pat_…`, static-header
+    auth for programmatic/ChatGPT clients) OR an OAuth 2.1 access token
+    (`prism_at_…`, the Claude connector flow). The token prefix disambiguates, so
+    each resolver only runs when it can match — no wasted lookups.
     """
     cred = _bearer_or_apikey(request)
     if not cred:
         return None
-    return resolve_pat(cred)
+    if cred.startswith(TOKEN_PREFIX):
+        return resolve_pat(cred)
+    if cred.startswith("prism_at_"):
+        from oauth import resolve_oauth_token  # lazy: avoid import cycle
+        return resolve_oauth_token(cred)
+    return None

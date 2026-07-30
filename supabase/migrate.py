@@ -49,6 +49,7 @@ MIGRATION_ORDER = [
     "proxy_default_standin_migration.sql",       # per-space default stand-in
     "meeting_bots_workspace_migration.sql",      # meeting_bots.workspace_id (durable server-side persist)
     "personal_access_tokens_migration.sql",      # MCP connector API keys (Claude/ChatGPT)
+    "oauth_migration.sql",                        # OAuth 2.1 AS for the MCP connector (Claude)
 ]
 
 migrations_dir = Path(__file__).parent

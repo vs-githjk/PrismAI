@@ -116,6 +116,8 @@ app.include_router(voice_router)  # /voice/audio-in + /voice/speaker + /voice/sp
 app.include_router(pat_router)  # /account/tokens — MCP connector credentials
 from mcp_server import router as mcp_router
 app.include_router(mcp_router)  # POST /mcp — Claude/ChatGPT connector (Streamable HTTP)
+from oauth_routes import router as oauth_router
+app.include_router(oauth_router)  # OAuth 2.1 AS for the Claude connector
 
 app.include_router(create_analysis_router(openai_client))
 app.include_router(create_chat_router(openai_client))

@@ -286,13 +286,20 @@ def _rpc_error(req_id, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
 
+import os as _os
+_MCP_RESOURCE_META = (
+    _os.getenv("WEBHOOK_BASE_URL", "https://meeting-copilot-api.onrender.com").rstrip("/")
+    + "/.well-known/oauth-protected-resource"
+)
+
+
 def _unauthorized() -> JSONResponse:
     # MCP does auth at the HTTP layer: 401 + WWW-Authenticate. The resource_metadata
-    # hint is where Milestone B's OAuth discovery will live.
+    # pointer triggers Claude's OAuth discovery (RFC 9728 → our authorization server).
     return JSONResponse(
         status_code=401,
-        content={"error": "invalid_token", "error_description": "A valid PrismAI access token is required."},
-        headers={"WWW-Authenticate": 'Bearer realm="PrismAI MCP", error="invalid_token"'},
+        content={"error": "invalid_token", "error_description": "Authentication required."},
+        headers={"WWW-Authenticate": f'Bearer resource_metadata="{_MCP_RESOURCE_META}"'},
     )
 
 
