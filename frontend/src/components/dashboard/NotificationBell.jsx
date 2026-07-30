@@ -122,6 +122,14 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
     setOpen(false)
   }
 
+  // Clear a single item without opening it (the per-row tick).
+  const dismissItem = async (n) => {
+    if (n.synthesized) { dismissSynth(n.id); return }
+    if (!n.read) setStoredUnread((c) => Math.max(0, c - 1))
+    setItems((prev) => prev.filter((x) => x.id !== n.id))
+    try { await apiFetch(`/notifications/${n.id}/read`, { method: 'POST' }) } catch { /* ignore */ }
+  }
+
   const markAllRead = async () => {
     setItems((prev) => prev.map((n) => (n.synthesized ? n : { ...n, read: true })))
     setStoredUnread(0)
@@ -173,25 +181,52 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                 const meta = META[n.type] || META.meeting_ready
                 const { Icon } = meta
                 const unread = n.synthesized || !n.read
+                // Synthesized action_due: the TASK is the headline; the timing
+                // ("Overdue" / "Due in 2d") is an urgency-colored badge, no timestamp.
+                // Stored events: title headline + body subline + real time-ago.
+                const isSynth = !!n.synthesized
+                const headline = isSynth ? (n.body || n.title) : n.title
+                const sub = isSynth ? null : n.body
+                const badge = isSynth ? n.title : null
+                const overdue = badge && badge.toLowerCase().startsWith('overdue')
+                const time = isSynth ? '' : timeAgo(n.created_at)
                 return (
-                  <button
+                  <div
                     key={n.id}
-                    type="button"
-                    onClick={() => clickItem(n)}
-                    className={`flex w-full items-start gap-3 border-b border-white/[0.04] px-4 py-3 text-left transition hover:bg-white/[0.04] ${unread ? 'bg-white/[0.02]' : ''}`}
+                    className={`group flex items-start gap-2 border-b border-white/[0.04] pl-4 pr-2 py-3 transition hover:bg-white/[0.04] ${unread ? 'bg-white/[0.02]' : ''}`}
                   >
-                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${meta.ring}`}>
-                      <Icon className={`h-[17px] w-[17px] ${meta.color}`} aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate text-[13px] font-semibold text-white/90">{n.title}</span>
-                        {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" />}
+                    <button
+                      type="button"
+                      onClick={() => clickItem(n)}
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    >
+                      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${meta.ring}`}>
+                        <Icon className={`h-[17px] w-[17px] ${meta.color}`} aria-hidden="true" />
                       </span>
-                      {n.body && <span className="mt-0.5 block truncate text-[12.5px] text-white/55">{n.body}</span>}
-                      <span className="mt-1 block text-[11px] text-white/35">{timeAgo(n.created_at)}</span>
-                    </span>
-                  </button>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="truncate text-[13px] font-semibold text-white/90">{headline}</span>
+                          {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" />}
+                        </span>
+                        {badge && (
+                          <span className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${overdue ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                            {badge}
+                          </span>
+                        )}
+                        {sub && <span className="mt-0.5 block truncate text-[12.5px] text-white/55">{sub}</span>}
+                        {time && <span className="mt-1 block text-[11px] text-white/35">{time}</span>}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); dismissItem(n) }}
+                      aria-label="Dismiss notification"
+                      title="Dismiss"
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/25 opacity-70 transition hover:bg-white/10 hover:text-cyan-300 group-hover:opacity-100"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                  </div>
                 )
               })
             )}
