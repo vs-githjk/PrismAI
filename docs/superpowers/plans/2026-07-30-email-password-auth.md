@@ -27,7 +27,7 @@
 | File | Responsibility |
 |------|----------------|
 | `frontend/src/components/SignupDialog.jsx` | Render OAuth plus email/password modes and invoke Supabase Auth. |
-| `frontend/e2e/auth.spec.js` | Exercise the login error path, signup confirmation path, and served privacy disclosure without a real Supabase project. |
+| `frontend/e2e/auth.spec.js` | Exercise the login error path and signup confirmation path without a real Supabase project. |
 | `frontend/playwright.config.js` | Supply isolated fake browser-safe Supabase values to the Playwright Vite server. |
 | `docs/legal/privacy-policy.md` | Keep the source legal draft accurate about managed email/password credentials. |
 | `frontend/public/legal/privacy-policy.md` | Serve the same legal text in the application. |
@@ -395,46 +395,13 @@ files. Do not stage the two local transcript files.
 ### Task 2: Correct the served credential disclosure and complete verification
 
 **Files:**
-- Modify: `frontend/e2e/auth.spec.js`
 - Modify: `docs/legal/privacy-policy.md`
 - Modify: `frontend/public/legal/privacy-policy.md`
 
 **Interfaces:**
-- Consumes: the existing `/#privacy` hash route and `LegalPage` Markdown renderer.
 - Produces: identical source and served privacy-policy copies that accurately describe Supabase-managed credentials.
 
-- [ ] **Step 1: Add a failing privacy-disclosure check**
-
-Append to `frontend/e2e/auth.spec.js`:
-
-```js
-test('privacy policy explains managed email/password credentials', async ({ page }) => {
-  await page.goto('/#privacy')
-  await expect(page.getByRole(
-    'heading',
-    { name: 'PrismAI Privacy Policy', exact: true },
-  )).toBeVisible()
-  await expect(page.getByText(
-    /Supabase Auth processes the credentials on our behalf/i,
-  )).toBeVisible()
-  await expect(page.getByText(
-    /PrismAI does not receive or store your plaintext password/i,
-  )).toBeVisible()
-})
-```
-
-- [ ] **Step 2: Run the test and verify the red state**
-
-Run from `frontend`:
-
-```powershell
-npm run test:e2e -- auth.spec.js
-```
-
-Expected: the first two auth tests pass and the privacy test fails because the
-current draft mentions only Google/Microsoft SSO.
-
-- [ ] **Step 3: Update both policy copies with the same paragraph**
+- [ ] **Step 1: Update both policy copies with the same paragraph**
 
 In both `docs/legal/privacy-policy.md` and
 `frontend/public/legal/privacy-policy.md`, replace the current
@@ -448,7 +415,7 @@ account with email and password, Supabase Auth processes the credentials on our
 behalf. PrismAI does not receive or store your plaintext password.
 ```
 
-- [ ] **Step 4: Verify the policies are identical and the tests pass**
+- [ ] **Step 2: Verify the policies are identical**
 
 Run from the repository root:
 
@@ -458,15 +425,7 @@ git diff --no-index --exit-code docs/legal/privacy-policy.md frontend/public/leg
 
 Expected: exit code `0`.
 
-Run from `frontend`:
-
-```powershell
-npm run test:e2e -- auth.spec.js
-```
-
-Expected: `3 passed`.
-
-- [ ] **Step 5: Verify the unchanged backend token boundary**
+- [ ] **Step 3: Verify the unchanged backend token boundary**
 
 Run from `backend`:
 
@@ -477,7 +436,15 @@ python -m unittest tests.test_auth
 Expected: all existing auth tests pass. No backend auth test or production file
 should change because email/password and OAuth sessions use the same bearer token.
 
-- [ ] **Step 6: Run final static and build checks**
+- [ ] **Step 4: Run final behavioral, static, and build checks**
+
+Run from `frontend`:
+
+```powershell
+npm run test:e2e -- auth.spec.js
+```
+
+Expected: `2 passed`.
 
 Run from the repository root:
 
@@ -497,18 +464,18 @@ npm run build
 
 Expected: exit code `0`, with only the existing large-chunk warning allowed.
 
-- [ ] **Step 7: Commit only the policy and its regression check**
+- [ ] **Step 5: Commit only the two policy copies**
 
 ```powershell
-git add -- frontend/e2e/auth.spec.js docs/legal/privacy-policy.md frontend/public/legal/privacy-policy.md
+git add -- docs/legal/privacy-policy.md frontend/public/legal/privacy-policy.md
 git diff --cached --check
 git commit -m "Document managed email password authentication"
 ```
 
-Before committing, `git diff --cached --name-only` must list exactly those three
+Before committing, `git diff --cached --name-only` must list exactly those two
 files.
 
-- [ ] **Step 8: Record the deployment-only Supabase requirements**
+- [ ] **Step 6: Record the deployment-only Supabase requirements**
 
 The implementation handoff must state all four operational requirements:
 
