@@ -9,6 +9,7 @@ import HowItWorks from './components/HowItWorks'
 import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
 import SignupDialog from './components/SignupDialog'
+import LegalPage from './components/LegalPage'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -588,6 +589,12 @@ const INITIAL_INVITE_TOKEN = (() => {
   return match ? match[1] : null
 })()
 
+// Detect a legal page (#privacy / #terms) synchronously so first render is correct.
+const INITIAL_LEGAL = (() => {
+  const m = window.location.hash.match(/^#(privacy|terms)$/)
+  return m ? m[1] : null
+})()
+
 // Detect an in-progress calendar OAuth callback synchronously (Google or Microsoft).
 // The provider redirects back to the ROOT (redirect_uri = origin) with ?code=&state=,
 // and the token exchange runs there. If the auth handler redirects root→/dashboard
@@ -790,6 +797,13 @@ function LandingScreen({ onViewDashboard, authReady = true, isReturner = false, 
           <HowItWorks />
           <PricingSection onGetStarted={openSignup} />
           <TeamSection />
+          <footer className="landing-legal-footer">
+            <span>© {new Date().getFullYear()} PrismAI</span>
+            <span className="sep">·</span>
+            <a href="#privacy">Privacy Policy</a>
+            <span className="sep">·</span>
+            <a href="#terms">Terms of Service</a>
+          </footer>
         </div>
         {signupOpen && (
           <SignupDialog
@@ -1118,6 +1132,8 @@ export default function App() {
   // hashchange/popstate can route in/out of the live sub-view. URL is the source
   // of truth — see the hash router effect below.
   const [liveToken, setLiveToken] = useState(INITIAL_LIVE_TOKEN)
+  // Legal page (#privacy / #terms), kept reactive so hash links route in/out.
+  const [legalView, setLegalView] = useState(INITIAL_LEGAL)
   const [shareCopied, setShareCopied] = useState(false)
   const [inviteStatus, setInviteStatus] = useState(INITIAL_INVITE_TOKEN ? 'loading' : null)
   const [inviteInfo, setInviteInfo] = useState(null)
@@ -1687,6 +1703,8 @@ export default function App() {
     const syncFromHash = () => {
       const liveMatch = window.location.hash.match(/^#live\/([a-f0-9]+)$/)
       const shareMatch = window.location.hash.match(/^#share\/([a-f0-9]+)$/)
+      const legalMatch = window.location.hash.match(/^#(privacy|terms)$/)
+      setLegalView(legalMatch ? legalMatch[1] : null)
       setLiveToken(liveMatch ? liveMatch[1] : null)
       const nextShare = shareMatch ? shareMatch[1] : null
       if (nextShare) {
@@ -2671,6 +2689,11 @@ export default function App() {
     a.click()
     URL.revokeObjectURL(url)
     return true
+  }
+
+  // Legal pages (#privacy / #terms) — intercepts on any path.
+  if (legalView) {
+    return <LegalPage page={legalView} onBack={() => { window.location.hash = '' }} />
   }
 
   // Landing screen — shown to first-time visitors
