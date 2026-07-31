@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
 
 from analysis_routes import create_analysis_router
+from auth_routes import router as auth_helper_router
 from calendar_routes import router as calendar_router
 from ms_calendar_routes import router as ms_calendar_router
 from chat_routes import create_chat_router, router as chat_router
@@ -113,6 +114,7 @@ async def security_middleware(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     return response
 
+app.include_router(auth_helper_router)  # POST /auth/provider-hint — OAuth-only account hint for the login dialog
 app.include_router(storage_router)
 app.include_router(proxy_router)
 app.include_router(knowledge_router)
