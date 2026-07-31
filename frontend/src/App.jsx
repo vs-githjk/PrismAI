@@ -8,7 +8,7 @@ import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
 import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
-import SignupDialog from './components/SignupDialog'
+import SignupDialog, { ResetPasswordDialog } from './components/SignupDialog'
 import LegalPage from './components/LegalPage'
 import OAuthConsent from './components/OAuthConsent'
 import AgentTags from './components/AgentTags'
@@ -840,6 +840,7 @@ async function generateCodeChallenge(verifier) {
 export default function App() {
   const [authReady, setAuthReady] = useState(() => !supabase)
   const [authSession, setAuthSession] = useState(null)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [crossMeetingInsights, setCrossMeetingInsights] = useState(null)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(
     () => sessionStorage.getItem('prism_active_workspace') || null
@@ -1239,6 +1240,10 @@ export default function App() {
       if (session) sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
       setAuthSession(session || (isTestRunSession() ? TEST_AUTH_SESSION : null))
       setAuthReady(true)
+      if (_event === 'PASSWORD_RECOVERY') {
+        // Arrived from a reset-password email link — offer to set a new one.
+        setPasswordRecovery(true)
+      }
       if (_event === 'SIGNED_IN') {
         const pendingInvite = sessionStorage.getItem('prism_pending_invite')
         if (pendingInvite) {
@@ -1246,7 +1251,12 @@ export default function App() {
           window.location.replace(`/dashboard#invite/${pendingInvite}`)
           return
         }
-        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH && !INITIAL_OAUTH_CONSENT) {
+        if (window.location.pathname === '/dashboard') {
+          // OAuth redirectTo lands here — mark the session as in-app now, not
+          // before the redirect (a canceled OAuth attempt must leave no trace).
+          sessionStorage.setItem(VISITED_KEY, '1')
+          sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+        } else if (sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH && !INITIAL_OAUTH_CONSENT) {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard')
@@ -2938,6 +2948,10 @@ export default function App() {
           personaCustomPrompt={personaCustomPrompt}
           onSavePersonalPersona={savePersonalPersona}
         />
+
+        {passwordRecovery && (
+          <ResetPasswordDialog onClose={() => setPasswordRecovery(false)} />
+        )}
 
         {showSpeakerModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
