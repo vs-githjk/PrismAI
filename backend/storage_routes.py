@@ -319,10 +319,44 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
             .neq("user_id", recorder_user_id)
             .execute()
         )
+        resolved_segments = entry.__dict__.get("_resolved_segments")
         for member in (members.data or []):
             member_id = member["user_id"]
             fan_id = _fan_out_id(entry.id, member_id)
-            client.table("meetings").upsert({
+            member_row_exists = False
+            if entry.recall_bot_id:
+                # Converge on the member's existing copy of this bot's meeting
+                # (self-saved by their own dashboard, or fanned out from another
+                # writer) instead of inserting a parallel fan_id row — the other
+                # half of the stand-in duplication bug. Scoped to THIS workspace
+                # so a copy the owner moved back to Personal is never captured.
+                try:
+                    prior = (
+                        client.table("meetings").select("id")
+                        .eq("recall_bot_id", entry.recall_bot_id).eq("user_id", member_id)
+                        .eq("workspace_id", workspace_id)
+                        .order("id").limit(1).execute()
+                    )
+                    if prior.data:
+                        fan_id = prior.data[0]["id"]
+                        member_row_exists = True
+                except Exception as exc:
+                    print(f"[fanout] member dedup lookup failed for {member_id}: {exc}")
+            if member_row_exists:
+                # The member already has this meeting. NEVER overwrite their row
+                # with this writer's payload (a member could otherwise tamper with
+                # every teammate's copy — title/transcript/result/share_token).
+                # The only converged write is recording ENRICHMENT, and only when
+                # this writer actually holds the owner-resolved segments.
+                if resolved_segments:
+                    # UPDATE, not upsert — an upsert would re-insert a skeleton row
+                    # if the member deleted their copy between the lookup and here.
+                    client.table("meetings").update({
+                        "recording_provider": entry.__dict__.get("_resolved_provider") or "recall",
+                        "transcript_segments": resolved_segments,
+                    }).eq("id", fan_id).eq("user_id", member_id).execute()
+                continue
+            fan_payload = {
                 "id": fan_id,
                 "user_id": member_id,
                 "date": entry.date,
@@ -344,8 +378,18 @@ async def _fan_out_to_workspace(client, entry: "MeetingEntry", recorder_user_id:
                 "recall_bot_id": entry.recall_bot_id,
                 "recording_provider": entry.__dict__.get("_resolved_provider")
                                        or ("recall" if entry.recall_bot_id else None),
-                "transcript_segments": entry.__dict__.get("_resolved_segments"),
-            }).execute()
+                "transcript_segments": resolved_segments,
+            }
+            try:
+                client.table("meetings").upsert(fan_payload).execute()
+            except Exception as exc:
+                # Unique (recall_bot_id, user_id) backstop: the member's own save
+                # landed between our lookup and this insert. Their row wins; a
+                # later writer holding segments will enrich it.
+                if entry.recall_bot_id and "meetings_bot_user_unique" in str(exc):
+                    print(f"[fanout] member {member_id} row appeared concurrently — skipped")
+                    continue
+                raise
             print(f"[fanout] wrote meeting {fan_id} to member {member_id} in workspace {workspace_id}")
             # Tell the teammate a new meeting landed in their shared workspace history.
             # meeting_id = their fan-out copy so click-through opens in their dashboard.
@@ -383,6 +427,8 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
     recall_bot_id = entry.recall_bot_id or None
     recording_provider: str | None = None
     transcript_segments = None
+    is_bot_owner = False
+    bot_owner_id: str | None = None
     if recall_bot_id:
         try:
             bs = (
@@ -393,11 +439,23 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
                 .execute()
             )
             row = bs.data if bs else None
+            bot_owner_id = (row or {}).get("user_id") or _bot_owner_id(client, recall_bot_id)
             if row and row.get("user_id") == user_id:
+                is_bot_owner = True
                 recording_provider = "recall"
                 transcript_segments = row.get("transcript_segments")
+            elif _caller_in_bot_workspace(client, user_id, recall_bot_id):
+                # A dedup'd teammate (member of the bot's workspace) KEEPS the
+                # recall_bot_id reference — it's the one-row-per-(bot, user)
+                # dedup key here and in fan-out. Dropping it (the old behavior)
+                # made their auto-save invisible to every dedup guard →
+                # duplicate rows → duplicated action items in Brief/insights.
+                # Only the recording payload stays owner-gated.
+                pass
             else:
-                # Caller doesn't own this bot — drop the reference rather than 403
+                # Stranger to the bot — drop the reference. Keeping it would let
+                # an arbitrary caller mint a row pointing at someone else's bot
+                # and use it as a capability (recording fetch, tombstone delete).
                 recall_bot_id = None
         except Exception as exc:
             print(f"[storage] bot_sessions lookup failed for {recall_bot_id}: {exc}")
@@ -406,6 +464,14 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
     # Mutate the entry so _fan_out_to_workspace (called below) sees the same
     # resolved values — it uses these to populate teammate rows in Task 6.
     entry.recall_bot_id = recall_bot_id
+    # SERVER-DERIVE the recorder for bot meetings. `recorded_by_user_id` decides
+    # meeting ownership in delete_meeting / move_meeting (whose cascades touch
+    # every member's copy), so a client-supplied value is a privilege-escalation
+    # knob: omitting it made the caller "owner" of a meeting recorded by someone
+    # else. The bot's owner is the only truthful recorder. Convention preserved:
+    # unset on the recorder's OWN row, set on everyone else's.
+    if recall_bot_id and bot_owner_id:
+        entry.recorded_by_user_id = None if bot_owner_id == user_id else bot_owner_id
     entry.__dict__["_resolved_segments"] = transcript_segments
     entry.__dict__["_resolved_provider"] = recording_provider
 
@@ -415,6 +481,7 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
     # with a fresh client-generated id would otherwise insert a DUPLICATE row (the
     # "5 meetings from 1 join" bug). If a row for this bot already exists for this
     # user, reuse its id so the upsert updates it in place instead of duplicating.
+    reused_prior = False
     if recall_bot_id:
         try:
             prior = (
@@ -424,10 +491,11 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
             )
             if prior.data:
                 entry.id = prior.data[0]["id"]
+                reused_prior = True
         except Exception as exc:
             print(f"[storage] recall_bot_id dedup lookup failed for {recall_bot_id}: {exc}")
 
-    client.table("meetings").upsert({
+    row_payload = {
         "id": entry.id,
         "user_id": user_id,
         "date": entry.date,
@@ -442,7 +510,32 @@ async def save_meeting(entry: MeetingEntry, user_id: str = Depends(require_user_
         "recall_bot_id": recall_bot_id,
         "recording_provider": recording_provider,
         "transcript_segments": transcript_segments,
-    }).execute()
+    }
+    # A non-owner converging onto their fan-out copy has no recording payload —
+    # updating with Nones would wipe the player fields the fan-out already wrote.
+    if reused_prior and not is_bot_owner:
+        row_payload.pop("recording_provider")
+        row_payload.pop("transcript_segments")
+    try:
+        client.table("meetings").upsert(row_payload).execute()
+    except Exception as exc:
+        # The unique (recall_bot_id, user_id) backstop fired: another writer
+        # inserted this user's row between our dedup lookup and this upsert.
+        # Converge onto theirs instead of failing the save.
+        if not (recall_bot_id and "meetings_bot_user_unique" in str(exc)):
+            raise
+        prior = (
+            client.table("meetings").select("id")
+            .eq("recall_bot_id", recall_bot_id).eq("user_id", user_id)
+            .order("id").limit(1).execute()
+        )
+        if not prior.data:
+            raise
+        entry.id = row_payload["id"] = prior.data[0]["id"]
+        if not is_bot_owner:
+            row_payload.pop("recording_provider", None)
+            row_payload.pop("transcript_segments", None)
+        client.table("meetings").upsert(row_payload).execute()
 
     # Notify the owner their bot meeting finished analysing (async — they may have
     # left the tab). Only for BOT meetings (paste/upload are synchronous + on-screen)
@@ -565,6 +658,43 @@ async def get_meeting(meeting_id: int, user_id: str = Depends(require_user_id)):
     return meeting
 
 
+def _bot_workspace_and_owner(client, recall_bot_id: str) -> tuple:
+    """(workspace_id, owner_user_id) for a bot from meeting_bots (durable)."""
+    try:
+        r = (client.table("meeting_bots").select("workspace_id, owner_user_id")
+             .eq("bot_id", recall_bot_id).maybe_single().execute())
+        row = (r.data if r else None) or {}
+        return row.get("workspace_id"), row.get("owner_user_id")
+    except Exception:
+        return None, None
+
+
+def _caller_in_bot_workspace(client, user_id: str, recall_bot_id: str) -> bool:
+    ws, _owner = _bot_workspace_and_owner(client, recall_bot_id)
+    return bool(ws) and is_workspace_member(client, user_id, ws)
+
+
+def _bot_owner_id(client, recall_bot_id: str) -> str | None:
+    """The bot's true owner from server-owned tables, or None if the bot is
+    unknown to both (legacy bots predating them — callers then fall back to
+    row-derived ownership rather than locking the real owner out)."""
+    try:
+        r = (client.table("bot_sessions").select("user_id")
+             .eq("bot_id", recall_bot_id).maybe_single().execute())
+        if r and r.data and r.data.get("user_id"):
+            return r.data["user_id"]
+    except Exception:
+        pass
+    return _bot_workspace_and_owner(client, recall_bot_id)[1]
+
+
+def _caller_owns_bot(client, user_id: str, recall_bot_id: str) -> bool:
+    """True when the caller owns the bot, OR the bot is unknown to the
+    server-owned tables (nothing to contradict the row's claim)."""
+    owner = _bot_owner_id(client, recall_bot_id)
+    return owner is None or owner == user_id
+
+
 def _mark_bot_deleted(client, recall_bot_id: str):
     """Tombstone the bot so startup recovery can't resurrect the meeting. Both
     recover_active_bots paths (backfill: status='done'; poller re-spawn: live states)
@@ -620,7 +750,10 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
     if not ws:
         d = client.table("meetings").delete().eq("id", meeting_id).eq("user_id", user_id).execute()
         _delete_meeting_transcript_rag(client, meeting_id, user_id)
-        if row.get("user_id") == user_id and bot_id:
+        # Tombstone only when the caller actually OWNS the bot — owning a row that
+        # merely references someone else's bot must not let them kill that bot's
+        # recovery/persist (cross-user DoS).
+        if row.get("user_id") == user_id and bot_id and _caller_owns_bot(client, user_id, bot_id):
             _mark_bot_deleted(client, bot_id)
         deleted = len(d.data or [])
         print(f"[delete] meeting {meeting_id} scope=personal deleted={deleted} bot={bot_id}")
@@ -641,6 +774,13 @@ async def delete_meeting(meeting_id: int, user_id: str = Depends(require_user_id
 
     # Owner → remove EVERY copy so it's gone for the whole workspace. Bot meetings share
     # recall_bot_id; otherwise all copies share (workspace_id, date).
+    # For a BOT meeting the cascade is destructive across members, so require real
+    # bot ownership (rows are client-writable; bot_sessions/meeting_bots are not).
+    if bot_id and not _caller_owns_bot(client, user_id, bot_id):
+        d = client.table("meetings").delete().eq("user_id", user_id).eq("recall_bot_id", bot_id).execute()
+        deleted = len(d.data or [])
+        print(f"[delete] meeting {meeting_id} scope=own_copy (not bot owner) deleted={deleted} bot={bot_id}")
+        return {"ok": True, "scope": "own_copy", "deleted": deleted}
     if bot_id:
         d = client.table("meetings").delete().eq("recall_bot_id", bot_id).eq("workspace_id", ws).execute()
     else:
@@ -981,7 +1121,7 @@ async def get_meeting_recording(meeting_id: int, user_id: str = Depends(require_
     try:
         res = (
             client.table("meetings")
-            .select("id, user_id, workspace_id, recall_bot_id, recording_provider")
+            .select("id, user_id, workspace_id, recorded_by_user_id, recall_bot_id, recording_provider")
             .eq("id", meeting_id)
             .maybe_single()
             .execute()
@@ -999,6 +1139,38 @@ async def get_meeting_recording(meeting_id: int, user_id: str = Depends(require_
     bot_id = meeting.get("recall_bot_id")
     if not bot_id:
         return {"url": None, "reason": "not_a_bot_meeting"}
+
+    # Capability check against the BOT, not just the row: a meetings row can be
+    # minted by any caller, so row access alone must never gate the recording.
+    # Allowed: the bot's owner, or a member of the bot's workspace. Legacy bots
+    # absent from BOTH meeting_bots and bot_sessions fall back to row access.
+    bot_ws, bot_owner = _bot_workspace_and_owner(client, bot_id)
+    bot_known = bool(bot_ws or bot_owner)
+    if not bot_known:
+        try:
+            r = (client.table("bot_sessions").select("user_id")
+                 .eq("bot_id", bot_id).maybe_single().execute())
+            bot_owner = (r.data or {}).get("user_id") if r else None
+            bot_known = bool(bot_owner)
+        except Exception:
+            pass
+    if bot_known:
+        allowed = (bot_owner == user_id) or (
+            bool(bot_ws) and is_workspace_member(client, user_id, bot_ws)
+        ) or _caller_owns_bot(client, user_id, bot_id)
+        if not allowed:
+            # Legitimate share path: the row IS the bot owner's meeting, shared into
+            # a workspace the caller belongs to (bot predates workspace stamping, or
+            # the owner moved a personal recording into the workspace). Safe because
+            # recorded_by_user_id is server-derived from the bot owner on save — a
+            # caller cannot claim to be relaying someone else's recording.
+            row_ws = meeting.get("workspace_id")
+            row_recorder = meeting.get("recorded_by_user_id") or meeting.get("user_id")
+            allowed = bool(row_ws) and row_recorder == bot_owner and is_workspace_member(
+                client, user_id, row_ws
+            )
+        if not allowed:
+            return {"url": None, "reason": "not_authorized"}
 
     if not RECALL_API_KEY:
         raise HTTPException(status_code=503, detail="Recall.ai not configured")

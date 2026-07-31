@@ -190,3 +190,21 @@ create table if not exists push_subscriptions (
 );
 create index if not exists push_subscriptions_user_idx on push_subscriptions(user_id);
 alter table push_subscriptions enable row level security;
+
+-- ── One meetings row per (recall_bot_id, user_id) ────────────────────────────
+-- DB-level backstop for the meeting-save races: server persist, the owner's
+-- browser, dedup'd teammates' browsers and workspace fan-out each do
+-- lookup-then-upsert, so two concurrent writers can both miss and both insert
+-- (the duplicated-action-items bug). App-side dedup converges the common
+-- orderings; this closes the residual TOCTOU at the only layer every writer and
+-- process shares. Both write sites in storage_routes.py catch the violation and
+-- converge onto the existing row. Dedup first (keep the OLDEST row per pair —
+-- existing share links and fan-out ids reference it). Idempotent.
+delete from meetings m using meetings m2
+ where m.recall_bot_id is not null
+   and m2.recall_bot_id = m.recall_bot_id
+   and m2.user_id = m.user_id
+   and m2.id < m.id;
+create unique index if not exists meetings_bot_user_unique
+  on meetings (recall_bot_id, user_id)
+  where recall_bot_id is not null;

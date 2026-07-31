@@ -47,6 +47,10 @@ MIGRATION_ORDER = [
     "proxy_representations_migration.sql",      # proxy_profiles + proxy_representations
     "proxy_workspace_profiles_migration.sql",   # per-workspace profiles + borrow_scopes
     "proxy_default_standin_migration.sql",       # per-space default stand-in
+    "proxy_followup_migration.sql",              # stand-in follow-up brief columns
+    "workspace_integrations_migration.sql",      # per-workspace tool configs (#2)
+    "custom_keyterms_migration.sql",             # transcription glossary (correct_meeting_text)
+    "meetings_bot_user_unique_migration.sql",    # one meetings row per (bot, user) — dedup backstop
     "meeting_bots_workspace_migration.sql",      # meeting_bots.workspace_id (durable server-side persist)
     "sandbox_migration.sql",                     # E2B sandbox columns on user_settings (screen presentation)
     "personal_access_tokens_migration.sql",      # MCP connector API keys (Claude/ChatGPT)
