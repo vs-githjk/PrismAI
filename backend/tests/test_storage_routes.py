@@ -294,6 +294,295 @@ class StorageRoutesTestCase(unittest.TestCase):
         self.assertEqual(len(bot_rows), 1)          # not duplicated
         self.assertEqual(bot_rows[0]["id"], 111)    # reused the existing row's id
 
+    def test_save_meeting_dedups_for_non_owner_saver(self):
+        # The stand-in duplication bug: a workspace teammate whose dashboard polls
+        # a bot they DON'T own also auto-saves on done. Their save must converge
+        # onto the fan-out copy the server persist already wrote for them — not
+        # insert a second row (which duplicated every action item in Brief/insights).
+        import caches
+        caches.invalidate_user_workspaces()
+        self.fake_db.tables["bot_sessions"] = [
+            {"bot_id": "bot-standin", "user_id": "owner-9", "transcript_segments": [{"t": 1}]},
+        ]
+        # The caller keeps the bot reference only as a member of the bot's workspace.
+        self.fake_db.tables["meeting_bots"] = [
+            {"bot_id": "bot-standin", "owner_user_id": "owner-9", "workspace_id": "ws-1"},
+        ]
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "owner-9"},
+            {"workspace_id": "ws-1", "user_id": "user-123"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 111, "user_id": "owner-9", "date": "2026-07-30T10:00:00Z", "title": "M",
+             "score": 50, "transcript": "t", "result": {"summary": "x"},
+             "recall_bot_id": "bot-standin", "workspace_id": "ws-1",
+             "recording_provider": "recall", "transcript_segments": [{"t": 1}]},
+            {"id": 222, "user_id": "user-123", "date": "2026-07-30T10:00:00Z", "title": "M",
+             "score": 50, "transcript": "t", "result": {"summary": "x"},
+             "recall_bot_id": "bot-standin", "workspace_id": "ws-1",
+             "recorded_by_user_id": "owner-9",
+             "recording_provider": "recall", "transcript_segments": [{"t": 1}]},
+        ]
+        response = self.client.post("/meetings", json={
+            "id": 999, "date": "2026-07-30T10:00:31Z", "title": "M", "score": 50,
+            "transcript": "t", "result": {"summary": "x"},
+            "recall_bot_id": "bot-standin", "recorded_by_user_id": "owner-9",
+        })
+        self.assertEqual(response.status_code, 200)
+        mine = [r for r in self.fake_db.tables["meetings"] if r.get("user_id") == "user-123"]
+        self.assertEqual(len(mine), 1)            # converged — no duplicate row
+        self.assertEqual(mine[0]["id"], 222)      # reused the fan-out copy's id
+        # The non-owner save must not clobber the recording fields the fan-out wrote.
+        self.assertEqual(mine[0]["transcript_segments"], [{"t": 1}])
+        self.assertEqual(mine[0]["recording_provider"], "recall")
+
+    def test_fan_out_reuses_members_existing_bot_row(self):
+        # A member who self-saved before the fan-out arrived must get their row
+        # UPDATED in place (enriched with recording fields), not a second fan_id copy.
+        import asyncio as _asyncio
+
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "owner-9"},
+            {"workspace_id": "ws-1", "user_id": "member-2"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 555, "user_id": "member-2", "date": "2026-07-30T10:00:31Z", "title": "M",
+             "score": 50, "transcript": "t", "result": {"summary": "x"},
+             "share_token": "member-tok",
+             "recall_bot_id": "bot-standin", "workspace_id": "ws-1"},
+        ]
+        entry = storage_routes.MeetingEntry(
+            id=111, date="2026-07-30T10:00:00Z", title="M", score=50,
+            transcript="t", result={"summary": "x"},
+            workspace_id="ws-1", recall_bot_id="bot-standin",
+        )
+        entry.__dict__["_resolved_provider"] = "recall"
+        entry.__dict__["_resolved_segments"] = [{"t": 1}]
+        _asyncio.run(storage_routes._fan_out_to_workspace(self.fake_db, entry, "owner-9", "ws-1"))
+        member_rows = [r for r in self.fake_db.tables["meetings"] if r.get("user_id") == "member-2"]
+        self.assertEqual(len(member_rows), 1)     # no fan_id duplicate
+        self.assertEqual(member_rows[0]["id"], 555)
+        self.assertEqual(member_rows[0]["transcript_segments"], [{"t": 1}])  # self-healed
+        # Converged enrichment must not clobber the member's own share links.
+        self.assertEqual(member_rows[0]["share_token"], "member-tok")
+
+    def test_fan_out_does_not_clobber_recording_fields_without_segments(self):
+        # Reverse order: server fan-out (with segments) landed first; a teammate's
+        # save triggers a second fan-out that has NO resolved segments. Updating
+        # existing rows must leave the recording fields alone.
+        import asyncio as _asyncio
+
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "user-123"},
+            {"workspace_id": "ws-1", "user_id": "member-2"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 555, "user_id": "member-2", "date": "2026-07-30T10:00:00Z", "title": "M",
+             "score": 50, "transcript": "t", "result": {"summary": "x"},
+             "share_token": "member-tok",
+             "recall_bot_id": "bot-standin", "workspace_id": "ws-1",
+             "recording_provider": "recall", "transcript_segments": [{"t": 1}]},
+        ]
+        entry = storage_routes.MeetingEntry(
+            id=999, date="2026-07-30T10:00:31Z", title="TAMPERED", score=50,
+            transcript="attacker text", result={"summary": "attacker"},
+            workspace_id="ws-1", recall_bot_id="bot-standin",
+            recorded_by_user_id="owner-9",
+        )
+        _asyncio.run(storage_routes._fan_out_to_workspace(self.fake_db, entry, "owner-9", "ws-1"))
+        member_rows = [r for r in self.fake_db.tables["meetings"] if r.get("user_id") == "member-2"]
+        self.assertEqual(len(member_rows), 1)
+        self.assertEqual(member_rows[0]["transcript_segments"], [{"t": 1}])
+        self.assertEqual(member_rows[0]["recording_provider"], "recall")
+        # A converging writer without segments must not touch the member's row
+        # AT ALL — no content tamper, no share-link wipe.
+        self.assertEqual(member_rows[0]["title"], "M")
+        self.assertEqual(member_rows[0]["transcript"], "t")
+        self.assertEqual(member_rows[0]["share_token"], "member-tok")
+
+    def test_save_meeting_drops_bot_reference_for_strangers(self):
+        # A caller with NO relationship to the bot (not owner, not in its
+        # workspace) must not be able to store a reference to it — the reference
+        # is a capability (recording fetch, tombstone delete).
+        import caches
+        caches.invalidate_user_workspaces()
+        self.fake_db.tables["bot_sessions"] = [
+            {"bot_id": "bot-victim", "user_id": "victim-1", "transcript_segments": [{"t": 1}]},
+        ]
+        self.fake_db.tables["meeting_bots"] = [
+            {"bot_id": "bot-victim", "owner_user_id": "victim-1", "workspace_id": "ws-victim"},
+        ]
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-victim", "user_id": "victim-1"},
+        ]
+        response = self.client.post("/meetings", json={
+            "id": 999, "date": "2026-07-30T10:00:00Z", "title": "fake", "score": 1,
+            "transcript": "x", "result": {"summary": "x"}, "recall_bot_id": "bot-victim",
+        })
+        self.assertEqual(response.status_code, 200)
+        saved = [r for r in self.fake_db.tables["meetings"] if r.get("user_id") == "user-123"]
+        self.assertEqual(len(saved), 1)
+        self.assertIsNone(saved[0].get("recall_bot_id"))
+        self.assertIsNone(saved[0].get("transcript_segments"))
+
+    def test_delete_does_not_tombstone_someone_elses_bot(self):
+        # Cross-user DoS guard: deleting your own row that references another
+        # user's bot must NOT flip their meeting_bots row to 'deleted'.
+        self.fake_db.tables["meeting_bots"] = [
+            {"bot_id": "bot-victim", "owner_user_id": "victim-1",
+             "workspace_id": None, "status": "done"},
+        ]
+        self.fake_db.tables["bot_sessions"] = [
+            {"bot_id": "bot-victim", "user_id": "victim-1"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 999, "user_id": "user-123", "date": "2026-07-30T10:00:00Z",
+             "title": "fake", "workspace_id": None, "recall_bot_id": "bot-victim"},
+        ]
+        response = self.client.delete("/meetings/999")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "done")
+
+    def test_delete_tombstones_own_bot(self):
+        self.fake_db.tables["meeting_bots"] = [
+            {"bot_id": "bot-mine", "owner_user_id": "user-123",
+             "workspace_id": None, "status": "done"},
+        ]
+        self.fake_db.tables["bot_sessions"] = [
+            {"bot_id": "bot-mine", "user_id": "user-123"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 998, "user_id": "user-123", "date": "2026-07-30T10:00:00Z",
+             "title": "mine", "workspace_id": None, "recall_bot_id": "bot-mine"},
+        ]
+        response = self.client.delete("/meetings/998")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "deleted")
+
+    def test_recording_endpoint_rejects_bot_strangers(self):
+        # Even with row access, the recording is gated by the BOT's owner/workspace.
+        import caches
+        caches.invalidate_user_workspaces()
+        self.fake_db.tables["meeting_bots"] = [
+            {"bot_id": "bot-victim", "owner_user_id": "victim-1", "workspace_id": "ws-victim"},
+        ]
+        self.fake_db.tables["bot_sessions"] = [
+            {"bot_id": "bot-victim", "user_id": "victim-1"},
+        ]
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-victim", "user_id": "victim-1"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            # Attacker-owned row referencing the victim's bot (e.g. minted before
+            # the save-side guard existed).
+            {"id": 999, "user_id": "user-123", "date": "2026-07-30T10:00:00Z",
+             "title": "fake", "workspace_id": None, "recall_bot_id": "bot-victim"},
+        ]
+        response = self.client.get("/meetings/999/recording")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"url": None, "reason": "not_authorized"})
+
+    def _bot_owned_by(self, bot_id, owner, workspace_id=None):
+        import caches
+        caches.invalidate_user_workspaces()
+        self.fake_db.tables["bot_sessions"] = [{"bot_id": bot_id, "user_id": owner}]
+        self.fake_db.tables["meeting_bots"] = [
+            {"bot_id": bot_id, "owner_user_id": owner,
+             "workspace_id": workspace_id, "status": "done"},
+        ]
+
+    def test_save_meeting_server_derives_recorder_from_bot_owner(self):
+        # recorded_by_user_id decides meeting ownership in delete/move (whose
+        # cascades hit every member's copy). A client must not be able to omit it
+        # and become "owner" of someone else's recording.
+        self._bot_owned_by("bot-v", "victim-1", "ws-1")
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "victim-1"},
+            {"workspace_id": "ws-1", "user_id": "user-123"},
+        ]
+        response = self.client.post("/meetings", json={
+            "id": 4242, "date": "2026-07-30T10:00:00Z", "title": "M", "score": 1,
+            "transcript": "t", "result": {"summary": "x"},
+            "workspace_id": "ws-1", "recall_bot_id": "bot-v",
+            # recorded_by_user_id deliberately omitted (the escalation attempt)
+        })
+        self.assertEqual(response.status_code, 200)
+        mine = [r for r in self.fake_db.tables["meetings"] if r.get("user_id") == "user-123"]
+        self.assertEqual(mine[0]["recorded_by_user_id"], "victim-1")
+
+    def test_workspace_delete_by_non_bot_owner_only_removes_own_copy(self):
+        # The cascade + tombstone must require real bot ownership, not a
+        # self-declared row.
+        self._bot_owned_by("bot-v", "victim-1", "ws-1")
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "victim-1"},
+            {"workspace_id": "ws-1", "user_id": "user-123"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 100, "user_id": "victim-1", "date": "2026-07-30T10:00:00Z",
+             "title": "M", "workspace_id": "ws-1", "recall_bot_id": "bot-v"},
+            {"id": 4242, "user_id": "user-123", "date": "2026-07-30T10:00:00Z",
+             "title": "M", "workspace_id": "ws-1", "recall_bot_id": "bot-v",
+             "recorded_by_user_id": None},  # attacker's row, ownership unclaimed
+        ]
+        response = self.client.delete("/meetings/4242")
+        self.assertEqual(response.status_code, 200)
+        remaining = {r["id"] for r in self.fake_db.tables["meetings"]}
+        self.assertEqual(remaining, {100})  # victim's row survives
+        self.assertEqual(self.fake_db.tables["meeting_bots"][0]["status"], "done")
+
+    def test_recording_allows_workspace_member_for_moved_personal_bot(self):
+        # Legit flow: bot recorded in Personal scope (meeting_bots.workspace_id
+        # NULL), owner later moved the meeting into a workspace and fanned it out.
+        # Members must still get the player.
+        self._bot_owned_by("bot-o", "owner-9", None)
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "owner-9"},
+            {"workspace_id": "ws-1", "user_id": "user-123"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 77, "user_id": "user-123", "date": "2026-07-30T10:00:00Z",
+             "title": "M", "workspace_id": "ws-1", "recall_bot_id": "bot-o",
+             "recorded_by_user_id": "owner-9"},
+        ]
+        with patch.object(storage_routes, "RECALL_API_KEY", ""):
+            response = self.client.get("/meetings/77/recording")
+        # Passed the capability gate (fails later on the missing Recall key).
+        self.assertEqual(response.status_code, 503)
+
+    def test_recording_still_blocks_forged_recorder_claim(self):
+        # Same shape as above but the row is NOT in a workspace the caller shares
+        # with the bot owner → still refused.
+        self._bot_owned_by("bot-o", "owner-9", None)
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-attacker", "user_id": "user-123"},
+        ]
+        self.fake_db.tables["meetings"] = [
+            {"id": 78, "user_id": "user-123", "date": "2026-07-30T10:00:00Z",
+             "title": "M", "workspace_id": None, "recall_bot_id": "bot-o",
+             "recorded_by_user_id": "owner-9"},
+        ]
+        response = self.client.get("/meetings/78/recording")
+        self.assertEqual(response.json(), {"url": None, "reason": "not_authorized"})
+
+    def test_fan_out_enrichment_does_not_resurrect_deleted_member_row(self):
+        import asyncio as _asyncio
+        self.fake_db.tables["workspace_members"] = [
+            {"workspace_id": "ws-1", "user_id": "owner-9"},
+            {"workspace_id": "ws-1", "user_id": "member-2"},
+        ]
+        self.fake_db.tables["meetings"] = []  # member deleted their copy
+        entry = storage_routes.MeetingEntry(
+            id=111, date="2026-07-30T10:00:00Z", title="M", score=50,
+            transcript="t", result={"summary": "x"},
+            workspace_id="ws-1", recall_bot_id="bot-standin",
+        )
+        entry.__dict__["_resolved_segments"] = [{"t": 1}]
+        _asyncio.run(storage_routes._fan_out_to_workspace(self.fake_db, entry, "owner-9", "ws-1"))
+        rows = [r for r in self.fake_db.tables["meetings"] if r.get("user_id") == "member-2"]
+        # A fresh full copy is fine; a 3-field skeleton is not.
+        self.assertTrue(all(r.get("date") and r.get("result") is not None for r in rows))
+
     def test_move_meeting_owner_to_personal_cascades_removes_fanout(self):
         # Owner moves a workspace meeting to Personal → own copy becomes Personal AND
         # teammates' fan-out copies are removed (the meeting leaves the workspace).

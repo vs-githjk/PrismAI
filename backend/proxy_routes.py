@@ -593,16 +593,43 @@ async def generate_standin_followups(bot_id: str, meeting_id, result: dict, tran
         return
     for rep in (reps.data or []):
         if (rep.get("followup_brief") or "").strip():
+            # Already briefed. If the email never went out (crash between the claim
+            # and the send), retry JUST the send — never rebuild/re-claim, so a
+            # delivered email can't be duplicated.
+            if not rep.get("followup_sent_at"):
+                try:
+                    if await _email_followup_brief(rep, rep["followup_brief"], rep.get("meeting_label", "")):
+                        supabase.table("proxy_representations").update(
+                            {"followup_sent_at": datetime.now(timezone.utc).isoformat()}
+                        ).eq("id", rep["id"]).is_("followup_sent_at", "null").execute()
+                        print(f"[standin] re-sent pending brief email rep={rep.get('id')}")
+                except Exception as exc:
+                    print(f"[standin] brief email retry failed rep={rep.get('id')}: {exc!r}")
             continue
         try:
             brief = await _build_followup_brief(rep, result, transcript)
             if not brief:
                 continue
-            update = {"followup_brief": brief, "followup_meeting_id": meeting_id}
+            # CLAIM before emailing: stamp the brief conditionally on it still
+            # being unset. Dispatch can race itself (overlapping deploy processes,
+            # the startup backfill re-running after a crashed stamp) — whoever
+            # loses this conditional update must NOT send a second email.
+            claim = (
+                supabase.table("proxy_representations")
+                .update({"followup_brief": brief, "followup_meeting_id": meeting_id})
+                .eq("id", rep["id"]).is_("followup_brief", "null")
+                .execute()
+            )
+            if not (claim.data or []):
+                print(f"[standin] rep={rep.get('id')} already claimed by another dispatcher — skipping email")
+                continue
             if await _email_followup_brief(rep, brief, rep.get("meeting_label", "")):
-                update["followup_sent_at"] = datetime.now(timezone.utc).isoformat()
-            supabase.table("proxy_representations").update(update).eq("id", rep["id"]).execute()
-            print(f"[standin] briefed author for rep={rep.get('id')} emailed={'followup_sent_at' in update}")
+                supabase.table("proxy_representations").update(
+                    {"followup_sent_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("id", rep["id"]).execute()
+                print(f"[standin] briefed author for rep={rep.get('id')} emailed=True")
+            else:
+                print(f"[standin] briefed author for rep={rep.get('id')} emailed=False")
         except Exception as exc:
             print(f"[standin] followup brief failed rep={rep.get('id')}: {exc!r}")
 

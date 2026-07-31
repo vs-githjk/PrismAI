@@ -252,9 +252,13 @@ class TestSaveMeetingEnrichment(unittest.TestCase):
         self.assertEqual(meetings_upsert["payload"].get("transcript_segments"),
                          [{"speaker": "A", "start": 0, "end": 1, "text": "hi"}])
 
-    def test_writes_nulls_when_caller_does_not_own_bot(self):
+    def test_writes_nulls_when_caller_is_a_stranger_to_the_bot(self):
         import storage_routes
-        # Bot exists but belongs to user-2; caller is user-1
+        # Bot exists but belongs to user-2; caller is user-1 with NO workspace tie
+        # to the bot. The reference is dropped (it would otherwise be a capability
+        # for recording fetch / tombstone delete) and segments never leak. A
+        # workspace TEAMMATE keeping the reference (the dedup fix) is covered in
+        # test_storage_routes.test_save_meeting_dedups_for_non_owner_saver.
         client = self._make_client({
             "bot_id": "bot-B", "user_id": "user-2",
             "transcript_segments": [{"speaker": "X", "start": 0, "end": 1, "text": "secret"}],

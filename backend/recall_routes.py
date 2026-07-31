@@ -1241,6 +1241,8 @@ async def recover_active_bots() -> None:
         bid = row.get("bot_id")
         if bid and bid not in _standin_persisted:
             await _persist_bot_meeting(bid)
+            # Idempotent per rep — catches briefs the process died before sending.
+            await _dispatch_standin_followups(bid)
             backfilled += 1
     if backfilled:
         print(f"[recall] startup backfill checked {backfilled} finished bot(s) for missing dashboard rows")
@@ -2046,18 +2048,22 @@ async def _persist_bot_meeting(bot_id: str) -> None:
     was closed before analysis finished would otherwise live only in bot_sessions —
     invisible to the user. This saves it ourselves via save_meeting (so workspace
     fan-out + transcript indexing happen too). Idempotent: in-memory guard + an
-    existing-row check on meetings.recall_bot_id, so it never double-writes alongside a
-    browser save (the browser POST sets recall_bot_id, which this checks first)."""
+    existing-row check on meetings.recall_bot_id scoped to the OWNER — teammate
+    copies also carry recall_bot_id (for their own dedup), and an unscoped check
+    would let a teammate's save block the absent owner's copy."""
     if not supabase or bot_id in _standin_persisted:
         return
     try:
+        owner_user_id, workspace_id = _resolve_owner_workspace(bot_id)
+        if not owner_user_id:
+            return
         existing = (
             supabase.table("meetings").select("id")
-            .eq("recall_bot_id", bot_id).limit(1).execute()
+            .eq("recall_bot_id", bot_id).eq("user_id", owner_user_id).limit(1).execute()
         )
         if existing.data:
             _standin_persisted.add(bot_id)
-            return  # already on a dashboard (browser saved it first)
+            return  # the owner already has this meeting (browser saved it first)
         # If the user explicitly deleted this meeting, don't resurrect it. Startup
         # recovery / a stray poller would otherwise re-persist a bot the user removed.
         try:
@@ -2070,9 +2076,6 @@ async def _persist_bot_meeting(bot_id: str) -> None:
                 return
         except Exception:
             pass
-        owner_user_id, workspace_id = _resolve_owner_workspace(bot_id)
-        if not owner_user_id:
-            return
         bs = (
             supabase.table("bot_sessions").select("result, transcript")
             .eq("bot_id", bot_id).maybe_single().execute()
@@ -2099,16 +2102,47 @@ async def _persist_bot_meeting(bot_id: str) -> None:
         _standin_persisted.add(bot_id)
         await save_meeting(entry, owner_user_id)
         print(f"[recall] auto-promoted bot {bot_id} into meetings for {owner_user_id} (workspace={workspace_id})")
-        # Close the stand-in loop: brief each absent author this bot represented
-        # (best-effort, non-blocking) — what happened for them + answers to what
-        # they asked + tasks now theirs. No-op if this bot delivered no stand-ins.
-        try:
-            from proxy_routes import generate_standin_followups
-            asyncio.create_task(generate_standin_followups(bot_id, entry.id, result, transcript))
-        except Exception as exc:
-            print(f"[recall] standin followup dispatch failed for {bot_id}: {exc}")
+        # Stand-in follow-up briefs are dispatched by _dispatch_standin_followups
+        # (called after this in _process_bot_transcript) — NOT here. Dispatching
+        # here silently skipped the absent author's brief whenever a browser won
+        # the save race (the early return above fires before reaching this point).
     except Exception as exc:
         print(f"[recall] auto-promote failed for {bot_id}: {exc}")
+
+
+async def _dispatch_standin_followups(bot_id: str, result=None, transcript: str = "") -> None:
+    """Close the stand-in loop: brief each absent author this bot represented —
+    what they missed, answers to what they asked, and tasks now theirs. Runs
+    after EVERY analysis regardless of who saved the meeting first (idempotent
+    per rep — generate_standin_followups skips already-briefed reps). Call with
+    just a bot_id (e.g. startup backfill) to load result/transcript from
+    bot_sessions."""
+    if not supabase:
+        return
+    try:
+        if result is None:
+            bs = (
+                supabase.table("bot_sessions").select("result, transcript")
+                .eq("bot_id", bot_id).maybe_single().execute()
+            )
+            data = (bs.data if bs else None) or {}
+            result = data.get("result")
+            transcript = data.get("transcript") or ""
+        if not isinstance(result, dict):
+            return
+        meeting_id = None
+        owner_user_id, _ws = _resolve_owner_workspace(bot_id)
+        if owner_user_id:
+            row = (
+                supabase.table("meetings").select("id")
+                .eq("recall_bot_id", bot_id).eq("user_id", owner_user_id)
+                .limit(1).execute()
+            )
+            meeting_id = (row.data or [{}])[0].get("id")
+        from proxy_routes import generate_standin_followups
+        await generate_standin_followups(bot_id, meeting_id, result, transcript)
+    except Exception as exc:
+        print(f"[recall] standin followup dispatch failed for {bot_id}: {exc}")
 
 
 # Back-compat alias: stand-in bots are headless and persist immediately.
@@ -2378,6 +2412,10 @@ async def _process_bot_transcript(bot_id: str):
         # save_meeting dedups on recall_bot_id (per user), so a browser that DID save
         # first just makes this a no-op — awaiting here can't double-write.
         await _persist_bot_meeting(bot_id)
+        # Brief absent stand-in authors AFTER the persist attempt, unconditionally —
+        # inside _persist_bot_meeting the dispatch was skipped whenever a browser
+        # saved first, so the author's follow-up email silently never happened.
+        await _dispatch_standin_followups(bot_id, result, transcript)
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)
     except Exception as exc:
