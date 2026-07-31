@@ -1,9 +1,43 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, MailCheck, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
 import { UI_SCREEN_KEY, VISITED_KEY, TEST_RUN_SESSION_KEY } from '../lib/sessionKeys'
 
 const DASHBOARD_PATH = '/dashboard'
+const PROVIDER_LABELS = { google: 'Google', azure: 'Microsoft' }
+
+// Asks the backend whether this email belongs to an OAuth-only account (one
+// that can never password-login). Best-effort: any failure returns null and
+// the caller falls back to a generic message.
+async function oauthProviderMessage(email) {
+  try {
+    const resp = await apiFetch('/auth/provider-hint', {
+      method: 'POST',
+      skipAuth: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    if (!resp.ok) return null
+    const { providers } = await resp.json()
+    const labels = (providers || []).map((p) => PROVIDER_LABELS[p] || p)
+    if (!labels.length) return null
+    const name = labels.join(' / ')
+    return `This account uses ${name} — sign in with the ${name} button above.`
+  } catch {
+    return null
+  }
+}
+
+function useEscapeToClose(onClose) {
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+}
 
 function GoogleIcon() {
   return (
@@ -42,10 +76,13 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
   const [submitError, setSubmitError] = useState('')
   const [loading, setLoading] = useState(false)
   const [verificationSent, setVerificationSent] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
   const isSignup = mode === 'signup'
   const dashboardUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${DASHBOARD_PATH}`
     : DASHBOARD_PATH
+
+  useEscapeToClose(onClose)
 
   const signInWith = async (provider, options = {}) => {
     setSubmitError('')
@@ -53,9 +90,8 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
       setSubmitError('Supabase auth is not configured yet.')
       return
     }
-    sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
-    sessionStorage.setItem(VISITED_KEY, '1')
-    sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+    // Session keys are set by App.jsx's SIGNED_IN handler after the OAuth
+    // return — writing them here would mark a canceled OAuth attempt as visited.
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -78,7 +114,26 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
     setPassword('')
     setSubmitError('')
     setVerificationSent(false)
+    setResetSent(false)
     onModeChange?.(nextMode)
+  }
+
+  const handleForgotPassword = async () => {
+    const address = email.trim()
+    if (!address) {
+      setSubmitError('Enter your email above first, then tap "Forgot password?".')
+      return
+    }
+    if (!supabase) {
+      setSubmitError('Supabase auth is not configured yet.')
+      return
+    }
+    setSubmitError('')
+    setLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(address, { redirectTo: dashboardUrl })
+    setLoading(false)
+    if (error) setSubmitError(error.message)
+    else setResetSent(true)
   }
 
   const handleSubmit = async (event) => {
@@ -98,7 +153,14 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
           options: { emailRedirectTo: dashboardUrl },
         })
         if (error) throw error
-        if (data.session) goToDashboard()
+        // Supabase's enumeration protection returns a user with no identities
+        // (and no error) when the email is already registered.
+        if (data.user && !data.session && data.user.identities?.length === 0) {
+          setSubmitError(
+            (await oauthProviderMessage(email.trim()))
+              || 'An account with this email already exists. Log in instead.'
+          )
+        } else if (data.session) goToDashboard()
         else setVerificationSent(true)
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -109,7 +171,17 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
         goToDashboard()
       }
     } catch (error) {
-      setSubmitError(error.message || 'Something went wrong. Try again.')
+      let message = error.message || 'Something went wrong. Try again.'
+      // Both errors can mean "this email is a Google/Microsoft account with
+      // no password" — check before showing a dead-end message.
+      if (/already registered|invalid login credentials/i.test(message)) {
+        const hint = await oauthProviderMessage(email.trim())
+        if (hint) message = hint
+        else if (/already registered/i.test(message)) {
+          message = 'An account with this email already exists. Log in instead.'
+        }
+      }
+      setSubmitError(message)
     } finally {
       setLoading(false)
     }
@@ -128,14 +200,17 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
           <X aria-hidden="true" />
         </button>
 
-        {verificationSent ? (
+        {verificationSent || resetSent ? (
           <div className="signup-verification">
             <div className="signup-verification-icon" aria-hidden="true"><MailCheck /></div>
-            <p className="signup-kicker">Verify your email</p>
+            <p className="signup-kicker">{resetSent ? 'Reset your password' : 'Verify your email'}</p>
             <h2 id="auth-dialog-title" className="signup-title">Check your inbox.</h2>
             <p className="signup-body">
-              We sent a verification link to <strong>{email.trim()}</strong>.
-              After you confirm, you will be sent to the dashboard.
+              {resetSent ? (
+                <>We sent a password reset link to <strong>{email.trim()}</strong>. Open it to set a new password.</>
+              ) : (
+                <>We sent a verification link to <strong>{email.trim()}</strong>. After you confirm, you will be sent to the dashboard.</>
+              )}
             </p>
             <button type="button" className="signup-submit" onClick={onClose}>Done</button>
           </div>
@@ -183,12 +258,19 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
                 type="password"
                 autoComplete={isSignup ? 'new-password' : 'current-password'}
                 required
+                minLength={isSignup ? 6 : undefined}
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value)
                   setSubmitError('')
                 }}
               />
+
+              {!isSignup && (
+                <button type="button" className="signup-forgot" onClick={handleForgotPassword} disabled={loading}>
+                  Forgot password?
+                </button>
+              )}
 
               {submitError && <p className="signup-submit-error" role="alert">{submitError}</p>}
 
@@ -211,6 +293,74 @@ export default function SignupDialog({ mode = 'signup', onModeChange, onClose })
               <a href="#privacy" onClick={onClose}>Privacy Policy</a>.
             </p>
           </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Shown when the user arrives from a password-recovery email link
+// (supabase-js emits PASSWORD_RECOVERY after processing the URL hash).
+export function ResetPasswordDialog({ onClose }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+
+  useEscapeToClose(onClose)
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    const { error: updateError } = await supabase.auth.updateUser({ password })
+    setLoading(false)
+    if (updateError) setError(updateError.message)
+    else setDone(true)
+  }
+
+  return (
+    <div className="signup-overlay" onMouseDown={onClose}>
+      <div
+        className="signup-dialog signup-auth-card"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reset-dialog-title"
+      >
+        <button type="button" className="signup-close" onClick={onClose} aria-label="Close dialog">
+          <X aria-hidden="true" />
+        </button>
+        <p className="signup-kicker">PrismAI account</p>
+        <h2 id="reset-dialog-title" className="signup-title">
+          {done ? 'Password updated.' : 'Set a new password.'}
+        </h2>
+        {done ? (
+          <>
+            <p className="signup-body">Use it the next time you log in.</p>
+            <button type="button" className="signup-submit" onClick={onClose}>Done</button>
+          </>
+        ) : (
+          <form className="signup-form" onSubmit={handleSubmit}>
+            <AuthField
+              id="reset-password"
+              label="New password"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setError('')
+              }}
+            />
+            {error && <p className="signup-submit-error" role="alert">{error}</p>}
+            <button type="submit" className="signup-submit" disabled={loading}>
+              {loading && <Loader2 className="signup-spinner" aria-hidden="true" />}
+              Save password
+            </button>
+          </form>
         )}
       </div>
     </div>
