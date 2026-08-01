@@ -285,7 +285,7 @@ export default function WorkspaceIsland(props) {
                         <button
                           type="button"
                           onClick={() => removeMember(wsSettingsId, member.user_id)}
-                          className="shrink-0 text-[10.5px] text-red-400/50 transition hover:text-red-400/80"
+                          className="shrink-0 rounded-md border border-red-400/25 bg-red-400/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-red-300/75 transition hover:border-red-400/50 hover:bg-red-400/[0.12] hover:text-red-200"
                         >
                           Remove
                         </button>
@@ -300,7 +300,7 @@ export default function WorkspaceIsland(props) {
                   <button
                     type="button"
                     onClick={deleteWorkspaceFromSettings}
-                    className="text-[11px] text-red-400/55 transition hover:text-red-400/85"
+                    className="rounded-lg border border-red-400/30 bg-red-400/[0.07] px-3.5 py-1.5 text-[11px] font-semibold text-red-300/80 transition hover:border-red-400/55 hover:bg-red-400/[0.12] hover:text-red-200"
                   >
                     Delete workspace
                   </button>
@@ -308,7 +308,7 @@ export default function WorkspaceIsland(props) {
                   <button
                     type="button"
                     onClick={() => removeMember(wsSettingsId, user?.id)}
-                    className="text-[11px] text-red-400/55 transition hover:text-red-400/85"
+                    className="rounded-lg border border-red-400/30 bg-red-400/[0.07] px-3.5 py-1.5 text-[11px] font-semibold text-red-300/80 transition hover:border-red-400/55 hover:bg-red-400/[0.12] hover:text-red-200"
                   >
                     Leave workspace
                   </button>

@@ -11,7 +11,7 @@ import StatusIsland from './StatusIsland'
  * When `onBack` is provided (i.e. a meeting is focused) a back arrow returns
  * to the previous non-meeting view; the Home sidebar item still works too.
  */
-export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature, onBack = null, onMenu = null }) {
+export default function DashboardTopbar({ title, searchValue, onSearchChange, actions = null, status = null, signedOut = false, onLockedFeature, onBack = null, onMenu = null, bell = null }) {
   const trackRef = useRef(null)
   const textRef = useRef(null)
   const [shift, setShift] = useState(0) // px the title must travel to reveal its tail; 0 = no marquee
@@ -94,6 +94,9 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
         />
         <Search className="h-[18px] w-[18px] shrink-0 text-white/45" aria-hidden="true" />
       </div>
+
+      {/* Notification bell — right of search. */}
+      {bell}
     </header>
   )
 }

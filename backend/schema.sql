@@ -142,3 +142,45 @@ as $$
     updated_at = now()
   where bot_id = p_bot_id;
 $$;
+
+-- ── notifications (#9) ────────────────────────────────────────────────────────
+-- Persistent notification center: a bell + unread count + history surviving
+-- refresh (distinct from the transient statusNotify toast). user_id/workspace_id
+-- are TEXT (workspace convention). Stored rows cover event-driven types
+-- (meeting_ready / bot_issue / workspace_activity / meeting_soon); action_due is
+-- synthesized fresh at GET (never stored) so overdue status can't go stale.
+-- RLS enabled with NO policies: anon/authenticated keys are denied; the
+-- service-role backend bypasses RLS and scopes every query by user_id itself.
+create table if not exists notifications (
+  id           bigserial primary key,
+  user_id      text not null,
+  type         text not null,
+  title        text,
+  body         text,
+  meeting_id   bigint,
+  link         text,
+  workspace_id text,
+  read         boolean not null default false,
+  dedup_key    text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists notifications_user_idx on notifications(user_id, read, created_at desc);
+-- Idempotent event hooks: a (user_id, dedup_key) can only be inserted once.
+-- Postgres treats NULLs as distinct, so non-deduped rows (dedup_key null) never collide.
+create unique index if not exists notifications_dedup_idx on notifications(user_id, dedup_key);
+alter table notifications enable row level security;
+
+-- ── push_subscriptions (#9, Web Push for meeting_soon) ────────────────────────
+-- One row per browser push subscription (Web Push / VAPID). endpoint is the
+-- unique key the push service gives us; p256dh + auth are the client's encryption
+-- keys. Service-role backend only (RLS on, no policies).
+create table if not exists push_subscriptions (
+  id         bigserial primary key,
+  user_id    text not null,
+  endpoint   text not null unique,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on push_subscriptions(user_id);
+alter table push_subscriptions enable row level security;

@@ -137,6 +137,33 @@ bot_store: dict = {}
 # live_token → bot_id index for public live-share lookups
 _live_token_index: dict = {}
 
+
+def _notify_bot_issue(bot_id: str, message: str) -> None:
+    """Best-effort 'your meeting bot had a problem' notification to the bot's owner
+    (empty transcript / no-show / analysis error). Deduped per bot so the same
+    failure surfaced by webhook + poll notifies once. Prefers Recall's SPECIFIC
+    leave diagnostic ('never admitted from the waiting room…') over the generic
+    message when one was captured. Never raises."""
+    from notifications import create_notification
+    store = bot_store.get(bot_id, {}) or {}
+    uid = store.get("user_id")
+    reason = store.get("leave_reason")
+    if (not uid or not reason) and supabase:
+        try:
+            r = supabase.table("bot_sessions").select("user_id, leave_reason").eq("bot_id", bot_id).limit(1).execute()
+            row = (r.data or [{}])[0]
+            uid = uid or row.get("user_id")
+            reason = reason or row.get("leave_reason")
+        except Exception:
+            pass
+    if not uid:
+        return
+    # Use Recall's reason only when it's specific — the generic fallbacks all start
+    # with "Prism left (…)" and are less useful than our own message.
+    body = reason if (reason and not reason.startswith("Prism left")) else message
+    create_notification(uid, "bot_issue", "Meeting bot issue", body=body,
+                        dedup_key=f"botissue:{bot_id}")
+
 # Tracks bots whose proactive checker has been re-spawned after a server restart,
 # so repeated /bot-status polls don't keep creating new tasks.
 _proactive_respawned: set[str] = set()
@@ -2317,6 +2344,11 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["status"] = "error"
             bot_store[bot_id]["error"] = error_msg
             _db_save(bot_id, {"status": "error", "error": error_msg})
+            # Mark the bot TERMINAL in meeting_bots too, else startup recovery keeps
+            # re-spawning its poller on every deploy → the same failure + notification
+            # fires again and again (the no-show / crash paths already do this).
+            _mb_update_status(bot_id, "error")
+            _notify_bot_issue(bot_id, "Your meeting had no transcript — it may have been too short or had no speech.")
             print(f"[recall] ERROR: empty transcript")
             return
 
@@ -2336,6 +2368,7 @@ async def _process_bot_transcript(bot_id: str):
             bot_store[bot_id]["error"] = error_msg
             _db_save(bot_id, {"status": "error", "error": error_msg})
             _mb_update_status(bot_id, "no_show")
+            _notify_bot_issue(bot_id, "Your meeting bot joined but nobody spoke — no meeting was saved.")
             print(f"[recall] no-show: {human_words} human words < {_MIN_HUMAN_WORDS}, skipping persist for bot {bot_id}")
             from realtime_routes import cleanup_bot_state
             cleanup_bot_state(bot_id)
@@ -2399,6 +2432,7 @@ async def _process_bot_transcript(bot_id: str):
         bot_store[bot_id]["error"] = str(exc)
         _db_save(bot_id, {"status": "error", "error": str(exc)})
         _mb_update_status(bot_id, "error")
+        _notify_bot_issue(bot_id, "Something went wrong analysing your meeting. Please try again.")
         print(f"[recall] ERROR processing bot {bot_id}: {exc}")
         from realtime_routes import cleanup_bot_state
         cleanup_bot_state(bot_id)

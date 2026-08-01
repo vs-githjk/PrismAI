@@ -8,7 +8,9 @@ import { TextRotate } from '@/components/ui/text-rotate'
 import HowItWorks from './components/HowItWorks'
 import PricingSection from './components/PricingSection'
 import TeamSection from './components/TeamSection'
-import SignupDialog from './components/SignupDialog'
+import SignupDialog, { ResetPasswordDialog } from './components/SignupDialog'
+import LegalPage from './components/LegalPage'
+import OAuthConsent from './components/OAuthConsent'
 import AgentTags from './components/AgentTags'
 import HealthScoreCard from './components/HealthScoreCard'
 import SummaryCard from './components/SummaryCard'
@@ -588,6 +590,17 @@ const INITIAL_INVITE_TOKEN = (() => {
   return match ? match[1] : null
 })()
 
+// Detect a legal page (#privacy / #terms) synchronously so first render is correct.
+const INITIAL_LEGAL = (() => {
+  const m = window.location.hash.match(/^#(privacy|terms)$/)
+  return m ? m[1] : null
+})()
+
+// Detect the OAuth consent screen (#oauth-consent?...) — the MCP connector flow.
+// It's entered by a full-page redirect (from our AS or after Supabase sign-in),
+// so a module-load check is sufficient.
+const INITIAL_OAUTH_CONSENT = (window.location.hash || '').startsWith('#oauth-consent')
+
 // Detect an in-progress calendar OAuth callback synchronously (Google or Microsoft).
 // The provider redirects back to the ROOT (redirect_uri = origin) with ?code=&state=,
 // and the token exchange runs there. If the auth handler redirects root→/dashboard
@@ -790,6 +803,13 @@ function LandingScreen({ onViewDashboard, authReady = true, isReturner = false, 
           <HowItWorks />
           <PricingSection onGetStarted={openSignup} />
           <TeamSection />
+          <footer className="landing-legal-footer">
+            <span>© {new Date().getFullYear()} PrismAI</span>
+            <span className="sep">·</span>
+            <a href="#privacy">Privacy Policy</a>
+            <span className="sep">·</span>
+            <a href="#terms">Terms of Service</a>
+          </footer>
         </div>
         {signupOpen && (
           <SignupDialog
@@ -820,6 +840,7 @@ async function generateCodeChallenge(verifier) {
 export default function App() {
   const [authReady, setAuthReady] = useState(() => !supabase)
   const [authSession, setAuthSession] = useState(null)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [crossMeetingInsights, setCrossMeetingInsights] = useState(null)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(
     () => sessionStorage.getItem('prism_active_workspace') || null
@@ -1118,6 +1139,8 @@ export default function App() {
   // hashchange/popstate can route in/out of the live sub-view. URL is the source
   // of truth — see the hash router effect below.
   const [liveToken, setLiveToken] = useState(INITIAL_LIVE_TOKEN)
+  // Legal page (#privacy / #terms), kept reactive so hash links route in/out.
+  const [legalView, setLegalView] = useState(INITIAL_LEGAL)
   const [shareCopied, setShareCopied] = useState(false)
   const [inviteStatus, setInviteStatus] = useState(INITIAL_INVITE_TOKEN ? 'loading' : null)
   const [inviteInfo, setInviteInfo] = useState(null)
@@ -1217,6 +1240,10 @@ export default function App() {
       if (session) sessionStorage.removeItem(TEST_RUN_SESSION_KEY)
       setAuthSession(session || (isTestRunSession() ? TEST_AUTH_SESSION : null))
       setAuthReady(true)
+      if (_event === 'PASSWORD_RECOVERY') {
+        // Arrived from a reset-password email link — offer to set a new one.
+        setPasswordRecovery(true)
+      }
       if (_event === 'SIGNED_IN') {
         const pendingInvite = sessionStorage.getItem('prism_pending_invite')
         if (pendingInvite) {
@@ -1224,7 +1251,12 @@ export default function App() {
           window.location.replace(`/dashboard#invite/${pendingInvite}`)
           return
         }
-        if (window.location.pathname !== '/dashboard' && sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH) {
+        if (window.location.pathname === '/dashboard') {
+          // OAuth redirectTo lands here — mark the session as in-app now, not
+          // before the redirect (a canceled OAuth attempt must leave no trace).
+          sessionStorage.setItem(VISITED_KEY, '1')
+          sessionStorage.setItem(UI_SCREEN_KEY, 'app')
+        } else if (sessionStorage.getItem(UI_SCREEN_KEY) !== 'landing' && !INITIAL_LIVE_TOKEN && !INITIAL_SHARE_TOKEN && !INITIAL_CAL_OAUTH && !INITIAL_OAUTH_CONSENT) {
           sessionStorage.setItem(VISITED_KEY, '1')
           sessionStorage.setItem(UI_SCREEN_KEY, 'app')
           window.location.replace('/dashboard')
@@ -1236,7 +1268,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard) return
+    if (!authReady || INITIAL_SHARE_TOKEN || INITIAL_LIVE_TOKEN || isDashboard || INITIAL_OAUTH_CONSENT) return
     if (sessionStorage.getItem(UI_SCREEN_KEY) === 'landing') return
     // Don't navigate away while a calendar OAuth exchange is in flight on this page —
     // a full navigation cancels the exchange fetch. The exchange effect navigates to
@@ -1687,6 +1719,8 @@ export default function App() {
     const syncFromHash = () => {
       const liveMatch = window.location.hash.match(/^#live\/([a-f0-9]+)$/)
       const shareMatch = window.location.hash.match(/^#share\/([a-f0-9]+)$/)
+      const legalMatch = window.location.hash.match(/^#(privacy|terms)$/)
+      setLegalView(legalMatch ? legalMatch[1] : null)
       setLiveToken(liveMatch ? liveMatch[1] : null)
       const nextShare = shareMatch ? shareMatch[1] : null
       if (nextShare) {
@@ -2673,6 +2707,17 @@ export default function App() {
     return true
   }
 
+  // OAuth consent (#oauth-consent) — the MCP connector authorization screen.
+  // Highest priority: intercept on any path, even for signed-in users.
+  if (INITIAL_OAUTH_CONSENT) {
+    return <OAuthConsent />
+  }
+
+  // Legal pages (#privacy / #terms) — intercepts on any path.
+  if (legalView) {
+    return <LegalPage page={legalView} onBack={() => { window.location.hash = '' }} />
+  }
+
   // Landing screen — shown to first-time visitors
   if (showLanding) {
     return (
@@ -2903,6 +2948,10 @@ export default function App() {
           personaCustomPrompt={personaCustomPrompt}
           onSavePersonalPersona={savePersonalPersona}
         />
+
+        {passwordRecovery && (
+          <ResetPasswordDialog onClose={() => setPasswordRecovery(false)} />
+        )}
 
         {showSpeakerModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">

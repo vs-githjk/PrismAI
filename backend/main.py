@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
 
 from analysis_routes import create_analysis_router
+from auth_routes import router as auth_helper_router
 from calendar_routes import router as calendar_router
 from ms_calendar_routes import router as ms_calendar_router
 from chat_routes import create_chat_router, router as chat_router
@@ -40,6 +41,8 @@ from storage_routes import router as storage_router
 from proxy_routes import router as proxy_router
 from workspace_routes import router as workspace_router
 from voice.audio_routes import router as voice_router
+from pat_routes import router as pat_router
+from notifications_routes import router as notifications_router
 
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -56,6 +59,10 @@ async def lifespan(app: FastAPI):
     # promoted to the dashboard without a browser or webhook. Best-effort, non-blocking.
     from recall_routes import recover_active_bots
     asyncio.create_task(recover_active_bots())
+    # #9: server-side meeting_soon reminder scanner (fires 5-min-before even with
+    # the tab closed). Opted-in users only; no-op when no push subscriptions exist.
+    from reminders import reminder_loop
+    asyncio.create_task(reminder_loop())
     try:
         yield
     finally:
@@ -101,6 +108,7 @@ async def security_middleware(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     return response
 
+app.include_router(auth_helper_router)  # POST /auth/provider-hint — OAuth-only account hint for the login dialog
 app.include_router(storage_router)
 app.include_router(proxy_router)
 app.include_router(knowledge_router)
@@ -112,6 +120,12 @@ app.include_router(calendar_router)
 app.include_router(ms_calendar_router)
 app.include_router(realtime_router)
 app.include_router(voice_router)  # /voice/audio-in + /voice/speaker + /voice/speaker-page
+app.include_router(pat_router)  # /account/tokens — MCP connector credentials
+app.include_router(notifications_router)  # /notifications — #9 notification center + Web Push
+from mcp_server import router as mcp_router
+app.include_router(mcp_router)  # POST /mcp — Claude/ChatGPT connector (Streamable HTTP)
+from oauth_routes import router as oauth_router
+app.include_router(oauth_router)  # OAuth 2.1 AS for the Claude connector
 
 app.include_router(create_analysis_router(openai_client))
 app.include_router(create_chat_router(openai_client))
