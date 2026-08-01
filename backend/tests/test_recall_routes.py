@@ -263,6 +263,43 @@ class BotVariantTestCase(unittest.TestCase):
             self.assertNotIn("variant", body, f"knob={off!r} should use Recall's default")
 
 
+class BotAudioInRecordingTestCase(unittest.TestCase):
+    """The bot's voice belongs in the RECORDING; its transcript text stays ours."""
+
+    def test_payload_includes_bot_audio_by_default(self):
+        body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertEqual(body["recording_config"]["include_bot_in_recording"],
+                         {"audio": True})
+
+    def test_payload_omits_when_knob_disabled(self):
+        with patch.object(recall_routes, "_INCLUDE_BOT_AUDIO", False):
+            body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        self.assertNotIn("include_bot_in_recording", body["recording_config"])
+
+    def test_drops_recall_stt_copy_of_bot_turns(self):
+        # Recall now hears the bot, so its transcript carries the bot too — and with a
+        # plausible STT error ("Prism" heard the summary slightly differently). Ours wins.
+        persona = next(iter(recall_routes.PERSONA_NAMES.values()))
+        segments = [
+            {"speaker": "Alice", "text": "what did we decide", "start": 1.0},
+            {"speaker": "PrismAI", "text": "you decided too ship on friday", "start": 2.0},
+            {"speaker": persona, "text": "anything else", "start": 3.0},
+            {"speaker": "Bob", "text": "nope", "start": 4.0},
+        ]
+        kept = recall_routes._drop_bot_segments(segments)
+        self.assertEqual([s["speaker"] for s in kept], ["Alice", "Bob"])
+
+    def test_keeps_humans_and_standin_display_names(self):
+        # A stand-in bot displays a real person's name and delivers by chat, not voice —
+        # dropping it would delete a human's real speech.
+        segments = [{"speaker": "Dana Patel", "text": "hi", "start": 1.0}]
+        self.assertEqual(recall_routes._drop_bot_segments(segments), segments)
+
+    def test_empty_and_none_are_passthrough(self):
+        self.assertEqual(recall_routes._drop_bot_segments([]), [])
+        self.assertIsNone(recall_routes._drop_bot_segments(None))
+
+
 class KeytermGroundingTestCase(unittest.TestCase):
     """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""
 

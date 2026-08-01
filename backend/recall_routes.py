@@ -30,9 +30,8 @@ _JOIN_PER_MINUTE = 10
 # realtime_routes._record_bot_line). Covers every persona display name + the
 # default. Used to detect whether the bot participated when assembling the
 # final transcript.
-_BOT_NAME_PREFIXES = tuple(
-    f"{n}:" for n in ({DEFAULT_BOT_NAME, "Prism", "PrismAI"} | set(PERSONA_NAMES.values()))
-)
+_BOT_SPEAKER_NAMES = {DEFAULT_BOT_NAME, "Prism", "PrismAI"} | set(PERSONA_NAMES.values())
+_BOT_NAME_PREFIXES = tuple(f"{n}:" for n in _BOT_SPEAKER_NAMES)
 
 # Minimum human words for a transcript to count as a real meeting. Below this it's a
 # no-show / instant-leave (nobody actually spoke) — analysing + saving it produces a
@@ -106,6 +105,13 @@ _BOT_TILE_ENABLED = os.getenv("PRISM_BOT_LOGO", "1") != "0"
 # web_4_core is what their docs recommend for Output Media. Costs more per bot-hour, so
 # it's a knob: PRISM_BOT_VARIANT="" (or "web") restores the default instance.
 _BOT_VARIANT = os.getenv("PRISM_BOT_VARIANT", "web_4_core").strip()
+# Recall defaults to EXCLUDING the bot's own audio from the recording, so replaying a
+# meeting the bot spoke in plays back with the bot silent — it looks like the humans
+# were talking to nobody. This is a RECORDING fix only: the transcript keeps using our
+# own _record_bot_line text (the exact string we sent to TTS — strictly better than
+# re-transcribing our own synthesized speech), and _drop_bot_segments below removes
+# Recall's duplicate of it. Video can't be included; audio is the whole feature.
+_INCLUDE_BOT_AUDIO = os.getenv("PRISM_INCLUDE_BOT_AUDIO", "1") != "0"
 _BOT_TILE_PATH = os.path.join(os.path.dirname(__file__), "assets", "bot_tile.jpg")
 
 
@@ -772,6 +778,10 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             "video_mixed_layout": "speaker_view",
             "video_mixed_mp4": {},
             "audio_mixed_mp3": {},
+            # Put the bot's own voice in the recorded mp3/mp4 (Recall omits it by
+            # default). Playback-only — see _INCLUDE_BOT_AUDIO. Recall rejects
+            # {"video": ...} here; audio is the only supported key.
+            **({"include_bot_in_recording": {"audio": True}} if _INCLUDE_BOT_AUDIO else {}),
             # Raw per-participant PCM (16kHz mono s16le) → our audio-in WS. Separate
             # (not mixed) so each frame carries participant identity — that replaces
             # the webhook diarization the retired transcript.data path gave us.
@@ -1155,6 +1165,25 @@ async def _resolve_bot_persona_name(bot_id: str) -> str:
         return name or DEFAULT_BOT_NAME
     except Exception:
         return DEFAULT_BOT_NAME
+
+
+def _drop_bot_segments(segments: list[dict] | None) -> list[dict] | None:
+    """Remove Recall-transcribed lines spoken by the bot itself.
+
+    Once include_bot_in_recording is on, the bot's voice is in the recording, so Recall
+    transcribes it too — and the merge below splices in our OWN copy of those same turns
+    (_record_bot_line), which would make the bot appear twice. Ours wins: it's the exact
+    string we handed to TTS, where Recall's is an STT pass over our own synthesized
+    speech. Unconditional (not tied to the flag) because it's a no-op when the recording
+    has no bot audio, and dropping an STT copy of text we authored is always right.
+
+    Matches on the bot's display name only, which is what Recall labels it with. A
+    stand-in bot displays a real person's name and is therefore untouched — correct: it
+    delivers by chat, never by voice, so there's nothing of its own in the audio."""
+    if not segments:
+        return segments
+    return [s for s in segments
+            if (s.get("speaker") or "").strip() not in _BOT_SPEAKER_NAMES]
 
 
 def _normalize_bot_speaker(lines: list[str], canonical: str) -> list[str]:
@@ -2158,7 +2187,10 @@ async def _process_bot_transcript(bot_id: str):
             raw = resp.json()
             print(f"[recall] transcript raw type={type(raw).__name__} len={len(raw) if isinstance(raw, (list, dict)) else 'n/a'} preview={str(raw)[:500]}")
             transcript = _transcript_from_recall_data(raw)
-            segments = _segments_from_recall_data(raw)
+            # Drop Recall's STT copy of the bot's own turns before anything downstream
+            # (merge spine AND the seekable segments the player uses) sees them — our
+            # exact _record_bot_line text gets spliced back in below.
+            segments = _drop_bot_segments(_segments_from_recall_data(raw))
 
         # The live buffer holds the humans' utterances interleaved with the bot's own
         # turns (recorded via _record_bot_line). Used as the fallback spine below; the
