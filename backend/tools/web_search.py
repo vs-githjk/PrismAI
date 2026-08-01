@@ -131,8 +131,11 @@ async def web_search(args: dict, user_settings: Optional[dict] = None) -> dict:
 register_tool(
     name="web_search",
     description=(
-        "Search the public web. Use this ONLY when knowledge_lookup returned "
-        "NO_GROUNDED_ANSWER or no_match. Returns up to 3 results with citations."
+        "Search the public web. Use it for current real-world information the model "
+        "cannot know — weather, news, prices, scores, live facts — and whenever "
+        "knowledge_lookup returned NO_GROUNDED_ANSWER or no_match. For questions about "
+        "the user's OWN documents or meetings, call knowledge_lookup first. "
+        "Returns up to 3 results with citations."
     ),
     parameters={
         "type": "object",
