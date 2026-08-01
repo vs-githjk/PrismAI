@@ -384,7 +384,13 @@ async def _stream_talk_or_dispatch(bot_id: str, command: str, speaker: str, from
         if spec is not None:
             deltas = spec.deltas()          # already streaming since EagerEndOfTurn
         else:
-            deltas = _open_deltas(await _build_voice_messages(bot_id, command, speaker))
+            messages = await _build_voice_messages(bot_id, command, speaker)
+            # t1b = prompt assembled, stream not yet opened. Splits llm_first into `prep`
+            # (settings + memory + owner lookups — mostly DB round-trips) and `inference`
+            # (the model's own time-to-first-token). Multi-second llm_first is
+            # unactionable until we know which half it is.
+            _sw.mark_turn(bot_id, "t1b")
+            deltas = _open_deltas(messages)
         async for delta in deltas:
             if speak_ok and barge.interrupted_since(bot_id, seq0):
                 # Someone talked over us. Keep the text (chat still gets the full reply);

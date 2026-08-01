@@ -33,19 +33,32 @@ from typing import Optional
 
 # Ordered markers. Intervals are computed between adjacent present markers.
 #   s0  is back-dated from Silero at open_turn (see `open_turn`), not stamped live.
+#   t1b is absent on the speculative path — the eager call assembles its prompt in a
+#       background task, so a speculation HIT shows a tiny llm_first and no prep split.
 #   t2b is only present on the voice-channel path — the nudge paths call bridge.speak
 #       directly, bypassing the politeness gap, so `tts_first` stays as their fallback.
-_MARKERS = ("s0", "t0", "t1", "t2", "t2b", "t3", "t4")
+#
+# CAVEAT on mix_hop: t3 and t4 are stamped three lines apart in the SAME frame handler
+# (pipeline.py), with only a local `ws.send_bytes` between them, so it reads ~0 and is not
+# measuring Recall's Output Media hop at all. `set_rtt_ms` is never called either, so the
+# rtt/2 compensation promised above is unwired. Read mix_hop as UNMEASURED, not as free,
+# until the speaker page's playout ping closes the loop.
+_MARKERS = ("s0", "t0", "t1", "t1b", "t2", "t2b", "t3", "t4")
 
 # Human labels for the adjacent-pair intervals, for the rolling summary.
 _INTERVALS = (
     ("s0", "t0", "eot_detect"),   # room went quiet → Flux declared end-of-turn
     ("t0", "t1", "stt"),          # end-of-turn → final transcript (≈0 on Flux: fused)
-    ("t1", "t2", "llm_first"),    # transcript → first LLM token
-    ("t2", "t2b", "gap"),         # first token → politeness gap released
-    ("t2b", "t3", "tts_render"),  # gap released → first TTS byte (Cartesia alone)
-    ("t2", "t3", "tts_first"),    # first token → first TTS byte (gap + render, combined)
-    ("t3", "t4", "mix_hop"),      # first TTS byte → first frame to speaker  ← LOUD
+    ("t1", "t1b", "prep"),        # transcript → prompt assembled (settings/memory: DB)
+    ("t1b", "t2", "inference"),   # stream opened → first LLM token (the model alone)
+    ("t1", "t2", "llm_first"),    # transcript → first LLM token (prep + inference)
+    ("t2", "t2b", "batch"),       # first token → enough text to hand to TTS. Named for
+                                  # what it measures: TTS_BATCH_MIN_CHARS accumulation.
+                                  # The politeness wait is inside it but reads ~0 —
+                                  # [voice-gap] SUMMARY measures that one directly.
+    ("t2b", "t3", "tts_render"),  # text handed over → first TTS byte (Cartesia alone)
+    ("t2", "t3", "tts_first"),    # first token → first TTS byte (batch + render)
+    ("t3", "t4", "mix_hop"),      # first TTS byte → first frame to speaker  ← see CAVEAT
     ("t0", "t4", "total"),        # end-of-turn → first audio out
     ("s0", "t4", "voice_to_voice"),  # the real number: mouth-shut → first audio out
 )
@@ -232,14 +245,18 @@ def _demo() -> None:
     # fabricated 0 would drag the medians down and read as "the gap costs nothing").
     assert "eot_detect" not in iv and "gap" not in iv and "tts_render" not in iv, iv
 
-    # Gap split: t2b between t2 and t3 must carve tts_first into gap + tts_render.
+    # Both splits: the sub-intervals must sum back to the combined one they decompose,
+    # or a segment is being double-counted or lost.
     sw3 = TurnStopwatch("botxxxxxxxx", "turn-3")
-    sw3._marks = {"t0": base, "t1": base + 0.10, "t2": base + 0.40,
+    sw3._marks = {"t0": base, "t1": base + 0.10, "t1b": base + 0.25, "t2": base + 0.40,
                   "t2b": base + 0.50, "t3": base + 0.55, "t4": base + 0.75}
     iv3 = sw3.intervals_ms()
-    assert abs(iv3["gap"] - 100.0) < 1.0, iv3
+    assert abs(iv3["prep"] - 150.0) < 1.0, iv3
+    assert abs(iv3["inference"] - 150.0) < 1.0, iv3
+    assert abs(iv3["prep"] + iv3["inference"] - iv3["llm_first"]) < 1.0, iv3
+    assert abs(iv3["batch"] - 100.0) < 1.0, iv3
     assert abs(iv3["tts_render"] - 50.0) < 1.0, iv3
-    assert abs(iv3["gap"] + iv3["tts_render"] - iv3["tts_first"]) < 1.0, iv3
+    assert abs(iv3["batch"] + iv3["tts_render"] - iv3["tts_first"]) < 1.0, iv3
 
     # s0 is back-dated off t0 by the measured Flux lag, so eot_detect reads that lag and
     # voice_to_voice is the real mouth-shut→audio number (total + the detector's think).
