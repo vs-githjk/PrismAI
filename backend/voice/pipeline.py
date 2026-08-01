@@ -194,7 +194,10 @@ class TranscriptCapture(FrameProcessor):
                 ts = getattr(frame, "timestamp", "") or ""
                 # Start this turn's stopwatch here: t0/t1 (speech end + transcript) are
                 # the same instant on Flux, and the mouth claims the turn when it speaks.
-                stopwatch.open_turn(self._bot_id, {"speaker": speaker[:24]})
+                # Silero already knows when the room fell quiet, so we can back-date s0
+                # and finally see how long Flux itself took to call the turn.
+                stopwatch.open_turn(self._bot_id, {"speaker": speaker[:24]},
+                                    eot_lag_s=barge.eot_lag_s(self._bot_id))
                 # Late interrupt (§1): a burst too short to trip the duration gate, whose
                 # words turn out to be substantive, is a real interjection after all.
                 asyncio.create_task(barge.late_interrupt(self._bot_id, text))

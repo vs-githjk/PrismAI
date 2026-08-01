@@ -59,6 +59,11 @@ async def _speak(bot_id: str, text: str, *, more: bool = False) -> None:
     from voice import barge, bridge
     try:
         await barge.wait_for_gap(bot_id)
+        # t2b = the politeness gap let go. Splits what was one opaque `tts_first` into
+        # `gap` (our wait) and `tts_render` (Cartesia's real time-to-first-byte), which
+        # were otherwise indistinguishable. First-write-wins, so only the first chunk of
+        # a streamed reply stamps it — later chunks skip the gap anyway.
+        _sw.mark_turn(bot_id, "t2b")
         await bridge.speak(bot_id, text)
         if not more:
             await bridge.end_utterance(bot_id)
