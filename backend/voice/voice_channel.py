@@ -31,7 +31,8 @@ from voice import stopwatch as _sw
 from voice.prompts import DISPATCH_TOKEN
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 
-from clients import LIVE_MODEL as _VOICE_MODEL  # OpenAI gpt-5.6-luna (Groq removed Jul 2026)
+from clients import VOICE_MODEL as _VOICE_MODEL  # talk brain only; PRISM_VOICE_MODEL
+                                                 # falls back to LIVE_MODEL when unset
 _ACK_DELAY_S = tuning.ACK_DELAY_S
 _DISPATCH_DECIDE_CHARS = len(DISPATCH_TOKEN) + 3  # buffer this many chars before deciding
 
