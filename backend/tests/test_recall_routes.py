@@ -243,6 +243,26 @@ class LeaveReasonTestCase(unittest.TestCase):
         self.assertEqual(posts, [])
 
 
+class BotVariantTestCase(unittest.TestCase):
+    """Output Media on a default 2-core instance garbles the bot's TTS during join."""
+
+    def test_payload_requests_4_core_by_default(self):
+        body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+        # Output Media is what makes the variant matter — assert they ship together.
+        self.assertEqual(body["output_media"]["camera"]["kind"], "webpage")
+        self.assertEqual(body["variant"], {
+            "zoom": "web_4_core",
+            "google_meet": "web_4_core",
+            "microsoft_teams": "web_4_core",
+        })
+
+    def test_variant_omitted_when_knob_disabled(self):
+        for off in ("", "web"):
+            with patch.object(recall_routes, "_BOT_VARIANT", off):
+                body = recall_routes._recall_bot_create_json("https://meet/x", "rt", "wh")
+            self.assertNotIn("variant", body, f"knob={off!r} should use Recall's default")
+
+
 class KeytermGroundingTestCase(unittest.TestCase):
     """Lever A — Deepgram nova-3 keyterm prompting from KB/workspace/meeting names."""
 

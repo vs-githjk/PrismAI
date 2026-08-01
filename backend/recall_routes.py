@@ -97,6 +97,15 @@ BOT_DISPLAY_NAME = os.getenv("PRISM_BOT_DISPLAY_NAME", "PrismAI")
 # still applies in the async batch re-transcription path. Flip to "1" to re-test.
 _LIVE_KEYTERM_ENABLED = os.getenv("PRISM_LIVE_KEYTERM", "0") == "1"
 _BOT_TILE_ENABLED = os.getenv("PRISM_BOT_LOGO", "1") != "0"
+# Output Media (our speaker page = the bot's camera + voice) renders in a headless
+# browser inside the bot container. On Recall's DEFAULT 2-core variant that renderer is
+# CPU-starved during join — page load + WebGL + audio-context init all land at once —
+# and the mixed audio under-runs, which is the "garbled for the first few seconds, then
+# fine" TTS. Recall's own diagnostic flags this ("not configured to use a 4 core or GPU
+# variant ... may result in degraded quality in the bot's audio & video output").
+# web_4_core is what their docs recommend for Output Media. Costs more per bot-hour, so
+# it's a knob: PRISM_BOT_VARIANT="" (or "web") restores the default instance.
+_BOT_VARIANT = os.getenv("PRISM_BOT_VARIANT", "web_4_core").strip()
 _BOT_TILE_PATH = os.path.join(os.path.dirname(__file__), "assets", "bot_tile.jpg")
 
 
@@ -807,6 +816,10 @@ def _recall_bot_create_json(meeting_url: str, realtime_url: str, webhook_url: st
             }
         },
     }
+    if _BOT_VARIANT and _BOT_VARIANT != "web":
+        # Per-platform, and only the three we actually join. Unlisted platforms keep
+        # Recall's default instance.
+        body["variant"] = {p: _BOT_VARIANT for p in ("zoom", "google_meet", "microsoft_teams")}
     if join_at:
         body["join_at"] = join_at
     return body
