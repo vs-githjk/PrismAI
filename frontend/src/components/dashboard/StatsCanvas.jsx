@@ -1,159 +1,130 @@
-import { Check, Clock, UserRound, Video, ClipboardList, Sparkles, CalendarPlus } from 'lucide-react'
+import { useMemo } from 'react'
+import { ChevronRight, Video, ClipboardList, Sparkles, CalendarPlus } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
-import { dueInfo, dueLabel } from '../../lib/dueStatus'
 import { hasContentAnalysis, typeMeta } from '../../lib/meetingType'
-
-// Same due badge styling as MeetingView, so Home and the meeting agree.
-const DUE_STYLE = {
-  overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
-  soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
-}
-
-const ACTION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000 // open action items: last 2 weeks
+import { collectOpenActions, byUrgency } from '../../lib/actionItems'
+import ActionItemRow from './ActionItemRow'
 
 const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
-const cardHeading = 'text-[22px] font-semibold tracking-[-0.015em] text-[color:var(--db-text)]'
+const cardHeading = 'text-[18px] font-semibold tracking-[-0.015em] text-[color:var(--db-text)] sm:text-[22px]'
 const emptyCopy = 'text-sm leading-6 text-[color:var(--db-text-muted)]'
 
-/** Top-left quadrant: static greeting, or a get-started launcher when history is empty. */
-function Greeting({ isEmpty, onLoadSample, canLoadSample, onStartMeeting, onPasteTranscript, showConnectCalendar, onConnectCalendar }) {
-  if (isEmpty) {
-    return (
-      <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
-        <h1 className="text-[clamp(2.4rem,4.6vw,4rem)] font-semibold leading-[0.98] text-[color:var(--db-text)]">
-          Let&rsquo;s get
-          <br />
-          started.
-        </h1>
-        <p className="mt-4 max-w-md text-base leading-7 text-[color:var(--db-text-muted)]">
-          Bring Prism into a live call, or paste a transcript to analyze.
-        </p>
-        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
-          {onStartMeeting && (
-            <button
-              type="button"
-              onClick={onStartMeeting}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 text-sm font-semibold text-[#04222a] shadow-sm transition-all hover:bg-cyan-300"
-            >
-              <Video className="h-4 w-4" aria-hidden="true" />
-              Start a meeting
-            </button>
-          )}
-          {onPasteTranscript && (
-            <button
-              type="button"
-              onClick={onPasteTranscript}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 text-sm font-medium text-white/85 transition-all hover:bg-white/[0.08]"
-            >
-              <ClipboardList className="h-4 w-4" aria-hidden="true" />
-              Paste a transcript
-            </button>
-          )}
-          {canLoadSample && (
-            <button
-              type="button"
-              onClick={onLoadSample}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/10 bg-transparent px-6 text-sm font-medium text-white/60 transition-all hover:bg-white/[0.05] hover:text-white/80"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              See a sample
-            </button>
-          )}
-        </div>
-        {showConnectCalendar && (
+/**
+ * The launcher, directly above the open action items in BOTH states: greeting
+ * headline + the two primary CTAs. A returning user (history present) is
+ * welcomed back; a first-run user just gets started, plus the sample offer.
+ */
+function Launcher({ isEmpty, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, showConnectCalendar, onConnectCalendar }) {
+  return (
+    <section className="dashboard-home-greeting flex flex-col px-1 text-left">
+      <h1 className="text-[clamp(2rem,3.6vw,3rem)] font-semibold leading-[1.08] text-[color:var(--db-text)]">
+        {/* Controlled break — free-wrapping split this mid-phrase ("…let's get / started."). */}
+        {isEmpty ? <>Let&rsquo;s get started.</> : <><span className="block">Welcome back,</span>let&rsquo;s get started.</>}
+      </h1>
+      <p className="mt-3 max-w-md text-[15px] leading-6 text-[color:var(--db-text-muted)]">
+        Bring Prism into a live call, or paste a transcript to analyze.
+      </p>
+      <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+        {onJoinMeeting && (
           <button
             type="button"
-            onClick={onConnectCalendar}
-            className="group mt-5 inline-flex w-fit items-center gap-2 text-[13px] text-white/50 transition-colors hover:text-cyan-200"
+            onClick={onJoinMeeting}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 text-sm font-semibold text-[#04222a] shadow-sm transition-all hover:bg-cyan-300"
           >
-            <CalendarPlus className="h-4 w-4 text-white/40 transition-colors group-hover:text-cyan-300" aria-hidden="true" />
-            <span>Connect Google or Outlook calendar to auto-join meetings</span>
-            <span className="font-semibold text-cyan-300/80 group-hover:text-cyan-200">Connect →</span>
+            <Video className="h-4 w-4" aria-hidden="true" />
+            Join a meeting
           </button>
         )}
-      </section>
-    )
-  }
-
-  return (
-    <section className="dashboard-home-greeting flex flex-col justify-center px-1 text-left">
-      <h1 className="text-[clamp(3.5rem,6.6vw,6.25rem)] font-bold leading-[0.9] tracking-[-0.02em] text-[color:var(--db-text)]">
-        Welcome
-        <br />
-        Back.
-      </h1>
-      <p className="mt-5 max-w-md text-base leading-7 text-[color:var(--db-text-muted)]">
-        Pick up where you left off. Your open items and recent meetings are below.
-      </p>
+        {onPasteTranscript && (
+          <button
+            type="button"
+            onClick={onPasteTranscript}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 text-sm font-medium text-white/85 transition-all hover:bg-white/[0.08]"
+          >
+            <ClipboardList className="h-4 w-4" aria-hidden="true" />
+            Paste a transcript
+          </button>
+        )}
+        {/* Sample data is an empty-state affordance only — offering it next to real
+            history invites you to overwrite what you are looking at. */}
+        {isEmpty && canLoadSample && (
+          <button
+            type="button"
+            onClick={onLoadSample}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/10 bg-transparent px-6 text-sm font-medium text-white/60 transition-all hover:bg-white/[0.05] hover:text-white/80"
+          >
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            See a sample
+          </button>
+        )}
+      </div>
+      {showConnectCalendar && (
+        <button
+          type="button"
+          onClick={onConnectCalendar}
+          className="group mt-4 inline-flex w-fit items-center gap-2 text-[13px] text-white/50 transition-colors hover:text-cyan-200"
+        >
+          <CalendarPlus className="h-4 w-4 text-white/40 transition-colors group-hover:text-cyan-300" aria-hidden="true" />
+          <span>Connect Google or Outlook calendar to auto-join meetings</span>
+          <span className="font-semibold text-cyan-300/80 group-hover:text-cyan-200">Connect →</span>
+        </button>
+      )}
     </section>
   )
 }
 
-/** Bottom-left quadrant: open action items from the last 2 weeks, click-through to source meeting. */
-function ActionItemsCard({ actions, onOpen, onToggle }) {
+/**
+ * Compact preview: the four most urgent open items, then a way through to the
+ * full page. Home showed all 43 in an internally-scrolling card, which turned the
+ * one screen you glance at into a page's worth of list.
+ */
+function ActionItemsCard({ rows, total, mineCount, onOpenAll, onOpenMeeting, onToggle }) {
+  const shown = rows.slice(0, 4)
+  const rest = total - shown.length
   return (
-    <section className={`dashboard-home-actions ${island}`}>
-      <div className="shrink-0 border-b border-[color:var(--db-border)] px-4 py-3.5">
-        <h2 className={cardHeading}>Open action items</h2>
-      </div>
+    <section id="home-actions" className={`dashboard-home-actions ${island}`}>
+      <button
+        type="button"
+        onClick={onOpenAll}
+        className="group flex shrink-0 items-baseline justify-between gap-3 border-b border-[color:var(--db-border)] px-4 py-3.5 text-left transition hover:bg-[var(--db-fill)]"
+      >
+        <h2 className={`${cardHeading} transition group-hover:text-cyan-100`}>Open action items</h2>
+        <span className="shrink-0 text-[11.5px] text-[color:var(--db-text-faint)]">
+          {total} open{mineCount > 0 ? ` · ${mineCount} yours` : ''}
+          <ChevronRight className="ml-1 inline h-3.5 w-3.5 -translate-y-[1px] transition group-hover:translate-x-0.5" aria-hidden="true" />
+        </span>
+      </button>
+
+      {/* Scrolls internally when the New Meeting panel above squeezes the row. */}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {actions.length ? (
-          <div className="space-y-2">
-            {actions.map(({ item, entry, index }) => (
-              <div
-                key={`${entry.id}-${item.task}-${index}`}
-                className="group flex w-full items-start gap-3 rounded-xl border border-[color:var(--db-border)] bg-gradient-to-br from-white/[0.06] to-white/[0.015] p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:from-white/[0.09] hover:to-white/[0.03]"
-              >
-                <button
-                  type="button"
-                  onClick={() => onToggle?.(entry, index)}
-                  aria-pressed={!!item.completed}
-                  aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] text-transparent transition-all duration-200 hover:border-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/40"
-                >
-                  <Check className="h-3 w-3" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpen?.(entry)}
-                  className="min-w-0 flex-1 text-left focus-visible:outline-none"
-                >
-                  <p className="line-clamp-2 text-[15px] font-medium leading-snug text-[color:var(--db-text)]">{item.task}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--db-text-faint)]">
-                      <UserRound className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
-                      <span className="truncate">{item.owner || 'Unowned'}</span>
-                    </span>
-                    {(() => {
-                      // Prefer the resolved status (matches MeetingView's badge); fall
-                      // back to the raw label only when there's no parseable date.
-                      const due = dueInfo(item)
-                      if (due.status === 'overdue' || due.status === 'soon') {
-                        return (
-                          <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${DUE_STYLE[due.status]}`}>
-                            {dueLabel(due)}
-                          </span>
-                        )
-                      }
-                      const label = due.status === 'later' ? dueLabel(due) : (item.due && item.due !== 'TBD' ? item.due : '')
-                      return label ? (
-                        <span className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--db-text-faint)]">
-                          <Clock className="h-3 w-3 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
-                          <span className="truncate">{label}</span>
-                        </span>
-                      ) : null
-                    })()}
-                    <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-cyan-200/15 bg-cyan-300/[0.06] px-2 py-0.5 text-[10.5px] font-medium text-cyan-200/70">
-                      <span className="max-w-[140px] truncate">{deriveDisplayTitle(entry)}</span>
-                    </span>
-                  </div>
-                </button>
-              </div>
-            ))}
-          </div>
+        {shown.length === 0 ? (
+          <p className={`px-1 py-2 ${emptyCopy}`}>No open action items yet — they appear here as meetings assign them.</p>
         ) : (
-          <p className={`px-1 py-2 ${emptyCopy}`}>No open action items in the last two weeks.</p>
+          <>
+            {/* Flat and urgency-ordered, not grouped: with four rows, date headings
+                would cost more space than they explain. The full page groups. */}
+            <ul className="space-y-1.5">
+              {shown.map((row) => (
+                <ActionItemRow
+                  key={`${row.entry.id}-${row.index}`}
+                  row={row}
+                  onToggle={onToggle}
+                  onOpenMeeting={onOpenMeeting}
+                  showMeeting
+                />
+              ))}
+            </ul>
+            {rest > 0 && (
+              <button
+                type="button"
+                onClick={onOpenAll}
+                className="mt-2 w-full rounded-lg border border-[color:var(--db-border)] py-2 text-[12.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.06] hover:text-cyan-100"
+              >
+                View all {total} action items →
+              </button>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -223,41 +194,55 @@ export default function StatsCanvas({
   loadFromHistory,
   loadSample,
   canLoadSample = false,
-  onStartMeeting,
+  onJoinMeeting,
   onPasteTranscript,
+  upcomingPanel = null,
   showConnectCalendar = false,
   onConnectCalendar,
   selectedMeetingId = null,
   onToggleAction,
+  user = null,
+  onOpenAllActions,
 }) {
   const safeHistory = history || []
-  const now = Date.now()
+  const isEmpty = safeHistory.length === 0
 
-  // Open action items from the last 2 weeks, aggregated client-side, newest-first.
-  const actions = safeHistory
-    .filter((entry) => {
-      const t = new Date(entry.date).getTime()
-      return Number.isFinite(t) && now - t <= ACTION_WINDOW_MS
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .flatMap((entry) =>
-      (entry.result?.action_items || [])
-        .map((item, index) => ({ item, entry, index }))
-        .filter(({ item }) => !item.completed),
-    )
+  // Just the counts and the urgency-ordered head of the list — the full grouped
+  // view lives on the Action items page (ActionItemsView).
+  const { rows, total, mineCount } = useMemo(() => {
+    const all = collectOpenActions(safeHistory, user)
+    return {
+      rows: [...all].sort(byUrgency),
+      total: all.length,
+      mineCount: all.filter((r) => r.isMine).length,
+    }
+  }, [safeHistory, user])
 
   return (
     <div className="dashboard-home-grid">
-      <Greeting
-        isEmpty={safeHistory.length === 0}
-        onLoadSample={loadSample}
-        canLoadSample={canLoadSample}
-        onStartMeeting={onStartMeeting}
-        onPasteTranscript={onPasteTranscript}
-        showConnectCalendar={showConnectCalendar}
-        onConnectCalendar={onConnectCalendar}
-      />
-      <ActionItemsCard actions={actions} onOpen={loadFromHistory} onToggle={onToggleAction} />
+      <div className="dashboard-home-left">
+        <Launcher
+          isEmpty={isEmpty}
+          onLoadSample={loadSample}
+          canLoadSample={canLoadSample}
+          onJoinMeeting={onJoinMeeting}
+          onPasteTranscript={onPasteTranscript}
+          showConnectCalendar={showConnectCalendar}
+          onConnectCalendar={onConnectCalendar}
+        />
+        <ActionItemsCard
+          rows={rows}
+          total={total}
+          mineCount={mineCount}
+          onOpenAll={onOpenAllActions}
+          onOpenMeeting={loadFromHistory}
+          onToggle={onToggleAction}
+        />
+        {/* Next joinable calendar events — pairs with the "Join a meeting" CTA above.
+            The inner component renders nothing (hideEmpty) unless there's genuinely
+            something to join; CSS :empty then hides this island shell too. */}
+        {upcomingPanel && <div className="dashboard-home-upcoming dashboard-island p-2">{upcomingPanel}</div>}
+      </div>
       <MeetingsCard history={safeHistory} onOpen={loadFromHistory} selectedMeetingId={selectedMeetingId} />
     </div>
   )

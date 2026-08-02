@@ -57,9 +57,11 @@ export default function HealthTrend({ history, onSelect }) {
         <svg viewBox={`0 0 ${width} ${height}`} className="h-[180px] w-full overflow-visible" role="img" aria-label="Meeting health score trend">
           <defs>
             <linearGradient id="healthArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.24" />
-              <stop offset="55%" stopColor="#8b5cf6" stopOpacity="0.12" />
-              <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
+              {/* Neutral fill: this chart plots HEALTH, and health colour comes
+                  from HEALTH_BANDS (carried by the dots below). A cyan-to-purple
+                  wash made the brand accent and violet read as score values. */}
+              <stop offset="0%" stopColor="rgba(255,255,255,0.16)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0)" />
             </linearGradient>
           </defs>
           {[0, 25, 50, 75, 100].map((tick) => {
@@ -73,7 +75,7 @@ export default function HealthTrend({ history, onSelect }) {
           })}
           <rect x={pad} y={pad} width={width - pad * 2} height={height - pad * 2} fill="none" stroke="rgba(255,255,255,0.04)" />
           <path d={areaPath} fill="url(#healthArea)" />
-          <path d={linePath} fill="none" stroke="#22d3ee" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="path-draw" />
+          <path d={linePath} fill="none" stroke="rgba(255,255,255,0.32)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="path-draw" />
           {data.map((point, index) => {
             const x = pad + (index / Math.max(data.length - 1, 1)) * (width - pad * 2)
             const y = pad + ((100 - point.score) / 100) * (height - pad * 2)

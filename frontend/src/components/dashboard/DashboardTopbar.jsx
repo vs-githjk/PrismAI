@@ -24,7 +24,11 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
       const text = textRef.current
       if (!track || !text) return
       const overflow = text.scrollWidth - track.clientWidth
-      setShift(overflow > 1 ? overflow : 0)
+      // Only marquee for a real overflow on a wide screen. `.is-marquee` sets
+      // text-overflow:clip, so a 2px overflow used to trade a clean ellipsis for
+      // a title sliced mid-glyph that then animated forever.
+      const worth = overflow > 24 && window.innerWidth >= 1024
+      setShift(worth ? overflow : 0)
     }
     measure()
     const ro = new ResizeObserver(measure)
@@ -59,7 +63,7 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
             <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
           </button>
         )}
-        <div ref={trackRef} className="dashboard-title-track min-w-0">
+        <div ref={trackRef} className="dashboard-title-track min-w-[6rem]">
           <span
             ref={textRef}
             className={`dashboard-title-text${overflowing ? ' is-marquee' : ''}`}
@@ -75,14 +79,27 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
       {/* Center: status island. The flex-1 center cell fills the gap between the
           title and the search pill, and justify-center sits the island in the
           middle of that gap — so it stays equidistant from both and shifts as the
-          title grows/shrinks. The title (left) absorbs squeeze via its marquee. */}
-      <div className="hidden min-w-0 flex-1 items-center justify-center sm:flex">
+          title grows/shrinks. The title (left) absorbs squeeze via its marquee.
+          The min-width reserves room for the expanded pill — with the default
+          basis-0 the cell collapsed to a few px and the pill (absolutely centred)
+          spilled over the action buttons and the search field. But it is reserved
+          ONLY when there is a status to show, and only from lg up: an
+          unconditional 184px stole that width from the title on every idle view,
+          which clipped even the word "Home" at 1024px. */}
+      <div
+        className={`hidden flex-1 items-center justify-center sm:flex ${
+          status && status.state && status.state !== 'idle' ? 'lg:min-w-[184px]' : 'min-w-0'
+        }`}
+      >
         <StatusIsland status={status} />
       </div>
 
       {/* Right: global search pill (shrinks on mobile; ml-auto keeps it right-aligned
           when the center status island is hidden). */}
-      <div className="ml-auto flex h-11 w-[clamp(120px,26vw,380px)] shrink-0 items-center gap-2.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3.5 transition focus-within:border-cyan-400/45 focus-within:bg-[var(--db-fill-strong)] sm:ml-0 sm:px-4">
+      {/* Mobile: a 44px icon-only target that expands to a real field on focus.
+          A 120px pill clipped its own placeholder to "Search ar" AND stole width
+          from the meeting action buttons beside it. */}
+      <div className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center gap-2.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] transition focus-within:w-[min(70vw,320px)] focus-within:justify-start focus-within:border-cyan-400/45 focus-within:bg-[var(--db-fill-strong)] focus-within:px-3.5 sm:ml-0 sm:w-[clamp(160px,26vw,380px)] sm:justify-start sm:px-4">
         <input
           value={signedOut ? '' : (searchValue || '')}
           onChange={(e) => onSearchChange?.(e.target.value)}
@@ -90,7 +107,7 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
           readOnly={signedOut}
           placeholder="Search anything..."
           aria-label="Search meetings"
-          className="h-full min-w-0 flex-1 bg-transparent text-[14px] font-medium text-[color:var(--db-text-soft)] outline-none placeholder:font-normal placeholder:text-[color:var(--db-text-faint)]"
+          className="h-full w-0 min-w-0 bg-transparent text-[14px] font-medium text-[color:var(--db-text-soft)] outline-none placeholder:font-normal placeholder:text-[color:var(--db-text-faint)] focus:w-auto focus:flex-1 sm:w-auto sm:flex-1"
         />
         <Search className="h-[18px] w-[18px] shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />
       </div>

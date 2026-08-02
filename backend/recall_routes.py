@@ -2305,22 +2305,17 @@ async def _process_bot_transcript(bot_id: str):
         # the ~10-min audio-retry budget. Saves up to ~10 min before a meeting lands on the
         # dashboard whenever the bot was active.
         _live_lines = [ln for ln in (bot_store.get(bot_id, {}).get("realtime_transcript_lines") or []) if ln.strip()]
-        _bot_spoke_live = any(ln.startswith(_BOT_NAME_PREFIXES) for ln in _live_lines)
 
-        # Lever B: when the bot was SILENT, the durable transcript is Recall's audio
-        # transcript — so re-transcribe it with Deepgram's more-accurate async nova-3
-        # (+ keyterms) and hold out for that instead of the live streaming pass. We skip
-        # this when the bot spoke: there we must use the bot-inclusive live transcript
-        # (Recall's audio wouldn't contain the bot's chat replies), so a second
-        # transcription would be wasted spend.
+        # Lever B is a fallback for failed live capture, not a reason to delay a usable
+        # transcript. When live lines exist, use the fast path and start analysis.
         prefer_async = False
-        if _ASYNC_TRANSCRIPT_ENABLED and not _bot_spoke_live:
+        if _ASYNC_TRANSCRIPT_ENABLED and not _live_lines:
             prefer_async = await _request_async_transcript(bot_id)
 
         if prefer_async:
             attempts = 6          # ~3.5 min for the async transcript to land, then fall back
         else:
-            attempts = 2 if len(_live_lines) >= 2 else 12
+            attempts = 2 if _live_lines else 12
         resp = await _fetch_transcript(bot_id, attempts=attempts, prefer_async=prefer_async)
 
         transcript = ""

@@ -6,7 +6,7 @@ import {
   ListTodo, Users, Filter,
 } from 'lucide-react'
 import { overallHealth } from '../lib/healthScore'
-import { deriveDisplayTitle } from '../lib/insights'
+import { deriveDisplayTitle, healthColor } from '../lib/insights'
 
 /**
  * Calendar view of meeting history (v2). Month / Week / Day, health-tinted chips,
@@ -20,17 +20,18 @@ const MAX_CHIPS = 3
 const HOUR_PX = 46          // pixel height of one hour row in week/day
 const BLOCK_PX = 34         // height of a meeting block (point-in-time, no duration)
 
-function healthColor(score) {
-  const v = Number(score)
-  if (!Number.isFinite(v)) return '#94a3b8'
-  if (v < 30) return '#ef4444'
-  if (v < 60) return '#f59e0b'
-  return '#22c55e'
-}
+// Health colour + buckets come from the app's ONE scale (lib/insights). This file
+// used to declare its own with 30/60 thresholds, so a 70 read "Healthy" here and
+// "Fair" on the meeting page for the same meeting.
 function healthBucket(score) {
+  // null/undefined FIRST — Number(null) is 0 and finite, which classified every
+  // unscored meeting as "strained".
+  if (score === null || score === undefined || score === '') return 'unknown'
   const v = Number(score)
   if (!Number.isFinite(v)) return 'unknown'
-  if (v < 30) return 'strained'
+  // Three filter buckets over five colour bands: strained = rose+orange (<40),
+  // mixed = amber (40-59), healthy = lime+emerald (>=60).
+  if (v < 40) return 'strained'
   if (v < 60) return 'mixed'
   return 'healthy'
 }
@@ -151,15 +152,20 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
   }
   const leave = () => setHover(null)
 
-  const Chip = ({ m }) => {
+  // Month-view chips are ~90px wide. Leading with the timestamp truncated every
+  // title to "4:56 PM On…" — neither the time nor the meeting was legible. The
+  // title leads now; the time moves to a second line when the cell has room
+  // (`showTime`), and the tooltip carries both regardless.
+  const Chip = ({ m, showTime = false }) => {
     const c = healthColor(m.health)
     const t = fmtTime(m.date)
     return (
       <button onClick={() => onOpenMeeting?.(m.id)} onMouseEnter={(e) => enter(m, e)} onMouseLeave={leave}
-        className="ps-anim block w-full truncate rounded-md px-1.5 py-1 text-left text-[11px] leading-tight transition hover:brightness-125"
+        title={t ? `${t} — ${m.title}` : m.title}
+        className="ps-anim block w-full rounded-md px-1.5 py-1 text-left text-[11px] leading-tight transition hover:brightness-125"
         style={{ background: `${c}1f`, borderLeft: `2.5px solid ${c}`, color: '#e7edf5' }}>
-        {t && <span className="mr-1 font-semibold" style={{ color: c }}>{t}</span>}
-        <span className="font-medium">{m.title}</span>
+        <span className="block truncate font-medium">{m.title}</span>
+        {showTime && t && <span className="block truncate text-[9.5px] font-semibold" style={{ color: c }}>{t}</span>}
       </button>
     )
   }
@@ -210,7 +216,7 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
       {/* Filters */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Filter className="h-3.5 w-3.5 text-[color:var(--db-text-faint)]" />
-        {[['healthy', 'Healthy', '#22c55e'], ['mixed', 'Mixed', '#f59e0b'], ['strained', 'Strained', '#ef4444']].map(([k, label, c]) => {
+        {[['healthy', 'Healthy', healthColor(85)], ['mixed', 'Mixed', healthColor(50)], ['strained', 'Strained', healthColor(20)]].map(([k, label, c]) => {
           const on = filters.health.has(k)
           return (
             <button key={k} onClick={() => setFilters((f) => { const h = new Set(f.health); h.has(k) ? h.delete(k) : h.add(k); return { ...f, health: h } })}
@@ -253,8 +259,15 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
               <div className="space-y-2.5">
                 {insights.topOwners.map(([name, n]) => (
                   <div key={name}>
-                    <div className="mb-1 flex items-center justify-between text-[11.5px]"><span className="truncate text-[color:var(--db-text-soft)]">{name}</span><span className="ml-2 shrink-0 font-semibold text-[color:var(--db-text-faint)]">{n}</span></div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--db-fill)]"><div className="h-full rounded-full" style={{ width: `${(n / insights.maxOwner) * 100}%`, background: 'linear-gradient(90deg,#22d3ee,#818cf8)' }} /></div>
+                    {/* No bar: a gradient stripe whose length encodes "2 vs 1"
+                        next to the printed count is decoration, and it spent the
+                        brand accent on a non-interactive element. */}
+                    <div className="flex items-center justify-between text-[11.5px]">
+                      <span className="truncate text-[color:var(--db-text-soft)]">{name}</span>
+                      <span className="ml-2 shrink-0 text-[color:var(--db-text-faint)]">
+                        <span className="font-semibold text-[color:var(--db-text-soft)]">{n}</span> open
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -262,7 +275,7 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
           </div>
           <div className="flex items-center gap-3 px-1 text-[10.5px] text-[color:var(--db-text-faint)]">
             <span className="font-medium uppercase tracking-wide">Health</span>
-            {[['#22c55e', 'Healthy'], ['#f59e0b', 'Mixed'], ['#ef4444', 'Strained']].map(([c, l]) => (
+            {[[healthColor(85), 'Healthy'], [healthColor(50), 'Mixed'], [healthColor(20), 'Strained']].map(([c, l]) => (
               <span key={l} className="flex items-center gap-1"><CircleDot className="h-2.5 w-2.5" style={{ color: c }} />{l}</span>
             ))}
           </div>
@@ -341,7 +354,8 @@ function MonthGrid({ year, month, byDay, upcomingByDay, todayKey, expandedDay, s
                 {meetings.length > 0 && <span className="text-[9.5px] font-medium text-[color:var(--db-text-faint)]">{meetings.length}</span>}
               </div>
               <div className={`space-y-1 ${expanded ? 'cal-scroll max-h-44 overflow-y-auto' : ''}`}>
-                {shown.map((m) => <Chip key={m.id} m={m} />)}
+                {/* Room for the time line only when the cell isn't crowded. */}
+                {shown.map((m) => <Chip key={m.id} m={m} showTime={shown.length <= 2} />)}
                 {extra > 0 && <button onClick={() => setExpandedDay(key)} className="ps-anim w-full rounded px-1.5 py-0.5 text-left text-[10.5px] font-medium text-cyan-300/70 transition hover:text-cyan-200">+{extra} more</button>}
                 {ups.map((e) => <UpChip key={e.id} e={e} />)}
               </div>

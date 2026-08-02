@@ -503,6 +503,9 @@ _FOLLOWUP_SYSTEM = (
     "**Answers to what you asked** (match the questions your stand-in relayed to how the team responded)\n"
     "**Now on your plate** (action items assigned to you)\n"
     "**They need from you** (anything the team directed at or asked of you)\n"
+    # ponytail: prompt-only capture; add a live relay tool + verbatim append if the model misses these
+    "**Messages left for you** (anything an attendee explicitly asked the bot to pass along "
+    "or relay to you — include it even if it seems trivial or off-topic)\n"
     "Omit any header with nothing real to say. If the meeting genuinely didn't touch you, "
     "say so honestly in one line. Keep it tight and scannable — no preamble, no sign-off."
 )

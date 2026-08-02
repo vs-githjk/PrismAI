@@ -1,17 +1,14 @@
 import { useCountUp, overallHealth } from '../../lib/healthScore'
+import { healthColor } from '../../lib/insights'
 
 // Balance triangle (3-axis radar) for the meeting health sub-scores.
 // Clarity / Action / Engagement each score 0-100 and contribute one third of
-// the overall. Overall = round(average). Semantic traffic-light coloring lives
-// in TRI_THRESHOLDS below — change it in one place.
-
-const TRI_THRESHOLDS = [
-  { min: 80, color: '#22c55e' }, // green  — healthy
-  { min: 60, color: '#f59e0b' }, // amber  — fair
-  { min: 0, color: '#ef4444' },  // red    — needs work
-]
-const triColor = (score) =>
-  (TRI_THRESHOLDS.find((t) => score >= t.min) ?? TRI_THRESHOLDS[TRI_THRESHOLDS.length - 1]).color
+// the overall. Overall = round(average).
+//
+// Colour comes from lib/insights healthColor — the app's ONE health scale. This
+// file used to declare its own traffic light, so the same score rendered green
+// here and violet on Home. Don't reintroduce a local scale.
+const triColor = healthColor
 
 const META = {
   clarity: { label: 'Clarity' },
@@ -51,8 +48,11 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
       engagement: scores.engagement,
     },
   })
-  const displayedOverall = useCountUp(overall, 1000)
-  const overallColor = triColor(displayedOverall)
+  // Colour from the TRUE score, never the animating value: seeding the count-up
+  // at 0 made a healthy 84 spend its first second as a red "needs work" verdict
+  // that then silently corrected itself. The number is printed directly for the
+  // same reason — the polygon growing in (vertices below) carries the animation.
+  const overallColor = triColor(overall)
 
   // Grid rings at 33 / 66 / 100% and the data polygon.
   const ring = (f) => ORDER.map((k) => ptStr(polar(MAX_R * f, ANGLE[k]))).join(' ')
@@ -106,7 +106,7 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
       </svg>
       <div className="mt-1 text-center font-semibold leading-none" style={{ fontSize: '1.5rem' }}>
         <span className="text-[color:var(--db-text)]">Overall: </span>
-        <span style={{ color: overallColor }}>{displayedOverall}</span>
+        <span style={{ color: overallColor }}>{overall}</span>
       </div>
     </div>
   )

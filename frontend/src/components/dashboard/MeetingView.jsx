@@ -15,6 +15,7 @@ import { listDocs } from '../../lib/knowledge'
 import { apiFetch } from '../../lib/api'
 import { useCountUp, overallHealth } from '../../lib/healthScore'
 import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
+import { healthColor } from '../../lib/insights'
 import { MEETING_TYPES, resolvedType, hasContentAnalysis } from '../../lib/meetingType'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 
@@ -23,14 +24,10 @@ const GAUGE_STROKE = 9
 // Half-circumference for a 180° arc (we draw only the top half)
 const GAUGE_ARC_LEN = Math.PI * GAUGE_RADIUS
 
-// Semantic health color: low = danger (red), mid = warning (amber), high = success (green).
-function healthColor(score) {
-  const value = Number(score)
-  if (!Number.isFinite(value)) return '#94a3b8'
-  if (value < 30) return '#ef4444'
-  if (value < 60) return '#f59e0b'
-  return '#22c55e'
-}
+// Health colour comes from the app's ONE scale (lib/insights healthColor:
+// >=80 emerald, 60-79 amber, <60 rose, null = slate "no score"). This file used to
+// declare its own 30/60 thresholds, which is why a 73-scoring meeting showed an
+// amber triangle beside a green Verdict accent on the same screen.
 
 // Padding baked into the viewBox so the progress arc's glow isn't clipped.
 const GAUGE_PAD = 12

@@ -1029,6 +1029,11 @@ h1, h2, h3, .font-display {
     --db-accent: #22d3ee;
     --db-accent-text: #67e8f9;
     --db-accent-fill: rgba(34, 211, 238, 0.10);
+    /* Opaque base under the island glass film. The film alone (3.5-7% white over
+       transparency) let page content scrolling beneath the FIXED topbar/sidebar
+       read straight through them. Mirrors what .dashboard-status-island already
+       does one block down; the blur + film still do the glass work on top. */
+    --db-island-base: rgba(21, 21, 22, 0.84);
   }
   .theme-light {
     --db-chrome-bg: #e6eaef;
@@ -1047,6 +1052,8 @@ h1, h2, h3, .font-display {
     --db-accent: #06b6d4;
     --db-accent-text: #0e7490;
     --db-accent-fill: rgba(34, 211, 238, 0.14);
+    /* Light theme's glass-top/bottom are already opaque, so no base is needed. */
+    --db-island-base: transparent;
   }
   .dark {
     --background: oklch(0.145 0 0);
@@ -1119,13 +1126,20 @@ h1, h2, h3, .font-display {
   background: var(--dashboard-chrome-bg);
   background-image: none;
   font-family: "Inter Variable", Inter, "Segoe UI", sans-serif;
+  /* Every figure in the dashboard is a column-of-numbers candidate (health
+     scores, KPI tiles, counts, durations) and proportional digits made them
+     jitter and mis-align. Inter ships tnum, so this costs nothing. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 /* Floating glass chrome island — neutral dark glassmorphism (no color tint).
    A faint white translucent film over the dark-gray page reads as glass under
    a heavy, lightly-saturated blur, with a bright top edge for the light catch. */
 .dashboard-island {
-  background: linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%);
+  background:
+    linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%),
+    var(--db-island-base);
   backdrop-filter: blur(26px) saturate(115%);
   -webkit-backdrop-filter: blur(26px) saturate(115%);
   border: 1px solid var(--db-border);
@@ -1197,6 +1211,45 @@ h1, h2, h3, .font-display {
   font-family: "Inter Variable", Inter, "Segoe UI", sans-serif;
 }
 
+/* Collapsed nav (desktop): the sidebar becomes an icon rail and every shell
+   offset follows, because the topbar/content/sidebar all derive their geometry
+   from --dashboard-sidebar-w. Reclaims ~220px for the content area.
+   The mobile block below overrides this — there the nav is a drawer, so a
+   collapsed rail would be meaningless. */
+.dashboard-page.nav-collapsed {
+  --dashboard-sidebar-w: 76px;
+}
+.dashboard-workspace-island,
+.dashboard-sidebar,
+.dashboard-topbar,
+.dashboard-content {
+  transition: width 0.22s ease, left 0.22s ease, margin-left 0.22s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-workspace-island,
+  .dashboard-sidebar,
+  .dashboard-topbar,
+  .dashboard-content {
+    transition: none;
+  }
+}
+
+/* Opaque backdrop for the header band. The islands float with a 26px gutter
+   above them, and .dashboard-page is the page scroller — so content scrolled up
+   under the chrome was visible in that strip and around the island's rounded
+   corners. Sits above the content, below the islands. */
+.dashboard-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--dashboard-edge) + var(--dashboard-topbar-h) + (var(--dashboard-gutter) / 2));
+  background: var(--dashboard-chrome-bg);
+  z-index: 15;
+  pointer-events: none;
+}
+
 /* Top-left island: workspace switcher, spans the sidebar column width. */
 .dashboard-workspace-island {
   position: fixed;
@@ -1254,28 +1307,85 @@ h1, h2, h3, .font-display {
 .dashboard-home-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--dashboard-gutter);
-  align-items: stretch;
   height: 100%;
-  min-height: 520px;
+  min-height: 0;
 }
-.dashboard-home-greeting { grid-column: 1; grid-row: 1; min-height: 0; }
-.dashboard-home-actions { grid-column: 1; grid-row: 2; min-height: 0; }
-.dashboard-home-meetings { grid-column: 2; grid-row: 1 / 3; min-height: 0; }
+/* Left column stacks the greeting/launcher over the open action items — flex
+   (not grid rows) so the action card can SHRINK below its content and scroll
+   internally when height runs out. Same structure empty or populated, so
+   arriving data never swaps one block for a different shape. */
+.dashboard-home-left {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dashboard-gutter);
+  min-height: 0;
+}
+/* The greeting holds the page's primary actions — it never shrinks; the card below yields. */
+.dashboard-home-greeting { flex-shrink: 0; }
+
+/* The first-run (empty-history) home is free-flowing copy + CTAs, not a fixed
+   grid: pinned inside the viewport-height overflow:hidden shell its headline
+   painted over the invite banner and covered its own buttons. Let that one case
+   scroll. */
+.dashboard-content.is-home.is-home-empty {
+  height: auto;
+  min-height: calc(100dvh - var(--dashboard-edge) - var(--dashboard-topbar-h) - var(--dashboard-gutter));
+  overflow: visible;
+}
+.dashboard-content.is-home.is-home-empty .dashboard-home-grid { height: auto; }
+
+/* Short windows: the greeting + action card can't both fit the viewport-locked
+   shell — let the page scroll instead of crushing the card to a sliver (same
+   treatment the empty state gets). */
+@media (max-height: 800px) {
+  .dashboard-content.is-home {
+    height: auto;
+    min-height: calc(100dvh - var(--dashboard-edge) - var(--dashboard-topbar-h) - var(--dashboard-gutter));
+    overflow: visible;
+  }
+  .dashboard-content.is-home .dashboard-home-grid { height: auto; }
+}
+.dashboard-home-actions {
+  min-height: 0;
+  /* Content height (flex-grow 0): the card previews four items and links out to
+     the full Action items page, so stretching it to fill leftover column height
+     would recreate the page-of-list it replaced. */
+}
+/* Upcoming calendar events under the action card — content-height, yields and
+   scrolls internally when the column runs out of room. The island shell hides
+   itself when the inner list renders nothing (loading / no joinable events). */
+.dashboard-home-upcoming { min-height: 0; overflow-y: auto; }
+.dashboard-home-upcoming:empty { display: none; }
+.dashboard-home-meetings { grid-column: 2; min-height: 0; }
 @media (max-width: 900px) {
   .dashboard-home-grid {
     grid-template-columns: 1fr;
     grid-template-rows: none;
     height: auto;
   }
+  .dashboard-home-left,
   .dashboard-home-greeting,
   .dashboard-home-actions,
   .dashboard-home-meetings {
     grid-column: auto;
     grid-row: auto;
-    min-height: 280px;
+    /* No min-height: a 280px floor on EVERY region padded the state band with
+       dead space and, combined with an uncapped action list, produced a ~3300px
+       page where all 16 items preceded any recent meeting. Each region is now
+       content-sized, and the lists cap themselves (see below). */
+    min-height: 0;
   }
+  /* The action feed keeps its own scroller on mobile rather than growing the page.
+     Roughly four rows — enough to act on, short enough that Recent meetings is
+     still reachable by thumb. The card's "N open" caption says what's below. */
+  .dashboard-home-actions > .overflow-y-auto,
+  .dashboard-home-meetings > .overflow-y-auto {
+    max-height: 58vh;
+  }
+  .dashboard-home-upcoming { max-height: 58vh; }
 }
 
 /* ============================================================
@@ -1287,9 +1397,12 @@ h1, h2, h3, .font-display {
    existing isNarrow (1023px) so JS + CSS agree.
    ============================================================ */
 @media (max-width: 1023px) {
-  .dashboard-page {
+  .dashboard-page,
+  .dashboard-page.nav-collapsed {
     --dashboard-edge: 12px;
     --dashboard-gutter: 12px;
+    /* The drawer sets its own width below; a collapsed rail makes no sense here. */
+    --dashboard-sidebar-w: 300px;
   }
 
   /* Topbar spans the full width; the hamburger (rendered in the topbar,

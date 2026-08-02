@@ -274,8 +274,11 @@ export default function StatusIsland({ status }) {
     // place (no flex reflow), so closing shrinks toward the true center instead
     // of drifting into a corner. `select-none` keeps the cursor an arrow, never
     // a text caret.
+    // `w-full` matters: the pills are absolutely positioned, so they contribute
+    // nothing to this box's width — without it the wrapper collapsed to its own
+    // px-12 padding (96px) and the pill's max-w-full clipped "Analysed" mid-word.
     <div
-      className="relative flex h-[72px] select-none items-center justify-center px-12"
+      className="relative flex h-[72px] w-full select-none items-center justify-center px-6"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -301,17 +304,21 @@ export default function StatusIsland({ status }) {
             animate={{ x: '-50%', y: '-50%', opacity: 1, scale: 1 }}
             exit={flat ? { x: '-50%', y: '-50%', opacity: 0 } : { x: '-50%', y: '-50%', opacity: 0, scale: 0.55 }}
             transition={popTransition}
-            className="dashboard-status-island absolute flex h-12 items-center justify-center whitespace-nowrap rounded-full px-5"
+            // max-w-full + overflow-hidden keep the pill INSIDE its topbar cell.
+            // Without them a nowrap pill overflowed a squeezed cell in both
+            // directions and painted over the Export/Share buttons on the left
+            // and the search placeholder on the right (its glyph ghosting through
+            // the translucent glass read as a render glitch).
+            className="dashboard-status-island absolute flex h-12 max-w-full items-center justify-center overflow-hidden rounded-full px-5"
             aria-live="polite"
           >
             <PillContent state={state} content={content} reduce={reduce} />
           </motion.div>
-        ) : mobile ? null : (
-          // Tiny neutral pill (idle / collapsed-analysed): an empty capsule.
-          // -30% length (48->34px), +10% height (~11px). Same absolute-center
-          // anchor as the big pill so the swap shrinks/grows in place. On mobile
-          // there is NO idle pill (rendered null above) — the island only appears
-          // when there's something to say.
+        ) : mobile || state === 'idle' ? null : (
+          // Tiny neutral pill: the shrink-target for a collapsing `analysed` pill,
+          // so the big->small swap still happens in place. NOT rendered for `idle`
+          // — an empty aria-hidden capsule floating in the topbar on every
+          // non-meeting view is a placeholder blob that says nothing.
           <motion.span
             key="small"
             style={pillStyle}

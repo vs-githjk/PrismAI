@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import re
 
 try:
@@ -106,6 +106,21 @@ def has_meaningful_result(result: dict | None) -> bool:
     return False
 
 
+def _within(date_value, cutoff) -> bool:
+    """True when an ISO date string is at/after `cutoff`. Unparseable or missing
+    dates return True so a row is counted rather than silently dropped from a
+    windowed aggregate."""
+    if not date_value:
+        return True
+    try:
+        parsed = datetime.fromisoformat(str(date_value).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed >= cutoff
+
+
 def derive_cross_meeting_insights(history: list[dict], user_id: str | None = None) -> dict:
     meetings = sorted(
         [entry for entry in history if has_meaningful_result(entry.get("result"))],
@@ -117,10 +132,32 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
         entry for entry in meetings
         if entry.get("result", {}).get("health_score", {}).get("score") is not None
     ]
-    latest_score = scored_meetings[0]["result"]["health_score"]["score"] if scored_meetings else None
-    oldest_score = scored_meetings[-1]["result"]["health_score"]["score"] if scored_meetings else None
-    avg_score = round(sum(entry["result"]["health_score"]["score"] for entry in scored_meetings) / len(scored_meetings)) if scored_meetings else None
-    score_delta = (latest_score - oldest_score) if latest_score is not None and oldest_score is not None else None
+    def _score(entry: dict):
+        return entry["result"]["health_score"]["score"]
+
+    latest_score = _score(scored_meetings[0]) if scored_meetings else None
+
+    # "Delta vs prior" is the meeting IMMEDIATELY BEFORE the latest — index 1, since
+    # `meetings` is sorted newest-first above. This used to subtract the OLDEST
+    # meeting in the window, so the tile reported a decline while the score was
+    # actually climbing. None (not 0) when there is no previous scored meeting.
+    previous_score = _score(scored_meetings[1]) if len(scored_meetings) > 1 else None
+    score_delta = (
+        latest_score - previous_score
+        if latest_score is not None and previous_score is not None
+        else None
+    )
+
+    # 30-day average — the window the UI labels. It previously averaged EVERY
+    # meeting in the payload, so the number drifted from its own label as history
+    # grew. Undated rows are kept rather than silently dropped.
+    avg_cutoff = datetime.now(UTC) - timedelta(days=30)
+    recent_scored = [e for e in scored_meetings if _within(e.get("date"), avg_cutoff)]
+    avg_score = (
+        round(sum(_score(e) for e in recent_scored) / len(recent_scored))
+        if recent_scored else None
+    )
+    avg_score_count = len(recent_scored)
 
     owner_counts = defaultdict(int)
     owner_meeting_ids = defaultdict(set)
@@ -391,6 +428,7 @@ def derive_cross_meeting_insights(history: list[dict], user_id: str | None = Non
     return {
         "meeting_count": len(meetings),
         "avg_score": avg_score,
+        "avg_score_count": avg_score_count,
         "latest_score": latest_score,
         "score_delta": score_delta,
         "tense_meetings": tense_meetings,

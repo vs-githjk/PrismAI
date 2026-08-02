@@ -1,5 +1,6 @@
 import importlib
 import sys
+from datetime import UTC, datetime, timedelta
 import types
 import unittest
 from pathlib import Path
@@ -801,11 +802,16 @@ class StorageRoutesTestCase(unittest.TestCase):
         self.assertEqual(payload["recommended_actions"], [])
 
     def test_get_insights_ignores_placeholder_results(self):
+        # RELATIVE dates: avg_score is windowed to the last 30 days, so hardcoded
+        # dates silently fall out of the window as time passes and this test starts
+        # asserting the window instead of the placeholder filtering it is named for.
+        recent = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+        older = (datetime.now(UTC) - timedelta(days=3)).isoformat()
         self.fake_db.tables["meetings"] = [
             {
                 "id": 2,
                 "user_id": "user-123",
-                "date": "2026-04-02",
+                "date": recent,
                 "title": "Placeholder",
                 "score": 0,
                 "result": {
@@ -819,7 +825,7 @@ class StorageRoutesTestCase(unittest.TestCase):
             {
                 "id": 1,
                 "user_id": "user-123",
-                "date": "2026-04-01",
+                "date": older,
                 "title": "Useful",
                 "score": 91,
                 "result": {

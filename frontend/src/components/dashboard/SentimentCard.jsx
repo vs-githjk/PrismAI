@@ -24,13 +24,28 @@ function useCountUp(target, duration = 1000) {
 const LABEL_META = {
   collaborative:    { color: '#34d399', tint: 'rgba(52,211,153,0.10)', border: 'rgba(52,211,153,0.28)', blurb: 'Open energy; speakers built on each other' },
   aligned:          { color: '#34d399', tint: 'rgba(52,211,153,0.10)', border: 'rgba(52,211,153,0.28)', blurb: 'Strong consensus and shared direction' },
-  'decision-making': { color: '#22d3ee', tint: 'rgba(34,211,238,0.10)', border: 'rgba(34,211,238,0.28)', blurb: 'Focused; choices were committed to' },
+  'decision-making': { color: '#38bdf8', tint: 'rgba(56,189,248,0.10)', border: 'rgba(56,189,248,0.28)', blurb: 'Focused; choices were committed to' },
   exploratory:      { color: '#a78bfa', tint: 'rgba(167,139,250,0.10)', border: 'rgba(167,139,250,0.28)', blurb: 'Open-ended; productive uncertainty' },
   frictional:       { color: '#fbbf24', tint: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.28)', blurb: 'Disagreement surfaced; tension present' },
   divergent:        { color: '#fb923c', tint: 'rgba(251,146,60,0.10)', border: 'rgba(251,146,60,0.28)', blurb: 'No agreement; pulling in different directions' },
   rushed:           { color: '#fbbf24', tint: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.28)', blurb: 'Short on time; items deferred or skipped' },
   draining:         { color: '#f87171', tint: 'rgba(248,113,113,0.10)', border: 'rgba(248,113,113,0.28)', blurb: 'Low energy; one-sided or unproductive' },
   neutral:          { color: '#94a3b8', tint: 'rgba(148,163,184,0.10)', border: 'rgba(148,163,184,0.28)', blurb: 'Informational; no strong dynamic' },
+}
+
+// The agent prompt owns the vocabulary above, but real transcripts (and the demo
+// data) still emit plain-language labels like "positive" / "tense". Those fell
+// through to the grey `neutral` entry, so the keystone card's headline pill and
+// score bar rendered colourless — an answer with no signal. Alias to the nearest
+// known state instead of degrading to grey.
+const LABEL_ALIAS = {
+  positive: 'collaborative', constructive: 'collaborative', productive: 'collaborative',
+  engaged: 'collaborative', warm: 'collaborative',
+  agreed: 'aligned', consensus: 'aligned', decisive: 'decision-making',
+  curious: 'exploratory', open: 'exploratory',
+  tense: 'frictional', negative: 'frictional', conflicted: 'divergent',
+  unresolved: 'divergent', mixed: 'frictional',
+  hurried: 'rushed', flat: 'draining', disengaged: 'draining',
 }
 
 const TONE_COLOR = {
@@ -107,7 +122,7 @@ export default function SentimentCard({ sentiment }) {
   const [open, setOpen] = useState(true)
   if (!sentiment?.overall) return null
   const labelKey = String(sentiment.overall).toLowerCase()
-  const meta = LABEL_META[labelKey] || LABEL_META.neutral
+  const meta = LABEL_META[labelKey] || LABEL_META[LABEL_ALIAS[labelKey]] || LABEL_META.neutral
   const speakers = sentiment.speakers || []
   const tensions = sentiment.tension_moments || []
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { overallHealth } from '../lib/healthScore'
+import { scoreBand } from '../lib/insights'
 
 function useCountUp(target, duration = 1000) {
   const [display, setDisplay] = useState(0)
@@ -19,11 +20,27 @@ function useCountUp(target, duration = 1000) {
   return display
 }
 
+// Bands + stroke come from the app's ONE health scale (lib/insights). This card
+// used to declare 80/60/40 with an indigo "Good" tier, so the same score could read
+// "Good" here and "Fair" on the meeting page. Only the Tailwind class bundles are
+// local, and they now track the shared band via `tone`.
+const TONE_STYLES = {
+  emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/25' },
+  lime: { text: 'text-lime-400', bg: 'bg-lime-500/10', border: 'border-lime-500/25' },
+  amber: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/25' },
+  orange: { text: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/25' },
+  rose: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/25' },
+  slate: { text: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/25' },
+}
 const SCORE_COLOR = (score) => {
-  if (score >= 80) return { stroke: '#10b981', text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/25', accent: 'linear-gradient(90deg, #10b981, #34d399, transparent)', label: 'Excellent' }
-  if (score >= 60) return { stroke: '#6366f1', text: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/25', accent: 'linear-gradient(90deg, #6366f1, #818cf8, transparent)', label: 'Good' }
-  if (score >= 40) return { stroke: '#f59e0b', text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/25', accent: 'linear-gradient(90deg, #f59e0b, #fbbf24, transparent)', label: 'Fair' }
-  return { stroke: '#ef4444', text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/25', accent: 'linear-gradient(90deg, #ef4444, #f87171, transparent)', label: 'Needs Work' }
+  const band = scoreBand(score)
+  const tone = TONE_STYLES[band.tone] || TONE_STYLES.slate
+  return {
+    stroke: band.color,
+    accent: `linear-gradient(90deg, ${band.color}, ${band.color}99, transparent)`,
+    label: band.label,
+    ...tone,
+  }
 }
 
 const BADGE_POSITIVE = new Set(['Clear Decisions', 'Action-Oriented', 'Well-Facilitated', 'Concise', 'Engaged Team', 'Inclusive'])

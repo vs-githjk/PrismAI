@@ -15,8 +15,10 @@ import {
 import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
 import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
+import { seenKeyFor, STANDIN_READ_EVENT } from '../lib/standinRead'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
+const ActionItemsView = lazy(() => import('./dashboard/ActionItemsView'))
 import MeetingTypeControl from './dashboard/MeetingTypeControl'
 import { INPUT_TYPE_OPTIONS } from '../lib/meetingType'
 import LiveCatchup from './LiveCatchup'
@@ -759,6 +761,50 @@ export default function DashboardPage(props) {
     )
   }, [props.liveToken, props.shareData, props.shareLoading])
 
+  // Unread stand-in briefs, for the sidebar badge. Fetched here (not in
+  // ProxyProfile) so a brief that landed while you were elsewhere is visible
+  // without navigating to the page that holds it. "Read" is the same
+  // localStorage set ProxyProfile marks on expand.
+  const [standinBadge, setStandinBadge] = useState(0)
+  useEffect(() => {
+    if (!props.user || props.isTestAccount) { setStandinBadge(0); return }
+    let cancelled = false
+    let reps = []
+    // Read-state is per-user and lives in localStorage (no server flag yet), so
+    // recompute from the cached reps rather than refetching — this is what makes
+    // the badge drop the instant a brief is opened.
+    const recount = () => {
+      let seen = new Set()
+      try { seen = new Set(JSON.parse(localStorage.getItem(seenKeyFor(props.user?.id)) || '[]')) } catch { /* ignore */ }
+      const unread = reps.filter((r) => (r.followup_brief || '').trim() && !seen.has(String(r.id))).length
+      if (!cancelled) setStandinBadge(unread)
+    }
+    const refresh = async () => {
+      try {
+        const res = await apiFetch('/proxy/representations' + (activeWorkspaceId ? `?workspace_id=${activeWorkspaceId}` : ''))
+        if (!res.ok) return
+        const { representations } = await res.json()
+        reps = representations || []
+        recount()
+      } catch { /* badge is best-effort */ }
+    }
+    refresh()
+    // Briefs are generated SERVER-side after a meeting is analysed, so nothing
+    // client-side would ever announce one. A slow poll (2 min) plus a refresh on
+    // tab focus is enough for a recap that arrives minutes after a meeting ends.
+    const poll = setInterval(refresh, 120000)
+    window.addEventListener('prism:standin-changed', refresh)
+    window.addEventListener(STANDIN_READ_EVENT, recount)
+    window.addEventListener('focus', refresh)
+    return () => {
+      cancelled = true
+      clearInterval(poll)
+      window.removeEventListener('prism:standin-changed', refresh)
+      window.removeEventListener(STANDIN_READ_EVENT, recount)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [props.user, props.isTestAccount, activeWorkspaceId])
+
   const historyCount = props.history?.length || 0
   const isFirstRender = useRef(true)
   const userSelectedMeetingRef = useRef(false)
@@ -777,6 +823,39 @@ export default function DashboardPage(props) {
   // Off-canvas nav drawer (mobile). Opened by the topbar hamburger; closed by the
   // backdrop, Escape, navigating, or growing back to desktop width.
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  // Desktop nav collapse — trades the 300px sidebar for a 76px icon rail so the
+  // content area gets the space back. Every shell offset derives from
+  // --dashboard-sidebar-w, so the class alone reflows the topbar and content.
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try { return localStorage.getItem('prismai:nav-collapsed') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('prismai:nav-collapsed', navCollapsed ? '1' : '0') } catch { /* ignore */ }
+  }, [navCollapsed])
+  // Keyboard: Cmd/Ctrl+B, the convention for this in editors and chat apps.
+  // Ignored while the user is typing — in a text field Cmd+B is bold (and in a
+  // plain input it's still their keystroke, not a nav command).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || (e.key !== 'b' && e.key !== 'B')) return
+      const el = e.target
+      const tag = el?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
+      e.preventDefault()
+      setNavCollapsed((v) => !v)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  // The rail is only ever collapsed on DESKTOP, and never while searching. Two
+  // bugs this closes: (1) under 1024px the nav is a drawer, and a persisted
+  // desktop collapse rendered an icon-only drawer with NO workspace switcher and
+  // NO meeting list; (2) the topbar search only filters the sidebar's meeting
+  // list, which a collapsed rail hides — so typing did nothing. Typing now slides
+  // the rail open and it re-collapses when the field clears. The stored
+  // preference (navCollapsed) is untouched by either.
+  const searchingHistory = !!(props.historySearch || '').trim()
+  const railCollapsed = navCollapsed && !isNarrow && !searchingHistory
   const [pastSessions, setPastSessions] = useState([])
 
   useEffect(() => {
@@ -1344,6 +1423,8 @@ export default function DashboardPage(props) {
               ? 'Stand-in'
               : activeView === 'calendar'
                 ? 'Calendar'
+                : activeView === 'actions'
+                  ? 'Action items'
                 : activeView === 'meeting' && (currentMeeting || props.result)
                   ? deriveDisplayTitle(currentMeeting || { result: props.result })
                   : 'Home'
@@ -1384,7 +1465,7 @@ export default function DashboardPage(props) {
 
   return (
     <div
-      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--db-text)]${theme === 'light' ? ' theme-light' : ''}${mobileNavOpen ? ' nav-open' : ''}`}
+      className={`landing-page dashboard-page min-h-dvh overflow-x-hidden text-[color:var(--db-text)]${theme === 'light' ? ' theme-light' : ''}${mobileNavOpen ? ' nav-open' : ''}${railCollapsed ? ' nav-collapsed' : ''}`}
     >
       {/* Mobile drawer backdrop — taps close the nav. */}
       {mobileNavOpen && (
@@ -1396,6 +1477,8 @@ export default function DashboardPage(props) {
       )}
       {!signedOut && (
       <WorkspaceIsland
+        collapsed={railCollapsed}
+        onToggleCollapse={() => setNavCollapsed((v) => !v)}
         user={props.user}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
@@ -1434,7 +1517,14 @@ export default function DashboardPage(props) {
         onLockedFeature={requestSignIn}
         onMenu={signedOut ? null : () => setMobileNavOpen(true)}
         bell={<NotificationBell onOpenMeeting={handleOpenMeetingById} signedOut={signedOut} />}
-        onBack={activeView === 'meeting' ? goBackFromMeeting : null}
+        // Action items is only reachable from Home, so its back goes there
+        // explicitly — routing it through goBackFromMeeting returned to itself,
+        // because persistView had just recorded 'actions' as the last view.
+        onBack={
+          activeView === 'actions' ? () => persistView('home')
+            : activeView === 'meeting' ? goBackFromMeeting
+              : null
+        }
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
             <MeetingActionsBar
@@ -1476,6 +1566,8 @@ export default function DashboardPage(props) {
         activeView={activeView}
         onGoHome={() => persistView('home')}
         onOpenStandin={() => persistView('standin')}
+        standinBadge={standinBadge}
+        collapsed={railCollapsed}
         onOpenCalendar={() => persistView('calendar')}
         onOpenTrend={handleOpenTrend}
         onOpenKnowledge={() => persistView('knowledge')}
@@ -1507,7 +1599,7 @@ export default function DashboardPage(props) {
         onLockedFeature={requestSignIn}
       />
 
-      <div className={`dashboard-content ${activeView === 'home' ? 'is-home' : ''}`}>
+      <div className={`dashboard-content ${activeView === 'home' ? 'is-home' : ''}${activeView === 'home' && (props.history?.length || 0) === 0 ? ' is-home-empty' : ''}`}>
         {showHomeNudge && (
           <div className="px-5 pt-4 sm:px-8">
             <div className="mx-auto flex max-w-[92rem] items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
@@ -1564,18 +1656,45 @@ export default function DashboardPage(props) {
           )}
           {(activeView === 'home' || (activeView === 'meeting' && !props.result)) && (
             <StatsCanvas
+                user={props.user}
               history={props.history}
               loadFromHistory={handleSelectMeeting}
               loadSample={props.loadDashboardSample}
               canLoadSample={props.canLoadSample}
-              onStartMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
+              onJoinMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
               onPasteTranscript={() => { props.setInputTab?.('paste'); setNewMeetingOpen(true) }}
+              upcomingPanel={
+                // window.__prismForceUpcoming: DEV-only escape hatch so headless visual
+                // tests can render this panel (the test account can never connect a
+                // real calendar). Dead code in production builds.
+                (props.calendarConnected && props.user && !props.isTestAccount) ||
+                (import.meta.env.DEV && typeof window !== 'undefined' && window.__prismForceUpcoming) ? (
+                  <Suspense fallback={null}>
+                    <UpcomingMeetings
+                      hideEmpty
+                      workspaces={workspaces}
+                      user={props.user}
+                      onCantMakeIt={(m) => setStandIn(m)}
+                      onOpenMeeting={handleOpenMeetingById}
+                      onJoin={(url, wsId) => {
+                        // Prefill the Join tab and open the New Meeting popover — the
+                        // user confirms mode + Join Meeting there, same as ever.
+                        props.setMeetingUrl(url)
+                        if (wsId) props.onJoinWithWorkspace?.(wsId)
+                        props.setInputTab?.('join')
+                        setNewMeetingOpen(true)
+                      }}
+                    />
+                  </Suspense>
+                ) : null
+              }
               showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
               onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
               memberEmailMap={workspaceMemberMap}
               currentUserId={props.user?.id}
               onToggleAction={props.toggleHistoryActionItem}
+              onOpenAllActions={() => persistView('actions')}
             />
           )}
           {activeView === 'meeting' && (
@@ -1617,6 +1736,17 @@ export default function DashboardPage(props) {
                 actionConnections={actionConnections}
                 suggestedEmails={suggestedAttendeeEmails}
                 teamsWebhook={props.integrations?.teams_webhook || ''}
+              />
+            </Suspense>
+          )}
+          {activeView === 'actions' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <ActionItemsView
+                history={props.history}
+                user={props.user}
+                onOpenMeeting={handleSelectMeeting}
+                onToggleAction={props.toggleHistoryActionItem}
+                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
               />
             </Suspense>
           )}
@@ -1669,6 +1799,11 @@ export default function DashboardPage(props) {
                 workspaceId={activeWorkspaceId}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
                 onOpenMeeting={handleOpenMeetingById}
+                // Lets the Stand-in page start a stand-in itself. The composer used
+                // to be reachable ONLY from the New Meeting popover, so this page's
+                // empty state gave directions to a button it couldn't offer.
+                onCantMakeIt={(m) => setStandIn(m)}
+                calendarConnected={props.anyCalendarConnected ?? props.calendarConnected}
               />
             </Suspense>
           )}
@@ -1678,7 +1813,7 @@ export default function DashboardPage(props) {
                 history={props.history}
                 onOpenMeeting={handleOpenMeetingById}
                 workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
-                calendarConnected={props.calendarConnected}
+                calendarConnected={props.anyCalendarConnected ?? props.calendarConnected}
               />
             </Suspense>
           )}

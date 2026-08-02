@@ -8,7 +8,6 @@ function initials(name = '') {
 export default function OwnerLoad({ insights }) {
   const owners = insights.topOwners || []
   const flagged = new Set((insights.ownershipDrift || []).map((item) => item.owner))
-  const max = Math.max(...owners.map((owner) => owner.count), 1)
 
   return (
     <section className={`${glassCard} p-4`} style={cardGlowStyle}>
@@ -29,18 +28,19 @@ export default function OwnerLoad({ insights }) {
                 key={owner.owner}
                 className={`border-b border-[color:var(--db-border)] px-3 py-2 last:border-b-0 ${isFlagged ? 'bg-amber-300/8' : 'bg-black/18'}`}
               >
-                <div className="mb-1.5 flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-cyan-200/16 bg-cyan-300/10 text-[11px] font-semibold text-cyan-50">
+                {/* The list is already sorted descending and each count is printed,
+                    so the old per-owner bar added nothing — with counts of 2/2/1/1
+                    it drew two full and two half brand-cyan stripes, reading as a
+                    field of decoration. Count right-aligned instead. */}
+                <div className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill-strong)] text-[11px] font-semibold text-[color:var(--db-text-soft)]">
                     {initials(owner.owner)}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-[color:var(--db-text)]">{owner.owner}</p>
-                    <p className={subtleText}>{owner.count} action item{owner.count === 1 ? '' : 's'}</p>
-                  </div>
-                  {isFlagged && <span className="rounded-full border border-amber-200/24 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">drift</span>}
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--db-fill-strong)]">
-                  <div className="h-full rounded-full bg-cyan-300 animate-bar-grow" style={{ width: `${Math.max((owner.count / max) * 100, 8)}%` }} />
+                  <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[color:var(--db-text)]">{owner.owner}</p>
+                  {isFlagged && <span className="shrink-0 rounded-full border border-amber-200/24 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">drift</span>}
+                  <span className={`shrink-0 ${subtleText}`}>
+                    <span className="font-semibold text-[color:var(--db-text-soft)]">{owner.count}</span> open
+                  </span>
                 </div>
               </div>
             )

@@ -4,7 +4,12 @@ import { cardGlowStyle, glassCard } from './dashboardStyles'
 export default function StatsHero({ insights, workspaceName = null }) {
   const delta = insights.scoreDelta
   const deltaTone = delta < 0 ? 'amber' : delta > 0 ? 'emerald' : 'cyan'
-  const status = delta > 0 ? 'Improving' : delta < 0 ? 'Needs attention' : 'Stable'
+  // A null delta means there is no previous meeting to compare against — that is
+  // not "Stable", which would assert a comparison we never made.
+  const status = delta === null || delta === undefined
+    ? 'Not enough history'
+    : delta > 0 ? 'Improving' : delta < 0 ? 'Needs attention' : 'Stable'
+  const avgCount = insights.avgScoreCount
   const completionRate = insights.completionRate?.rate ?? null
   const avgDecisions = insights.decisionVelocity?.avg ?? null
 
@@ -28,13 +33,22 @@ export default function StatsHero({ insights, workspaceName = null }) {
           </span>
         </div>
       </div>
+      {/* Tone is deliberately uniform: six tiles in five hues read as decoration,
+          not severity. Severity lives in the score band + the header pill. Each
+          tile carries a plain-English definition so the figure is self-explaining. */}
       <div className="grid grid-cols-2 lg:grid-cols-3">
-        <MetricTile label="Latest score" value={insights.latestScore} suffix="/100" isScore delay={0} />
-        <MetricTile label="30-day average" value={insights.avgScore} suffix="/100" tone="cyan" delay={60} />
-        <MetricTile label="Delta vs prior" value={delta ?? 0} tone={deltaTone} delta delay={120} />
-        <MetricTile label="Meetings analyzed" value={insights.meetingCount} tone="violet" delay={180} />
-        <MetricTile label="Completion rate" value={completionRate} suffix="% done" tone="emerald" delay={240} />
-        <MetricTile label="Avg decisions" value={avgDecisions !== null ? Math.round(avgDecisions) : null} suffix="/meeting" tone="cyan" delay={300} />
+        <MetricTile label="Latest score" value={insights.latestScore} suffix="/100" isScore bar delay={0}
+          hint="health of your most recent meeting" />
+        <MetricTile label="30-day average" value={insights.avgScore} suffix="/100" isScore bar delay={60}
+          hint={avgCount ? `mean health across ${avgCount} meeting${avgCount === 1 ? '' : 's'} in the last 30 days` : 'no scored meetings in the last 30 days'} />
+        <MetricTile label="Delta vs prior" value={delta} tone={deltaTone} delta delay={120}
+          hint="change from the meeting before this one" />
+        <MetricTile label="Meetings analyzed" value={insights.meetingCount} delay={180}
+          hint="meetings in this view" />
+        <MetricTile label="Completion rate" value={completionRate} suffix="% done" bar delay={240}
+          hint="share of action items ticked off" />
+        <MetricTile label="Avg decisions" value={avgDecisions !== null ? Math.round(avgDecisions) : null} suffix="/meeting" delay={300}
+          hint="decisions logged per meeting" />
       </div>
     </section>
   )

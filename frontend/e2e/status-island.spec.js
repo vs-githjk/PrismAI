@@ -50,12 +50,12 @@ test('Phase C: the dev status toggle is gone from the topbar', async ({ page }) 
   await expect(page.getByRole('button', { name: /cycle status island/i })).toHaveCount(0)
 })
 
-test('Phase C: desktop idle shows the tiny capsule pill', async ({ page }) => {
+test('Phase C: desktop idle shows NO pill', async ({ page }) => {
   await page.goto(HOME)
-  const pill = page.locator(`header ${ISLAND}`).first()
-  await expect(pill).toBeVisible()
-  const box = await pill.boundingBox()
-  expect(box.width).toBeLessThan(60) // the ~34px idle capsule, not an expanded pill
+  // The idle state renders nothing: an empty aria-hidden capsule floating in the
+  // topbar centre on every non-meeting view is a placeholder that says nothing.
+  // (The tiny capsule still exists as the shrink-target when `analysed` collapses.)
+  await expect(page.locator(`header ${ISLAND}`)).toHaveCount(0)
 })
 
 test('Phase C/E: failed analysis → error pill with Retry + Dismiss', async ({ page }) => {

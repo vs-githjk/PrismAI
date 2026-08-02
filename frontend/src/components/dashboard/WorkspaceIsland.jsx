@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronDown, Plus, Settings2, Share2, X } from 'lucide-react'
+import { Check, ChevronDown, PanelLeftClose, Plus, Settings2, Share2, X } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +59,8 @@ export default function WorkspaceIsland(props) {
     inviteCopied,
     closeWsSettings,
     onSaveWorkspacePersona,
+    collapsed = false,
+    onToggleCollapse = null,
   } = props
 
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
@@ -69,11 +71,28 @@ export default function WorkspaceIsland(props) {
 
   return (
     <div className="dashboard-island dashboard-workspace-island flex items-center" aria-label="Workspace">
+      {/* Collapsed rail: the scope reduces to its initial and the whole island
+          becomes the expand control, so the toggle is never orphaned. */}
+      {collapsed ? (
+        <button
+          type="button"
+          onClick={() => onToggleCollapse?.()}
+          title={`${scopeLabel} — expand sidebar (Ctrl+B)`}
+          aria-label={`Expand sidebar. Current workspace: ${scopeLabel}`}
+          aria-expanded={false}
+          aria-controls="dashboard-sidebar-nav"
+          className="flex h-full w-full items-center justify-center rounded-[inherit] transition hover:bg-[var(--db-fill)]"
+        >
+          <span className="grid h-9 w-9 place-items-center rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[15px] font-semibold text-[color:var(--db-text)]">
+            {(scopeLabel || 'P').trim().charAt(0).toUpperCase()}
+          </span>
+        </button>
+      ) : (
       <DropdownMenu open={wsMenuOpen} onOpenChange={setWsMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-full w-full min-w-0 items-center justify-between gap-2.5 rounded-[inherit] px-6 transition hover:bg-[var(--db-fill)]"
+            className="flex h-full min-w-0 flex-1 items-center justify-between gap-2.5 rounded-[inherit] py-0 pl-6 pr-3 transition hover:bg-[var(--db-fill)]"
           >
             <span className="min-w-0 truncate text-[18px] font-semibold text-[color:var(--db-text)]">
               {scopeLabel}
@@ -198,6 +217,23 @@ export default function WorkspaceIsland(props) {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
+
+      {/* Collapse control — expanded state only; collapsed, the whole island is
+          the expand button (above). Hidden on mobile, where the nav is a drawer. */}
+      {!collapsed && onToggleCollapse && (
+        <button
+          type="button"
+          onClick={() => onToggleCollapse()}
+          title="Collapse sidebar (Ctrl+B)"
+          aria-label="Collapse sidebar"
+          aria-expanded
+          aria-controls="dashboard-sidebar-nav"
+          className="mr-3 hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] lg:flex"
+        >
+          <PanelLeftClose className="h-[18px] w-[18px]" aria-hidden="true" />
+        </button>
+      )}
 
       {/* Workspace settings modal */}
       <Dialog open={!!wsSettingsId} onOpenChange={(o) => { if (!o) closeWsSettings() }}>

@@ -123,6 +123,38 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 
 class TestProcessBotTranscriptSavesSegments(unittest.TestCase):
+    def test_live_transcript_skips_async_retranscription(self):
+        import recall_routes
+        bot_id = "bot-live"
+        recall_routes.bot_store[bot_id] = {
+            "status": "processing", "result": None, "error": None,
+            "commands": [], "user_id": "user-1",
+            "realtime_transcript_lines": [
+                "Alice: we are reviewing the product roadmap and launch plan with the engineering team today",
+            ],
+        }
+        self.addCleanup(recall_routes.bot_store.pop, bot_id, None)
+        self.addCleanup(recall_routes._processing_bots.discard, bot_id)
+
+        request_async = AsyncMock(return_value=True)
+        fetch_transcript = AsyncMock(return_value=None)
+
+        with patch.object(recall_routes, "_ASYNC_TRANSCRIPT_ENABLED", True), \
+             patch.object(recall_routes, "_request_async_transcript", request_async), \
+             patch.object(recall_routes, "_fetch_transcript", fetch_transcript), \
+             patch.object(recall_routes, "_db_save"), \
+             patch.object(recall_routes, "_mb_update_status"), \
+             patch.object(recall_routes, "run_full_analysis", AsyncMock(return_value={"summary": "ok"})), \
+             patch.object(recall_routes, "build_analysis_transcript", side_effect=lambda t, owner_name=None: t), \
+             patch.object(recall_routes, "_persist_bot_meeting", AsyncMock()), \
+             patch("realtime_routes.cleanup_bot_state"):
+            asyncio.run(recall_routes._process_bot_transcript(bot_id))
+
+        request_async.assert_not_awaited()
+        fetch_transcript.assert_awaited_once_with(
+            bot_id, attempts=2, prefer_async=False,
+        )
+
     def test_saves_segments_to_bot_sessions_on_success(self):
         import recall_routes
         recall_routes.bot_store["bot-xyz"] = {

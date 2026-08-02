@@ -41,13 +41,18 @@ def _rr():
 
 
 def get_mode(state: dict) -> str:
-    """'auto' | 'manual'. Reads the Phase-4 toggle, migrating legacy values in place:
-    the old auto state machine's 'autonomous' → auto, 'utterance' → manual. Default auto,
-    so a fresh solo meeting converses out of the box (core decision #6)."""
+    """'auto' | 'manual'. Reads the Phase-4 toggle, migrating an EXPLICIT legacy choice
+    in place: the old auto state machine's 'autonomous' → auto, 'utterance' → manual.
+    Only `manual_mode` counts as explicit — it is written solely by the join selector
+    and the mode endpoint (always alongside `mode`). The bare `mode` key is pre-seeded
+    to 'utterance' by meeting_memory.get_initial_memory_state() as the ambient-lane
+    default; reading it here made every fresh bot boot manual, silently disabling solo
+    free-flow. Default auto, so a fresh solo meeting converses out of the box (core
+    decision #6)."""
     m = state.get("engagement_mode")
     if m in ("auto", "manual"):
         return m
-    legacy = state.get("manual_mode") or state.get("mode")
+    legacy = state.get("manual_mode")
     migrated = "manual" if legacy == "utterance" else "auto"
     state["engagement_mode"] = migrated
     return migrated
@@ -174,6 +179,13 @@ if __name__ == "__main__":
     sys.modules["realtime_routes"] = _FakeRR("realtime_routes")
 
     async def _main():
+        # The ambient-lane seed ("mode": "utterance", no manual_mode) is NOT an
+        # explicit choice — a fresh solo bot must default auto and converse.
+        st = {"mode": "utterance", "_humans": 1}
+        assert (await decide("b", st, "what did we decide", "A"))[0] is True
+        # An explicit legacy choice (manual_mode set) still boots manual.
+        st = {"mode": "utterance", "manual_mode": "utterance", "_humans": 1}
+        assert await decide("b", st, "what did we decide", "A") == (False, "")
         # Manual: only wake words.
         st = {"engagement_mode": "manual", "_humans": 1}
         assert await decide("b", st, "what did we decide", "A") == (False, "")

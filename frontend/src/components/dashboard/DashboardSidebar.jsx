@@ -76,6 +76,8 @@ export default function DashboardSidebar(props) {
     onOpenTrend,
     onOpenKnowledge,
     onOpenStandin,
+    standinBadge = 0,
+    collapsed = false,
     onOpenCalendar,
     onSelectMeeting,
     onDeleteMeeting,
@@ -134,7 +136,7 @@ export default function DashboardSidebar(props) {
   const [avatarOk, setAvatarOk] = useState(true)
 
   return (
-    <aside className="dashboard-sidebar dashboard-island flex flex-col" aria-label="Dashboard navigation">
+    <aside id="dashboard-sidebar-nav" className="dashboard-sidebar dashboard-island flex flex-col" aria-label="Dashboard navigation">
       {/* Pinned: Home + Trend + Knowledge. When signed out, each is locked and
           clicking opens the sign-in gate instead of navigating. */}
       <div className="space-y-1 px-3 pt-4">
@@ -143,14 +145,16 @@ export default function DashboardSidebar(props) {
           { key: 'trend', label: 'Trend', Icon: TrendingUp, active: onTrend, onClick: onOpenTrend },
           { key: 'calendar', label: 'Calendar', Icon: CalendarDays, active: onCalendar, onClick: onOpenCalendar },
           { key: 'knowledge', label: 'Knowledge', Icon: BookOpen, active: onKnowledge, onClick: onOpenKnowledge },
-          { key: 'standin', label: 'Stand-in', Icon: UserRoundCheck, active: onStandin, onClick: onOpenStandin },
-        ].map(({ key, label, Icon, active, onClick }) => (
+          { key: 'standin', label: 'Stand-in', Icon: UserRoundCheck, active: onStandin, onClick: onOpenStandin, badge: standinBadge },
+        ].map(({ key, label, Icon, active, onClick, badge }) => (
           <button
             key={key}
             type="button"
             onClick={signedOut ? () => onLockedFeature?.(label) : onClick}
             aria-disabled={signedOut || undefined}
-            className={`${navItemBase} ${
+            title={collapsed ? label : undefined}
+            aria-label={collapsed ? label : undefined}
+            className={`${navItemBase} ${collapsed ? 'relative justify-center px-0' : ''} ${
               active && !signedOut
                 ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
                 : signedOut
@@ -159,17 +163,37 @@ export default function DashboardSidebar(props) {
             }`}
           >
             <Icon className="h-[18px] w-[18px] shrink-0" />
-            {label}
-            {signedOut && <Lock className="ml-auto h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />}
+            {!collapsed && label}
+            {/* Unread count — so a waiting stand-in brief is visible from any view,
+                not only after navigating to the page that holds it. Collapsed, it
+                rides the icon as a corner dot-count. */}
+            {!signedOut && badge > 0 && (
+              collapsed ? (
+                <span className="absolute right-1.5 top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-cyan-400 px-1 text-[9.5px] font-semibold text-[#06080d]"
+                  aria-label={`${badge} unread`}>
+                  {badge}
+                </span>
+              ) : (
+                <span className="ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-cyan-400 px-1.5 text-[10.5px] font-semibold text-[#06080d]"
+                  aria-label={`${badge} unread`}>
+                  {badge}
+                </span>
+              )
+            )}
+            {signedOut && !collapsed && <Lock className="ml-auto h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)]" aria-hidden="true" />}
           </button>
         ))}
       </div>
 
-      {/* Meetings section — New meeting button sits beside the heading */}
-      <div className="mt-4 flex items-center justify-between px-5 pb-1.5">
-        <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
-          Meetings
-        </p>
+      {/* Meetings section — New meeting button sits beside the heading. Collapsed,
+          the heading and the meeting list go (titles are unreadable at 76px) and
+          only the New-meeting control remains, centred. */}
+      <div className={`mt-4 flex items-center px-5 pb-1.5 ${collapsed ? 'justify-center px-0' : 'justify-between'}`}>
+        {!collapsed && (
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
+            Meetings
+          </p>
+        )}
         {signedOut ? (
           <button
             type="button"
@@ -219,7 +243,10 @@ export default function DashboardSidebar(props) {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+      {/* `hidden` removes the aside's only flex-1 child, so the account footer
+          below needs mt-auto to stay pinned to the bottom of the collapsed rail
+          (without it, it jumped up under the nav icons leaving ~400px of void). */}
+      <div className={`min-h-0 flex-1 overflow-y-auto px-3 pb-2 ${collapsed ? 'hidden' : ''}`}>
         {/* Pinned live session — sits above all history while the meeting is in
             progress / analysing. Disappears once done (the saved meeting then
             shows as an ordinary history row below). */}
@@ -344,8 +371,10 @@ export default function DashboardSidebar(props) {
         )}
       </div>
 
-      {/* Footer: account block — replaced by a Sign in CTA when signed out. */}
-      <div className="border-t border-[color:var(--db-border)] p-2.5">
+      {/* Footer: account block — replaced by a Sign in CTA when signed out.
+          mt-auto pins it to the bottom in BOTH states (harmless when the meeting
+          list is present, since the list already absorbs the free space). */}
+      <div className="mt-auto border-t border-[color:var(--db-border)] p-2.5">
         {signedOut ? (
           <button
             type="button"
@@ -360,7 +389,9 @@ export default function DashboardSidebar(props) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[var(--db-fill)]"
+              title={collapsed ? accountName : undefined}
+              aria-label={collapsed ? `Account: ${accountName}` : undefined}
+              className={`flex w-full items-center rounded-xl py-2 text-left transition hover:bg-[var(--db-fill)] ${collapsed ? 'justify-center px-0' : 'gap-3 px-2.5'}`}
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-cyan-400/[0.14] text-cyan-200">
                 {avatarUrl && avatarOk ? (
@@ -375,15 +406,19 @@ export default function DashboardSidebar(props) {
                   <UserCircle className="h-6 w-6" />
                 )}
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-semibold text-[color:var(--db-text)]">
-                  {accountName}
-                </span>
-                <span className="block truncate text-[12px] text-[color:var(--db-text-faint)]">
-                  {accountSub}
-                </span>
-              </span>
-              <ChevronDown className="h-4 w-4 shrink-0 rotate-180 text-[color:var(--db-text-faint)]" />
+              {!collapsed && (
+                <>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-semibold text-[color:var(--db-text)]">
+                      {accountName}
+                    </span>
+                    <span className="block truncate text-[12px] text-[color:var(--db-text-faint)]">
+                      {accountSub}
+                    </span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 rotate-180 text-[color:var(--db-text-faint)]" />
+                </>
+              )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent

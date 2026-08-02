@@ -192,7 +192,10 @@ function matchWorkspace(attendeeEmails, workspaces) {
   return bestOverlap > 0 ? best : null
 }
 
-export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null, onCantMakeIt }) {
+// hideEmpty: on Home the card should only exist when there is something to join —
+// loading shimmer, errors, and "no upcoming meetings" all render as nothing there
+// (the Join tab keeps those states, where the user is actively looking).
+export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null, onCantMakeIt, hideEmpty = false }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -298,6 +301,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
   }
 
   if (error === 'reconnect') {
+    if (hideEmpty) return null
     return (
       <EmptyState
         title="Upcoming meetings"
@@ -309,6 +313,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
   }
 
   if (error === 'load') {
+    if (hideEmpty) return null
     return (
       <EmptyState
         title="Upcoming meetings"
@@ -319,7 +324,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
     )
   }
 
-  if (loading) return (
+  if (loading) return hideEmpty ? null : (
     <div className="rounded-xl px-3 py-2.5 flex items-center gap-2"
       style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="w-3 h-3 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.15)' }} />
@@ -330,6 +335,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
   // Only show events with meeting links (others aren't actionable here)
   const joinable = events.filter(e => e.has_meeting_link)
   if (joinable.length === 0) {
+    if (hideEmpty) return null
     return (
       <EmptyState
         title="Upcoming meetings"

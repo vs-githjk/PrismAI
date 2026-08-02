@@ -1,4 +1,4 @@
-import { overallHealth } from './healthScore'
+import { overallHealth } from './healthScore.js'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'will', 'into', 'your',
@@ -79,13 +79,39 @@ export function deriveInsights(history = []) {
     .sort((a, b) => new Date(b.date) - new Date(a.date))
 
   const scoredMeetings = meetings.filter((entry) => overallHealth(entry.result?.health_score) !== null)
-  const latestScore = overallHealth(scoredMeetings[0]?.result?.health_score)
-  const oldestScore = overallHealth(scoredMeetings.at(-1)?.result?.health_score)
-  const avgScore = scoredMeetings.length
-    ? Math.round(scoredMeetings.reduce((sum, entry) => sum + (overallHealth(entry.result.health_score) ?? 0), 0) / scoredMeetings.length)
-    : null
-  const scoreDelta = latestScore !== null && oldestScore !== null ? latestScore - oldestScore : null
+  const scoreOf = (entry) => overallHealth(entry?.result?.health_score)
+  const latestScore = scoreOf(scoredMeetings[0])
 
+  // "Delta vs prior" means the meeting IMMEDIATELY BEFORE the latest one — index
+  // 1, since the list is sorted newest-first above. This used to subtract the
+  // OLDEST meeting in the whole window, so the tile could report a decline while
+  // the score was in fact climbing (84 after a 73 read as -4 because the first
+  // meeting scored 88). null when there is no previous scored meeting: a single
+  // meeting has no delta, and 0 would claim "no change".
+  const previousScore = scoredMeetings.length > 1 ? scoreOf(scoredMeetings[1]) : null
+  const scoreDelta = latestScore !== null && previousScore !== null ? latestScore - previousScore : null
+
+  // 30-day average — the window the UI has always claimed. It previously averaged
+  // EVERY meeting handed to the view, so the figure drifted from its own label as
+  // history grew. avgScoreCount is exported so the label can state its sample size
+  // instead of implying a full month of data.
+  const AVG_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+  const avgCutoff = Date.now() - AVG_WINDOW_MS
+  const recentScored = scoredMeetings.filter((entry) => {
+    const t = new Date(entry.date).getTime()
+    return !Number.isFinite(t) || t >= avgCutoff // undated entries count rather than vanish
+  })
+  const avgScore = recentScored.length
+    ? Math.round(recentScored.reduce((sum, entry) => sum + scoreOf(entry), 0) / recentScored.length)
+    : null
+  const avgScoreCount = recentScored.length
+
+  // Completion + decision velocity, so the Trend KPI band has real numbers when
+  // the server hasn't sent its own (it used to fall through to null and the tile
+  // printed a confident "0" — worse than an honest dash).
+  let totalItems = 0
+  let completedItems = 0
+  let totalDecisions = 0
   const ownerCounts = new Map()
   const ownerMeetingCounts = new Map()
   const themeCounts = new Map()
@@ -110,6 +136,10 @@ export function deriveInsights(history = []) {
     ;(sentiment.speakers || []).forEach((speaker) => {
       if (speaker?.name) nameTokens(speaker.name).forEach((token) => nameWords.add(token))
     })
+
+    totalItems += items.length
+    completedItems += items.filter((item) => item?.completed).length
+    totalDecisions += decisions.length
 
     items.forEach((item) => {
       const owner = (item.owner || '').trim()
@@ -255,9 +285,18 @@ export function deriveInsights(history = []) {
   return {
     meetingCount: meetings.length,
     avgScore,
+    avgScoreCount,
     latestScore,
+    previousScore,
     scoreDelta,
     tenseMeetings,
+    // null (not 0) when there's nothing to measure — the tile shows a dash.
+    completionRate: totalItems > 0
+      ? { rate: Math.round((completedItems / totalItems) * 100), done: completedItems, total: totalItems }
+      : null,
+    decisionVelocity: meetings.length > 0
+      ? { avg: totalDecisions / meetings.length, total: totalDecisions }
+      : null,
     topOwners,
     ownershipDrift,
     recurringThemes,
@@ -312,6 +351,7 @@ export function normalizeInsights(insights = {}, history = []) {
   return {
     meetingCount: source.meeting_count ?? source.meetingCount ?? derived.meetingCount,
     avgScore: source.avg_score ?? source.avgScore ?? derived.avgScore,
+    avgScoreCount: source.avg_score_count ?? source.avgScoreCount ?? derived.avgScoreCount,
     latestScore: source.latest_score ?? source.latestScore ?? derived.latestScore,
     scoreDelta: source.score_delta ?? source.scoreDelta ?? derived.scoreDelta,
     tenseMeetings: source.tense_meetings ?? source.tenseMeetings ?? derived.tenseMeetings,
@@ -325,8 +365,8 @@ export function normalizeInsights(insights = {}, history = []) {
     unresolvedDecisions,
     recentDecisions,
     recommendedActions: source.recommended_actions ?? source.recommendedActions ?? derived.recommendedActions,
-    completionRate: source.completion_rate ?? source.completionRate ?? null,
-    decisionVelocity: source.decision_velocity ?? source.decisionVelocity ?? null,
+    completionRate: source.completion_rate ?? source.completionRate ?? derived.completionRate ?? null,
+    decisionVelocity: source.decision_velocity ?? source.decisionVelocity ?? derived.decisionVelocity ?? null,
     openOwnerLoad: source.open_owner_load ?? source.openOwnerLoad ?? [],
   }
 }
@@ -367,10 +407,44 @@ export function deriveDisplayTitle(entry) {
   return stored || 'Meeting'
 }
 
+/**
+ * THE health colour scale — one source of truth for every score in the app.
+ *
+ * There used to be three competing scales (this one, MeetingHealthTriangle's
+ * traffic light, and CalendarView's Healthy/Mixed/Strained), so the SAME score
+ * rendered green on a meeting page and violet on Home. Worse, the old bands here
+ * gave a mediocre 30-59 the brand cyan (#22d3ee), making a middling meeting look
+ * brand-approved — cyan is reserved for selection/links/primary actions.
+ *
+ * Semantic traffic light only. Thresholds match the meeting-health triangle
+ * (>=80 healthy, >=60 fair, else needs work) so the two never disagree again.
+ */
+// FIVE bands, not three. Real meeting scores cluster low (in this account: 32
+// meetings, median 20, max 50 — not one above 59), so a 3-band <60/60-79/80+ scale
+// painted every single percentage the same red: semantically defensible, but it
+// differentiated nothing and read as a wall of alarm. The extra low-end bands
+// restore the variety while keeping colour DIRECTIONAL (redder = worse) and
+// keeping cyan reserved for interactive state.
+export const HEALTH_BANDS = [
+  { min: 80, color: '#34d399', label: 'Healthy', tone: 'emerald' },
+  { min: 60, color: '#a3e635', label: 'Good', tone: 'lime' },
+  { min: 40, color: '#fbbf24', label: 'Fair', tone: 'amber' },
+  { min: 20, color: '#fb923c', label: 'Weak', tone: 'orange' },
+  { min: 0, color: '#f87171', label: 'Needs work', tone: 'rose' },
+]
+
+export const NO_SCORE_BAND = { color: '#94a3b8', label: 'No score', tone: 'slate' }
+
 export function scoreBand(score) {
+  // The null/undefined guard must come BEFORE Number(): Number(null) is 0 and 0 is
+  // finite, so a missing score used to fall straight through to the <60 band and
+  // render as a confident red "Needs work". An unscored meeting is not a bad
+  // meeting — it's an unknown one.
+  if (score === null || score === undefined || score === '') return NO_SCORE_BAND
   const value = Number(score)
-  if (!Number.isFinite(value)) return { color: '#94a3b8', label: 'No score', tone: 'slate' }
-  if (value < 30) return { color: '#f59e0b', label: 'At risk', tone: 'amber' }
-  if (value < 60) return { color: '#22d3ee', label: 'Building', tone: 'cyan' }
-  return { color: '#8b5cf6', label: 'Strong', tone: 'violet' }
+  if (!Number.isFinite(value)) return NO_SCORE_BAND
+  return HEALTH_BANDS.find((b) => value >= b.min) ?? HEALTH_BANDS[HEALTH_BANDS.length - 1]
 }
+
+/** Colour alone, for SVG/inline-style consumers (charts, gauges, vertices). */
+export const healthColor = (score) => scoreBand(score).color

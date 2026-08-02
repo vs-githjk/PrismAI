@@ -2902,6 +2902,11 @@ export default function App() {
           botTranscriptReady={botTranscriptReady}
           liveCommands={liveCommands}
           calendarConnected={calendarConnected}
+          // Google-specific (Gmail send / Google Calendar create) vs "can we read
+          // upcoming events at all". Prism tracks the two providers separately, and
+          // gating event reads on the Google flag made Outlook-only users look
+          // disconnected — including in Stand-in's meeting hand-off.
+          anyCalendarConnected={calendarConnected || outlookConnected}
           onOpenCalendarSetup={() => openIntegrations('Calendar')}
           nextUpcomingMeeting={nextUpcomingMeeting}
           recording={recording}
