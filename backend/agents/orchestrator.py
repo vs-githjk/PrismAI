@@ -74,7 +74,9 @@ def run_orchestrator(transcript: str, meeting_type: str | None = None) -> list[s
         # from a report's colon-prefixed headings ("Verdict:", "Weakest:", …).
         agents = [a for a in agents if a not in ("sentiment", "speaker_coach")]
     elif count_human_speakers(transcript) < 2:
-        agents = [a for a in agents if a != "sentiment"]
+        # No second human → no interpersonal dynamic to characterize and no talk
+        # balance to coach ("you spoke 96%" to someone commanding a bot is noise).
+        agents = [a for a in agents if a not in ("sentiment", "speaker_coach")]
     if mt in ("", "auto"):
         agents.append("meeting_classifier")
     return agents

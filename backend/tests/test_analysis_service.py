@@ -42,12 +42,15 @@ class OrchestratorRoutingTests(unittest.TestCase):
         self.assertEqual(set(out["agents_to_run"]), set(analysis_service.AGENT_MAP.keys()))
         self.assertIn("sentiment", out["agents_to_run"])
 
-    def test_solo_recording_skips_sentiment(self):
+    def test_solo_recording_skips_interpersonal_agents(self):
+        # Solo (or human+bot) recordings have no interpersonal dynamic to grade
+        # and no talk balance to coach — both agents are gated off (Aug 2026).
         transcript = "Vidyut: this is a quick voice memo, just me here, no one else."
         out = asyncio.run(analysis_service._orchestrator_node(_state(transcript)))
         self.assertNotIn("sentiment", out["agents_to_run"])
+        self.assertNotIn("speaker_coach", out["agents_to_run"])
         self.assertEqual(set(out["agents_to_run"]),
-                         set(analysis_service.AGENT_MAP.keys()) - {"sentiment"})
+                         set(analysis_service.AGENT_MAP.keys()) - {"sentiment", "speaker_coach"})
 
     def test_calendar_always_runs(self):
         # No follow-up signals — calendar_suggester still runs (it self-decides).

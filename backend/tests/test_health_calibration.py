@@ -22,12 +22,17 @@ def test_bot_lines_do_not_count_as_speakers():
     assert count_human_speakers(TWO_HUMANS) == 2
 
 
-def test_sentiment_gated_off_for_human_plus_bot():
+def test_interpersonal_agents_gated_off_for_human_plus_bot():
     # The July 17 regression: 'Abhinav + Prism' passed the old >=2-speaker gate and
     # sentiment graded the product as a coworker ("Prism dominates 81% of talk").
-    assert "sentiment" not in run_orchestrator(SOLO_WITH_BOT)
-    assert "sentiment" not in run_orchestrator(SOLO_WITH_PERSONA)
-    assert "sentiment" in run_orchestrator(TWO_HUMANS)
+    # speaker_coach follows the same rule — no second human, no talk balance.
+    for solo in (SOLO_WITH_BOT, SOLO_WITH_PERSONA):
+        routed = run_orchestrator(solo)
+        assert "sentiment" not in routed
+        assert "speaker_coach" not in routed
+    routed = run_orchestrator(TWO_HUMANS)
+    assert "sentiment" in routed
+    assert "speaker_coach" in routed
 
 
 def test_failure_default_has_no_score():

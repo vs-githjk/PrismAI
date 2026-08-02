@@ -9,6 +9,7 @@ import {
   FolderInput,
   MessageSquare,
   MessagesSquare,
+  MoreVertical,
   Share2,
   X,
 } from 'lucide-react'
@@ -100,108 +101,148 @@ function MeetingActionsBar({
 
   const curWs = currentWorkspaceId || null
 
+  // Shared menu fragments — rendered inside the desktop per-button dropdowns AND
+  // the single mobile kebab, so the two can never offer different actions.
+  const moveItems = canMove && (
+    <>
+      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/35">Move to</div>
+      <DropdownMenuItem
+        disabled={curWs === null}
+        onSelect={() => onMoveMeeting?.(null)}
+        className={itemClass}
+      >
+        <span className="flex-1">Personal</span>
+        {curWs === null && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
+      </DropdownMenuItem>
+      {workspaces.map((ws) => (
+        <DropdownMenuItem
+          key={ws.id}
+          disabled={curWs === ws.id}
+          onSelect={() => onMoveMeeting?.(ws.id)}
+          className={itemClass}
+        >
+          <span className="min-w-0 flex-1 truncate">{ws.name}</span>
+          {curWs === ws.id && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
+        </DropdownMenuItem>
+      ))}
+    </>
+  )
+
+  const exportItems = (
+    <>
+      <DropdownMenuItem onSelect={() => copyMarkdown()} className={itemClass}>
+        <Copy className={iconClass} aria-hidden="true" />
+        {mdCopied ? 'Copied!' : 'Copy markdown'}
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => exportMarkdown()} className={itemClass}>
+        <Download className={iconClass} aria-hidden="true" />
+        Download .md
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => exportPDF()} className={itemClass}>
+        <FileText className={iconClass} aria-hidden="true" />
+        Open print view
+      </DropdownMenuItem>
+      {hasTranscript && (
+        <>
+          <DropdownMenuItem onSelect={() => exportTranscriptPDF?.()} className={itemClass}>
+            <FileText className={iconClass} aria-hidden="true" />
+            Transcript → PDF
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => downloadTranscriptTxt?.()} className={itemClass}>
+            <Download className={iconClass} aria-hidden="true" />
+            Download transcript .txt
+          </DropdownMenuItem>
+        </>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        disabled={exportingSlack}
+        onSelect={() => exportToSlack()}
+        className={slackConnected ? itemClass : connectItemClass}
+      >
+        <MessageSquare className={slackConnected ? iconClass : connectIconClass} aria-hidden="true" />
+        {exportingSlack ? 'Sending…' : slackConnected ? 'Send to Slack' : 'Connect Slack →'}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        disabled={exportingNotion}
+        onSelect={() => exportToNotion()}
+        className={notionConnected ? itemClass : connectItemClass}
+      >
+        <BookOpen className={notionConnected ? iconClass : connectIconClass} aria-hidden="true" />
+        {exportingNotion ? 'Sending…' : notionConnected ? 'Send to Notion' : 'Connect Notion →'}
+      </DropdownMenuItem>
+    </>
+  )
+
+  const menuContentClass = 'dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5'
+
   return (
-    <div className="flex items-center gap-2">
-      {canMove && (
+    <>
+      {/* ≥sm: the familiar three separate controls. */}
+      <div className="hidden items-center gap-2 sm:flex">
+        {canMove && (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className={secondaryButtonClass} aria-label="Move meeting" title="Move to…">
+                <FolderInput className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className={menuContentClass}>
+              {moveItems}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {shareToken && (
+          <button
+            type="button"
+            onClick={handleShare}
+            className={secondaryButtonClass}
+            style={shareCopied ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
+            aria-label={shareCopied ? 'Share link copied' : 'Copy share link'}
+            title={shareCopied ? 'Copied!' : 'Share'}
+          >
+            {shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Share2 className="h-4 w-4" aria-hidden="true" />}
+          </button>
+        )}
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
-            <button type="button" className={secondaryButtonClass} aria-label="Move meeting" title="Move to…">
-              <FolderInput className="h-4 w-4" aria-hidden="true" />
+            <button type="button" className={secondaryButtonClass} aria-label="Export meeting" title="Export">
+              <Download className="h-4 w-4" aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
-          >
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/35">Move to</div>
-            <DropdownMenuItem
-              disabled={curWs === null}
-              onSelect={() => onMoveMeeting?.(null)}
-              className={itemClass}
-            >
-              <span className="flex-1">Personal</span>
-              {curWs === null && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
-            </DropdownMenuItem>
-            {workspaces.map((ws) => (
-              <DropdownMenuItem
-                key={ws.id}
-                disabled={curWs === ws.id}
-                onSelect={() => onMoveMeeting?.(ws.id)}
-                className={itemClass}
-              >
-                <span className="min-w-0 flex-1 truncate">{ws.name}</span>
-                {curWs === ws.id && <Check className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />}
-              </DropdownMenuItem>
-            ))}
+          <DropdownMenuContent align="end" className={menuContentClass}>
+            {exportItems}
           </DropdownMenuContent>
         </DropdownMenu>
-      )}
-      {shareToken && (
-        <button
-          type="button"
-          onClick={handleShare}
-          className={secondaryButtonClass}
-          style={shareCopied ? { borderColor: 'rgba(34,211,238,0.45)', color: '#67e8f9' } : undefined}
-          aria-label={shareCopied ? 'Share link copied' : 'Copy share link'}
-          title={shareCopied ? 'Copied!' : 'Share'}
-        >
-          {shareCopied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Share2 className="h-4 w-4" aria-hidden="true" />}
-        </button>
-      )}
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <button type="button" className={secondaryButtonClass} aria-label="Export meeting" title="Export">
-            <Download className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className="dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5"
-        >
-          <DropdownMenuItem onSelect={() => copyMarkdown()} className={itemClass}>
-            <Copy className={iconClass} aria-hidden="true" />
-            {mdCopied ? 'Copied!' : 'Copy markdown'}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => exportMarkdown()} className={itemClass}>
-            <Download className={iconClass} aria-hidden="true" />
-            Download .md
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => exportPDF()} className={itemClass}>
-            <FileText className={iconClass} aria-hidden="true" />
-            Open print view
-          </DropdownMenuItem>
-          {hasTranscript && (
-            <>
-              <DropdownMenuItem onSelect={() => exportTranscriptPDF?.()} className={itemClass}>
-                <FileText className={iconClass} aria-hidden="true" />
-                Transcript → PDF
+      </div>
+
+      {/* <sm: ONE kebab with everything — three 40px buttons plus search and the
+          bell physically cannot fit a 390px bar (they overlapped the bell). */}
+      <div className="sm:hidden">
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={secondaryButtonClass} aria-label="Meeting actions" title="Meeting actions">
+              <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={menuContentClass}>
+            {shareToken && (
+              <DropdownMenuItem onSelect={handleShare} className={itemClass}>
+                {shareCopied ? <Check className={iconClass} aria-hidden="true" /> : <Share2 className={iconClass} aria-hidden="true" />}
+                {shareCopied ? 'Link copied!' : 'Copy share link'}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => downloadTranscriptTxt?.()} className={itemClass}>
-                <Download className={iconClass} aria-hidden="true" />
-                Download transcript .txt
-              </DropdownMenuItem>
-            </>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            disabled={exportingSlack}
-            onSelect={() => exportToSlack()}
-            className={slackConnected ? itemClass : connectItemClass}
-          >
-            <MessageSquare className={slackConnected ? iconClass : connectIconClass} aria-hidden="true" />
-            {exportingSlack ? 'Sending…' : slackConnected ? 'Send to Slack' : 'Connect Slack →'}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={exportingNotion}
-            onSelect={() => exportToNotion()}
-            className={notionConnected ? itemClass : connectItemClass}
-          >
-            <BookOpen className={notionConnected ? iconClass : connectIconClass} aria-hidden="true" />
-            {exportingNotion ? 'Sending…' : notionConnected ? 'Send to Notion' : 'Connect Notion →'}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+            )}
+            {exportItems}
+            {moveItems && (
+              <>
+                <DropdownMenuSeparator />
+                {moveItems}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </>
   )
 }
 
