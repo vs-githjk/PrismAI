@@ -2282,6 +2282,7 @@ export default function App() {
         title: 'Q2 roadmap planning',
         transcript: DEMO_TRANSCRIPTS[0],
         result: {
+          tldr: 'Q2 is locked on checkout improvements and mobile redesign; analytics moves to Q3 with Mike updating the roadmap.',
           summary: 'The team narrowed Q2 priorities to checkout improvements and mobile redesign, moving analytics to Q3. Follow-up ownership is clear across roadmap, client messaging, and feature specs.',
           action_items: [
             { task: 'Update the roadmap with analytics moved to Q3', owner: 'Mike', due: 'Thursday EOD' },

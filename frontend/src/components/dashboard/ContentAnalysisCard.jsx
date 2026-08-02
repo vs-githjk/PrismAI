@@ -1,4 +1,5 @@
-import { Quote, ThumbsDown, ThumbsUp, Sparkles, ShieldQuestion } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, Quote, ThumbsDown, ThumbsUp, Sparkles, ShieldQuestion } from 'lucide-react'
 import { cardGlowStyle, glassCard } from './dashboardStyles'
 
 function scoreColor(s) {
@@ -12,31 +13,38 @@ function scoreColor(s) {
 
 // The deep-dive card for pitch / interview meetings. Renders the type-specific
 // rubric, strengths/weaknesses, and key moments produced by the content_analyst
-// agent. The headline score lives in the top health slot (swapped in MeetingView);
-// here we lead with the verdict + per-dimension breakdown.
+// agent. The headline score lives ONLY in the top health slot (swapped in
+// MeetingView) — repeating it in this card's corner put two loud copies of the
+// same number on one screen. Here we lead with the verdict, and the rubric is
+// progressive-disclosure: label + bar + number always (the shape of the analysis
+// in one glance), the explanation + evidence quote on demand. The weakest
+// dimension starts open — it's the one you came to understand.
 export default function ContentAnalysisCard({ analysis }) {
+  const rubric = analysis?.rubric || []
+  const [openRows, setOpenRows] = useState(() => {
+    let weakest = null
+    let min = Infinity
+    rubric.forEach((row, i) => {
+      const n = Number(row.score)
+      if (Number.isFinite(n) && n < min) { min = n; weakest = i }
+    })
+    return new Set(weakest === null ? [] : [weakest])
+  })
   if (!analysis) return null
-  const { type_label, score_label, headline_score, verdict, rubric = [], strengths = [], weaknesses = [], key_moments = [], authenticity_signals = [], authenticity_note } = analysis
+  const { type_label, verdict, strengths = [], weaknesses = [], key_moments = [], authenticity_signals = [], authenticity_note } = analysis
+  const toggleRow = (i) => setOpenRows((prev) => {
+    const next = new Set(prev)
+    next.has(i) ? next.delete(i) : next.add(i)
+    return next
+  })
 
   return (
     <section className={`${glassCard} p-5`} style={cardGlowStyle}>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-cyan-300" aria-hidden="true" />
-          <h2 className="text-xl font-bold tracking-[-0.01em] text-white">
-            {type_label || 'Content analysis'}
-          </h2>
-        </div>
-        {Number.isFinite(Number(headline_score)) && (
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-white/40">
-              {score_label || 'Score'}
-            </span>
-            <span className="text-2xl font-bold leading-none" style={{ color: scoreColor(headline_score) }}>
-              {headline_score}
-            </span>
-          </span>
-        )}
+      <div className="mb-4 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+        <h2 className="text-xl font-bold tracking-[-0.01em] text-white">
+          {type_label || 'Content analysis'}
+        </h2>
       </div>
 
       {verdict && (
@@ -46,30 +54,50 @@ export default function ContentAnalysisCard({ analysis }) {
       )}
 
       {rubric.length > 0 && (
-        <div className="mb-5 space-y-3.5">
-          {rubric.map((row, i) => (
-            <div key={i}>
-              <div className="mb-1 flex items-baseline justify-between gap-3">
-                <span className="text-[13px] font-semibold text-white/90">{row.dimension}</span>
-                <span className="text-[12px] font-bold" style={{ color: scoreColor(row.score) }}>
-                  {Number.isFinite(Number(row.score)) ? row.score : '—'}
-                </span>
+        <div className="mb-5 space-y-1">
+          {rubric.map((row, i) => {
+            const expandable = !!(row.notes || row.evidence)
+            const open = openRows.has(i)
+            return (
+              <div key={i} className={`rounded-lg px-2 py-1.5 transition ${expandable ? 'hover:bg-white/[0.03]' : ''}`}>
+                <button
+                  type="button"
+                  onClick={expandable ? () => toggleRow(i) : undefined}
+                  aria-expanded={expandable ? open : undefined}
+                  disabled={!expandable}
+                  className="block w-full text-left disabled:cursor-default"
+                >
+                  <div className="mb-1 flex items-baseline justify-between gap-3">
+                    <span className="flex items-center gap-1.5 text-[13px] font-semibold text-white/90">
+                      {row.dimension}
+                      {expandable && (
+                        <ChevronDown
+                          className={`h-3 w-3 text-white/35 transition-transform ${open ? 'rotate-180' : ''}`}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </span>
+                    <span className="text-[12px] font-bold" style={{ color: scoreColor(row.score) }}>
+                      {Number.isFinite(Number(row.score)) ? row.score : '—'}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(0, Math.min(100, Number(row.score) || 0))}%`, backgroundColor: scoreColor(row.score) }}
+                    />
+                  </div>
+                </button>
+                {open && row.notes && <p className="mt-1.5 text-[12.5px] leading-5 text-white/62">{row.notes}</p>}
+                {open && row.evidence && (
+                  <p className="mt-1 flex items-start gap-1.5 text-[11.5px] italic leading-5 text-white/45">
+                    <Quote className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-white/30" aria-hidden="true" />
+                    <span>{row.evidence}</span>
+                  </p>
+                )}
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.max(0, Math.min(100, Number(row.score) || 0))}%`, backgroundColor: scoreColor(row.score) }}
-                />
-              </div>
-              {row.notes && <p className="mt-1.5 text-[12.5px] leading-5 text-white/62">{row.notes}</p>}
-              {row.evidence && (
-                <p className="mt-1 flex items-start gap-1.5 text-[11.5px] italic leading-5 text-white/45">
-                  <Quote className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-white/30" aria-hidden="true" />
-                  <span>{row.evidence}</span>
-                </p>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
