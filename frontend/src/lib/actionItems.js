@@ -74,10 +74,12 @@ export const scopeFilter = (rows, scope) => (
 )
 
 const DUE_RANK = { overdue: 0, soon: 1 }
-/** Overdue first, then due-soon, then everything else. */
+/** LIVE urgency first (overdue, due-soon), then everything else — 'stale' ranks
+ *  with the rest, so a weeks-old missed deadline can't outrank real work. Phrase
+ *  resolution is anchored to each item's meeting date. */
 export function byUrgency(a, b) {
-  const ra = DUE_RANK[dueInfo(a.item).status] ?? 2
-  const rb = DUE_RANK[dueInfo(b.item).status] ?? 2
+  const ra = DUE_RANK[dueInfo(a.item, a.entry?.date).status] ?? 2
+  const rb = DUE_RANK[dueInfo(b.item, b.entry?.date).status] ?? 2
   if (ra !== rb) return ra - rb
   // Tie-break on the meeting date so the ordering is stable, newest first.
   return new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()

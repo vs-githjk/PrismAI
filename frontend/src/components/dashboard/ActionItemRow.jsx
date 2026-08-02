@@ -17,9 +17,11 @@ const DUE_STYLE = {
  */
 export default function ActionItemRow({ row, onToggle, onOpenMeeting, showMeeting = false }) {
   const { item, entry, index, isMine, unassigned } = row
-  const due = dueInfo(item)
+  // Anchor phrase resolution to the MEETING date — "tomorrow" said weeks ago is a
+  // fixed past date, not a perpetual DUE TOMORROW. Stale deadlines get quiet text.
+  const due = dueInfo(item, entry?.date)
   const hard = due.status === 'overdue' || due.status === 'soon'
-  const soft = due.status === 'later'
+  const soft = due.status === 'later' || due.status === 'stale'
     ? dueLabel(due)
     : (item.due && String(item.due).trim().toUpperCase() !== 'TBD' ? item.due : '')
 

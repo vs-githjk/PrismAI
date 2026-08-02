@@ -7,7 +7,14 @@ import assert from 'node:assert/strict'
 import { byMineFirst, byUrgency, collectOpenActions } from '../src/lib/actionItems.js'
 
 const entry = (id, date) => ({ id, date })
-// due_date is the backend-resolved ISO field dueInfo actually reads.
+// due_date is the backend-resolved ISO field dueInfo actually reads. Recent
+// (computed) dates — a hardcoded past year would be STALE, which by design does
+// not rank as live urgency.
+const recentOverdue = () => {
+  const d = new Date()
+  d.setDate(d.getDate() - 2)
+  return d.toISOString().slice(0, 10)
+}
 const row = ({ isMine = false, unassigned = false, due_date = '', date = '2026-07-01' } = {}) => ({
   item: { task: 't', owner: 'x', due_date },
   entry: entry(1, date),
@@ -17,7 +24,7 @@ const row = ({ isMine = false, unassigned = false, due_date = '', date = '2026-0
 
 test('yours outrank everyone, even non-urgent vs overdue teammate', () => {
   const mineNoDue = row({ isMine: true })
-  const teammateOverdue = row({ due_date: '2020-01-01' })
+  const teammateOverdue = row({ due_date: recentOverdue() })
   assert.ok(byMineFirst(mineNoDue, teammateOverdue) < 0)
 })
 
@@ -30,7 +37,7 @@ test('unassigned outrank teammates but not yours', () => {
 })
 
 test('within a tier, urgency still decides', () => {
-  const mineOverdue = row({ isMine: true, due_date: '2020-01-01' })
+  const mineOverdue = row({ isMine: true, due_date: recentOverdue() })
   const mineNoDue = row({ isMine: true })
   assert.ok(byMineFirst(mineOverdue, mineNoDue) < 0)
   assert.equal(byMineFirst(mineOverdue, mineNoDue), byUrgency(mineOverdue, mineNoDue))

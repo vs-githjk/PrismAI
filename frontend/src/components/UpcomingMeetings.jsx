@@ -99,7 +99,7 @@ function BriefPanel({ state, workspaceName, onItemClick }) {
   // Attach deadline status (client fallback covers items analyzed before
   // due-date resolution shipped) and re-sort overdue/soonest first.
   const items = (state.items || [])
-    .map((item) => ({ ...item, _due: dueInfo(item) }))
+    .map((item) => ({ ...item, _due: dueInfo(item, item.meeting_date) }))
     .sort((a, b) => compareDue(a._due, b._due))
   if (items.length === 0) {
     return (

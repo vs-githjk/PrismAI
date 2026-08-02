@@ -18,6 +18,7 @@ import {
   Moon,
 } from 'lucide-react'
 import { deriveDisplayTitle } from '../../lib/insights'
+import { meetingBucket } from '../../lib/dateGroups'
 import { formatHistoryDate, IntegrationsIcon } from './chrome'
 import PersonaChip from '../PersonaChip'
 import {
@@ -29,21 +30,18 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 
-// Group meetings into Today / This week / Earlier, newest first.
+// Group meetings by the shared calendar ladder (Today · Yesterday · This week ·
+// This month · Last month · Last 6 months · This year · Older), newest first —
+// the same buckets the Action items page uses. The old local 3-bucket version
+// collapsed a whole account's history into one giant "EARLIER 32" pile.
 function groupMeetings(entries) {
-  const now = new Date()
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const weekAgo = startOfToday - 6 * 24 * 60 * 60 * 1000
-  const buckets = { Today: [], 'This week': [], Earlier: [] }
+  const byBucket = new Map()
   for (const entry of entries) {
-    const t = new Date(entry?.date).getTime()
-    if (!Number.isNaN(t) && t >= startOfToday) buckets.Today.push(entry)
-    else if (!Number.isNaN(t) && t >= weekAgo) buckets['This week'].push(entry)
-    else buckets.Earlier.push(entry)
+    const b = meetingBucket(entry?.date)
+    if (!byBucket.has(b.key)) byBucket.set(b.key, { ...b, items: [] })
+    byBucket.get(b.key).items.push(entry)
   }
-  return ['Today', 'This week', 'Earlier']
-    .map((label) => ({ label, items: buckets[label] }))
-    .filter((g) => g.items.length > 0)
+  return [...byBucket.values()].sort((a, b) => a.rank - b.rank)
 }
 
 const navItemBase =
@@ -113,7 +111,7 @@ export default function DashboardSidebar(props) {
   const onStandin = activeView === 'standin'
   const onCalendar = activeView === 'calendar'
 
-  // Collapsible date groups (Today / This week / Earlier).
+  // Collapsible date groups (the shared calendar ladder), keyed by label.
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
   const toggleGroup = (label) =>
     setCollapsedGroups((prev) => {
