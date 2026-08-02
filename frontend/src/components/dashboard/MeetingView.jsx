@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Popover } from 'radix-ui'
 import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus, X } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import EmailCard from './EmailCard'
@@ -95,7 +94,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
-  const [summaryOpen, setSummaryOpen] = useState(false)
   // Content-analysis lens override (re-runs content_analyst via /agent).
   const [typeBusy, setTypeBusy] = useState(false)
   const [typeError, setTypeError] = useState('')
@@ -106,8 +104,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   useEffect(() => {
     setExitNoteDismissed(exitDismissKey ? localStorage.getItem(exitDismissKey) === '1' : false)
   }, [exitDismissKey])
-  // Collapse the long summary again when switching meetings.
-  useEffect(() => { setSummaryOpen(false) }, [meetingId])
   const dismissExitNote = () => {
     setExitNoteDismissed(true)
     if (exitDismissKey) {
@@ -247,46 +243,30 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   }
   const showPinned = !readOnly && !!meetingId
 
-  // Pinned documents are knowledge-base plumbing, not meeting insight — a quiet
-  // chip that pops the admin panel on demand, instead of a full card that put
-  // "2 chunks · resync · delete" at the same eye level as the summary.
-  const pinnedChip = showPinned ? (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/30 hover:text-cyan-200"
-        >
-          <Paperclip className="h-3 w-3" aria-hidden="true" />
-          {pinnedDocs.length > 0 ? `In knowledge base · ${pinnedDocs.length}` : 'Pin documents'}
+  const pinnedSection = showPinned ? (
+    <section className={`${glassCard} flex max-h-[30vh] flex-col p-4`} style={cardGlowStyle}>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Paperclip className="h-4 w-4 text-cyan-300" />
+          <h3 className="text-sm font-semibold text-[color:var(--db-text)]">Pinned Documents</h3>
+        </div>
+        <button onClick={() => setUploadOpen(true)}
+                className="flex items-center gap-1 rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[11px] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]">
+          <Plus className="h-3 w-3" /> Add
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={6}
-          className="z-50 w-[360px] rounded-xl border border-[#2f2f2f] bg-[#0b0b0b] p-4 shadow-2xl shadow-black/60"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-[color:var(--db-text)]">Pinned documents</h3>
-            <button onClick={() => setUploadOpen(true)}
-                    className="flex items-center gap-1 rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[11px] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]">
-              <Plus className="h-3 w-3" /> Add
-            </button>
+      </div>
+      <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+        {pinnedDocs.length === 0 ? (
+          <p className="text-[11px] text-[color:var(--db-text-faint)]">No documents pinned to this meeting.</p>
+        ) : (
+          <div className="space-y-2">
+            {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
           </div>
-          <div className="max-h-[40vh] overflow-y-auto">
-            {pinnedDocs.length === 0 ? (
-              <p className="text-[11px] text-[color:var(--db-text-faint)]">No documents pinned to this meeting.</p>
-            ) : (
-              <div className="space-y-2">
-                {pinnedDocs.map(d => <KnowledgeDocCard key={d.id} doc={d} onChange={refreshDocs} />)}
-              </div>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        )}
+      </div>
+      <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
+                            meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
+    </section>
   ) : null
 
   const exitNote = result.exit_note
@@ -331,17 +311,22 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </span>
           )}
           {!typeBusy && typeError && <span className="text-[11px] text-amber-300/85">{typeError}</span>}
-          {pinnedChip}
         </div>
       )}
-      {showPinned && (
-        <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
-                              meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
-      )}
       {/* When there is genuinely nothing to grade (score null — e.g. a solo
-          bot-command session), the score column disappears entirely rather than
-          showing an empty gauge slot; the summary takes the full width. */}
-      <div className={`grid gap-5 ${hasScorePanel ? 'lg:grid-cols-[max-content_minmax(0,1fr)]' : ''}`}>
+          bot-command session), the score column disappears rather than showing an
+          empty gauge slot; the summary (and pinned docs card) take the width. */}
+      <div
+        className={`grid gap-5 ${
+          hasScorePanel && showPinned
+            ? 'lg:grid-cols-[max-content_minmax(0,1.5fr)_minmax(0,1fr)]'
+            : hasScorePanel
+              ? 'lg:grid-cols-[max-content_minmax(0,1fr)]'
+              : showPinned
+                ? 'lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]'
+                : ''
+        }`}
+      >
         {hasScorePanel && (
         <section className="flex max-h-[30vh] flex-col items-center justify-center px-2 py-4">
           {special ? (
@@ -379,27 +364,8 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             {result.tldr && (
               <p className="mb-3 text-[15px] font-semibold leading-6 text-[color:var(--db-text)]">{result.tldr}</p>
             )}
-            {/* With a tldr present the long paragraph is the second telling of the
-                same story — collapse it so the page opens with one, not three. */}
             {result.summary ? (
-              result.tldr ? (
-                <>
-                  {summaryOpen && (
-                    <p className="text-[13.5px] leading-7 text-[color:var(--db-text-muted)]">{result.summary}</p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSummaryOpen((v) => !v)}
-                    aria-expanded={summaryOpen}
-                    className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium text-cyan-300/80 transition hover:text-cyan-200"
-                  >
-                    {summaryOpen ? 'Hide full summary' : 'Read full summary'}
-                    <ChevronDown className={`h-3 w-3 transition-transform ${summaryOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-                  </button>
-                </>
-              ) : (
-                <p className="text-[15px] leading-7 text-[color:var(--db-text)]">{result.summary}</p>
-              )
+              <p className={`${result.tldr ? 'text-[13.5px] text-[color:var(--db-text-muted)]' : 'text-[15px] text-[color:var(--db-text)]'} leading-7`}>{result.summary}</p>
             ) : (
               <p className={subtleText}>No summary generated.</p>
             )}
@@ -439,15 +405,13 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             )}
           </div>
         </section>
+
+        {pinnedSection}
       </div>
 
       {special && <ContentAnalysisCard key={currentType} analysis={contentAnalysis} />}
 
-      {/* Empty cards announce nothing — a meeting with no actions or no decisions
-          simply doesn't show that card, and one lone card takes the full width. */}
-      {(actionItems.length > 0 || decisions.length > 0) && (
-      <div className={`grid gap-5 ${actionItems.length > 0 && decisions.length > 0 ? 'lg:grid-cols-2' : ''}`}>
-        {actionItems.length > 0 && (
+      <div className="grid gap-5 lg:grid-cols-2">
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Action items</h2>
@@ -538,9 +502,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           )}
           </div>
         </section>
-        )}
 
-        {decisions.length > 0 && (
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Decisions</h2>
@@ -592,9 +554,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           )}
           </div>
         </section>
-        )}
       </div>
-      )}
 
       {/* Sentiment is per-speaker tone — meaningless for a single-authored
           article/report, so hide it there (covers auto-detected reports too). */}
