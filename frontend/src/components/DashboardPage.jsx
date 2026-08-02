@@ -728,6 +728,32 @@ export default function DashboardPage(props) {
   // alongside workspace members, so you can one-click the people you actually meet with.
   const [calendarAttendeeEmails, setCalendarAttendeeEmails] = useState([])
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
+  // Home layout signal: a joinable calendar event is imminent/in progress, so the
+  // upcoming list floats above the action items (reported by UpcomingMeetings).
+  const [upcomingImminent, setUpcomingImminent] = useState(false)
+  // One line of the B2 semantic synthesis for Home ("Still open: …"). Server-cached
+  // per meeting-set, so this piggybacks on the same cache Trend uses.
+  const [homeOpenThreads, setHomeOpenThreads] = useState([])
+  const homeHistoryCount = props.history?.length || 0
+  useEffect(() => {
+    let cancelled = false
+    // No isTestAccount guard: the demo account's fetch 401s server-side and lands
+    // in the [] fallback, and headless visual tests need to stub this endpoint.
+    if (!props.user || homeHistoryCount === 0) {
+      setHomeOpenThreads([])
+      return undefined
+    }
+    const url = activeWorkspaceId ? `/insights/semantic?workspace_id=${activeWorkspaceId}` : '/insights/semantic'
+    apiFetch(url)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const usable = data && typeof data === 'object' && !data.locked && data.enabled !== false
+        setHomeOpenThreads(usable ? data.open_threads || [] : [])
+      })
+      .catch(() => { if (!cancelled) setHomeOpenThreads([]) })
+    return () => { cancelled = true }
+  }, [props.user, props.isTestAccount, activeWorkspaceId, homeHistoryCount])
   const [workspaceNudgeDismissed, setWorkspaceNudgeDismissed] = useState(
     () => { try { return localStorage.getItem('prismai:workspace-nudge-dismissed') === '1' } catch { return false } }
   )
@@ -1672,6 +1698,7 @@ export default function DashboardPage(props) {
                   <Suspense fallback={null}>
                     <UpcomingMeetings
                       hideEmpty
+                      onImminence={setUpcomingImminent}
                       workspaces={workspaces}
                       user={props.user}
                       onCantMakeIt={(m) => setStandIn(m)}
@@ -1688,6 +1715,9 @@ export default function DashboardPage(props) {
                   </Suspense>
                 ) : null
               }
+              upcomingImminent={upcomingImminent}
+              openThreads={homeOpenThreads}
+              onOpenTrend={handleOpenTrend}
               showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
               onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}

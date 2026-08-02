@@ -195,7 +195,9 @@ function matchWorkspace(attendeeEmails, workspaces) {
 // hideEmpty: on Home the card should only exist when there is something to join —
 // loading shimmer, errors, and "no upcoming meetings" all render as nothing there
 // (the Join tab keeps those states, where the user is actively looking).
-export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null, onCantMakeIt, hideEmpty = false }) {
+// onImminence: reports whether any joinable event starts within 30 min (or started
+// within the last hour) so Home can float this list above the action items.
+export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeeting, user = null, onCantMakeIt, hideEmpty = false, onImminence }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -278,6 +280,19 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
 
   useEffect(() => { load() }, [load])
 
+  // Ref so a new callback identity never re-fires load(); recomputed when events land.
+  const onImminenceRef = useRef(onImminence)
+  onImminenceRef.current = onImminence
+  useEffect(() => {
+    if (!onImminenceRef.current) return
+    const imminent = events.some((e) => {
+      if (!e.has_meeting_link) return false
+      const mins = minutesUntil(e.start)
+      return mins !== null && mins <= 30 && mins >= -60
+    })
+    onImminenceRef.current(imminent)
+  }, [events])
+
   function EmptyState({ title, message, actionLabel, onAction }) {
     return (
       <div className="rounded-xl px-3 py-3"
@@ -346,7 +361,9 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
 
   return (
     <div className="rounded-xl overflow-hidden"
-      style={{ border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.015)' }}>
+      // Embedded on Home (hideEmpty) the island shell already draws the card —
+      // skip the inner border/background so it isn't a box inside a box.
+      style={hideEmpty ? undefined : { border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.015)' }}>
 
       {/* Header */}
       <button

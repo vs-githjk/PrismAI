@@ -25,10 +25,12 @@ export default function ActionItemRow({ row, onToggle, onOpenMeeting, showMeetin
 
   return (
     <li
-      className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 transition ${
+      className={`flex items-start gap-2.5 rounded-lg px-3 py-2 transition ${
+        // Flat rows — a border around every row inside an already-bordered card was
+        // the "boxes in boxes" clutter. Ownership reads from the tint + cyan "You".
         isMine
-          ? 'border-cyan-400/25 bg-cyan-400/[0.05] hover:bg-cyan-400/[0.09]'
-          : 'border-[color:var(--db-border)] bg-[var(--db-fill)] hover:bg-[var(--db-fill-strong)]'
+          ? 'bg-cyan-400/[0.06] hover:bg-cyan-400/[0.10]'
+          : 'hover:bg-[var(--db-fill-strong)]'
       }`}
     >
       <button

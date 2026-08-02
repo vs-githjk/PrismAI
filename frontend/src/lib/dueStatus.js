@@ -1,4 +1,4 @@
-import { resolveDatePhrase } from './resolveDate'
+import { resolveDatePhrase } from './resolveDate.js'
 
 // Resolve an action item's deadline to a concrete date + status. Prefers the
 // backend-resolved `due_date`; falls back to client-parsing the free-text `due`

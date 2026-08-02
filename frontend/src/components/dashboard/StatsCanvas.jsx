@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { ChevronRight, Video, ClipboardList, Sparkles, CalendarPlus } from 'lucide-react'
+import { ChevronRight, Video, ClipboardList, Sparkles, CalendarPlus, MessagesSquare } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
 import { hasContentAnalysis, typeMeta } from '../../lib/meetingType'
-import { collectOpenActions, byUrgency } from '../../lib/actionItems'
+import { collectOpenActions, byMineFirst } from '../../lib/actionItems'
 import ActionItemRow from './ActionItemRow'
 
 const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
@@ -17,9 +17,10 @@ const emptyCopy = 'text-sm leading-6 text-[color:var(--db-text-muted)]'
  */
 function Launcher({ isEmpty, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, showConnectCalendar, onConnectCalendar }) {
   return (
-    <section className="dashboard-home-greeting flex flex-col px-1 text-left">
+    <section className="dashboard-home-greeting order-1 flex flex-col px-1 text-left">
+      {/* The hero stays in both states — it's the page's aesthetic anchor (owner's
+          call). Controlled break so it never wraps mid-phrase. */}
       <h1 className="text-[clamp(2rem,3.6vw,3rem)] font-semibold leading-[1.08] text-[color:var(--db-text)]">
-        {/* Controlled break — free-wrapping split this mid-phrase ("…let's get / started."). */}
         {isEmpty ? <>Let&rsquo;s get started.</> : <><span className="block">Welcome back,</span>let&rsquo;s get started.</>}
       </h1>
       <p className="mt-3 max-w-md text-[15px] leading-6 text-[color:var(--db-text-muted)]">
@@ -83,7 +84,7 @@ function ActionItemsCard({ rows, total, mineCount, onOpenAll, onOpenMeeting, onT
   const shown = rows.slice(0, 4)
   const rest = total - shown.length
   return (
-    <section id="home-actions" className={`dashboard-home-actions ${island}`}>
+    <section id="home-actions" className={`dashboard-home-actions order-3 ${island}`}>
       <button
         type="button"
         onClick={onOpenAll}
@@ -154,8 +155,10 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                 const hasScore = Number.isFinite(Number(score))
                 const scoreLabel = ca ? typeMeta(ca.type).short : 'Health'
                 const isSelected = entry.id === selectedMeetingId
+                // Prefer the one-sentence tldr — the long summary made every card two
+                // lines of "Abhinav Dasari engaged with…" boilerplate, six cards deep.
                 const summary =
-                  entry.result?.summary || entry.result?.health_score?.verdict || 'No summary recorded.'
+                  entry.result?.tldr || entry.result?.summary || entry.result?.health_score?.verdict || 'No summary recorded.'
                 return (
                   <button
                     type="button"
@@ -167,7 +170,7 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                       <p className="line-clamp-1 text-[19px] font-semibold leading-tight tracking-[-0.01em] text-[color:var(--db-text)]">
                         {deriveDisplayTitle(entry)}
                       </p>
-                      <p className="mt-1.5 line-clamp-2 text-[13.5px] leading-6 text-[color:var(--db-text-muted)]">{summary}</p>
+                      <p className="mt-1.5 line-clamp-1 text-[13.5px] leading-6 text-[color:var(--db-text-muted)]">{summary}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end justify-center pl-1">
                       <span className="font-bold leading-none tracking-tight" style={{ color: band.color }}>
@@ -197,6 +200,9 @@ export default function StatsCanvas({
   onJoinMeeting,
   onPasteTranscript,
   upcomingPanel = null,
+  upcomingImminent = false,
+  openThreads = [],
+  onOpenTrend,
   showConnectCalendar = false,
   onConnectCalendar,
   selectedMeetingId = null,
@@ -212,7 +218,7 @@ export default function StatsCanvas({
   const { rows, total, mineCount } = useMemo(() => {
     const all = collectOpenActions(safeHistory, user)
     return {
-      rows: [...all].sort(byUrgency),
+      rows: [...all].sort(byMineFirst),
       total: all.length,
       mineCount: all.filter((r) => r.isMine).length,
     }
@@ -240,8 +246,33 @@ export default function StatsCanvas({
         />
         {/* Next joinable calendar events — pairs with the "Join a meeting" CTA above.
             The inner component renders nothing (hideEmpty) unless there's genuinely
-            something to join; CSS :empty then hides this island shell too. */}
-        {upcomingPanel && <div className="dashboard-home-upcoming dashboard-island p-2">{upcomingPanel}</div>}
+            something to join; CSS :empty then hides this island shell too. When a
+            meeting is imminent/in progress this is the most perishable thing on the
+            page, so it jumps ABOVE the action items (CSS order — no remount). */}
+        {upcomingPanel && (
+          <div className={`dashboard-home-upcoming dashboard-island p-2 ${upcomingImminent ? 'order-2' : 'order-5'}`}>
+            {upcomingPanel}
+          </div>
+        )}
+        {/* One line of cross-meeting intelligence: the longest-running unresolved
+            thread. Clicks through to Trend, where the full open-threads card lives. */}
+        {openThreads.length > 0 && (
+          <button
+            type="button"
+            onClick={onOpenTrend}
+            className="dashboard-island group order-4 flex shrink-0 items-center gap-2.5 px-4 py-2.5 text-left transition hover:bg-[var(--db-fill)]"
+          >
+            <MessagesSquare className="h-4 w-4 shrink-0 text-amber-300/80" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-[color:var(--db-text-muted)]">
+              <span className="font-semibold text-[color:var(--db-text)]">Still open: </span>
+              {openThreads[0].thread}
+            </span>
+            {openThreads.length > 1 && (
+              <span className="shrink-0 text-[11px] text-[color:var(--db-text-faint)]">+{openThreads.length - 1} more</span>
+            )}
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)] transition group-hover:translate-x-0.5" aria-hidden="true" />
+          </button>
+        )}
       </div>
       <MeetingsCard history={safeHistory} onOpen={loadFromHistory} selectedMeetingId={selectedMeetingId} />
     </div>

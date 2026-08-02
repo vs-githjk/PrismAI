@@ -9,8 +9,8 @@
  * Age is expressed through the date grouping instead, where it's visible.
  */
 
-import { dueInfo } from './dueStatus'
-import { meetingBucket } from './dateGroups'
+import { dueInfo } from './dueStatus.js'
+import { meetingBucket } from './dateGroups.js'
 
 // Owner strings the analysis emits when nobody owns the item. These are REAL
 // values in the data (14 of 43 open items in one audited account read
@@ -81,6 +81,14 @@ export function byUrgency(a, b) {
   if (ra !== rb) return ra - rb
   // Tie-break on the meeting date so the ordering is stable, newest first.
   return new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()
+}
+
+const OWN_RANK = (r) => (r.isMine ? 0 : r.unassigned ? 1 : 2)
+/** Home's preview order: YOUR items first, then unassigned (nobody else will claim
+ *  those), then teammates' — urgency within each tier. A pure-urgency sort made the
+ *  personal dashboard lead with other people's work. */
+export function byMineFirst(a, b) {
+  return OWN_RANK(a) - OWN_RANK(b) || byUrgency(a, b)
 }
 
 /**
