@@ -25,12 +25,19 @@ export function useCountUp(target, duration = 1000) {
 export function overallHealth(healthScore) {
   const bd = healthScore?.breakdown
   if (bd) {
-    const axes = [bd.clarity, bd.action_orientation, bd.engagement].map(Number)
-    if (axes.every(Number.isFinite)) {
-      return Math.round((axes[0] + axes[1] + axes[2]) / 3)
+    // Check null BEFORE coercing — Number(null) is 0, so a null-breakdown
+    // "nothing to grade" analysis would otherwise read as a confident 0.
+    const raw = [bd.clarity, bd.action_orientation, bd.engagement]
+    if (raw.every((v) => v !== null && v !== undefined && v !== '')) {
+      const axes = raw.map(Number)
+      if (axes.every(Number.isFinite)) {
+        return Math.round((axes[0] + axes[1] + axes[2]) / 3)
+      }
     }
   }
-  const score = Number(healthScore?.score)
+  const s = healthScore?.score
+  if (s === null || s === undefined || s === '') return null
+  const score = Number(s)
   return Number.isFinite(score) ? Math.round(score) : null
 }
 

@@ -203,17 +203,22 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
     engagement: Number(bd.engagement),
   }
   const hasBreakdown = !!breakdown &&
+    [bd.clarity, bd.action_orientation, bd.engagement].every((v) => v !== null && v !== undefined) &&
     [breakdown.clarity, breakdown.action, breakdown.engagement].every(Number.isFinite)
   // Overall = mean of axes (shared helper); used for the verdict color tint so it
   // matches the triangle's Overall band instead of the LLM's standalone score.
   const overallScore = overallHealth(healthScore)
+  // Anything to put in the score column at all? (null score = nothing to grade)
+  const hasScorePanel = special || hasBreakdown || (healthScore?.score !== null && healthScore?.score !== undefined)
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
   // Sort open-first, then by deadline (overdue/soonest first, undated last) —
   // while preserving each item's original index for the completion PATCH.
   const sortedActionItems = actionItems
-    .map((item, originalIndex) => ({ item, originalIndex, due: dueInfo(item) }))
+    // Phrases resolve against the MEETING date (fresh analyses have no meeting
+    // object yet — today is then correct, the words were just said).
+    .map((item, originalIndex) => ({ item, originalIndex, due: dueInfo(item, meeting?.date) }))
     .sort((a, b) => {
       if (!!a.item.completed !== !!b.item.completed) return a.item.completed ? 1 : -1
       return compareDue(a.due, b.due)
@@ -333,7 +338,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         <KnowledgeUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)}
                               meetingId={meetingId} workspaceId={workspaceId} onUploaded={refreshDocs} />
       )}
-      <div className="grid gap-5 lg:grid-cols-[max-content_minmax(0,1fr)]">
+      {/* When there is genuinely nothing to grade (score null — e.g. a solo
+          bot-command session), the score column disappears entirely rather than
+          showing an empty gauge slot; the summary takes the full width. */}
+      <div className={`grid gap-5 ${hasScorePanel ? 'lg:grid-cols-[max-content_minmax(0,1fr)]' : ''}`}>
+        {hasScorePanel && (
         <section className="flex max-h-[30vh] flex-col items-center justify-center px-2 py-4">
           {special ? (
             // Health triangle (clarity/engagement/action) is the wrong lens for a
@@ -344,17 +353,15 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </>
           ) : hasBreakdown ? (
             <MeetingHealthTriangle scores={breakdown} />
-          ) : healthScore?.score !== undefined ? (
+          ) : (
             <>
               <SemicircularGauge score={healthScore.score} />
               <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">Health score</p>
             </>
-          ) : (
-            <p className={subtleText}>No health score recorded.</p>
           )}
           {/* Live/unsaved analyses run a separate LLM pass from the saved copy, so the
               score can drift a point or two — flag it as provisional, not authoritative. */}
-          {!special && isProvisional && (healthScore?.score !== undefined || hasBreakdown) && (
+          {!special && isProvisional && (
             <span
               title="This is the live analysis. The saved copy is re-scored and is the authoritative value."
               className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-400/25 bg-cyan-400/[0.08] px-2.5 py-0.5 text-[10px] font-medium text-cyan-200/80"
@@ -364,6 +371,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </span>
           )}
         </section>
+        )}
 
         <section className="flex max-h-[30vh] flex-col justify-center p-4">
           <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Summary</p>
@@ -497,7 +505,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <p className="text-xs font-medium text-[color:var(--db-text-faint)]">
                           {item.owner || 'Unowned'}
-                          {item.due && item.due !== 'TBD' ? ` · ${item.due}` : ''}
+                          {/* Resolved label over the raw phrase — "tomorrow" from a
+                              June meeting must not read as literally tomorrow. */}
+                          {due.status === 'later' || due.status === 'stale'
+                            ? ` · ${dueLabel(due)}`
+                            : !due.status && item.due && item.due !== 'TBD' ? ` · ${item.due}` : ''}
                         </p>
                         {!item.completed && (due.status === 'overdue' || due.status === 'soon') && (
                           <span className={`rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${DUE_STYLE[due.status]}`}>

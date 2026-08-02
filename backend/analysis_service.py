@@ -241,6 +241,12 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
     if resolved_type not in VALID_TYPES:
         resolved_type = "standard"
 
+    # Scale signals for Tier-2 graders: how many HUMANS spoke and how much was
+    # said. health_score uses these to grade a meeting against its own weight —
+    # a 40-word solo bot command must not be scored like a failed board meeting.
+    from agents.orchestrator import count_human_speakers
+    transcript_text = state.get("transcript") or ""
+
     return {
         "results": {"decision_linker": link_out},
         "context": {
@@ -251,6 +257,8 @@ async def _tier1_barrier(state: AnalysisState) -> dict:
             "unactioned_decisions": unactioned_texts,
             "owner_name": owner_name,
             "meeting_type": resolved_type,
+            "human_speakers": count_human_speakers(transcript_text),
+            "word_count": len(transcript_text.split()),
         },
     }
 

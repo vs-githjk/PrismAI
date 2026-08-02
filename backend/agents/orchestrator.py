@@ -4,7 +4,8 @@ Previously an LLM call chose which agents to run. But once most agents became
 mandatory and sentiment moved to a speaker-count gate, the LLM was left deciding
 essentially nothing — a full-transcript round-trip on the critical path for no
 real pruning. Routing is now pure, deterministic logic: every agent runs, except
-sentiment on single-speaker recordings (its vocabulary needs >=2 participants).
+sentiment on recordings with fewer than two HUMAN speakers (its vocabulary needs
+>=2 participants, and the bot's own lines don't count as a participant).
 No LLM call, no JSON-parse failure mode, consistent across short and long meetings.
 """
 
@@ -19,9 +20,25 @@ ALL_AGENTS = [
 ]
 
 
-def _count_speakers(transcript: str) -> int:
-    """Distinct 'Speaker:' prefixes in the transcript. Same heuristic the
-    sentiment agent uses for talk distribution (short, no sentence punctuation)."""
+def _bot_speaker_names() -> set[str]:
+    """Every name the in-meeting bot can speak under (persona names + Prism aliases).
+    Imported lazily so a personas import problem can never break routing."""
+    names = {"prism", "prismai", "prism ai"}
+    try:
+        from personas import PERSONA_NAMES
+        names |= {str(n).strip().lower() for n in PERSONA_NAMES.values() if n}
+    except Exception:
+        pass
+    return names
+
+
+def count_human_speakers(transcript: str) -> int:
+    """Distinct HUMAN 'Speaker:' prefixes in the transcript. The bot's own lines
+    (Prism / persona names) don't count — a human talking to the bot is a solo
+    recording, and grading its "interpersonal dynamics" produced verdicts like
+    "Prism dominates 81% of talk" about the product itself. (Tradeoff: a human
+    actually named e.g. Echo is miscounted as the bot — acceptably rare.)"""
+    bots = _bot_speaker_names()
     speakers: set[str] = set()
     for raw_line in (transcript or "").split("\n"):
         line = raw_line.strip()
@@ -29,6 +46,8 @@ def _count_speakers(transcript: str) -> int:
             continue
         head = line.split(":", 1)[0].strip()
         if not head or len(head) > 40 or any(c in head for c in ".?!"):
+            continue
+        if head.lower() in bots:
             continue
         speakers.add(head.lower())
     return len(speakers)
@@ -54,7 +73,7 @@ def run_orchestrator(transcript: str, meeting_type: str | None = None) -> list[s
         # analysis instead. Skipping them also avoids the "13 speakers" false read
         # from a report's colon-prefixed headings ("Verdict:", "Weakest:", …).
         agents = [a for a in agents if a not in ("sentiment", "speaker_coach")]
-    elif _count_speakers(transcript) < 2:
+    elif count_human_speakers(transcript) < 2:
         agents = [a for a in agents if a != "sentiment"]
     if mt in ("", "auto"):
         agents.append("meeting_classifier")

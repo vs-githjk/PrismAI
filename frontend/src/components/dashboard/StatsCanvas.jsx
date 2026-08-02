@@ -152,7 +152,8 @@ function MeetingsCard({ history, onOpen, selectedMeetingId }) {
                 const ca = hasContentAnalysis(entry.result) ? entry.result.content_analysis : null
                 const score = ca ? Number(ca.headline_score) : overallHealth(entry.result?.health_score)
                 const band = scoreBand(score)
-                const hasScore = Number.isFinite(Number(score))
+                // null check BEFORE Number() — Number(null) is a finite 0.
+                const hasScore = score !== null && score !== undefined && Number.isFinite(Number(score))
                 const scoreLabel = ca ? typeMeta(ca.type).short : 'Health'
                 const isSelected = entry.id === selectedMeetingId
                 // Prefer the one-sentence tldr — the long summary made every card two
