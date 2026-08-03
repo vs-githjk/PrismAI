@@ -2381,6 +2381,20 @@ export default function App() {
           speaker_coach: { speakers: [{ name: 'Morgan', talk_percent: 40, decisions_owned: 2, action_items_owned: 0, coaching_note: 'Clear decision-maker and good at sequencing — giving the team more space to debate tradeoffs would strengthen alignment.' }, { name: 'Sam', talk_percent: 25, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Solid on the technical scope; sharing complexity estimates earlier helps the group prioritise.' }, { name: 'Tyler', talk_percent: 20, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Concise and reliable — proactively flagging copy dependencies would prevent last-minute bottlenecks.' }, { name: 'Casey', talk_percent: 15, decisions_owned: 0, action_items_owned: 1, coaching_note: 'Strong visual contributions — narrating design decisions as you share mockups helps non-designers follow the reasoning.' }], balance_score: 68 },
         },
       },
+      {
+        // A non-graded recording — real accounts have these (solo asks to the
+        // bot), and the sample should show that Prism doesn't fake-grade them.
+        title: 'Calendar check with Prism',
+        transcript: "Alex: Prism, what's on my calendar tomorrow?\nPrism: You have two meetings tomorrow: the design review at 10am and the investor sync at 3pm.",
+        result: {
+          tldr: 'A quick solo ask — Prism read back tomorrow’s calendar.',
+          summary: 'A one-question session: Alex asked Prism for tomorrow’s calendar and got the two scheduled meetings read back. No discussion, decisions, or follow-ups.',
+          action_items: [],
+          decisions: [],
+          sentiment: null,
+          health_score: { score: null, verdict: 'A quick solo session commanding the assistant — not a meeting to grade.', improvement_tip: '', badges: [], breakdown: { clarity: null, action_orientation: null, engagement: null } },
+        },
+      },
     ]
 
     const entries = sampleResults.map((item, index) => ({

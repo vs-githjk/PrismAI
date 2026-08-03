@@ -204,8 +204,10 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   // Overall = mean of axes (shared helper); used for the verdict color tint so it
   // matches the triangle's Overall band instead of the LLM's standalone score.
   const overallScore = overallHealth(healthScore)
-  // Anything to put in the score column at all? (null score = nothing to grade)
-  const hasScorePanel = special || hasBreakdown || (healthScore?.score !== null && healthScore?.score !== undefined)
+  // The score column renders whenever a health analysis exists — a null score
+  // shows the triangle in its ungraded state (wireframe + "Overall: —") so the
+  // page keeps its visual anchor without inventing a number.
+  const hasScorePanel = special || hasBreakdown || !!healthScore
 
   const actionItems = result.action_items || []
   const openCount = actionItems.filter((item) => !item.completed).length
@@ -338,10 +340,15 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </>
           ) : hasBreakdown ? (
             <MeetingHealthTriangle scores={breakdown} />
-          ) : (
+          ) : healthScore?.score !== null && healthScore?.score !== undefined ? (
             <>
               <SemicircularGauge score={healthScore.score} />
               <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">Health score</p>
+            </>
+          ) : (
+            <>
+              <MeetingHealthTriangle ungraded />
+              <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">Not graded</p>
             </>
           )}
           {/* Live/unsaved analyses run a separate LLM pass from the saved copy, so the

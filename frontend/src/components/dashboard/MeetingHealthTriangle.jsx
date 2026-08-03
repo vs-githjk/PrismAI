@@ -31,7 +31,11 @@ const polar = (r, deg) => {
 }
 const ptStr = ([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`
 
-export default function MeetingHealthTriangle({ scores, size = 248 }) {
+// `ungraded`: the same triangle as the app's visual anchor, but empty — wireframe,
+// axis labels without numbers, "Overall: —". Shown for recordings the calibrated
+// agent declined to score (solo bot sessions etc.) so the meeting page keeps its
+// identity without inventing a number.
+export default function MeetingHealthTriangle({ scores = {}, size = 248, ungraded = false }) {
   // Animate each axis + the overall number so the shape grows in, matching the
   // app's gauge/bar count-up feel.
   const clarity = useCountUp(scores.clarity, 1000)
@@ -41,7 +45,7 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
 
   // Mean of the 3 axes via the shared helper so this never drifts from the
   // home card. (The helper keys on action_orientation; map our local `action`.)
-  const overall = overallHealth({
+  const overall = ungraded ? null : overallHealth({
     breakdown: {
       clarity: scores.clarity,
       action_orientation: scores.action,
@@ -66,7 +70,9 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
         height={(size * 138) / VB}
         className="block"
         role="img"
-        aria-label={`Meeting health ${overall} of 100 — clarity ${scores.clarity}, action-oriented ${scores.action}, engagement ${scores.engagement}`}
+        aria-label={ungraded
+          ? 'Meeting health not graded'
+          : `Meeting health ${overall} of 100 — clarity ${scores.clarity}, action-oriented ${scores.action}, engagement ${scores.engagement}`}
       >
         {/* grid rings */}
         {[1, 0.66, 0.33].map((f, i) => (
@@ -78,19 +84,21 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
           return <line key={k} x1={C} y1={C} x2={x} y2={y} stroke="rgba(255,255,255,0.16)" strokeWidth={1.25} />
         })}
         {/* data shape */}
-        <polygon points={dataPoly} fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.65)" strokeWidth={2.5} strokeLinejoin="round" />
+        {!ungraded && (
+          <polygon points={dataPoly} fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.65)" strokeWidth={2.5} strokeLinejoin="round" />
+        )}
         {/* vertices + always-on labels */}
         {ORDER.map((k) => {
           const [cx, cy] = polar((MAX_R * animated[k]) / 100, ANGLE[k])
           const [lx, ly] = polar(LABEL_R, ANGLE[k])
-          const color = triColor(scores[k])
+          const color = ungraded ? 'rgba(148,163,184,0.6)' : triColor(scores[k])
           const top = ANGLE[k] === -90
           const anchor = top ? 'middle' : lx > C ? 'end' : 'start'
           // Push the two bottom labels further apart horizontally.
           const dx = top ? 0 : lx > C ? 12 : -12
           return (
             <g key={k}>
-              <circle cx={cx} cy={cy} r={5} fill={color} />
+              {!ungraded && <circle cx={cx} cy={cy} r={5} fill={color} />}
               <text
                 x={lx + dx}
                 y={ly + (top ? -3 : 4)}
@@ -98,7 +106,7 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
                 style={{ fontSize: 9, fontWeight: 600 }}
               >
                 <tspan fill="rgba(255,255,255,0.55)">{META[k].label} </tspan>
-                <tspan fill={color} fontWeight={700}>{scores[k]}</tspan>
+                {!ungraded && <tspan fill={color} fontWeight={700}>{scores[k]}</tspan>}
               </text>
             </g>
           )
@@ -106,7 +114,7 @@ export default function MeetingHealthTriangle({ scores, size = 248 }) {
       </svg>
       <div className="mt-1 text-center font-semibold leading-none" style={{ fontSize: '1.5rem' }}>
         <span className="text-[color:var(--db-text)]">Overall: </span>
-        <span style={{ color: overallColor }}>{overall}</span>
+        <span style={{ color: overallColor }}>{ungraded ? '—' : overall}</span>
       </div>
     </div>
   )
