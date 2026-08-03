@@ -286,8 +286,16 @@ _COMMAND_DEBOUNCE_S = float(os.getenv("PRISM_COMMAND_DEBOUNCE_S", "3"))
 _CAP_FAIL_PATTERNS = (
     "not connected", "connect google", "connect ", "reconnect", "not authorized",
     "unauthor", "invalid_grant", "invalid credentials", "expired", "no refresh token",
-    "permission", "forbidden", " 401", " 403",
+    "permission", "forbidden", "not configured",
 )
+
+# Status codes were matched as " 401"/" 403" — substrings with a LEADING SPACE, which
+# silently miss the common formatting `failed (401)` (the char before is a paren, not a
+# space). web_search hit exactly that: a bad Tavily key produced "Web search failed (401)",
+# never matched, so the capability was never blocked and never logged — the tool just
+# failed into the void on every ask. Word-boundary match handles both spellings without
+# firing on embedded digits like "1401".
+_CAP_FAIL_STATUS = re.compile(r"\b(401|403)\b")
 
 # Once a capability is blocked, a rephrased ask that clearly targets it gets a
 # terse one-liner instead of a full LLM round-trip. Phrase regexes are kept
@@ -334,7 +342,7 @@ def _is_auth_failure(result: dict) -> bool:
     if not err:
         return False
     low = err.lower()
-    return any(p in low for p in _CAP_FAIL_PATTERNS)
+    return bool(_CAP_FAIL_STATUS.search(low)) or any(p in low for p in _CAP_FAIL_PATTERNS)
 
 
 def _blocked_capability_for_command(command: str, state: dict) -> str | None:
