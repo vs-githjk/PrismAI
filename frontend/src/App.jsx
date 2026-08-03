@@ -2382,8 +2382,8 @@ export default function App() {
         },
       },
       {
-        // A non-graded recording — real accounts have these (solo asks to the
-        // bot), and the sample should show that Prism doesn't fake-grade them.
+        // A solo bot session — graded as an INTERACTION (clear ask, instant
+        // answer), not as a failed team meeting.
         title: 'Calendar check with Prism',
         transcript: "Alex: Prism, what's on my calendar tomorrow?\nPrism: You have two meetings tomorrow: the design review at 10am and the investor sync at 3pm.",
         result: {
@@ -2392,7 +2392,7 @@ export default function App() {
           action_items: [],
           decisions: [],
           sentiment: null,
-          health_score: { score: null, verdict: 'A quick solo session commanding the assistant — not a meeting to grade.', improvement_tip: '', badges: [], breakdown: { clarity: null, action_orientation: null, engagement: null } },
+          health_score: { score: 66, verdict: 'A crisp solo ask that got exactly the answer it needed.', improvement_tip: '', badges: ['Concise'], breakdown: { clarity: 75, action_orientation: 60, engagement: 62 } },
         },
       },
     ]

@@ -7,31 +7,33 @@ SYSTEM_PROMPT = (
     "Return ONLY valid JSON:\n"
     "{\n"
     '  "health_score": {\n'
-    '    "score": <integer 0-100, or null when there is nothing to grade>,\n'
+    '    "score": <integer 0-100>,\n'
     '    "verdict": "<one concise sentence about quality and outcome>",\n'
     '    "improvement_tip": "<one concrete, specific thing that would make the NEXT meeting better>",\n'
     '    "badges": ["<badge>", ...],\n'
-    '    "breakdown": { "clarity": <0-100 or null>, "action_orientation": <0-100 or null>, "engagement": <0-100 or null> }\n'
+    '    "breakdown": { "clarity": <0-100>, "action_orientation": <0-100>, "engagement": <0-100> }\n'
     "  }\n"
     "}\n"
-    "NOTHING TO GRADE: if the transcript is not a real meeting — a lone person issuing "
-    "commands to an AI assistant, a connection test, or a fragmentary exchange with no "
-    "substantive discussion — set score AND every breakdown value to null, badges to [], "
-    "and write a verdict that plainly says what the recording was (e.g. 'A quick solo "
-    "session commanding the assistant — not a meeting to grade.'). Do NOT assign a low "
-    "score to something that never tried to be a meeting.\n"
-    "CALIBRATION for real meetings (two-plus people, or a substantive solo briefing):\n"
-    "- Grade against the meeting's own goal. A casual check-in that answered its question, "
-    "a working session that found the bugs it was hunting, a catch-up that kept a team "
-    "connected: these accomplished their purpose and belong at 55-75 even with zero "
-    "formal decisions.\n"
+    "EVERY recording gets a score — grade it against what IT tried to be:\n"
+    "- A normal meeting (2+ people): grade against the meeting's own goal. A casual "
+    "check-in that answered its question, a working session that found the bugs it was "
+    "hunting, a catch-up that kept a team connected: these accomplished their purpose "
+    "and belong at 55-75 even with zero formal decisions.\n"
+    "- A SOLO session where one person works with the AI assistant: grade the "
+    "INTERACTION. Clear ask that got a useful answer or outcome = 55-75 (clarity = how "
+    "clear the ask was; action_orientation = whether it produced the outcome or a next "
+    "step; engagement = how smoothly the exchange flowed). An ask the assistant could "
+    "not fulfill = 35-55, and say so in the verdict. Never grade a solo session as a "
+    "failed team meeting.\n"
+    "- A fragmentary recording (connection test, a few stray words): 40-55 with a "
+    "verdict that plainly says what it was ('A brief connection check — nothing to "
+    "discuss.'). Never 0 for mere brevity.\n"
     "- 76-100: crisp outcomes — clear decisions and/or owned next steps beyond what the "
     "format required.\n"
-    "- 35-54: the meeting had a purpose it only partly served (main question left "
-    "hanging, ownership fuzzy, meandering that cost real time).\n"
     "- Below 35: genuine dysfunction ONLY — unresolved conflict, talking past each "
-    "other, a stated goal abandoned. Never for brevity or informality alone.\n"
-    "- Do NOT penalize missing action items or decisions when the meeting's purpose "
+    "other, a stated goal abandoned, a purpose clearly failed. Never for brevity or "
+    "informality alone.\n"
+    "- Do NOT penalize missing action items or decisions when the recording's purpose "
     "didn't call for them.\n"
     "Badges: pick UP TO 3 that clearly apply, from: "
     "Clear Decisions, Action-Oriented, Well-Facilitated, Concise, Engaged Team, "
@@ -45,7 +47,7 @@ SYSTEM_PROMPT = (
     "improvement_tip: ONE actionable suggestion grounded in the weakest dimension or a negative badge "
     "(e.g. 'Assign owners to the 3 unowned action items before closing' or 'Timebox the budget topic'). "
     "Reference specifics from the meeting, not generic advice. Use an empty string when the meeting "
-    "was excellent, or when there was nothing to grade."
+    "was excellent, or when there is nothing meaningful to improve about a trivial recording."
 )
 
 # Failure fallback: NO score, not a fake one. A stored 50 from a crashed analysis
