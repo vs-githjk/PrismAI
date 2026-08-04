@@ -22,16 +22,19 @@ function relativeDate(iso) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-const quickActionClass =
-  'inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/12 bg-white/[0.04] px-4 text-[12.5px] font-medium text-white/80 transition-all hover:bg-white/[0.09]'
+// The greeting row's action pair — identical size and shape, differing only in
+// emphasis: Join is the filled brand primary, Paste the quiet twin.
+const heroActionBase =
+  'inline-flex h-10 items-center justify-center gap-2 rounded-full px-5 text-[13px] transition-all'
+const heroActionPrimary =
+  `${heroActionBase} bg-cyan-400 font-semibold text-[#04222a] shadow-sm hover:bg-cyan-300`
+const heroActionSecondary =
+  `${heroActionBase} border border-white/15 bg-white/[0.04] font-medium text-white/85 hover:bg-white/[0.09]`
 
-/** "Good morning, Abhinav." — time-of-day + first name; "Welcome back." when no
- *  name is known. "Let's get started" was onboarding copy shown to power users. */
-function greetingFor(user, now = new Date()) {
-  const h = now.getHours()
-  const part = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+/** "Welcome back, Abhinav." — the brand greeting, personalized (owner's call). */
+function greetingFor(user) {
   const name = (user?.user_metadata?.full_name || user?.user_metadata?.name || '').trim().split(/\s+/)[0]
-  return name ? `${part}, ${name}.` : 'Welcome back.'
+  return name ? `Welcome back, ${name}.` : 'Welcome back.'
 }
 
 /**
@@ -87,20 +90,20 @@ function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, on
   }
   return (
     <section className="dashboard-home-hero flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[color:var(--db-text)]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-1">
+        <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[color:var(--db-text)]">
           {greetingFor(user)}
         </h1>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2.5">
           {onJoinMeeting && (
-            <button type="button" onClick={onJoinMeeting} className={quickActionClass}>
-              <Video className="h-3.5 w-3.5" aria-hidden="true" />
+            <button type="button" onClick={onJoinMeeting} className={heroActionPrimary}>
+              <Video className="h-4 w-4" aria-hidden="true" />
               Join a meeting
             </button>
           )}
           {onPasteTranscript && (
-            <button type="button" onClick={onPasteTranscript} className={quickActionClass}>
-              <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
+            <button type="button" onClick={onPasteTranscript} className={heroActionSecondary}>
+              <ClipboardList className="h-4 w-4" aria-hidden="true" />
               Paste transcript
             </button>
           )}
