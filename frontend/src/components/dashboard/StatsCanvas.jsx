@@ -22,14 +22,17 @@ function relativeDate(iso) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-// The greeting row's action pair — identical size and shape, differing only in
-// emphasis: Join is the filled brand primary, Paste the quiet twin.
+// THE hero action pair — one definition for both the onboarding hero and the
+// returning-user greeting row, so the buttons can never drift apart again:
+// full-size pills, Join filled cyan, Paste the quiet outlined twin.
 const heroActionBase =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-full px-5 text-[13px] transition-all'
+  'inline-flex h-11 items-center justify-center gap-2 rounded-full px-6 text-sm transition-all'
 const heroActionPrimary =
   `${heroActionBase} bg-cyan-400 font-semibold text-[#04222a] shadow-sm hover:bg-cyan-300`
 const heroActionSecondary =
-  `${heroActionBase} border border-white/15 bg-white/[0.04] font-medium text-white/85 hover:bg-white/[0.09]`
+  `${heroActionBase} border border-white/15 bg-white/[0.04] font-medium text-white/85 hover:bg-white/[0.08]`
+const heroActionGhost =
+  `${heroActionBase} border border-white/10 bg-transparent font-medium text-white/60 hover:bg-white/[0.05] hover:text-white/80`
 
 /** "Welcome back, Abhinav." — the brand greeting, personalized (owner's call). */
 function greetingFor(user) {
@@ -55,31 +58,19 @@ function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, on
         </p>
         <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
           {onJoinMeeting && (
-            <button
-              type="button"
-              onClick={onJoinMeeting}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan-400 px-6 text-sm font-semibold text-[#04222a] shadow-sm transition-all hover:bg-cyan-300"
-            >
+            <button type="button" onClick={onJoinMeeting} className={heroActionPrimary}>
               <Video className="h-4 w-4" aria-hidden="true" />
               Join a meeting
             </button>
           )}
           {onPasteTranscript && (
-            <button
-              type="button"
-              onClick={onPasteTranscript}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 text-sm font-medium text-white/85 transition-all hover:bg-white/[0.08]"
-            >
+            <button type="button" onClick={onPasteTranscript} className={heroActionSecondary}>
               <ClipboardList className="h-4 w-4" aria-hidden="true" />
               Paste a transcript
             </button>
           )}
           {canLoadSample && (
-            <button
-              type="button"
-              onClick={onLoadSample}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/10 bg-transparent px-6 text-sm font-medium text-white/60 transition-all hover:bg-white/[0.05] hover:text-white/80"
-            >
+            <button type="button" onClick={onLoadSample} className={heroActionGhost}>
               <Sparkles className="h-4 w-4" aria-hidden="true" />
               See a sample
             </button>
@@ -104,7 +95,7 @@ function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, on
           {onPasteTranscript && (
             <button type="button" onClick={onPasteTranscript} className={heroActionSecondary}>
               <ClipboardList className="h-4 w-4" aria-hidden="true" />
-              Paste transcript
+              Paste a transcript
             </button>
           )}
         </div>
