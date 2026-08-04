@@ -29,6 +29,20 @@ tasks-first Trend with the graph demoted, and a standalone Action Items page
   past) are history, not urgency.
 - Every other task surface is a slice that routes here: Home carries only a
   one-line task-count strip; meeting pages show only their own items.
+
+## Amendment (2026-08-04, state-aware Home)
+
+Adopted one day later with the state-aware Home redesign:
+
+- **Task priority is amended** to: urgency (overdue → due soon) → ownership
+  tiers among equals (yours → unowned → teammates') → source-meeting recency.
+  ONE order, used identically by every surface; the hub chips remain filters.
+- **Home's strip becomes the "Needs-attention feed"** — still a bounded slice
+  (top 3–5 tasks + top 2–3 unresolved threads + "View all tasks → hub"), never
+  a second full task surface. The hub on Trend remains canonical.
+- Home's hero is **state-aware** (live → starting soon → next meeting → compact
+  empty row) beneath a one-line greeting; "View context" opens the workspace
+  Brief (hidden for personal meetings); Send Stand-in is a first-class action.
 - The standalone Action Items page is removed; its grouped-list UI is recycled
   as the hub's list.
 

@@ -1720,36 +1720,33 @@ export default function DashboardPage(props) {
               canLoadSample={props.canLoadSample}
               onJoinMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
               onPasteTranscript={() => { props.setInputTab?.('paste'); setNewMeetingOpen(true) }}
-              upcomingPanel={
-                // window.__prismForceUpcoming: DEV-only escape hatch so headless visual
-                // tests can render this panel (the test account can never connect a
-                // real calendar). Dead code in production builds.
+              // window.__prismForceUpcoming: DEV-only escape hatch so headless visual
+              // tests can exercise the hero (the test account can never connect a
+              // real calendar). Dead code in production builds.
+              heroEnabled={
                 (props.calendarConnected && props.user && !props.isTestAccount) ||
-                (import.meta.env.DEV && typeof window !== 'undefined' && window.__prismForceUpcoming) ? (
-                  <Suspense fallback={null}>
-                    <UpcomingMeetings
-                      workspaces={workspaces}
-                      user={props.user}
-                      onCantMakeIt={(m) => setStandIn(m)}
-                      onOpenMeeting={handleOpenMeetingById}
-                      onJoin={(url, wsId) => {
-                        // Prefill the Join tab and open the New Meeting popover — the
-                        // user confirms mode + Join Meeting there, same as ever.
-                        props.setMeetingUrl(url)
-                        if (wsId) props.onJoinWithWorkspace?.(wsId)
-                        props.setInputTab?.('join')
-                        setNewMeetingOpen(true)
-                      }}
-                    />
-                  </Suspense>
-                ) : null
+                (import.meta.env.DEV && typeof window !== 'undefined' && !!window.__prismForceUpcoming)
               }
+              workspaces={workspaces}
+              botLive={props.botStatus === 'joining' || props.botStatus === 'recording'}
+              liveAvailable={!!props.liveToken}
+              onOpenLive={() => persistView('live')}
+              onJoinEvent={(url, wsId) => {
+                // Prefill the Join tab and open the New Meeting popover — the
+                // user confirms mode + Join Meeting there, same as ever.
+                props.setMeetingUrl(url)
+                if (wsId) props.onJoinWithWorkspace?.(wsId)
+                props.setInputTab?.('join')
+                setNewMeetingOpen(true)
+              }}
+              onCantMakeIt={(m) => setStandIn(m)}
               openThreads={homeOpenThreads}
               onOpenTrend={handleOpenTrend}
               onOpenCalendar={() => persistView('calendar')}
               showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
               onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
+              onToggleAction={props.toggleHistoryActionItem}
             />
           )}
           {activeView === 'meeting' && (

@@ -19,11 +19,13 @@ members, delete/leave).
 
 ### Home
 A pinned sidebar page, always present, that is the default landing surface.
-Scope-aware. Answers "what's next and what happened": greeting + start/join
-actions, **next meetings** (upcoming calendar events), a slim **task strip**
-(count of open tasks linking to the Task hub — a door, never a list), and the
-recent-meetings overview. Home is *not* a meeting and never hosts the full
-task list.
+Scope-aware and **state-aware**: a one-line greeting stays as the brand moment,
+and beneath it the **Meeting hero** — the single most time-sensitive meeting
+(live → starting soon → next upcoming), with countdown and Join / View context /
+Send Stand-in actions; when nothing is scheduled it collapses to a compact
+status row (never a large empty card). Below the hero: the **Needs-attention
+feed** (a bounded slice of the Task hub) and a capped recent-meetings list.
+Home is *not* a meeting and never hosts the full task list.
 
 ### Meeting page
 Each saved meeting is a page listed in the sidebar below Home, in the spirit of
@@ -62,11 +64,14 @@ page). Every other task surface (Home, meeting pages) is a preview or slice
 that leads here.
 
 ### Task priority
-The hub's ranking: live due urgency first (**overdue**, then **due soon**),
-then **recency** of the source meeting (newest first); undated tasks from old
-meetings rank last. **Ownership is a filter** (Yours | All | Unassigned) with
-the viewer's own rows highlighted — never a sort tier. A stale deadline (>14
-days past) is history, not urgency.
+ONE ranking, used identically by every task surface (Home's Needs-attention
+feed and the Trend Task hub): live due urgency first (**overdue**, then **due
+soon**), then ownership tiers among the equally urgent (**yours → unowned →
+teammates'**), then **recency** of the source meeting (newest first). The hub's
+Yours | All | Unassigned chips are filters layered on top of this order. A
+stale deadline (>14 days past) is history, not urgency. (Amended Aug 2026 —
+ownership was briefly filter-only; the state-aware Home redesign restored it
+as a tier below urgency.)
 
 ### New meeting
 The action that starts a new analysis (paste / upload / record / bot).

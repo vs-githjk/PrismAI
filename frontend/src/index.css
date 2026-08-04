@@ -1306,27 +1306,16 @@ h1, h2, h3, .font-display {
    Cards scroll internally rather than the page. */
 .dashboard-home-grid {
   display: grid;
-  /* 60/40: the left column is where the doing happens (CTAs, next meetings,
-     task strip); recent meetings are compact rows that don't need half a page. */
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  grid-template-rows: minmax(0, 1fr);
+  /* State-aware Home (ADR 0002 amendment): full-width hero row (greeting line +
+     Meeting hero), then ~65% Needs-attention / ~35% Recent meetings. */
+  grid-template-columns: minmax(0, 13fr) minmax(0, 7fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--dashboard-gutter);
   height: 100%;
   min-height: 0;
 }
-/* Left column stacks the greeting/launcher over the open action items — flex
-   (not grid rows) so the action card can SHRINK below its content and scroll
-   internally when height runs out. Same structure empty or populated, so
-   arriving data never swaps one block for a different shape. */
-.dashboard-home-left {
-  grid-column: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--dashboard-gutter);
-  min-height: 0;
-}
-/* The greeting holds the page's primary actions — it never shrinks; the card below yields. */
-.dashboard-home-greeting { flex-shrink: 0; }
+.dashboard-home-hero { grid-column: 1 / -1; grid-row: 1; min-height: 0; }
+.dashboard-home-attention { grid-column: 1; grid-row: 2; min-height: 0; }
 
 /* The first-run (empty-history) home is free-flowing copy + CTAs, not a fixed
    grid: pinned inside the viewport-height overflow:hidden shell its headline
@@ -1339,9 +1328,9 @@ h1, h2, h3, .font-display {
 }
 .dashboard-content.is-home.is-home-empty .dashboard-home-grid { height: auto; }
 
-/* Short windows: the greeting + next-meetings card can't both fit the
-   viewport-locked shell — let the page scroll instead of crushing the card to a
-   sliver (same treatment the empty state gets). */
+/* Short windows: the hero + columns can't all fit the viewport-locked shell —
+   let the page scroll instead of crushing a card to a sliver (same treatment
+   the empty state gets). */
 @media (max-height: 800px) {
   .dashboard-content.is-home {
     height: auto;
@@ -1350,18 +1339,15 @@ h1, h2, h3, .font-display {
   }
   .dashboard-content.is-home .dashboard-home-grid { height: auto; }
 }
-/* Next meetings — Home's primary card. Yields and scrolls internally when the
-   column runs out of room. */
-.dashboard-home-upcoming { min-height: 0; }
-.dashboard-home-meetings { grid-column: 2; min-height: 0; }
+.dashboard-home-meetings { grid-column: 2; grid-row: 2; min-height: 0; }
 @media (max-width: 900px) {
   .dashboard-home-grid {
     grid-template-columns: 1fr;
     grid-template-rows: none;
     height: auto;
   }
-  .dashboard-home-left,
-  .dashboard-home-greeting,
+  .dashboard-home-hero,
+  .dashboard-home-attention,
   .dashboard-home-meetings {
     grid-column: auto;
     grid-row: auto;
@@ -1370,7 +1356,7 @@ h1, h2, h3, .font-display {
   }
   /* Cards keep their own scrollers on mobile rather than growing the page, so
      Recent meetings stays reachable by thumb. */
-  .dashboard-home-upcoming > .overflow-y-auto,
+  .dashboard-home-attention > .overflow-y-auto,
   .dashboard-home-meetings > .overflow-y-auto {
     max-height: 58vh;
   }

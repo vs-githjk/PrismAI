@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ListTodo } from 'lucide-react'
-import { collectOpenActions, byUrgency, scopeFilter } from '../../lib/actionItems'
+import { collectOpenActions, byPriority, scopeFilter } from '../../lib/actionItems'
 import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
 import ActionItemRow from './ActionItemRow'
 
@@ -8,10 +8,9 @@ import ActionItemRow from './ActionItemRow'
  * The Task hub — the canonical list of open action items for the active scope
  * (see docs/adr/0002). Lives on Trend, co-headline with the health graph.
  *
- * Priority = live due urgency first (overdue → due soon), then recency of the
- * source meeting (byUrgency does exactly this). Ownership is a FILTER
- * (Yours | All | Unassigned), never a sort tier; your rows render highlighted
- * via ActionItemRow's isMine treatment.
+ * Sort = byPriority, THE one task order (urgency → yours → unowned → recency;
+ * CONTEXT.md "Task priority") — identical to Home's Needs-attention feed. The
+ * Yours | All | Unassigned chips are filters layered on top.
  */
 export default function TaskHub({ history = [], user = null, onToggle, onOpenMeeting }) {
   const [scope, setScope] = useState('all')
@@ -19,7 +18,7 @@ export default function TaskHub({ history = [], user = null, onToggle, onOpenMee
   const { rows, total, mineCount, unassignedCount } = useMemo(() => {
     const all = collectOpenActions(history, user)
     return {
-      rows: scopeFilter(all, scope).sort(byUrgency),
+      rows: scopeFilter(all, scope).sort(byPriority),
       total: all.length,
       mineCount: all.filter((r) => r.isMine).length,
       unassignedCount: all.filter((r) => r.unassigned).length,

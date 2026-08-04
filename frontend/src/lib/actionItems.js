@@ -84,6 +84,15 @@ export function byUrgency(a, b) {
   return new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()
 }
 
-// (byMineFirst and groupByMeetingDate were removed with the standalone Action
-// Items page — the Task hub on Trend sorts purely by byUrgency and filters by
-// ownership; see docs/adr/0002.)
+const OWN_RANK = (r) => (r.isMine ? 0 : r.unassigned ? 1 : 2)
+/** THE task priority (CONTEXT.md "Task priority", amended Aug 2026) — used
+ *  identically by every task surface: live due urgency (overdue → due soon),
+ *  then ownership tiers among the equally urgent (yours → unowned →
+ *  teammates'), then source-meeting recency. */
+export function byPriority(a, b) {
+  const ra = DUE_RANK[dueInfo(a.item, a.entry?.date).status] ?? 2
+  const rb = DUE_RANK[dueInfo(b.item, b.entry?.date).status] ?? 2
+  if (ra !== rb) return ra - rb
+  if (OWN_RANK(a) !== OWN_RANK(b)) return OWN_RANK(a) - OWN_RANK(b)
+  return new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()
+}

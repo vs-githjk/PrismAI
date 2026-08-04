@@ -75,7 +75,7 @@ function formatRelativeDate(iso) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-function BriefPanel({ state, workspaceName, onItemClick }) {
+export function BriefPanel({ state, workspaceName, onItemClick }) {
   if (!state || state.loading) {
     return (
       <div className="px-3 pb-3 pt-1">
@@ -162,6 +162,52 @@ function BriefPanel({ state, workspaceName, onItemClick }) {
   )
 }
 
+/**
+ * Fetch Google + Outlook events in parallel and merge — shared by this list and
+ * Home's MeetingHero so both see identical events. A 404 (provider not
+ * connected) is skipped; a Google 401 surfaces as error 'reconnect' only when
+ * nothing else loaded. Dedups a meeting on both calendars (same link, or same
+ * start+title) while keeping every source for the badges; sorted by start.
+ * @returns {Promise<{events: Array, error: 'reconnect'|'load'|null}>}
+ */
+export async function fetchMergedEvents() {
+  try {
+    const settled = await Promise.allSettled([
+      apiFetch('/calendar/events?days_ahead=3'),
+      apiFetch('/ms-calendar/events?days_ahead=3'),
+    ])
+    const SOURCES = ['google', 'outlook']
+    let tagged = []
+    let googleAuthExpired = false
+    let anyOk = false
+    for (let i = 0; i < settled.length; i++) {
+      if (settled[i].status !== 'fulfilled') continue
+      const r = settled[i].value
+      if (r.status === 401) { if (i === 0) googleAuthExpired = true; continue }
+      if (!r.ok) continue
+      anyOk = true
+      const data = await r.json()
+      tagged = tagged.concat((data.events || []).map(ev => ({ ...ev, _source: SOURCES[i] })))
+    }
+    const byKey = new Map()
+    for (const ev of tagged) {
+      const key = ev.meeting_link || `${ev.start}|${ev.title}`
+      const existing = byKey.get(key)
+      if (existing) {
+        if (!existing._sources.includes(ev._source)) existing._sources.push(ev._source)
+      } else {
+        byKey.set(key, { ...ev, _sources: [ev._source] })
+      }
+    }
+    const merged = Array.from(byKey.values())
+    merged.sort((a, b) => new Date(a.start) - new Date(b.start))
+    if (!anyOk && googleAuthExpired) return { events: [], error: 'reconnect' }
+    return { events: merged, error: null }
+  } catch {
+    return { events: [], error: 'load' }
+  }
+}
+
 // Which calendar an event came from. Google green vs Outlook blue so the two are
 // distinguishable at a glance (a meeting on both shows both badges).
 const SOURCE_META = {
@@ -180,7 +226,7 @@ function SourceBadge({ source }) {
   )
 }
 
-function matchWorkspace(attendeeEmails, workspaces) {
+export function matchWorkspace(attendeeEmails, workspaces) {
   if (!attendeeEmails?.length || !workspaces?.length) return null
   const emailSet = new Set(attendeeEmails.map(e => e.toLowerCase()))
   let best = null
@@ -231,51 +277,10 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    try {
-      // Pull Google + Outlook in parallel; merge whatever's connected. A 404
-      // (provider not connected) is simply skipped; a Google 401 means its token
-      // expired (shown as reconnect only when nothing else loaded).
-      const settled = await Promise.allSettled([
-        apiFetch('/calendar/events?days_ahead=3'),
-        apiFetch('/ms-calendar/events?days_ahead=3'),
-      ])
-      // Index 0 = Google, index 1 = Outlook — tag each event with its source so
-      // the row can show which calendar it came from.
-      const SOURCES = ['google', 'outlook']
-      let tagged = []
-      let googleAuthExpired = false
-      let anyOk = false
-      for (let i = 0; i < settled.length; i++) {
-        if (settled[i].status !== 'fulfilled') continue
-        const r = settled[i].value
-        if (r.status === 401) { if (i === 0) googleAuthExpired = true; continue }
-        if (!r.ok) continue
-        anyOk = true
-        const data = await r.json()
-        tagged = tagged.concat((data.events || []).map(ev => ({ ...ev, _source: SOURCES[i] })))
-      }
-      // Dedup a meeting that shows up on both calendars (same link, or same
-      // start+title) — but KEEP a record of every source it appeared on, so a
-      // meeting on both shows both badges. Then sort chronologically.
-      const byKey = new Map()
-      for (const ev of tagged) {
-        const key = ev.meeting_link || `${ev.start}|${ev.title}`
-        const existing = byKey.get(key)
-        if (existing) {
-          if (!existing._sources.includes(ev._source)) existing._sources.push(ev._source)
-        } else {
-          byKey.set(key, { ...ev, _sources: [ev._source] })
-        }
-      }
-      let merged = Array.from(byKey.values())
-      merged.sort((a, b) => new Date(a.start) - new Date(b.start))
-      if (!anyOk && googleAuthExpired) { setError('reconnect'); return }
-      setEvents(merged)
-    } catch {
-      setError('load')
-    } finally {
-      setLoading(false)
-    }
+    const { events: merged, error: fetchError } = await fetchMergedEvents()
+    if (fetchError) setError(fetchError)
+    else setEvents(merged)
+    setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
