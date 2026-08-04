@@ -33,7 +33,10 @@ export default function TaskHub({ history = [], user = null, onToggle, onOpenMee
   ]
 
   return (
-    <section className={`${glassCard} flex min-h-0 flex-col overflow-hidden`} style={cardGlowStyle}>
+    // The height bound lives ON the section (not a wrapper): a max-h'd wrapper
+    // without clipping let a 40-task list paint straight over the sections
+    // below it. The list scrolls internally past this cap.
+    <section className={`${glassCard} flex max-h-[36rem] min-h-0 flex-col overflow-hidden`} style={cardGlowStyle}>
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[color:var(--db-border)] px-4 py-3">
         <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Tasks</h2>
         <div className="ml-auto flex gap-1">

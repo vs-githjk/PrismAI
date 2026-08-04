@@ -15,7 +15,19 @@ const TOPIC_STATUS = {
 }
 
 function MeetingChips({ ids = [], resolveMeeting, onSelect, max = 4 }) {
-  const meetings = ids.map(resolveMeeting).filter(Boolean).slice(0, max)
+  // Dedup by display label — duplicate meetings (fan-out copies, repeated test
+  // runs) rendered as "Meeting, Meeting, Meeting" chips saying nothing.
+  const seen = new Set()
+  const meetings = ids
+    .map(resolveMeeting)
+    .filter(Boolean)
+    .filter((m) => {
+      const key = m.title || formatMeetingDate(m.date)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, max)
   if (!meetings.length) return null
   return (
     <div className="mt-2 flex flex-wrap gap-1">
@@ -164,13 +176,15 @@ export function DecisionEvolutionCard({ items = [], loading, resolveMeeting, onS
             <div key={`${item.topic}-${index}`} className="rounded-lg border border-violet-200/[0.14] bg-violet-300/[0.05] p-3">
               <p className="text-sm font-semibold text-white">{item.topic}</p>
               <div className="mt-2 space-y-1.5">
-                {item.timeline.map((step, stepIndex) => {
+                {/* Defensive: a malformed/cached payload without `timeline` must
+                    degrade to an empty card, never white-screen the dashboard. */}
+                {(item.timeline || []).map((step, stepIndex) => {
                   const meeting = resolveMeeting(step.meeting_id)
                   return (
                     <div key={stepIndex} className="flex gap-2">
                       <div className="mt-1 flex flex-col items-center">
                         <span className="h-1.5 w-1.5 rounded-full bg-violet-300" />
-                        {stepIndex < item.timeline.length - 1 && <span className="mt-0.5 h-full w-px flex-1 bg-violet-200/20" />}
+                        {stepIndex < (item.timeline || []).length - 1 && <span className="mt-0.5 h-full w-px flex-1 bg-violet-200/20" />}
                       </div>
                       <div className="pb-1">
                         <p className="text-[13px] leading-5 text-white/82">{step.what_changed}</p>

@@ -133,7 +133,7 @@ export default function IntelligenceView({
           <HealthTrend history={safeHistory} onSelect={onSelectMeeting} />
           <Vitals insights={insights} latestMeeting={latestMeeting} />
         </div>
-        <div className="min-w-0 lg:max-h-[42rem]">
+        <div className="min-w-0">
           <TaskHub
             history={safeHistory}
             user={user}
