@@ -1306,7 +1306,9 @@ h1, h2, h3, .font-display {
    Cards scroll internally rather than the page. */
 .dashboard-home-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 60/40: the left column is where the doing happens (CTAs, next meetings,
+     task strip); recent meetings are compact rows that don't need half a page. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   grid-template-rows: minmax(0, 1fr);
   gap: var(--dashboard-gutter);
   height: 100%;
@@ -1337,9 +1339,9 @@ h1, h2, h3, .font-display {
 }
 .dashboard-content.is-home.is-home-empty .dashboard-home-grid { height: auto; }
 
-/* Short windows: the greeting + action card can't both fit the viewport-locked
-   shell — let the page scroll instead of crushing the card to a sliver (same
-   treatment the empty state gets). */
+/* Short windows: the greeting + next-meetings card can't both fit the
+   viewport-locked shell — let the page scroll instead of crushing the card to a
+   sliver (same treatment the empty state gets). */
 @media (max-height: 800px) {
   .dashboard-content.is-home {
     height: auto;
@@ -1348,17 +1350,9 @@ h1, h2, h3, .font-display {
   }
   .dashboard-content.is-home .dashboard-home-grid { height: auto; }
 }
-.dashboard-home-actions {
-  min-height: 0;
-  /* Content height (flex-grow 0): the card previews four items and links out to
-     the full Action items page, so stretching it to fill leftover column height
-     would recreate the page-of-list it replaced. */
-}
-/* Upcoming calendar events under the action card — content-height, yields and
-   scrolls internally when the column runs out of room. The island shell hides
-   itself when the inner list renders nothing (loading / no joinable events). */
-.dashboard-home-upcoming { min-height: 0; overflow-y: auto; }
-.dashboard-home-upcoming:empty { display: none; }
+/* Next meetings — Home's primary card. Yields and scrolls internally when the
+   column runs out of room. */
+.dashboard-home-upcoming { min-height: 0; }
 .dashboard-home-meetings { grid-column: 2; min-height: 0; }
 @media (max-width: 900px) {
   .dashboard-home-grid {
@@ -1368,24 +1362,18 @@ h1, h2, h3, .font-display {
   }
   .dashboard-home-left,
   .dashboard-home-greeting,
-  .dashboard-home-actions,
   .dashboard-home-meetings {
     grid-column: auto;
     grid-row: auto;
-    /* No min-height: a 280px floor on EVERY region padded the state band with
-       dead space and, combined with an uncapped action list, produced a ~3300px
-       page where all 16 items preceded any recent meeting. Each region is now
-       content-sized, and the lists cap themselves (see below). */
+    /* No min-height: content-sized regions; the lists cap themselves (below). */
     min-height: 0;
   }
-  /* The action feed keeps its own scroller on mobile rather than growing the page.
-     Roughly four rows — enough to act on, short enough that Recent meetings is
-     still reachable by thumb. The card's "N open" caption says what's below. */
-  .dashboard-home-actions > .overflow-y-auto,
+  /* Cards keep their own scrollers on mobile rather than growing the page, so
+     Recent meetings stays reachable by thumb. */
+  .dashboard-home-upcoming > .overflow-y-auto,
   .dashboard-home-meetings > .overflow-y-auto {
     max-height: 58vh;
   }
-  .dashboard-home-upcoming { max-height: 58vh; }
 }
 
 /* ============================================================

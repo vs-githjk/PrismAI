@@ -18,9 +18,12 @@ The control at the **top of the sidebar** that selects the active scope
 members, delete/leave).
 
 ### Home
-A pinned sidebar page, always present, that is the default landing surface. It
-shows the overview (stats hero + recent-meeting overview). Home is scope-aware:
-it reflects the active workspace. Home is *not* a meeting.
+A pinned sidebar page, always present, that is the default landing surface.
+Scope-aware. Answers "what's next and what happened": greeting + start/join
+actions, **next meetings** (upcoming calendar events), a slim **task strip**
+(count of open tasks linking to the Task hub — a door, never a list), and the
+recent-meetings overview. Home is *not* a meeting and never hosts the full
+task list.
 
 ### Meeting page
 Each saved meeting is a page listed in the sidebar below Home, in the spirit of
@@ -46,6 +49,24 @@ switch** while a meeting is in focus.
 The control in the **center of the topbar** that toggles the focused meeting
 between its **Current-meeting intelligence** and **Cross-meeting intelligence**
 views. Disabled (grayed) whenever no meeting is in focus.
+
+### Trend
+A pinned sidebar page showing **Cross-meeting intelligence** for the active
+scope. (Supersedes the original design where cross-meeting views were reachable
+only via the topbar intelligence switch — see ADR 0002.)
+
+### Task hub
+The canonical, central list of open action items across the active scope. Lives
+on the **Trend** page, co-headline with the health graph (no tabs, no separate
+page). Every other task surface (Home, meeting pages) is a preview or slice
+that leads here.
+
+### Task priority
+The hub's ranking: live due urgency first (**overdue**, then **due soon**),
+then **recency** of the source meeting (newest first); undated tasks from old
+meetings rank last. **Ownership is a filter** (Yours | All | Unassigned) with
+the viewer's own rows highlighted — never a sort tier. A stale deadline (>14
+days past) is history, not urgency.
 
 ### New meeting
 The action that starts a new analysis (paste / upload / record / bot).

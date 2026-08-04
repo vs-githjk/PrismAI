@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus, X } from 'lucide-react'
 import CalendarCard from './CalendarCard'
+import CollapsibleSection from './CollapsibleSection'
 import EmailCard from './EmailCard'
 import KnowledgeDocCard from '../KnowledgeDocCard'
 import MeetingHealthTriangle from './MeetingHealthTriangle'
@@ -563,45 +564,53 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
       </div>
 
+      {/* Everything below the actions/decisions row is collapsed by default
+          (Aug 2026 brief): follow-up first, then the analysis tail. Sections
+          expand on click; nothing is removed. */}
+      {(!readOnly && (result.suggested_actions?.length > 0 || result.follow_up_email)) || result.calendar_suggestion?.recommended ? (
+        <CollapsibleSection title="Follow-up" hint="email · calendar · ready-to-send actions">
+          <div className="space-y-4 pt-1">
+            {!readOnly && (result.suggested_actions?.length > 0) && (
+              <SuggestedActions
+                actions={result.suggested_actions}
+                connections={actionConnections}
+                suggestedEmails={suggestedEmails}
+                meetingId={meetingId}
+                teamsWebhook={teamsWebhook}
+                workspaceId={workspaceId}
+                readOnly={readOnly}
+              />
+            )}
+            {!readOnly && (
+              <EmailCard
+                email={result.follow_up_email}
+                gmailConnected={gmailConnected}
+                suggestedEmails={suggestedEmails}
+                onSave={(updated) => onResultUpdate?.({ follow_up_email: updated })}
+                viewerName={viewerName}
+                meetingId={meetingId}
+                transcript={transcript}
+                result={result}
+              />
+            )}
+            <CalendarCard
+              suggestion={result.calendar_suggestion}
+              meetingDate={meeting?.date}
+              meetingTitle={meeting?.title || result?.title || ''}
+              readOnly={readOnly}
+              suggestedEmails={suggestedEmails}
+              meetingId={meetingId}
+            />
+          </div>
+        </CollapsibleSection>
+      ) : null}
+
       {/* Sentiment is per-speaker tone — meaningless for a single-authored
-          article/report, so hide it there (covers auto-detected reports too). */}
-      {!readOnly && currentType !== 'article' && <SentimentCard sentiment={sentiment} />}
+          article/report, so hide it there (covers auto-detected reports too).
+          Collapsed by default (Aug 2026 brief) — its own header keeps the
+          headline pill visible, so nothing is lost while closed. */}
+      {!readOnly && currentType !== 'article' && <SentimentCard sentiment={sentiment} defaultOpen={false} />}
 
-      {!readOnly && (result.suggested_actions?.length > 0) && (
-        <SuggestedActions
-          actions={result.suggested_actions}
-          connections={actionConnections}
-          suggestedEmails={suggestedEmails}
-          meetingId={meetingId}
-          teamsWebhook={teamsWebhook}
-          workspaceId={workspaceId}
-          readOnly={readOnly}
-        />
-      )}
-
-      {!readOnly && (
-        <EmailCard
-          email={result.follow_up_email}
-          gmailConnected={gmailConnected}
-          suggestedEmails={suggestedEmails}
-          onSave={(updated) => onResultUpdate?.({ follow_up_email: updated })}
-          viewerName={viewerName}
-          meetingId={meetingId}
-          transcript={transcript}
-          result={result}
-        />
-      )}
-
-      <CalendarCard
-        suggestion={result.calendar_suggestion}
-        meetingDate={meeting?.date}
-        meetingTitle={meeting?.title || result?.title || ''}
-        readOnly={readOnly}
-        suggestedEmails={suggestedEmails}
-        meetingId={meetingId}
-      />
-
-      {/* Secondary insight — kept low, just above the recording/transcript. */}
       {/* Talk-time / speaker coaching — N/A for a single-authored article/report. */}
       {!readOnly && currentType !== 'article' && <SpeakerCoachCard speakerCoach={result.speaker_coach} />}
 

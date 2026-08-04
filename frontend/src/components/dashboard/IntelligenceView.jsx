@@ -8,75 +8,19 @@ import {
   NarrativeBar,
   OpenThreadsCard,
   SemanticLockedBanner,
-  TopicsCard,
 } from './CrossMeetingSemantic'
 import { ActionModal } from './SuggestedActions'
 import HealthTrend from './HealthTrend'
 import StatsHero from './StatsHero'
+import TaskHub from './TaskHub'
 import Vitals from './Vitals'
+import CollapsibleSection from './CollapsibleSection'
 import { cardGlowStyle, cardTitle, glassCard, subtleText } from './dashboardStyles'
 
-const OwnerLoad = lazy(() => import('./OwnerLoad'))
 const DecisionMemory = lazy(() => import('./DecisionMemory'))
 
-function OwnershipDriftCard({ insights }) {
-  const drift = insights.ownershipDrift || []
-  return (
-    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-      <div className="mb-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/80">Ownership drift</p>
-        <h2 className={cardTitle}>Overloaded contributors</h2>
-      </div>
-      {drift.length ? (
-        <div className="space-y-2">
-          {drift.map(({ owner, count, meetings }) => (
-            <div key={owner} className="rounded-lg border border-sky-200/[0.14] bg-sky-300/[0.06] px-3 py-2.5">
-              <p className="text-sm font-semibold text-[color:var(--db-text)]">{owner}</p>
-              <p className={subtleText}>
-                {count} action item{count !== 1 ? 's' : ''} · {meetings} meeting{meetings !== 1 ? 's' : ''}
-              </p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className={subtleText}>Ownership looks balanced across recent meetings.</p>
-      )}
-    </section>
-  )
-}
-
-function MembersLeaderboard({ insights }) {
-  const load = insights.openOwnerLoad || []
-  return (
-    <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-      <div className="mb-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/80">Members leaderboard</p>
-        <h2 className={cardTitle}>Open action items by owner</h2>
-      </div>
-      {load.length ? (
-        <div className="space-y-2">
-          {load.map(({ owner, open, total }) => (
-            <div key={owner} className="rounded-lg border border-[color:var(--db-border)] bg-black/25 px-3 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-[color:var(--db-text)]">{owner}</p>
-                <span className="text-[11px] font-semibold text-amber-300/90">{open} open</span>
-              </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--db-fill-strong)]">
-                <div
-                  className="h-full rounded-full bg-amber-400/60"
-                  style={{ width: total > 0 ? `${Math.round((open / total) * 100)}%` : '0%' }}
-                />
-              </div>
-              <p className="mt-1 text-[10px] text-[color:var(--db-text-faint)]">{total} total assigned</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className={subtleText}>No action items assigned yet.</p>
-      )}
-    </section>
-  )
-}
+// (Ownership drift, Owner load, Topics, and Members leaderboard were pruned in
+// the Aug 2026 redesign — the Task hub replaced them as the page's second focus.)
 
 export default function IntelligenceView({
   history,
@@ -87,6 +31,8 @@ export default function IntelligenceView({
   actionConnections = {},
   suggestedEmails = [],
   teamsWebhook = '',
+  user = null,
+  onToggleAction,
 }) {
   const safeHistory = history || []
   const insights = useMemo(
@@ -180,53 +126,55 @@ export default function IntelligenceView({
         <NarrativeBar narrative={semantic?.narrative} loading={cardsLoading} />
       ) : null}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <HealthTrend history={safeHistory} onSelect={onSelectMeeting} />
-        <Vitals insights={insights} latestMeeting={latestMeeting} />
-      </div>
-
-      {!locked && showSemantic && (
-        <div className="grid gap-3 lg:grid-cols-2">
-          <OpenThreadsCard
-            threads={semantic?.open_threads || []}
-            loading={cardsLoading}
-            resolveMeeting={resolveMeeting}
-            onSelect={onSelectMeeting}
-            onAct={actOnThread}
-            actLabel={threadActLabel}
-            isActed={isThreadActed}
-          />
-          <DecisionEvolutionCard
-            items={semantic?.decision_evolution || []}
-            loading={cardsLoading}
-            resolveMeeting={resolveMeeting}
-            onSelect={onSelectMeeting}
+      {/* Co-headline row (ADR 0002): the health graph and the Task hub share the
+          top of the page — tasks as prominent as the graph, no tabs. */}
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,7fr)_minmax(360px,5fr)]">
+        <div className="min-w-0 space-y-3">
+          <HealthTrend history={safeHistory} onSelect={onSelectMeeting} />
+          <Vitals insights={insights} latestMeeting={latestMeeting} />
+        </div>
+        <div className="min-w-0 lg:max-h-[42rem]">
+          <TaskHub
+            history={safeHistory}
+            user={user}
+            onToggle={onToggleAction}
+            onOpenMeeting={onSelectMeeting}
           />
         </div>
-      )}
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Suspense fallback={<SkeletonCard lines={3} />}>
-          <OwnerLoad insights={insights} />
-        </Suspense>
-        <OwnershipDriftCard insights={insights} />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Suspense fallback={<SkeletonCard lines={3} />}>
-          <DecisionMemory insights={insights} onSelect={onSelectMeeting} />
-        </Suspense>
-        {!locked && showSemantic && (
-          <TopicsCard
-            topics={semantic?.topics || []}
-            loading={cardsLoading}
-            resolveMeeting={resolveMeeting}
-            onSelect={onSelectMeeting}
-          />
-        )}
-      </div>
-
-      {workspaceName && <MembersLeaderboard insights={insights} />}
+      {/* Demoted, not deleted (standard prune, Aug 2026): threads / evolution /
+          decision memory live behind one collapsed row. The aggressive-prune
+          follow-up is deleting this block. */}
+      <CollapsibleSection
+        title="Threads & decisions"
+        hint="open threads · decision evolution · decision memory"
+      >
+        <div className="space-y-3 pt-1">
+          {!locked && showSemantic && (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <OpenThreadsCard
+                threads={semantic?.open_threads || []}
+                loading={cardsLoading}
+                resolveMeeting={resolveMeeting}
+                onSelect={onSelectMeeting}
+                onAct={actOnThread}
+                actLabel={threadActLabel}
+                isActed={isThreadActed}
+              />
+              <DecisionEvolutionCard
+                items={semantic?.decision_evolution || []}
+                loading={cardsLoading}
+                resolveMeeting={resolveMeeting}
+                onSelect={onSelectMeeting}
+              />
+            </div>
+          )}
+          <Suspense fallback={<SkeletonCard lines={3} />}>
+            <DecisionMemory insights={insights} onSelect={onSelectMeeting} />
+          </Suspense>
+        </div>
+      </CollapsibleSection>
 
       {threadAction && createPortal(
         <ActionModal

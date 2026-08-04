@@ -1,49 +1,43 @@
-// Home's preview order: yours → unassigned → teammates', urgency within each tier.
-// A pure-urgency sort made the personal dashboard lead with other people's work.
+// The Task hub's priority sort (byUrgency): live due urgency first (overdue →
+// due soon), then recency of the source meeting. Stale deadlines and ownership
+// deliberately do NOT rank — ownership is a filter, stale is history.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { byMineFirst, byUrgency, collectOpenActions } from '../src/lib/actionItems.js'
+import { byUrgency, collectOpenActions, scopeFilter } from '../src/lib/actionItems.js'
 
-const entry = (id, date) => ({ id, date })
-// due_date is the backend-resolved ISO field dueInfo actually reads. Recent
-// (computed) dates — a hardcoded past year would be STALE, which by design does
-// not rank as live urgency.
-const recentOverdue = () => {
+const daysFromNow = (n) => {
   const d = new Date()
-  d.setDate(d.getDate() - 2)
+  d.setDate(d.getDate() + n)
   return d.toISOString().slice(0, 10)
 }
-const row = ({ isMine = false, unassigned = false, due_date = '', date = '2026-07-01' } = {}) => ({
+const row = ({ due_date = '', date = daysFromNow(-30) } = {}) => ({
   item: { task: 't', owner: 'x', due_date },
-  entry: entry(1, date),
-  isMine,
-  unassigned,
+  entry: { id: 1, date },
 })
 
-test('yours outrank everyone, even non-urgent vs overdue teammate', () => {
-  const mineNoDue = row({ isMine: true })
-  const teammateOverdue = row({ due_date: recentOverdue() })
-  assert.ok(byMineFirst(mineNoDue, teammateOverdue) < 0)
+test('a recent overdue outranks a task from a newer meeting', () => {
+  const overdue = row({ due_date: daysFromNow(-2), date: daysFromNow(-10) })
+  const freshUndated = row({ date: daysFromNow(0) })
+  assert.ok(byUrgency(overdue, freshUndated) < 0)
 })
 
-test('unassigned outrank teammates but not yours', () => {
-  const mine = row({ isMine: true })
-  const unassigned = row({ unassigned: true })
-  const teammate = row({})
-  assert.ok(byMineFirst(unassigned, teammate) < 0)
-  assert.ok(byMineFirst(mine, unassigned) < 0)
+test('due soon outranks undated; among undated, newer meeting wins', () => {
+  const soon = row({ due_date: daysFromNow(1), date: daysFromNow(-20) })
+  const newUndated = row({ date: daysFromNow(-1) })
+  const oldUndated = row({ date: daysFromNow(-40) })
+  assert.ok(byUrgency(soon, newUndated) < 0)
+  assert.ok(byUrgency(newUndated, oldUndated) < 0)
 })
 
-test('within a tier, urgency still decides', () => {
-  const mineOverdue = row({ isMine: true, due_date: recentOverdue() })
-  const mineNoDue = row({ isMine: true })
-  assert.ok(byMineFirst(mineOverdue, mineNoDue) < 0)
-  assert.equal(byMineFirst(mineOverdue, mineNoDue), byUrgency(mineOverdue, mineNoDue))
+test('a stale deadline does not rank as live urgency', () => {
+  const stale = row({ due_date: daysFromNow(-40), date: daysFromNow(-45) })
+  const newUndated = row({ date: daysFromNow(0) })
+  assert.ok(byUrgency(newUndated, stale) < 0)
 })
 
-test('collectOpenActions tags ownership used by the sort', () => {
+test('collectOpenActions tags ownership for the hub filters', () => {
   const history = [{
     id: 1,
     date: '2026-07-01',
@@ -57,8 +51,8 @@ test('collectOpenActions tags ownership used by the sort', () => {
     },
   }]
   const user = { user_metadata: { full_name: 'Abhinav Dasari' }, email: 'abhinav.d@x.com' }
-  const rows = collectOpenActions(history, user).sort(byMineFirst)
-  assert.deepEqual(rows.map((r) => r.item.task), ['mine', 'nobody', 'theirs'])
-  assert.equal(rows[0].isMine, true)
-  assert.equal(rows[1].unassigned, true)
+  const all = collectOpenActions(history, user)
+  assert.equal(all.length, 3)
+  assert.deepEqual(scopeFilter(all, 'mine').map((r) => r.item.task), ['mine'])
+  assert.deepEqual(scopeFilter(all, 'unassigned').map((r) => r.item.task), ['nobody'])
 })

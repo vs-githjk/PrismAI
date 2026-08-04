@@ -19,7 +19,6 @@ import { apiFetch } from '../lib/api'
 import { seenKeyFor, STANDIN_READ_EVENT } from '../lib/standinRead'
 import { deriveDisplayTitle } from '../lib/insights'
 import StatsCanvas from './dashboard/StatsCanvas'
-const ActionItemsView = lazy(() => import('./dashboard/ActionItemsView'))
 import MeetingTypeControl from './dashboard/MeetingTypeControl'
 import { INPUT_TYPE_OPTIONS } from '../lib/meetingType'
 import LiveCatchup from './LiveCatchup'
@@ -737,7 +736,10 @@ export default function DashboardPage(props) {
     // A live/share token (deep-link) wins over the persisted view.
     if (props.liveToken) return 'live'
     if (props.shareData || props.shareLoading) return 'shared'
-    return sessionStorage.getItem('prism_active_view') ||
+    const stored = sessionStorage.getItem('prism_active_view')
+    // 'actions' was removed as a destination (ADR 0002) — its home is now Trend.
+    if (stored === 'actions') return 'intelligence'
+    return stored ||
       (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
   })
   const [showGateDialog, setShowGateDialog] = useState(false)
@@ -769,9 +771,6 @@ export default function DashboardPage(props) {
   // alongside workspace members, so you can one-click the people you actually meet with.
   const [calendarAttendeeEmails, setCalendarAttendeeEmails] = useState([])
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
-  // Home layout signal: a joinable calendar event is imminent/in progress, so the
-  // upcoming list floats above the action items (reported by UpcomingMeetings).
-  const [upcomingImminent, setUpcomingImminent] = useState(false)
   // One line of the B2 semantic synthesis for Home ("Still open: …"). Server-cached
   // per meeting-set, so this piggybacks on the same cache Trend uses.
   const [homeOpenThreads, setHomeOpenThreads] = useState([])
@@ -1490,8 +1489,6 @@ export default function DashboardPage(props) {
               ? 'Stand-in'
               : activeView === 'calendar'
                 ? 'Calendar'
-                : activeView === 'actions'
-                  ? 'Action items'
                 : activeView === 'meeting' && (currentMeeting || props.result)
                   ? deriveDisplayTitle(currentMeeting || { result: props.result })
                   : 'Home'
@@ -1584,14 +1581,7 @@ export default function DashboardPage(props) {
         onLockedFeature={requestSignIn}
         onMenu={signedOut ? null : () => setMobileNavOpen(true)}
         bell={<NotificationBell onOpenMeeting={handleOpenMeetingById} signedOut={signedOut} />}
-        // Action items is only reachable from Home, so its back goes there
-        // explicitly — routing it through goBackFromMeeting returned to itself,
-        // because persistView had just recorded 'actions' as the last view.
-        onBack={
-          activeView === 'actions' ? () => persistView('home')
-            : activeView === 'meeting' ? goBackFromMeeting
-              : null
-        }
+        onBack={activeView === 'meeting' ? goBackFromMeeting : null}
         actions={
           activeView === 'meeting' && props.result && !props.loading ? (
             <MeetingActionsBar
@@ -1738,8 +1728,6 @@ export default function DashboardPage(props) {
                 (import.meta.env.DEV && typeof window !== 'undefined' && window.__prismForceUpcoming) ? (
                   <Suspense fallback={null}>
                     <UpcomingMeetings
-                      hideEmpty
-                      onImminence={setUpcomingImminent}
                       workspaces={workspaces}
                       user={props.user}
                       onCantMakeIt={(m) => setStandIn(m)}
@@ -1756,16 +1744,12 @@ export default function DashboardPage(props) {
                   </Suspense>
                 ) : null
               }
-              upcomingImminent={upcomingImminent}
               openThreads={homeOpenThreads}
               onOpenTrend={handleOpenTrend}
+              onOpenCalendar={() => persistView('calendar')}
               showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
               onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
-              memberEmailMap={workspaceMemberMap}
-              currentUserId={props.user?.id}
-              onToggleAction={props.toggleHistoryActionItem}
-              onOpenAllActions={() => persistView('actions')}
             />
           )}
           {activeView === 'meeting' && (
@@ -1807,17 +1791,8 @@ export default function DashboardPage(props) {
                 actionConnections={actionConnections}
                 suggestedEmails={suggestedAttendeeEmails}
                 teamsWebhook={props.integrations?.teams_webhook || ''}
-              />
-            </Suspense>
-          )}
-          {activeView === 'actions' && (
-            <Suspense fallback={<SkeletonCard lines={4} tall />}>
-              <ActionItemsView
-                history={props.history}
                 user={props.user}
-                onOpenMeeting={handleSelectMeeting}
                 onToggleAction={props.toggleHistoryActionItem}
-                workspaceName={activeWorkspaceId ? (workspaces.find((ws) => ws.id === activeWorkspaceId)?.name ?? null) : null}
               />
             </Suspense>
           )}

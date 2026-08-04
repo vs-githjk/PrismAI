@@ -10,7 +10,6 @@
  */
 
 import { dueInfo } from './dueStatus.js'
-import { meetingBucket } from './dateGroups.js'
 
 // Owner strings the analysis emits when nobody owns the item. These are REAL
 // values in the data (14 of 43 open items in one audited account read
@@ -85,37 +84,6 @@ export function byUrgency(a, b) {
   return new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()
 }
 
-const OWN_RANK = (r) => (r.isMine ? 0 : r.unassigned ? 1 : 2)
-/** Home's preview order: YOUR items first, then unassigned (nobody else will claim
- *  those), then teammates' — urgency within each tier. A pure-urgency sort made the
- *  personal dashboard lead with other people's work. */
-export function byMineFirst(a, b) {
-  return OWN_RANK(a) - OWN_RANK(b) || byUrgency(a, b)
-}
-
-/**
- * Group rows by the calendar bucket of the MEETING that assigned them (i.e. when
- * the work was handed over), then by meeting within each bucket.
- * @returns {Array<{key, label, count, meetings: Array<{entry, items}>}>}
- */
-export function groupByMeetingDate(rows, now = new Date()) {
-  const byBucket = new Map()
-  for (const row of rows) {
-    const b = meetingBucket(row.entry.date, now)
-    if (!byBucket.has(b.key)) byBucket.set(b.key, { ...b, items: [], meetings: new Map() })
-    const bucket = byBucket.get(b.key)
-    bucket.items.push(row)
-    if (!bucket.meetings.has(row.entry.id)) bucket.meetings.set(row.entry.id, { entry: row.entry, items: [] })
-    bucket.meetings.get(row.entry.id).items.push(row)
-  }
-  return [...byBucket.values()]
-    .sort((a, b) => a.rank - b.rank)
-    .map((bucket) => ({
-      key: bucket.key,
-      label: bucket.label,
-      count: bucket.items.length,
-      meetings: [...bucket.meetings.values()]
-        .sort((a, b) => new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime())
-        .map((m) => ({ entry: m.entry, items: [...m.items].sort(byUrgency) })),
-    }))
-}
+// (byMineFirst and groupByMeetingDate were removed with the standalone Action
+// Items page — the Task hub on Trend sorts purely by byUrgency and filters by
+// ownership; see docs/adr/0002.)

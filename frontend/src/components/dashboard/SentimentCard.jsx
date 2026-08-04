@@ -115,11 +115,12 @@ function SpeakerRow({ speaker, isLast }) {
   )
 }
 
-export default function SentimentCard({ sentiment }) {
-  // Keystone insight — collapsible (like Speaker Coaching / Transcript) so the
-  // meeting view can be tidied, but default OPEN and with the headline (overall
-  // label + arc) always in the header so it stays a keystone, not a hidden card.
-  const [open, setOpen] = useState(true)
+export default function SentimentCard({ sentiment, defaultOpen = true }) {
+  // Collapsible with the headline (overall label + arc) always in the header,
+  // so nothing essential hides while closed. The meeting page passes
+  // defaultOpen={false} (Aug 2026 brief: analysis tail collapsed by default);
+  // other mounts keep the open default.
+  const [open, setOpen] = useState(defaultOpen)
   if (!sentiment?.overall) return null
   const labelKey = String(sentiment.overall).toLowerCase()
   const meta = LABEL_META[labelKey] || LABEL_META[LABEL_ALIAS[labelKey]] || LABEL_META.neutral
