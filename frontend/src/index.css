@@ -1315,7 +1315,10 @@ h1, h2, h3, .font-display {
   min-height: 0;
 }
 .dashboard-home-hero { grid-column: 1 / -1; grid-row: 1; min-height: 0; }
-.dashboard-home-attention { grid-column: 1; grid-row: 2; min-height: 0; }
+/* Content-height cards, top-aligned: stretching them to the viewport left half
+   a card of dead space below short content. max-height keeps long lists capped
+   with their internal scrollers. */
+.dashboard-home-attention { grid-column: 1; grid-row: 2; min-height: 0; align-self: start; max-height: 100%; }
 
 /* The first-run (empty-history) home is free-flowing copy + CTAs, not a fixed
    grid: pinned inside the viewport-height overflow:hidden shell its headline
@@ -1339,7 +1342,16 @@ h1, h2, h3, .font-display {
   }
   .dashboard-content.is-home .dashboard-home-grid { height: auto; }
 }
-.dashboard-home-meetings { grid-column: 2; grid-row: 2; min-height: 0; }
+.dashboard-home-meetings { grid-column: 2; grid-row: 2; min-height: 0; align-self: start; max-height: 100%; }
+
+/* Dashboard keyboard-focus ring: the browser default is a harsh white outline
+   that outshines the selected state (seen on the Home nav item). Brand cyan,
+   visible on the dark base, still obviously a focus indicator. */
+.dashboard-page :is(button, a, select, [role="tab"]):focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.45);
+  outline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   .dashboard-home-grid {
     grid-template-columns: 1fr;

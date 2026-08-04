@@ -25,13 +25,22 @@ function relativeDate(iso) {
 const quickActionClass =
   'inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/12 bg-white/[0.04] px-4 text-[12.5px] font-medium text-white/80 transition-all hover:bg-white/[0.09]'
 
+/** "Good morning, Abhinav." — time-of-day + first name; "Welcome back." when no
+ *  name is known. "Let's get started" was onboarding copy shown to power users. */
+function greetingFor(user, now = new Date()) {
+  const h = now.getHours()
+  const part = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+  const name = (user?.user_metadata?.full_name || user?.user_metadata?.name || '').trim().split(/\s+/)[0]
+  return name ? `${part}, ${name}.` : 'Welcome back.'
+}
+
 /**
  * The hero row. New users (no history) get the full onboarding hero; returning
  * users get ONE greeting line with compact quick actions beside it, and the
  * state-aware MeetingHero beneath (owner's call: the greeting brand moment
  * stays, slimmed — see ADR 0002 amendment).
  */
-function HeroRow({ isEmpty, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, hero }) {
+function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, hero }) {
   if (isEmpty) {
     return (
       <section className="dashboard-home-hero flex flex-col px-1 text-left">
@@ -80,7 +89,7 @@ function HeroRow({ isEmpty, onLoadSample, canLoadSample, onJoinMeeting, onPasteT
     <section className="dashboard-home-hero flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[color:var(--db-text)]">
-          Welcome back, let&rsquo;s get started.
+          {greetingFor(user)}
         </h1>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {onJoinMeeting && (
@@ -205,6 +214,7 @@ export default function StatsCanvas({
     <div className="dashboard-home-grid">
       <HeroRow
         isEmpty={isEmpty}
+        user={user}
         onLoadSample={loadSample}
         canLoadSample={canLoadSample}
         onJoinMeeting={onJoinMeeting}
