@@ -41,66 +41,41 @@ function greetingFor(user) {
 }
 
 /**
- * The hero row. New users (no history) get the full onboarding hero; returning
- * users get ONE greeting line with compact quick actions beside it, and the
- * state-aware MeetingHero beneath (owner's call: the greeting brand moment
- * stays, slimmed — see ADR 0002 amendment).
+ * The hero block — ONE layout for both states, exactly the morning design:
+ * big headline, subtitle, full-size action pills beneath. New users read
+ * "Let's get started." (+ See a sample); returning users read
+ * "Welcome back, Abhinav." and get the state-aware MeetingHero below.
  */
 function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, hero }) {
-  if (isEmpty) {
-    return (
-      <section className="dashboard-home-hero flex flex-col px-1 text-left">
-        <h1 className="text-[clamp(2rem,3.6vw,3rem)] font-semibold leading-[1.08] text-[color:var(--db-text)]">
-          Let&rsquo;s get started.
-        </h1>
-        <p className="mt-3 max-w-md text-[15px] leading-6 text-[color:var(--db-text-muted)]">
-          Bring Prism into a live call, or paste a transcript to analyze.
-        </p>
-        <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
-          {onJoinMeeting && (
-            <button type="button" onClick={onJoinMeeting} className={heroActionPrimary}>
-              <Video className="h-4 w-4" aria-hidden="true" />
-              Join a meeting
-            </button>
-          )}
-          {onPasteTranscript && (
-            <button type="button" onClick={onPasteTranscript} className={heroActionSecondary}>
-              <ClipboardList className="h-4 w-4" aria-hidden="true" />
-              Paste a transcript
-            </button>
-          )}
-          {canLoadSample && (
-            <button type="button" onClick={onLoadSample} className={heroActionGhost}>
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              See a sample
-            </button>
-          )}
-        </div>
-      </section>
-    )
-  }
   return (
-    <section className="dashboard-home-hero flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-1">
-        <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[color:var(--db-text)]">
-          {greetingFor(user)}
-        </h1>
-        <div className="ml-auto flex shrink-0 items-center gap-2.5">
-          {onJoinMeeting && (
-            <button type="button" onClick={onJoinMeeting} className={heroActionPrimary}>
-              <Video className="h-4 w-4" aria-hidden="true" />
-              Join a meeting
-            </button>
-          )}
-          {onPasteTranscript && (
-            <button type="button" onClick={onPasteTranscript} className={heroActionSecondary}>
-              <ClipboardList className="h-4 w-4" aria-hidden="true" />
-              Paste a transcript
-            </button>
-          )}
-        </div>
+    <section className="dashboard-home-hero flex flex-col px-1 text-left">
+      <h1 className="text-[clamp(2rem,3.6vw,3rem)] font-semibold leading-[1.08] text-[color:var(--db-text)]">
+        {isEmpty ? <>Let&rsquo;s get started.</> : greetingFor(user)}
+      </h1>
+      <p className="mt-3 max-w-md text-[15px] leading-6 text-[color:var(--db-text-muted)]">
+        Bring Prism into a live call, or paste a transcript to analyze.
+      </p>
+      <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+        {onJoinMeeting && (
+          <button type="button" onClick={onJoinMeeting} className={heroActionPrimary}>
+            <Video className="h-4 w-4" aria-hidden="true" />
+            Join a meeting
+          </button>
+        )}
+        {onPasteTranscript && (
+          <button type="button" onClick={onPasteTranscript} className={heroActionSecondary}>
+            <ClipboardList className="h-4 w-4" aria-hidden="true" />
+            Paste a transcript
+          </button>
+        )}
+        {isEmpty && canLoadSample && (
+          <button type="button" onClick={onLoadSample} className={heroActionGhost}>
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            See a sample
+          </button>
+        )}
       </div>
-      {hero}
+      {!isEmpty && hero && <div className="mt-4">{hero}</div>}
     </section>
   )
 }
