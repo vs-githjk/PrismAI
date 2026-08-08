@@ -20,6 +20,7 @@ import {
 import { deriveDisplayTitle } from '../../lib/insights'
 import { meetingBucket } from '../../lib/dateGroups'
 import { formatHistoryDate, IntegrationsIcon } from './chrome'
+import { eyebrow } from './dashboardStyles'
 import PersonaChip from '../PersonaChip'
 import {
   DropdownMenu,
@@ -45,7 +46,7 @@ function groupMeetings(entries) {
 }
 
 const navItemBase =
-  'group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-medium transition-colors'
+  'group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors'
 
 // Sub-label for the pinned live row, by polled live status.
 const LIVE_LABELS = {
@@ -152,27 +153,34 @@ export default function DashboardSidebar(props) {
             aria-disabled={signedOut || undefined}
             title={collapsed ? label : undefined}
             aria-label={collapsed ? label : undefined}
-            className={`${navItemBase} ${collapsed ? 'relative justify-center px-0' : ''} ${
+            className={`${navItemBase} ${collapsed ? 'justify-center px-0' : ''} ${
               active && !signedOut
-                ? 'bg-cyan-400/[0.10] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.20)]'
+                ? 'bg-[var(--db-fill-strong)] text-[color:var(--db-text)]'
                 : signedOut
                   ? 'text-[color:var(--db-text-faint)] hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text-muted)]'
-                  : 'text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+                  : 'text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text)]'
             }`}
           >
-            <Icon className="h-[18px] w-[18px] shrink-0" />
+            {active && !signedOut && (
+              <span
+                className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[var(--db-accent)]"
+                aria-hidden="true"
+              />
+            )}
+            <Icon className="h-4 w-4 shrink-0 text-[color:var(--db-text-muted)]" />
             {!collapsed && label}
             {/* Unread count — so a waiting stand-in brief is visible from any view,
                 not only after navigating to the page that holds it. Collapsed, it
-                rides the icon as a corner dot-count. */}
+                rides the icon as a corner dot-count. Neutral (never cyan) — a
+                count pill is not a selection state. */}
             {!signedOut && badge > 0 && (
               collapsed ? (
-                <span className="absolute right-1.5 top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-cyan-400 px-1 text-[9.5px] font-semibold text-[#06080d]"
+                <span className="absolute right-1.5 top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-[var(--db-fill-strong)] px-1 text-[9.5px] font-semibold text-[color:var(--db-text-muted)]"
                   aria-label={`${badge} unread`}>
                   {badge}
                 </span>
               ) : (
-                <span className="ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-cyan-400 px-1.5 text-[10.5px] font-semibold text-[#06080d]"
+                <span className="ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-[var(--db-fill-strong)] px-1.5 text-[10.5px] font-semibold text-[color:var(--db-text-muted)]"
                   aria-label={`${badge} unread`}>
                   {badge}
                 </span>
@@ -186,9 +194,9 @@ export default function DashboardSidebar(props) {
       {/* Meetings section — New meeting button sits beside the heading. Collapsed,
           the heading and the meeting list go (titles are unreadable at 76px) and
           only the New-meeting control remains, centred. */}
-      <div className={`mt-4 flex items-center px-5 pb-1.5 ${collapsed ? 'justify-center px-0' : 'justify-between'}`}>
+      <div className={`mt-4 flex items-center border-t border-[color:var(--db-border)] px-5 pb-1.5 pt-3 ${collapsed ? 'justify-center px-0' : 'justify-between'}`}>
         {!collapsed && (
-          <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
+          <p className={eyebrow} style={{ color: 'var(--db-text-faint)' }}>
             Meetings
           </p>
         )}
@@ -198,9 +206,9 @@ export default function DashboardSidebar(props) {
             aria-label="New meeting"
             title="Sign in to start a meeting"
             onClick={() => onLockedFeature?.('New meeting')}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/30 transition hover:bg-white/[0.06] hover:text-white/50"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text-muted)]"
           >
-            <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
+            <Plus className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : (
           <DropdownMenu
@@ -215,9 +223,9 @@ export default function DashboardSidebar(props) {
                 type="button"
                 aria-label="New meeting"
                 title="New meeting"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-cyan-200/80 transition hover:bg-cyan-400/[0.14] hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/25"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[color:var(--db-accent-text)] transition hover:bg-[var(--db-accent-fill)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--db-accent)]"
               >
-                <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
+                <Plus className="h-4 w-4" aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -256,12 +264,12 @@ export default function DashboardSidebar(props) {
             className={`mb-2 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
               liveActive
                 ? 'bg-rose-400/[0.10] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.22)]'
-                : 'hover:bg-white/[0.06] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)]'
+                : 'hover:bg-[var(--db-fill)] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)]'
             }`}
           >
             <span className="status-island-livedot relative h-2 w-2 shrink-0 rounded-full bg-rose-500" aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              <span className={`block truncate text-[14px] font-semibold leading-5 ${liveActive ? 'text-rose-100' : 'text-white/85'}`}>
+              <span className={`block truncate text-[14px] font-semibold leading-5 ${liveActive ? 'text-rose-100' : 'text-[color:var(--db-text)]'}`}>
                 Live meeting
               </span>
               <span className="block truncate text-[11.5px] leading-4 text-rose-300/80">
@@ -297,7 +305,7 @@ export default function DashboardSidebar(props) {
                   className={`h-3 w-3 shrink-0 text-[color:var(--db-text-faint)] transition-transform group-hover/hdr:text-[color:var(--db-text-muted)] ${collapsed ? '' : 'rotate-90'}`}
                   aria-hidden="true"
                 />
-                <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[color:var(--db-text-faint)] group-hover/hdr:text-[color:var(--db-text-faint)]">
+                <span className={eyebrow} style={{ color: 'var(--db-text-faint)' }}>
                   {group.label}
                 </span>
                 <span className="ml-1 text-[10px] font-medium text-[color:var(--db-text-faint)]">{group.items.length}</span>
@@ -309,12 +317,18 @@ export default function DashboardSidebar(props) {
                   <div
                     key={entry.id}
                     ref={isActive ? activeRowRef : null}
-                    className={`group flex items-center rounded-lg pr-1 transition ${
+                    className={`group relative flex items-center rounded-lg pr-1 transition ${
                       isActive
-                        ? 'bg-cyan-400/[0.10] shadow-[inset_0_0_0_1px_rgba(34,211,238,0.18)]'
-                        : 'hover:bg-[var(--db-fill-strong)]'
+                        ? 'bg-[var(--db-fill-strong)]'
+                        : 'hover:bg-[var(--db-fill)]'
                     }`}
                   >
+                    {isActive && (
+                      <span
+                        className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[var(--db-accent)]"
+                        aria-hidden="true"
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => onSelectMeeting(entry)}
@@ -323,26 +337,26 @@ export default function DashboardSidebar(props) {
                     >
                       {isLive ? (
                         <span
-                          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-cyan-400"
+                          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--db-accent)]"
                           aria-hidden="true"
                         />
                       ) : (
                         <span
                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            isActive ? 'bg-cyan-300' : 'bg-[var(--db-fill-strong)]'
+                            isActive ? 'bg-[var(--db-accent)]' : 'bg-[var(--db-fill-strong)]'
                           }`}
                           aria-hidden="true"
                         />
                       )}
                       <span className="min-w-0 flex-1">
                         <span
-                          className={`block truncate text-[14px] font-medium leading-5 ${
-                            isActive ? 'text-cyan-100' : 'text-[color:var(--db-text-soft)]'
+                          className={`block truncate text-[13px] font-medium leading-5 ${
+                            isActive ? 'text-[color:var(--db-text)]' : 'text-[color:var(--db-text-soft)]'
                           }`}
                         >
                           {deriveDisplayTitle(entry)}
                           {isLive && (
-                            <span className="ml-1.5 text-[10.5px] font-semibold text-cyan-300">
+                            <span className="ml-1.5 text-[10.5px] font-semibold text-[color:var(--db-accent-text)]">
                               · live
                             </span>
                           )}
@@ -372,12 +386,12 @@ export default function DashboardSidebar(props) {
       {/* Footer: account block — replaced by a Sign in CTA when signed out.
           mt-auto pins it to the bottom in BOTH states (harmless when the meeting
           list is present, since the list already absorbs the free space). */}
-      <div className="mt-auto border-t border-[color:var(--db-border)] p-2.5">
+      <div className="mt-auto border-t border-[color:var(--db-border)] p-2">
         {signedOut ? (
           <button
             type="button"
             onClick={() => onLockedFeature?.('Account')}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/[0.10] px-2.5 py-2.5 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-400/30 bg-cyan-400/[0.10] px-2.5 py-2 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
           >
             <LogIn className="h-4 w-4 shrink-0" aria-hidden="true" />
             Sign in
@@ -389,7 +403,7 @@ export default function DashboardSidebar(props) {
               type="button"
               title={collapsed ? accountName : undefined}
               aria-label={collapsed ? `Account: ${accountName}` : undefined}
-              className={`flex w-full items-center rounded-xl py-2 text-left transition hover:bg-[var(--db-fill)] ${collapsed ? 'justify-center px-0' : 'gap-3 px-2.5'}`}
+              className={`flex w-full items-center rounded-lg py-1.5 text-left transition hover:bg-[var(--db-fill)] ${collapsed ? 'justify-center px-0' : 'gap-3 px-2.5'}`}
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-cyan-400/[0.14] text-cyan-200">
                 {avatarUrl && avatarOk ? (

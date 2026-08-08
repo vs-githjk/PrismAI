@@ -83,7 +83,7 @@ export default function WorkspaceIsland(props) {
           aria-controls="dashboard-sidebar-nav"
           className="flex h-full w-full items-center justify-center rounded-[inherit] transition hover:bg-[var(--db-fill)]"
         >
-          <span className="grid h-9 w-9 place-items-center rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[15px] font-semibold text-[color:var(--db-text)]">
+          <span className="grid h-9 w-9 place-items-center rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[13px] font-semibold text-[color:var(--db-text)]">
             {(scopeLabel || 'P').trim().charAt(0).toUpperCase()}
           </span>
         </button>
@@ -92,12 +92,12 @@ export default function WorkspaceIsland(props) {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-full min-w-0 flex-1 items-center justify-between gap-2.5 rounded-[inherit] py-0 pl-6 pr-3 transition hover:bg-[var(--db-fill)]"
+            className="flex h-full min-w-0 flex-1 items-center justify-between gap-2.5 rounded-[inherit] py-0 pl-5 pr-3 transition hover:bg-[var(--db-fill)]"
           >
-            <span className="min-w-0 truncate text-[18px] font-semibold text-[color:var(--db-text)]">
+            <span className="min-w-0 truncate text-[13px] font-semibold text-[color:var(--db-text)]">
               {scopeLabel}
             </span>
-            <ChevronDown className="h-4 w-4 shrink-0 text-[color:var(--db-text-faint)]" />
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[color:var(--db-text-faint)]" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent

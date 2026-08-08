@@ -1122,10 +1122,10 @@ h1, h2, h3, .font-display {
 .dashboard-page {
   --dashboard-chrome-bg: var(--db-chrome-bg);
   --dashboard-bg: var(--db-page-bg);
-  --dashboard-topbar-h: 76px;
+  --dashboard-topbar-h: 64px;
   --dashboard-sidebar-w: 300px;
   --dashboard-gutter: 16px;
-  --dashboard-edge: 26px;
+  --dashboard-edge: 20px;
   background: var(--dashboard-chrome-bg);
   background-image: none;
   font-family: "Inter Variable", Inter, "Segoe UI", sans-serif;
@@ -1236,8 +1236,8 @@ h1, h2, h3, .font-display {
   }
 }
 
-/* Opaque backdrop for the header band. The islands float with a 26px gutter
-   above them, and .dashboard-page is the page scroller — so content scrolled up
+/* Opaque backdrop for the header band. The islands float with a var(--dashboard-edge)
+   gutter above them, and .dashboard-page is the page scroller — so content scrolled up
    under the chrome was visible in that strip and around the island's rounded
    corners. Sits above the content, below the islands. */
 .dashboard-page::before {
@@ -1451,10 +1451,10 @@ h1, h2, h3, .font-display {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: -0.01em;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--db-text);
   vertical-align: middle;
 }
 .dashboard-title-text.is-marquee {

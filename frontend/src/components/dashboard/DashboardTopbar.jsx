@@ -46,7 +46,7 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
           type="button"
           onClick={onMenu}
           aria-label="Open menu"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/75 transition hover:border-cyan-400/45 hover:text-white lg:hidden"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-accent)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] lg:hidden"
         >
           <Menu className="h-[19px] w-[19px]" aria-hidden="true" />
         </button>
@@ -58,7 +58,7 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
             type="button"
             onClick={onBack}
             aria-label="Back to dashboard"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-cyan-400/45 hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-accent)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]"
           >
             <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
           </button>
@@ -99,7 +99,7 @@ export default function DashboardTopbar({ title, searchValue, onSearchChange, ac
       {/* Mobile: a 44px icon-only target that expands to a real field on focus.
           A 120px pill clipped its own placeholder to "Search ar" AND stole width
           from the meeting action buttons beside it. */}
-      <div className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center gap-2.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] transition focus-within:w-[min(70vw,320px)] focus-within:justify-start focus-within:border-cyan-400/45 focus-within:bg-[var(--db-fill-strong)] focus-within:px-3.5 sm:ml-0 sm:w-[clamp(160px,26vw,380px)] sm:justify-start sm:px-4">
+      <div className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center gap-2.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] transition focus-within:w-[min(70vw,320px)] focus-within:justify-start focus-within:border-[color:var(--db-accent)] focus-within:bg-[var(--db-fill-strong)] focus-within:px-3.5 sm:ml-0 sm:w-[clamp(160px,26vw,380px)] sm:justify-start sm:px-4">
         <input
           value={signedOut ? '' : (searchValue || '')}
           onChange={(e) => onSearchChange?.(e.target.value)}
