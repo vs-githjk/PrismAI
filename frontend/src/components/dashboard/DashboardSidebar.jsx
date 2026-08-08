@@ -412,7 +412,7 @@ export default function DashboardSidebar(props) {
               className={`flex w-full items-center rounded-lg py-1.5 text-left transition hover:bg-[var(--db-fill)] ${collapsed ? 'justify-center px-0' : 'gap-3 px-2.5'}`}
             >
               <span
-                className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full text-[color:var(--db-accent-text)]"
+                className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--db-accent-fill)] text-[color:var(--db-accent-text)]"
                 style={{ background: 'color-mix(in srgb, var(--db-accent) 14%, transparent)' }}
               >
                 {avatarUrl && avatarOk ? (

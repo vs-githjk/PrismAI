@@ -110,7 +110,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
                 <p className="truncate text-[12px] text-[color:var(--db-text-muted)]">{a.task}</p>
               </div>
               {doneRef ? (
-                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-emerald-700">
+                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-[color:var(--db-success)]">
                   <Check className="h-[15px] w-[15px]" aria-hidden="true" /> {meta.past}
                   {doneRef.url && (
                     <a href={doneRef.url} target="_blank" rel="noreferrer"
@@ -272,7 +272,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
           </div>
         ) : done ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-700">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full text-[color:var(--db-success)]" style={{ background: 'var(--db-success-fill)' }}>
               <Check className="h-6 w-6" aria-hidden="true" />
             </span>
             <p className="text-[14px] font-medium text-[color:var(--db-text)]">Done — {meta.done}.</p>
@@ -353,7 +353,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
                 className="w-full resize-y rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] leading-relaxed text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
             </Field>
 
-            {error && <p className="text-[12.5px] text-rose-600">{error}</p>}
+            {error && <p className="text-[12.5px] text-[color:var(--db-danger)]">{error}</p>}
 
             <div className="mt-1 flex items-center justify-end gap-2">
               <Button variant="ghost" onClick={onClose} className="px-4 py-2 text-[13px]">

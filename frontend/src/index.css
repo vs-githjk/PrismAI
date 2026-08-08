@@ -1051,6 +1051,23 @@ h1, h2, h3, .font-display {
        black in light theme and made a light-theme popup composite dark
        while its --db-text* tokens flipped to near-black text. */
     --db-scrim: rgba(0, 0, 0, 0.70);
+    /* Success/danger pair (Aug 2026) — mirrors --db-warn/--db-warn-fill exactly:
+       a single fixed Tailwind shade cannot clear AA on both a dark and a light
+       composited surface for the same hue (proven the hard way — see the
+       fix-round-1→2 history in the Task 9 report), so these get real per-theme
+       values like --db-warn does. Dark keeps the original bright emerald-300/
+       rose-300 (already correct here, ~8.6-11.5:1 on --db-card/--db-popup-base
+       and their own fill composites); light uses a dark shade of the same hue
+       (emerald-800/rose-700) verified against the HARDER of the two real
+       composites each renders on (the list-row's --db-fill over --db-card,
+       which is darker than bare --db-popup-base in light theme because
+       --db-fill light is a subtractive dark tint, not additive like dark
+       theme's). --fill uses the same RGB as the text token at low alpha,
+       exactly like --db-warn-fill does. */
+    --db-success: #6ee7b7;
+    --db-success-fill: rgba(110, 231, 183, 0.12);
+    --db-danger: #fda4af;
+    --db-danger-fill: rgba(253, 164, 175, 0.12);
   }
   .theme-light {
     --db-chrome-bg: #e9e7e2;
@@ -1076,6 +1093,14 @@ h1, h2, h3, .font-display {
     --db-warn-fill: rgba(146, 64, 14, 0.08);
     --db-popup-base: #fbfaf7;
     --db-scrim: rgba(28, 27, 23, 0.35);
+    /* emerald-800 clears 4.5:1 text / 3:1 icon against BOTH real composites
+       (6.23:1 on the list-row's --db-fill-over-card, 7.36:1 on bare
+       --db-popup-base). rose-700 clears the same on bare --db-popup-base
+       (6.02:1) — the only surface the danger text renders on here. */
+    --db-success: #065f46;
+    --db-success-fill: rgba(6, 95, 70, 0.08);
+    --db-danger: #be123c;
+    --db-danger-fill: rgba(190, 18, 60, 0.08);
   }
   .dark {
     --background: oklch(0.145 0 0);
