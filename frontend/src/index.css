@@ -1329,6 +1329,42 @@ h1, h2, h3, .font-display {
   .dashboard-home-assistant { display: none; }
 }
 
+/* Mobile "Ask Prism" launcher (Task 4) — the only way to reach the Home
+   assistant below the shell breakpoint. Token-driven (not a Tailwind
+   cyan-* utility) so it stays correct in both themes: --db-accent-text/
+   --db-accent are darker cyan shades in .theme-light for contrast on a
+   light card, where a raw cyan-300/400 utility would wash out. bottom uses
+   env(safe-area-inset-bottom) so it clears the home-indicator on notched
+   phones instead of sitting under it. */
+.dashboard-ask-prism-trigger {
+  position: fixed;
+  right: 1.25rem;
+  bottom: max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding: 0 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--db-accent-fill);
+  background: var(--db-card);
+  color: var(--db-accent-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: var(--db-shadow);
+  transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.dashboard-ask-prism-trigger:hover {
+  transform: scale(1.05);
+  border-color: var(--db-accent);
+  color: var(--db-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-ask-prism-trigger { transition: none; }
+  .dashboard-ask-prism-trigger:hover { transform: none; }
+}
+
 /* Dashboard keyboard-focus ring: the browser default is a harsh white outline
    that outshines the selected state (seen on the Home nav item). Brand cyan,
    visible on the dark base, still obviously a focus indicator. */

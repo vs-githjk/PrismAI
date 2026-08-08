@@ -11,6 +11,7 @@ import {
   MessagesSquare,
   MoreVertical,
   Share2,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { glassCard, cardGlowStyle } from './dashboard/dashboardStyles'
@@ -883,6 +884,10 @@ export default function DashboardPage(props) {
   const [chatOpen, setChatOpen] = useState(() => {
     try { return localStorage.getItem('prismai:dashboard-chat-open') === '1' } catch { return false }
   })
+  // Mobile "Ask Prism" sheet (Task 4) — the only way to reach the Home
+  // assistant below the shell breakpoint, where .dashboard-home-assistant is
+  // display:none. Reset alongside the mobile nav drawer below.
+  const [askPrismOpen, setAskPrismOpen] = useState(false)
   const [isNarrow, setIsNarrow] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.matchMedia('(max-width: 1023px)').matches
@@ -938,8 +943,9 @@ export default function DashboardPage(props) {
   }, [])
 
   // Close the mobile drawer whenever the view or workspace changes (a nav/meeting
-  // tap), and on Escape.
-  useEffect(() => { setMobileNavOpen(false) }, [activeView, activeWorkspaceId])
+  // tap), and on Escape. The Ask Prism sheet only ever renders on the home view,
+  // so it closes the same way.
+  useEffect(() => { setMobileNavOpen(false); setAskPrismOpen(false) }, [activeView, activeWorkspaceId])
   useEffect(() => {
     if (!mobileNavOpen) return undefined
     const handler = (e) => { if (e.key === 'Escape') setMobileNavOpen(false) }
@@ -1721,6 +1727,9 @@ export default function DashboardPage(props) {
               canLoadSample={props.canLoadSample}
               onJoinMeeting={() => { props.setInputTab?.('join'); setNewMeetingOpen(true) }}
               onPasteTranscript={() => { props.setInputTab?.('paste'); setNewMeetingOpen(true) }}
+              onUploadRecording={() => { props.setInputTab?.('upload'); setNewMeetingOpen(true) }}
+              onRecordAudio={() => { props.setInputTab?.('record'); setNewMeetingOpen(true) }}
+              micSupported={props.micSupported}
               // window.__prismForceUpcoming: DEV-only escape hatch so headless visual
               // tests can exercise the hero (the test account can never connect a
               // real calendar). Dead code in production builds.
@@ -1884,6 +1893,60 @@ export default function DashboardPage(props) {
           </div>
         </main>
       </div>
+
+      {/* Mobile "Ask Prism" sheet (Task 4) — below the shell breakpoint,
+          .dashboard-home-assistant is display:none (index.css), so this pill
+          + full-height Dialog sheet is the ONLY way to reach the Home
+          assistant there. Home view only: never competes with the docked
+          meeting ChatPanel below, which mounts only on the meeting view. */}
+      {activeView === 'home' && isNarrow && (
+        <>
+          <button
+            type="button"
+            onClick={() => setAskPrismOpen(true)}
+            aria-label="Ask Prism"
+            className="dashboard-ask-prism-trigger"
+          >
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            Ask Prism
+          </button>
+
+          <Dialog open={askPrismOpen} onOpenChange={setAskPrismOpen}>
+            {/* Positioning overrides fully replace the default centered-modal
+                box: inset-x-0/bottom-0/top-[8dvh] instead of top-1/2+left-1/2,
+                so translate-x-0/translate-y-0 cancel the default's centering
+                transform (else it'd fly the sheet off-screen by half its own,
+                now-viewport-sized, box). max-w-none/sm:max-w-none cancel the
+                default's max-w-md, which would otherwise clip the sheet to a
+                centered 28rem column at >=640px (still below the 1024px
+                breakpoint this sheet targets). `block` cancels the default
+                `grid` display so WorkspaceChatPanel's own `h-full` resolves
+                against this element's height the simple way, exactly like it
+                already does inside .dashboard-home-assistant. top-[8dvh] uses
+                dvh so the sheet's own height (not just page content) shrinks
+                with the on-screen keyboard on supporting mobile browsers,
+                keeping the composer reachable instead of covered. */}
+            <DialogContent
+              showCloseButton={false}
+              className="fixed inset-x-0 bottom-0 top-[8dvh] block w-full max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-t-2xl rounded-b-none p-0 sm:max-w-none"
+            >
+              <DialogTitle className="sr-only">Ask Prism</DialogTitle>
+              <DialogDescription className="sr-only">Ask Prism across your saved meetings.</DialogDescription>
+              <button
+                type="button"
+                onClick={() => setAskPrismOpen(false)}
+                aria-label="Close"
+                className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text-soft)]"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <Suspense fallback={<div className="p-4 text-xs text-[color:var(--db-text-faint)]">Loading chat…</div>}>
+                <WorkspaceChatPanel user={props.user} />
+              </Suspense>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
 
       {activeView === 'meeting' && props.result && !props.loading && (
         <>

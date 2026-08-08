@@ -1,10 +1,11 @@
 import { useMemo } from 'react'
-import { ClipboardList, Sparkles, Video } from 'lucide-react'
+import { ClipboardList, Mic, Sparkles, Upload, Video } from 'lucide-react'
 import { deriveDisplayTitle, scoreBand } from '../../lib/insights'
 import { overallHealth } from '../../lib/healthScore'
 import { hasContentAnalysis, typeMeta } from '../../lib/meetingType'
 import MeetingHero from './MeetingHero'
 import NeedsAttention from './NeedsAttention'
+import { subtleText } from './dashboardStyles'
 
 const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
 const cardHeading = 'text-[18px] font-semibold tracking-[-0.015em] text-[color:var(--db-text)] sm:text-[22px]'
@@ -41,19 +42,30 @@ function greetingFor(user) {
 }
 
 /**
- * The hero block — ONE layout for both states, exactly the morning design:
- * big headline, subtitle, full-size action pills beneath. New users read
- * "Let's get started." (+ See a sample); returning users read
- * "Welcome back, Abhinav." and get the state-aware MeetingHero below.
+ * The uncarded header block — greeting, one-line product promise, and the
+ * full capture row (Join / Paste / Upload / Record / Sample). Content on
+ * canvas, not a card: the first card is MeetingHero, rendered as this
+ * component's sibling by the caller. New users read "Let's get started."
+ * (+ See a sample); returning users read "Welcome back, Abhinav."
  */
-function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, hero }) {
+function HeroRow({
+  isEmpty,
+  user,
+  onLoadSample,
+  canLoadSample,
+  onJoinMeeting,
+  onPasteTranscript,
+  onUploadRecording,
+  onRecordAudio,
+  micSupported,
+}) {
   return (
     <section className="flex flex-col px-1 text-left">
       <h1 className="text-[clamp(2rem,3.6vw,3rem)] font-semibold leading-[1.08] text-[color:var(--db-text)]">
         {isEmpty ? <>Let&rsquo;s get started.</> : greetingFor(user)}
       </h1>
-      <p className="mt-3 max-w-md text-[15px] leading-6 text-[color:var(--db-text-muted)]">
-        Bring Prism into a live call, or paste a transcript to analyze.
+      <p className={`mt-3 max-w-md ${subtleText}`}>
+        Drop in a meeting — Prism turns it into decisions, actions, and follow-ups.
       </p>
       <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
         {onJoinMeeting && (
@@ -68,6 +80,18 @@ function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, on
             Paste a transcript
           </button>
         )}
+        {onUploadRecording && (
+          <button type="button" onClick={onUploadRecording} className={heroActionSecondary}>
+            <Upload className="h-4 w-4" aria-hidden="true" />
+            Upload a recording
+          </button>
+        )}
+        {micSupported && onRecordAudio && (
+          <button type="button" onClick={onRecordAudio} className={heroActionSecondary}>
+            <Mic className="h-4 w-4" aria-hidden="true" />
+            Record audio
+          </button>
+        )}
         {isEmpty && canLoadSample && (
           <button type="button" onClick={onLoadSample} className={heroActionGhost}>
             <Sparkles className="h-4 w-4" aria-hidden="true" />
@@ -75,7 +99,6 @@ function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, on
           </button>
         )}
       </div>
-      {!isEmpty && hero && <div className="mt-4">{hero}</div>}
     </section>
   )
 }
@@ -164,6 +187,9 @@ export default function StatsCanvas({
   canLoadSample = false,
   onJoinMeeting,
   onPasteTranscript,
+  onUploadRecording,
+  onRecordAudio,
+  micSupported = false,
   heroEnabled = false,
   workspaces = [],
   botLive = false,
@@ -194,23 +220,26 @@ export default function StatsCanvas({
           canLoadSample={canLoadSample}
           onJoinMeeting={onJoinMeeting}
           onPasteTranscript={onPasteTranscript}
-          hero={
-            <MeetingHero
-              enabled={heroEnabled}
-              user={user}
-              workspaces={workspaces}
-              botLive={botLive}
-              liveAvailable={liveAvailable}
-              onOpenLive={onOpenLive}
-              onJoinEvent={onJoinEvent}
-              onCantMakeIt={onCantMakeIt}
-              onOpenMeeting={loadFromHistory}
-              onOpenCalendar={onOpenCalendar}
-              showConnectCalendar={showConnectCalendar}
-              onConnectCalendar={onConnectCalendar}
-            />
-          }
+          onUploadRecording={onUploadRecording}
+          onRecordAudio={onRecordAudio}
+          micSupported={micSupported}
         />
+        {!isEmpty && (
+          <MeetingHero
+            enabled={heroEnabled}
+            user={user}
+            workspaces={workspaces}
+            botLive={botLive}
+            liveAvailable={liveAvailable}
+            onOpenLive={onOpenLive}
+            onJoinEvent={onJoinEvent}
+            onCantMakeIt={onCantMakeIt}
+            onOpenMeeting={loadFromHistory}
+            onOpenCalendar={onOpenCalendar}
+            showConnectCalendar={showConnectCalendar}
+            onConnectCalendar={onConnectCalendar}
+          />
+        )}
         {!isEmpty && (
           <NeedsAttention
             history={safeHistory}
