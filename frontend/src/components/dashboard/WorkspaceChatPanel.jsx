@@ -14,7 +14,7 @@ const SUGGESTIONS = [
   'Summarize my last 3 meetings',
 ]
 
-export default function WorkspaceChatPanel({ user, onOpenMeeting }) {
+export default function WorkspaceChatPanel({ user }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -43,12 +43,46 @@ export default function WorkspaceChatPanel({ user, onOpenMeeting }) {
         content: data.response ?? 'No response from server.',
         toolsUsed: data.tools_used || [],
         ragContext: data.rag_context || null,
+        pendingConfirmations: data.pending_confirmations || [],
       }])
     } catch {
       setMessages((prev) => [...prev, { role: 'assistant', error: true, retryText: msg }])
     } finally {
       setLoading(false)
     }
+  }
+
+  // /chat/global runs the same tool-calling loop as /chat, so a resource-creating
+  // tool (gmail_send, jira_create_issue, linear_create_issue, a Slack post tool) can
+  // come back needing confirmation instead of executing outright. Approve-first is
+  // the app's safety contract: nothing runs until the user clicks Confirm, and the
+  // prepared action is never silently dropped. Mirrors ChatPanel's pendingConfirmations
+  // handling and its POST /chat/confirm-tool call/body exactly — pending actions are
+  // keyed server-side by (user_id, pending_id), not by which chat surface created them.
+  async function confirmPending(msgIndex, pc) {
+    try {
+      const res = await apiFetch('/chat/confirm-tool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pending_id: pc.pending_id }),
+      })
+      if (!res.ok) throw new Error('Confirm failed')
+      const data = await res.json()
+      setMessages((prev) => prev.map((m, mi) => mi === msgIndex ? {
+        ...m,
+        pendingConfirmations: (m.pendingConfirmations || []).filter((p) => p.pending_id !== pc.pending_id),
+        toolsUsed: [...(m.toolsUsed || []), { tool: pc.tool, summary: data.summary || `Executed ${pc.tool}` }],
+      } : m))
+    } catch (err) {
+      console.warn('[WorkspaceChatPanel] confirm-tool failed:', err)
+    }
+  }
+
+  function cancelPending(msgIndex, pc) {
+    setMessages((prev) => prev.map((m, mi) => mi === msgIndex ? {
+      ...m,
+      pendingConfirmations: (m.pendingConfirmations || []).filter((p) => p.pending_id !== pc.pending_id),
+    } : m))
   }
 
   if (!user) {
@@ -104,12 +138,48 @@ export default function WorkspaceChatPanel({ user, onOpenMeeting }) {
                 </div>
               )}
               {m.ragContext?.has_conflict && (
-                <p className="mt-1.5 rounded-lg bg-amber-500/10 px-2 py-1 text-xs text-amber-500">Sources disagree — check the citations below.</p>
+                <p className="mt-1.5 rounded-lg px-2 py-1 text-xs" style={{ background: 'var(--db-warn-fill)', color: 'var(--db-warn)' }}>
+                  Sources disagree — check the citations below.
+                </p>
               )}
               {m.ragContext?.sources?.length > 0 && (
                 <div className="mt-2 space-y-1.5">
                   <p className={eyebrow}>Sources ({m.ragContext.sources.length})</p>
+                  {/* rag_context.sources carries doc_id/chunk_id/doc_name/source_type/
+                      score/snippet/metadata{page,timestamp,meeting_title} — no meeting_id.
+                      There is no honest way to open the source meeting from here, and
+                      SourceCard itself only ever accepted `source` — don't re-add an
+                      onOpenMeeting click-through blind. */}
                   {m.ragContext.sources.map((s, j) => <SourceCard key={j} source={s} />)}
+                </div>
+              )}
+              {m.pendingConfirmations?.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {m.pendingConfirmations.map((pc) => (
+                    <div key={pc.pending_id} className="rounded-lg border p-2.5 text-[11px]" style={{ borderColor: 'var(--db-warn)', background: 'var(--db-warn-fill)' }}>
+                      <p className="mb-1 font-medium" style={{ color: 'var(--db-warn)' }}>{pc.message || `Confirm: ${pc.tool}`}</p>
+                      <pre className="mb-2 max-h-24 overflow-y-auto whitespace-pre-wrap text-[10px] text-[color:var(--db-text-muted)]">
+                        {typeof pc.preview === 'object' ? JSON.stringify(pc.preview, null, 2) : pc.preview}
+                      </pre>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => confirmPending(i, pc)}
+                          className="rounded-md bg-[color:var(--db-accent)] px-3 py-1 text-[10px] font-semibold text-[#04222a]"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => cancelPending(i, pc)}
+                          className="rounded-md border px-3 py-1 text-[10px] font-medium text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)]"
+                          style={{ borderColor: 'var(--db-border)', background: 'var(--db-fill)' }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -130,7 +200,7 @@ export default function WorkspaceChatPanel({ user, onOpenMeeting }) {
           style={{ borderColor: 'var(--db-border)' }}
         />
         <button type="submit" disabled={loading || !input.trim()} aria-label="Send"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color:var(--db-accent)] text-black disabled:opacity-40">
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color:var(--db-accent)] text-[#04222a] disabled:opacity-40">
           <SendHorizontal className="h-4 w-4" />
         </button>
       </form>

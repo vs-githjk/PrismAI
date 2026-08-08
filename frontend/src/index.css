@@ -1037,6 +1037,11 @@ h1, h2, h3, .font-display {
     --db-island-base: #1a1a1c;
     /* Matte card surface for content cards (cardGlowStyle), one tone above canvas. */
     --db-card: #19191b;
+    /* Warning/attention pair (Aug 2026) — RAG conflict banners, pending tool
+       confirmations. amber-400 text clears 10.5:1 against --db-card (#19191b);
+       see frontend/tests/themeTokens.test.mjs for the dark/light parity guard. */
+    --db-warn: #fbbf24;
+    --db-warn-fill: rgba(251, 191, 36, 0.12);
   }
   .theme-light {
     --db-chrome-bg: #e9e7e2;
@@ -1057,6 +1062,9 @@ h1, h2, h3, .font-display {
     --db-accent-fill: rgba(8, 145, 178, 0.10);
     --db-island-base: #fbfaf7;
     --db-card: #fbfaf7;
+    /* amber-800 text clears 6.8:1 against --db-card (#fbfaf7). */
+    --db-warn: #92400e;
+    --db-warn-fill: rgba(146, 64, 14, 0.08);
   }
   .dark {
     --background: oklch(0.145 0 0);

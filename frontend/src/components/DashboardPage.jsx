@@ -1691,11 +1691,11 @@ export default function DashboardPage(props) {
         <main
           className={`relative z-10 mx-auto mt-2 w-full max-w-[92rem] px-5 sm:px-8 ${
             activeView === 'home'
-              ? 'flex min-h-0 flex-1 flex-col pb-[var(--dashboard-edge)]'
+              ? 'pb-[var(--dashboard-edge)]'
               : 'pb-28 pt-6'
           }`}
         >
-          <div key={activeView} className={`animate-fade-in-up ${activeView === 'home' ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+          <div key={activeView} className="animate-fade-in-up">
           {props.viewingSample && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.08] px-4 py-2.5">
               <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-cyan-300" />
@@ -1749,11 +1749,23 @@ export default function DashboardPage(props) {
               selectedMeetingId={props.selectedMeetingId}
               onToggleAction={props.toggleHistoryActionItem}
               assistant={
-                <Suspense fallback={<div className="p-4 text-xs text-[color:var(--db-text-faint)]">Loading chat…</div>}>
-                  <WorkspaceChatPanel
-                    user={props.user}
-                    onOpenMeeting={(meta) => meta?.meeting_id && handleOpenMeetingById(meta.meeting_id)}
-                  />
+                <Suspense
+                  fallback={
+                    <div
+                      className="rounded-2xl border p-4 text-xs text-[color:var(--db-text-faint)]"
+                      style={{
+                        borderColor: 'var(--db-border)',
+                        // Match .dashboard-home-assistant's own height so the lazy
+                        // WorkspaceChatPanel chunk resolving doesn't snap the column height.
+                        height: 'calc(100dvh - (var(--dashboard-edge) * 2) - var(--dashboard-topbar-h) - var(--dashboard-gutter))',
+                        minHeight: 420,
+                      }}
+                    >
+                      Loading chat…
+                    </div>
+                  }
+                >
+                  <WorkspaceChatPanel user={props.user} />
                 </Suspense>
               }
             />
