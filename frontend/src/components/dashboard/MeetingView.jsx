@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, CornerDownRight, FileText, Lightbulb, Paperclip, Plus, X } from 'lucide-react'
+import { CornerDownRight, Lightbulb, Paperclip, Plus, X } from 'lucide-react'
 import CalendarCard from './CalendarCard'
 import CollapsibleSection from './CollapsibleSection'
 import EmailCard from './EmailCard'
@@ -18,7 +18,7 @@ import { useCountUp, overallHealth } from '../../lib/healthScore'
 import { dueInfo, dueLabel, compareDue } from '../../lib/dueStatus'
 import { healthColor } from '../../lib/insights'
 import { MEETING_TYPES, resolvedType, hasContentAnalysis } from '../../lib/meetingType'
-import { cardGlowStyle, glassCard, subtleText } from './dashboardStyles'
+import { cardGlowStyle, glassCard, subtleText, eyebrow, cardTitle, bodyText } from './dashboardStyles'
 
 const GAUGE_RADIUS = 46
 const GAUGE_STROKE = 9
@@ -94,7 +94,6 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
   const meetingId = meeting?.id ? String(meeting.id) : undefined
   const [pinnedDocs, setPinnedDocs] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [transcriptOpen, setTranscriptOpen] = useState(false)
   // Content-analysis lens override (re-runs content_analyst via /agent).
   const [typeBusy, setTypeBusy] = useState(false)
   const [typeError, setTypeError] = useState('')
@@ -308,30 +307,69 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
               : 'Change the meeting type — deeper re-analysis needs the transcript loaded in this view'}
           />
           {typeBusy && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-cyan-200/75">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-[color:var(--db-text-muted)]">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--db-accent)]" />
               Re-analyzing the transcript… this takes ~15s
             </span>
           )}
-          {!typeBusy && typeError && <span className="text-[11px] text-amber-300/85">{typeError}</span>}
+          {!typeBusy && typeError && <span className="text-[11px] text-[color:var(--db-warn)]">{typeError}</span>}
         </div>
       )}
-      {/* When there is genuinely nothing to grade (score null — e.g. a solo
-          bot-command session), the score column disappears rather than showing an
-          empty gauge slot; the summary (and pinned docs card) take the width. */}
-      <div
-        className={`grid gap-5 ${
-          hasScorePanel && showPinned
-            ? 'lg:grid-cols-[max-content_minmax(0,1.5fr)_minmax(0,1fr)]'
-            : hasScorePanel
-              ? 'lg:grid-cols-[max-content_minmax(0,1fr)]'
-              : showPinned
-                ? 'lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]'
-                : ''
-        }`}
-      >
+      {/* Summary-first record (Aug 2026): TL;DR + full summary lead, full width,
+          as the strongest surface on the page. The score becomes a compact right
+          rail beside it (stacks below on mobile) — when there is genuinely nothing
+          to grade (score null — e.g. a solo bot-command session) the rail
+          disappears rather than showing an empty gauge slot, and the summary takes
+          the full row. Pinned documents sit below, full width, unchanged. */}
+      <div className={hasScorePanel ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-start' : ''}>
+        <section>
+          <p className={`${eyebrow} mb-2`}>Summary</p>
+          {result.tldr && (
+            <p className="mb-2.5 text-[18px] font-bold leading-7 text-[color:var(--db-text)]">{result.tldr}</p>
+          )}
+          {result.summary ? (
+            <p className={bodyText}>{result.summary}</p>
+          ) : (
+            <p className={subtleText}>No summary generated.</p>
+          )}
+          {result.topics?.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {result.topics.map((topic, i) => (
+                <span key={i} className="rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-0.5 text-[11px] font-medium text-[color:var(--db-text-muted)]">
+                  {topic}
+                </span>
+              ))}
+            </div>
+          )}
+          {!special && healthScore?.verdict && (
+            <figure
+              className="mt-3.5 border-l-2 pl-3.5"
+              style={{ borderColor: healthColor(overallScore) }}
+            >
+              <figcaption
+                className="text-[9.5px] font-semibold uppercase tracking-[0.18em]"
+                style={{ color: healthColor(overallScore) }}
+              >
+                Verdict
+              </figcaption>
+              <blockquote className="mt-1 text-[13px] italic leading-6 text-[color:var(--db-text-soft)]">
+                {healthScore.verdict}
+              </blockquote>
+            </figure>
+          )}
+          {!special && healthScore?.improvement_tip && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
+              <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
+              <div>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
+                <p className="mt-0.5 text-[13px] leading-5 text-[color:var(--db-text-soft)]">{healthScore.improvement_tip}</p>
+              </div>
+            </div>
+          )}
+        </section>
+
         {hasScorePanel && (
-        <section className="flex max-h-[30vh] flex-col items-center justify-center px-2 py-4">
+        <section className="flex flex-col items-center gap-1.5 py-1">
           {special ? (
             // Health triangle (clarity/engagement/action) is the wrong lens for a
             // pitch or interview — show the type's own headline score instead.
@@ -365,67 +403,19 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           )}
         </section>
         )}
-
-        <section className="flex max-h-[30vh] flex-col justify-center p-4">
-          <p className="mb-2.5 text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Summary</p>
-          <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
-            {result.tldr && (
-              <p className="mb-3 text-[15px] font-semibold leading-6 text-[color:var(--db-text)]">{result.tldr}</p>
-            )}
-            {result.summary ? (
-              <p className={`${result.tldr ? 'text-[13.5px] text-[color:var(--db-text-muted)]' : 'text-[15px] text-[color:var(--db-text)]'} leading-7`}>{result.summary}</p>
-            ) : (
-              <p className={subtleText}>No summary generated.</p>
-            )}
-            {result.topics?.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {result.topics.map((topic, i) => (
-                  <span key={i} className="rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-0.5 text-[11px] font-medium text-[color:var(--db-text-muted)]">
-                    {topic}
-                  </span>
-                ))}
-              </div>
-            )}
-            {!special && healthScore?.verdict && (
-              <figure
-                className="mt-3.5 border-l-2 pl-3.5"
-                style={{ borderColor: healthColor(overallScore) }}
-              >
-                <figcaption
-                  className="text-[9.5px] font-semibold uppercase tracking-[0.18em]"
-                  style={{ color: healthColor(overallScore) }}
-                >
-                  Verdict
-                </figcaption>
-                <blockquote className="mt-1 text-[13px] italic leading-6 text-[color:var(--db-text-soft)]">
-                  {healthScore.verdict}
-                </blockquote>
-              </figure>
-            )}
-            {!special && healthScore?.improvement_tip && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] px-3 py-2">
-                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden="true" />
-                <div>
-                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">To improve next time</p>
-                  <p className="mt-0.5 text-[13px] leading-5 text-[color:var(--db-text-soft)]">{healthScore.improvement_tip}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {pinnedSection}
       </div>
+
+      {pinnedSection}
 
       {special && <ContentAnalysisCard key={currentType} analysis={contentAnalysis} />}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Action items</h2>
+            <h2 className={cardTitle}>Action items</h2>
             {actionItems.length > 0 && (
               <span
-                className="text-sm font-semibold"
+                className={eyebrow}
                 style={{ color: openCount > 0 ? '#f59e0b' : '#22c55e' }}
               >
                 {openCount > 0 ? `${openCount} open` : 'All done'}
@@ -513,18 +503,22 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
 
         <section className={`${glassCard} flex max-h-[40vh] flex-col p-5`} style={cardGlowStyle}>
           <div className="mb-4 flex items-baseline justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-[-0.01em] text-[color:var(--db-text)]">Decisions</h2>
+            <h2 className={cardTitle}>Decisions</h2>
             {decisions.length > 0 && (
-              <span className="text-sm font-semibold text-violet-300">{decisions.length}</span>
+              <span className={eyebrow} style={{ color: '#c4b5fd' }}>{decisions.length}</span>
             )}
           </div>
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           {decisions.length ? (
-            <div className="space-y-3">
+            <div>
               {decisions.map((d, i) => {
                 const prio = DECISION_PRIORITY[d.importance] || DECISION_PRIORITY[3]
                 return (
-                  <div key={i} className="border-l-2 pl-3.5" style={{ borderColor: prio.border }}>
+                  <div
+                    key={i}
+                    className="border-l-2 border-t border-t-[color:var(--db-border)] pl-3.5 py-3 first:border-t-0 first:pt-0"
+                    style={{ borderLeftColor: prio.border }}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-[15px] font-medium leading-snug text-[color:var(--db-text)]">{d.decision}</p>
                       <span
@@ -624,29 +618,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       )}
 
       {transcript && (
-        <section className={`${glassCard}`} style={cardGlowStyle}>
-          <button
-            type="button"
-            onClick={() => setTranscriptOpen(o => !o)}
-            className="flex w-full items-center justify-between gap-3 p-4"
-          >
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-cyan-300/80" aria-hidden="true" />
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text)]">Transcript</p>
-            </div>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-[color:var(--db-text-muted)] transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`}
-              aria-hidden="true"
-            />
-          </button>
-          {transcriptOpen && (
-            <div className="border-t border-[color:var(--db-border)] px-4 pb-4 pt-3">
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-[color:var(--db-text)]">
-                {transcript}
-              </pre>
-            </div>
-          )}
-        </section>
+        <CollapsibleSection title="Transcript" hint="full text · sync with recording" defaultOpen={false}>
+          <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-[color:var(--db-text)]">
+            {transcript}
+          </pre>
+        </CollapsibleSection>
       )}
 
     </div>
