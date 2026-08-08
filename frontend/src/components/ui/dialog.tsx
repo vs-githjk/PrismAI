@@ -40,7 +40,9 @@ function DialogOverlay({
         // bg-black/10 was nearly invisible on an already-dark dashboard, so the modal
         // appeared to "float" with no visual separation. Heavier black + a real blur
         // create proper depth between the modal and the underlying page.
-        "fixed inset-0 isolate z-50 bg-black/70 duration-150 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // --db-scrim (not a flat bg-black/70) so light theme dims toward paper's own
+        // ink tone instead of staying literally black under a --db-popup-base panel.
+        "fixed inset-0 isolate z-50 bg-[var(--db-scrim)] duration-150 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}

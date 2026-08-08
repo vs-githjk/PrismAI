@@ -192,7 +192,7 @@ export function DecisionEvolutionCard({ items = [], loading, resolveMeeting, onS
                           <button
                             type="button"
                             onClick={() => onSelect?.(meeting)}
-                            className="text-[10.5px] text-[color:var(--db-text-faint)] transition hover:text-cyan-100"
+                            className="text-[10.5px] text-[color:var(--db-text-muted)] transition hover:text-cyan-100"
                           >
                             {meeting.title || formatMeetingDate(meeting.date)}
                           </button>

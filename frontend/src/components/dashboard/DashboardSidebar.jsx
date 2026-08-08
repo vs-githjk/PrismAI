@@ -212,7 +212,7 @@ export default function DashboardSidebar(props) {
             aria-label="New meeting"
             title="Sign in to start a meeting"
             onClick={() => onLockedFeature?.('New meeting')}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[color:var(--db-text-faint)] transition hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text-muted)]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[color:var(--db-text-muted)] transition hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text-soft)]"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -397,7 +397,7 @@ export default function DashboardSidebar(props) {
           <button
             type="button"
             onClick={() => onLockedFeature?.('Account')}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-[color:var(--db-accent-fill)] bg-[var(--db-accent-fill)] px-2.5 py-2 text-[13px] font-semibold text-[color:var(--db-accent-text)] transition hover:border-[color:var(--db-accent)] hover:bg-[var(--db-accent-fill)]"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-[color:var(--db-accent)] bg-[var(--db-accent-fill)] px-2.5 py-2 text-[13px] font-semibold text-[color:var(--db-accent-text)] transition hover:bg-[color:var(--db-accent)] hover:text-[#04222a]"
           >
             <LogIn className="h-4 w-4 shrink-0" aria-hidden="true" />
             Sign in
@@ -411,7 +411,10 @@ export default function DashboardSidebar(props) {
               aria-label={collapsed ? `Account: ${accountName}` : undefined}
               className={`flex w-full items-center rounded-lg py-1.5 text-left transition hover:bg-[var(--db-fill)] ${collapsed ? 'justify-center px-0' : 'gap-3 px-2.5'}`}
             >
-              <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--db-accent-fill)] text-[color:var(--db-accent-text)]">
+              <span
+                className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full text-[color:var(--db-accent-text)]"
+                style={{ background: 'color-mix(in srgb, var(--db-accent) 14%, transparent)' }}
+              >
                 {avatarUrl && avatarOk ? (
                   <img
                     src={avatarUrl}

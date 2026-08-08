@@ -98,7 +98,7 @@ export default function AIWorkspaceSetup({ onClose }) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--db-scrim)] p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div

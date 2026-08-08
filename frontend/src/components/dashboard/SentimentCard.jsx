@@ -144,13 +144,13 @@ export default function SentimentCard({ sentiment, defaultOpen = true }) {
         </span>
         {sentiment.arc && <ArcIndicator arc={sentiment.arc} />}
         <ChevronDown
-          className={`ml-auto h-4 w-4 shrink-0 text-white/70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`ml-auto h-4 w-4 shrink-0 text-[color:var(--db-text-muted)] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"
         />
       </button>
 
       {open && (
-      <div className="border-t border-white/[0.07] px-4 pb-4 pt-3">
+      <div className="border-t border-[color:var(--db-border)] px-4 pb-4 pt-3">
       <div className="mb-3">
         <ScoreBar score={sentiment.score} color={meta.color} />
       </div>

@@ -90,7 +90,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
       <div className="mb-3 flex items-center gap-2">
         <Sparkles className="h-[18px] w-[18px] text-cyan-300" aria-hidden="true" />
         <h3 className="text-[15px] font-semibold text-[color:var(--db-text)]">Suggested actions</h3>
-        <span className="text-[12px] text-[color:var(--db-text-faint)]">— from your action items, ready to send</span>
+        <span className="text-[12px] text-[color:var(--db-text-muted)]">— from your action items, ready to send</span>
       </div>
       <ul className="flex flex-col gap-2">
         {list.map((a, i) => {
@@ -110,11 +110,11 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
                 <p className="truncate text-[12px] text-[color:var(--db-text-muted)]">{a.task}</p>
               </div>
               {doneRef ? (
-                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-emerald-300">
+                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-emerald-700">
                   <Check className="h-[15px] w-[15px]" aria-hidden="true" /> {meta.past}
                   {doneRef.url && (
                     <a href={doneRef.url} target="_blank" rel="noreferrer"
-                      className="ml-1 inline-flex items-center gap-1 text-cyan-300 hover:underline">
+                      className="ml-1 inline-flex items-center gap-1 text-[color:var(--db-accent-text)] hover:underline">
                       Open <ExternalLink className="h-3 w-3" aria-hidden="true" />
                     </a>
                   )}
@@ -246,7 +246,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
   const Icon = meta.icon
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--db-scrim)] p-4 backdrop-blur-sm"
       onClick={onClose}>
       <div className="dashboard-popup w-full max-w-lg rounded-2xl p-5"
         onClick={(e) => e.stopPropagation()}>
@@ -261,24 +261,24 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
               <p className="text-[12px] text-[color:var(--db-text-muted)]">Goes to {TOOL_DEST[resolved.tool]}</p>
             )}
           </div>
-          <button type="button" onClick={onClose} className="text-[color:var(--db-text-faint)] hover:text-[color:var(--db-text)]">
+          <button type="button" onClick={onClose} className="text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)]">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
         {resolved.missing ? (
-          <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-[13px] text-amber-200">
+          <div className="rounded-xl border px-4 py-3 text-[13px]" style={{ borderColor: 'var(--db-warn)', background: 'var(--db-warn-fill)', color: 'var(--db-warn)' }}>
             Connect <span className="font-semibold">{resolved.missing}</span> in Settings → Integrations to enable this action.
           </div>
         ) : done ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-700">
               <Check className="h-6 w-6" aria-hidden="true" />
             </span>
             <p className="text-[14px] font-medium text-[color:var(--db-text)]">Done — {meta.done}.</p>
             {done.url && (
               <a href={done.url} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-[13px] text-cyan-300 hover:underline">
+                className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--db-accent-text)] hover:underline">
                 Open <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             )}
@@ -298,10 +298,10 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
               <Field label={isEmail ? 'To' : 'Attendees'}>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {recipients.map((e) => (
-                    <span key={e} className="inline-flex items-center gap-1 rounded-full bg-cyan-400/12 px-2.5 py-1 text-[12px] text-cyan-200">
+                    <span key={e} className="inline-flex items-center gap-1 rounded-full bg-[var(--db-accent-fill)] px-2.5 py-1 text-[12px] text-[color:var(--db-accent-text)]">
                       {e}
                       <button type="button" onClick={() => setRecipients(recipients.filter((x) => x !== e))}
-                        className="text-cyan-200/60 hover:text-cyan-100">×</button>
+                        className="text-[color:var(--db-accent-text)] hover:text-[color:var(--db-accent)]">×</button>
                     </span>
                   ))}
                 </div>
@@ -309,7 +309,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {availableEmails.slice(0, 8).map((e) => (
                       <button key={e} type="button" onClick={() => setRecipients([...recipients, e])}
-                        className="rounded-full border border-[color:var(--db-border-strong)] px-2.5 py-1 text-[12px] text-[color:var(--db-text-muted)] hover:border-cyan-400/40 hover:text-cyan-200">
+                        className="rounded-full border border-[color:var(--db-border-strong)] px-2.5 py-1 text-[12px] text-[color:var(--db-text-muted)] hover:border-[color:var(--db-accent)] hover:text-[color:var(--db-accent-text)]">
                         + {e}
                       </button>
                     ))}
@@ -353,14 +353,14 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
                 className="w-full resize-y rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] leading-relaxed text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
             </Field>
 
-            {error && <p className="text-[12.5px] text-rose-300">{error}</p>}
+            {error && <p className="text-[12.5px] text-rose-600">{error}</p>}
 
             <div className="mt-1 flex items-center justify-end gap-2">
               <Button variant="ghost" onClick={onClose} className="px-4 py-2 text-[13px]">
                 Cancel
               </Button>
               <button type="button" onClick={submit} disabled={busy}
-                className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-4 py-2 text-[13px] font-medium text-cyan-100 transition hover:bg-cyan-400/25 disabled:opacity-50">
+                className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--db-accent)] bg-[var(--db-accent-fill)] px-4 py-2 text-[13px] font-medium text-[color:var(--db-accent-text)] transition hover:bg-[var(--db-accent-fill)] disabled:opacity-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
                 {meta.verb}
               </button>
@@ -375,7 +375,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
 function Field({ label, children, className = '' }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-1 block text-[11.5px] font-medium uppercase tracking-wide text-[color:var(--db-text-faint)]">{label}</span>
+      <span className="mb-1 block text-[11.5px] font-medium uppercase tracking-wide text-[color:var(--db-text-muted)]">{label}</span>
       {children}
     </label>
   )

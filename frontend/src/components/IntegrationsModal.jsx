@@ -561,7 +561,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+      style={{ background: 'var(--db-scrim)', backdropFilter: 'blur(8px)' }}>
       <div className="dashboard-popup w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up">
 
         {/* Header */}

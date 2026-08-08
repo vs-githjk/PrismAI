@@ -157,7 +157,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
   }
 
   return createPortal((
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'var(--db-scrim)', backdropFilter: 'blur(4px)' }}>
       <div className="flex flex-col rounded-2xl overflow-hidden" style={{ width: 'min(900px, 94vw)', height: '88vh', maxHeight: '900px', background: '#0d0d12', border: '1px solid rgba(34,211,238,0.2)' }}>
         {/* Header */}
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--db-border)' }}>

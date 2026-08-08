@@ -221,14 +221,14 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
           return (
             <button key={k} onClick={() => setFilters((f) => { const h = new Set(f.health); h.has(k) ? h.delete(k) : h.add(k); return { ...f, health: h } })}
               className="ps-anim flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
-              style={on ? { color: c, background: `${c}1a`, borderColor: `${c}40` } : { color: 'var(--db-text-faint)', borderColor: 'var(--db-border)' }}>
+              style={on ? { color: c, background: `${c}1a`, borderColor: `${c}40` } : { color: 'var(--db-text-muted)', borderColor: 'var(--db-border)' }}>
               <CircleDot className="h-2.5 w-2.5" style={{ color: on ? c : 'currentColor' }} />{label}
             </button>
           )
         })}
         <button onClick={() => setFilters((f) => ({ ...f, openOnly: !f.openOnly }))}
           className="ps-anim flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
-          style={filters.openOnly ? { color: 'var(--db-accent-text)', background: 'var(--db-accent-fill)', borderColor: 'var(--db-accent)' } : { color: 'var(--db-text-faint)', borderColor: 'var(--db-border)' }}>
+          style={filters.openOnly ? { color: 'var(--db-accent-text)', background: 'var(--db-accent-fill)', borderColor: 'var(--db-accent)' } : { color: 'var(--db-text-muted)', borderColor: 'var(--db-border)' }}>
           <ListTodo className="h-3 w-3" /> Has open actions
         </button>
       </div>

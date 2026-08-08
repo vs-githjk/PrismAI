@@ -72,7 +72,7 @@ export default function ContentAnalysisCard({ analysis }) {
                       {row.dimension}
                       {expandable && (
                         <ChevronDown
-                          className={`h-3 w-3 text-[color:var(--db-text-faint)] transition-transform ${open ? 'rotate-180' : ''}`}
+                          className={`h-3 w-3 text-[color:var(--db-text-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
                           aria-hidden="true"
                         />
                       )}
@@ -91,7 +91,7 @@ export default function ContentAnalysisCard({ analysis }) {
                 {open && row.notes && <p className="mt-1.5 text-[12.5px] leading-5 text-[color:var(--db-text-muted)]">{row.notes}</p>}
                 {open && row.evidence && (
                   <p className="mt-1 flex items-start gap-1.5 text-[11.5px] italic leading-5 text-[color:var(--db-text-muted)]">
-                    <Quote className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-[color:var(--db-text-faint)]" aria-hidden="true" />
+                    <Quote className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-[color:var(--db-text-muted)]" aria-hidden="true" />
                     <span>{row.evidence}</span>
                   </p>
                 )}
@@ -136,7 +136,7 @@ export default function ContentAnalysisCard({ analysis }) {
 
       {key_moments.length > 0 && (
         <div className="border-t border-[color:var(--db-border)] pt-4">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-faint)]">Key moments</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text-muted)]">Key moments</p>
           <div className="space-y-2.5">
             {key_moments.map((m, i) => (
               <div key={i} className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2">

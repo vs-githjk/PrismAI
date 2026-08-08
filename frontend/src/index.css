@@ -1042,6 +1042,15 @@ h1, h2, h3, .font-display {
        see frontend/tests/themeTokens.test.mjs for the dark/light parity guard. */
     --db-warn: #fbbf24;
     --db-warn-fill: rgba(251, 191, 36, 0.12);
+    /* Popup opaque base (Aug 2026 fix) — .dashboard-popup's own background is
+       only a near-transparent glass-top/bottom gradient + backdrop-filter, so
+       it has no floor color of its own (the exact bug Task 1 fixed for
+       .dashboard-island via --db-island-base). Same family as --db-island-base. */
+    --db-popup-base: #1a1a1c;
+    /* Modal dimmer scrim — replaces hand-rolled bg-black/70, which stayed
+       black in light theme and made a light-theme popup composite dark
+       while its --db-text* tokens flipped to near-black text. */
+    --db-scrim: rgba(0, 0, 0, 0.70);
   }
   .theme-light {
     --db-chrome-bg: #e9e7e2;
@@ -1065,6 +1074,8 @@ h1, h2, h3, .font-display {
     /* amber-800 text clears 6.8:1 against --db-card (#fbfaf7). */
     --db-warn: #92400e;
     --db-warn-fill: rgba(146, 64, 14, 0.08);
+    --db-popup-base: #fbfaf7;
+    --db-scrim: rgba(28, 27, 23, 0.35);
   }
   .dark {
     --background: oklch(0.145 0 0);
@@ -1206,7 +1217,13 @@ h1, h2, h3, .font-display {
    since a popup layers over dense page text and needs more separation.
    No border-radius here: each surface keeps its own (rounded-xl/2xl). */
 .dashboard-popup {
-  background: linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%);
+  /* Same bug Task 1 fixed on .dashboard-island: the glass-top/bottom gradient
+     alone has no floor color, so whatever sits behind the blur reads through.
+     --db-popup-base is the opaque floor (mirrors --db-island-base); blur stays
+     since popups are transient layers. */
+  background:
+    linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%),
+    var(--db-popup-base);
   backdrop-filter: blur(40px) saturate(120%);
   -webkit-backdrop-filter: blur(40px) saturate(120%);
   border: 1px solid var(--db-border);
@@ -1367,9 +1384,13 @@ h1, h2, h3, .font-display {
 
 /* Dashboard keyboard-focus ring: the browser default is a harsh white outline
    that outshines the selected state (seen on the Home nav item). Brand cyan,
-   visible on the dark base, still obviously a focus indicator. */
+   visible on the dark base, still obviously a focus indicator.
+   0.45 alpha measured ~2.95-2.98:1 against --db-chrome-bg (the darkest of
+   the three dark backgrounds this ring appears on) — under WCAG 1.4.11's
+   3:1 non-text floor. 0.55 clears ~3.77:1 there (and more on the lighter
+   --db-page-bg / --db-card / --db-island-base). */
 .dashboard-page :is(button, a, select, [role="tab"]):focus-visible {
-  outline: 2px solid rgba(34, 211, 238, 0.45);
+  outline: 2px solid rgba(34, 211, 238, 0.55);
   outline-offset: 2px;
 }
 /* The dark-tuned 45%-alpha ring computes to ~1.3:1 against the light-theme

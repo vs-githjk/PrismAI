@@ -17,7 +17,7 @@ export default function MeetingTypeControl({
   return (
     <label className="inline-flex items-center gap-2" title={title}>
       {label && (
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-muted)]">
           {label}
         </span>
       )}
@@ -34,7 +34,7 @@ export default function MeetingTypeControl({
             </option>
           ))}
         </select>
-        <span className="pointer-events-none absolute right-2 flex items-center text-[color:var(--db-text-faint)]">
+        <span className="pointer-events-none absolute right-2 flex items-center text-[color:var(--db-text-muted)]">
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : (
             <svg width="9" height="9" viewBox="0 0 10 6" fill="none" aria-hidden="true">
               <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

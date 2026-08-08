@@ -108,7 +108,7 @@ function MeetingActionsBar({
   // the single mobile kebab, so the two can never offer different actions.
   const moveItems = canMove && (
     <>
-      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--db-text-faint)]">Move to</div>
+      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--db-text-muted)]">Move to</div>
       <DropdownMenuItem
         disabled={curWs === null}
         onSelect={() => onMoveMeeting?.(null)}
@@ -279,7 +279,7 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
         Analyze Meeting
       </Button>
       {!transcript && (
-        <p className="text-center text-[11px] text-[color:var(--db-text-faint)]">Paste, upload, record, or join a meeting to analyze.</p>
+        <p className="text-center text-[11px] text-[color:var(--db-text-muted)]">Paste, upload, record, or join a meeting to analyze.</p>
       )}
     </div>
   )
@@ -426,7 +426,7 @@ function NewMeetingPanel(props) {
                 {props.transcribing ? `⏳ ${props.transcribeStatus || 'Working…'}` : '📎 Choose Audio or Video'}
               </button>
               {!props.transcribing && !props.transcript && !props.transcribeError && (
-                <p className="text-[10.5px] leading-relaxed text-[color:var(--db-text-faint)]">
+                <p className="text-[10.5px] leading-relaxed text-[color:var(--db-text-muted)]">
                   Audio or video. Video audio is extracted in your browser — the first
                   large file loads a converter (~30MB, cached after). Keep recordings
                   under ~70 min.
@@ -574,7 +574,7 @@ function NewMeetingPanel(props) {
               {/* Where this live meeting's notes will be saved — the bot's workspace is
                   fixed at join, so this stays accurate even if the global chip changes. */}
               {botActive && (
-                <p className="px-1 text-[10.5px] text-[color:var(--db-text-faint)]">
+                <p className="px-1 text-[10.5px] text-[color:var(--db-text-muted)]">
                   Recording into:{' '}
                   <span className="font-medium text-[color:var(--db-text-soft)]">
                     {props.botWorkspaceId
@@ -1863,7 +1863,7 @@ export default function DashboardPage(props) {
             props.shareLoading ? (
               <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 py-16">
                 <div className="h-8 w-8 animate-pulse rounded-xl" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }} />
-                <p className="text-xs text-[color:var(--db-text-faint)]">Loading shared meeting…</p>
+                <p className="text-xs text-[color:var(--db-text-muted)]">Loading shared meeting…</p>
               </div>
             ) : props.shareData ? (
               <Suspense fallback={<SkeletonCard lines={4} tall />}>
@@ -1981,7 +1981,7 @@ export default function DashboardPage(props) {
               type="button"
               aria-label="Close chat"
               onClick={() => setChatOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+              className="fixed inset-0 z-40 bg-[var(--db-scrim)] backdrop-blur-[2px]"
             />
           )}
 

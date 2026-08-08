@@ -24,7 +24,7 @@ const buttonVariants = cva(
         accent:
           "border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/[0.16] hover:text-cyan-100",
         ghost:
-          "border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
+          "border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
         // Borderless, transparent icon button (close ✕, subtle inline controls) —
         // the second real icon flavor alongside the bordered-glass `ghost`+icon size.
         subtle:
@@ -36,9 +36,9 @@ const buttonVariants = cva(
         default:
           "border-transparent bg-cyan-400 text-[#07040f] hover:bg-cyan-300",
         outline:
-          "border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
+          "border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
         secondary:
-          "border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
+          "border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
         destructive:
           "border-rose-400/40 bg-rose-400/15 text-rose-200 hover:bg-rose-400/25",
       },

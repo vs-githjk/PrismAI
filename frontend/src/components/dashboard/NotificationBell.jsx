@@ -213,7 +213,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                           </span>
                         )}
                         {sub && <span className="mt-0.5 block truncate text-[12.5px] text-[color:var(--db-text-muted)]">{sub}</span>}
-                        {time && <span className="mt-1 block text-[11px] text-[color:var(--db-text-faint)]">{time}</span>}
+                        {time && <span className="mt-1 block text-[11px] text-[color:var(--db-text-muted)]">{time}</span>}
                       </span>
                     </button>
                     <button
@@ -245,7 +245,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
             </button>
           )}
           {pushState === 'subscribed' && (
-            <div className="flex items-center justify-between border-t border-[color:var(--db-border)] px-4 py-2.5 text-[11px] text-[color:var(--db-text-faint)]">
+            <div className="flex items-center justify-between border-t border-[color:var(--db-border)] px-4 py-2.5 text-[11px] text-[color:var(--db-text-muted)]">
               <span className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" /> Meeting reminders on</span>
               <button
                 type="button"

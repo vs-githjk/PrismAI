@@ -376,7 +376,10 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             // missing score must not coerce to a confident 0 (Number(null) is 0
             // and finite) — check null/undefined/'' first, same guard as the
             // health-score branch below, and fall back to the same ungraded state.
-            contentAnalysis.headline_score !== null && contentAnalysis.headline_score !== undefined && contentAnalysis.headline_score !== '' ? (
+            // Also require Number.isFinite: a non-numeric value like "N/A" must
+            // read as not-graded too, not NaN-through-to-the-gauge — but a real
+            // 0 (isFinite) still renders as 0, never coerced to "ungraded".
+            contentAnalysis.headline_score !== null && contentAnalysis.headline_score !== undefined && contentAnalysis.headline_score !== '' && Number.isFinite(Number(contentAnalysis.headline_score)) ? (
               <>
                 <SemicircularGauge score={Number(contentAnalysis.headline_score)} />
                 <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">{contentAnalysis.score_label || 'Score'}</p>
