@@ -321,7 +321,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           to grade (score null — e.g. a solo bot-command session) the rail
           disappears rather than showing an empty gauge slot, and the summary takes
           the full row. Pinned documents sit below, full width, unchanged. */}
-      <div className={hasScorePanel ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-start' : ''}>
+      <div className={hasScorePanel ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,240px)] lg:items-start' : ''}>
         <section>
           <p className={`${eyebrow} mb-2`}>Summary</p>
           {result.tldr && (
@@ -369,7 +369,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         </section>
 
         {hasScorePanel && (
-        <section className="flex flex-col items-center gap-1.5 py-1">
+        <section className="flex min-w-0 flex-col items-center gap-1.5 py-1">
           {special ? (
             // Health triangle (clarity/engagement/action) is the wrong lens for a
             // pitch or interview — show the type's own headline score instead.
@@ -378,7 +378,11 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
               <p className="mt-1.5 text-sm font-medium text-white/55">{contentAnalysis.score_label || 'Score'}</p>
             </>
           ) : hasBreakdown ? (
-            <MeetingHealthTriangle scores={breakdown} />
+            // Explicit size: the rail track tops out at 240px; the triangle's own
+            // default (248px) would overflow it. 216px leaves 24px of horizontal
+            // slack (matching the grid's own gap-6) so the shape never touches the
+            // column edge, with margin for the shrink-safe minmax(0,240px) track.
+            <MeetingHealthTriangle scores={breakdown} size={216} />
           ) : healthScore?.score !== null && healthScore?.score !== undefined ? (
             <>
               <SemicircularGauge score={healthScore.score} />
@@ -386,7 +390,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             </>
           ) : (
             <>
-              <MeetingHealthTriangle ungraded />
+              <MeetingHealthTriangle ungraded size={216} />
               <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">Not graded</p>
             </>
           )}
@@ -505,7 +509,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className={cardTitle}>Decisions</h2>
             {decisions.length > 0 && (
-              <span className={eyebrow} style={{ color: '#c4b5fd' }}>{decisions.length}</span>
+              <span className={`${eyebrow} text-violet-300`}>{decisions.length}</span>
             )}
           </div>
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
@@ -618,7 +622,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
       )}
 
       {transcript && (
-        <CollapsibleSection title="Transcript" hint="full text · sync with recording" defaultOpen={false}>
+        <CollapsibleSection title="Transcript" hint="full text" defaultOpen={false}>
           <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-[color:var(--db-text)]">
             {transcript}
           </pre>
