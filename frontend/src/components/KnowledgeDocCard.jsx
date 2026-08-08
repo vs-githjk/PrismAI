@@ -11,10 +11,14 @@ import KnowledgeDocViewer from './KnowledgeDocViewer'
 // `confidential` map to the --db-success/--db-danger pair (both calibrated for
 // AA on --db-card in both themes, see index.css). `internal` has no matching
 // hue in the token set, so it uses the neutral text/fill pair instead of an
-// arbitrary hardcoded blue.
+// arbitrary hardcoded blue. All three borders are the SAME solid token as
+// their own text color (not an alpha-modified neutral) so every pill clears
+// the 3:1 non-text floor against --db-card, not just the text inside it —
+// round 1 shipped `internal`'s border on --db-border-strong (an alpha fill),
+// which composites to ~1.53:1 dark / ~1.38:1 light, under the floor.
 const SENSITIVITY_META = {
   public:       { label: 'Public',       cls: 'border-[color:var(--db-success)] bg-[color:var(--db-success-fill)] text-[color:var(--db-success)]' },
-  internal:     { label: 'Internal',     cls: 'border-[color:var(--db-border-strong)] bg-[color:var(--db-fill-strong)] text-[color:var(--db-text-soft)]' },
+  internal:     { label: 'Internal',     cls: 'border-[color:var(--db-text-soft)] bg-[color:var(--db-fill-strong)] text-[color:var(--db-text-soft)]' },
   confidential: { label: 'Confidential', cls: 'border-[color:var(--db-danger)] bg-[color:var(--db-danger-fill)] text-[color:var(--db-danger)]' },
 }
 
