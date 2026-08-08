@@ -1764,6 +1764,7 @@ export default function DashboardPage(props) {
               onCantMakeIt={(m) => setStandIn(m)}
               openThreads={homeOpenThreads}
               onOpenTrend={handleOpenTrend}
+              onOpenActions={() => persistView('actions')}
               onOpenCalendar={() => persistView('calendar')}
               showConnectCalendar={!!props.user && !props.calendarConnected && !props.isTestAccount}
               onConnectCalendar={props.onOpenCalendarSetup}
@@ -1832,6 +1833,7 @@ export default function DashboardPage(props) {
                 teamsWebhook={props.integrations?.teams_webhook || ''}
                 user={props.user}
                 onToggleAction={props.toggleHistoryActionItem}
+                onOpenActions={() => persistView('actions')}
               />
             </Suspense>
           )}

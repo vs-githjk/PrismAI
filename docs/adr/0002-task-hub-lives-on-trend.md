@@ -56,3 +56,13 @@ Adopted one day later with the state-aware Home redesign:
   next-meetings is the landing page's job and tasks are Trend's job.
 - Reversal cost: information architecture, sidebar, Home, and Trend all encode
   this — hence this record.
+
+## Amendment (2026-08-08, north-star migration)
+
+The location decision is superseded by the approved north-star direction
+(docs/superpowers/specs/2026-08-08-prism-north-star-frontend-migration-design.md):
+the full Task hub moves from Trend to a standalone top-level **Actions** page,
+and Trend keeps a compact open-task summary that links to it. Everything else
+in this record stands — `byPriority` remains THE one task order used
+identically by every surface, ownership chips remain filters, and stale
+deadlines remain history, not urgency.

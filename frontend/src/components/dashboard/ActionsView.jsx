@@ -74,8 +74,8 @@ export default function ActionsView({ history = [], user = null, onToggleAction,
         <p className={eyebrow}>Right now</p>
         <dl className="mt-2 space-y-1.5 text-sm text-[color:var(--db-text-soft)]">
           <div className="flex justify-between"><dt>Open items</dt><dd className="text-[color:var(--db-text)]">{total}</dd></div>
-          <div className="flex justify-between"><dt>Overdue</dt><dd className="text-[color:var(--db-text)]">{overdue || '—'}</dd></div>
-          <div className="flex justify-between"><dt>Due soon</dt><dd className="text-[color:var(--db-text)]">{soon || '—'}</dd></div>
+          <div className="flex justify-between"><dt>Overdue</dt><dd className="text-[color:var(--db-text)]">{overdue}</dd></div>
+          <div className="flex justify-between"><dt>Due soon</dt><dd className="text-[color:var(--db-text)]">{soon}</dd></div>
           <div className="flex justify-between"><dt>Yours</dt><dd className="text-[color:var(--db-text)]">{mineCount}</dd></div>
         </dl>
         <p className={`${subtleText} mt-4`}>

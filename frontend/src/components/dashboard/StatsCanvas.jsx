@@ -199,6 +199,7 @@ export default function StatsCanvas({
   onCantMakeIt,
   openThreads = [],
   onOpenTrend,
+  onOpenActions,
   onOpenCalendar,
   showConnectCalendar = false,
   onConnectCalendar,
@@ -248,6 +249,7 @@ export default function StatsCanvas({
             onToggle={onToggleAction}
             onOpenMeeting={loadFromHistory}
             onOpenTrend={onOpenTrend}
+            onOpenActions={onOpenActions}
           />
         )}
         <MeetingsCard

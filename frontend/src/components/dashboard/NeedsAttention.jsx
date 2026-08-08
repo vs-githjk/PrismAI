@@ -6,12 +6,13 @@ import ActionItemRow from './ActionItemRow'
 const island = 'dashboard-island flex min-h-0 flex-col overflow-hidden'
 
 /**
- * Home's "Needs attention" feed — a BOUNDED slice of the Trend Task hub
- * (ADR 0002 amendment): the top 5 tasks by the one true priority order, then
- * the top unresolved threads, then the door to the full hub. Never grows into
- * a second task surface.
+ * Home's "Needs attention" feed — a BOUNDED slice of the full task queue
+ * (ADR 0002, amended Aug 2026 — the queue now lives on the standalone Actions
+ * page): the top 5 tasks by the one true priority order, then the top
+ * unresolved threads (which still live on Trend), then the door to Actions.
+ * Never grows into a second task surface.
  */
-export default function NeedsAttention({ history = [], user = null, openThreads = [], onToggle, onOpenMeeting, onOpenTrend }) {
+export default function NeedsAttention({ history = [], user = null, openThreads = [], onToggle, onOpenMeeting, onOpenTrend, onOpenActions }) {
   const { rows, total } = useMemo(() => {
     const all = collectOpenActions(history, user)
     return { rows: [...all].sort(byPriority).slice(0, 5), total: all.length }
@@ -82,7 +83,7 @@ export default function NeedsAttention({ history = [], user = null, openThreads 
             {(total > rows.length || threads.length > 0) && (
               <button
                 type="button"
-                onClick={onOpenTrend}
+                onClick={onOpenActions}
                 className="mt-2.5 w-full rounded-lg border border-[color:var(--db-border)] py-2 text-[12.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.06] hover:text-cyan-100"
               >
                 View all {total} task{total === 1 ? '' : 's'} →

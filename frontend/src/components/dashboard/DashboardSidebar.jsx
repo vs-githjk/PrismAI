@@ -146,12 +146,12 @@ export default function DashboardSidebar(props) {
       <div className="space-y-1 px-3 pt-4">
         {[
           { key: 'home', label: 'Home', Icon: Home, active: onHome, onClick: onGoHome },
-          { key: 'actions', label: 'Actions', Icon: ListTodo, active: onActions, onClick: onOpenActions, badge: actionsCount },
+          { key: 'actions', label: 'Actions', Icon: ListTodo, active: onActions, onClick: onOpenActions, badge: actionsCount, badgeLabel: `${actionsCount} open action item${actionsCount === 1 ? '' : 's'}` },
           { key: 'trend', label: 'Trend', Icon: TrendingUp, active: onTrend, onClick: onOpenTrend },
           { key: 'calendar', label: 'Calendar', Icon: CalendarDays, active: onCalendar, onClick: onOpenCalendar },
           { key: 'knowledge', label: 'Knowledge', Icon: BookOpen, active: onKnowledge, onClick: onOpenKnowledge },
           { key: 'standin', label: 'Stand-in', Icon: UserRoundCheck, active: onStandin, onClick: onOpenStandin, badge: standinBadge },
-        ].map(({ key, label, Icon, active, onClick, badge }) => (
+        ].map(({ key, label, Icon, active, onClick, badge, badgeLabel }) => (
           <button
             key={key}
             type="button"
@@ -182,12 +182,12 @@ export default function DashboardSidebar(props) {
             {!signedOut && badge > 0 && (
               collapsed ? (
                 <span className="absolute right-1.5 top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-[var(--db-fill-strong)] px-1 text-[9.5px] font-semibold text-[color:var(--db-text-muted)]"
-                  aria-label={`${badge} unread`}>
+                  aria-label={badgeLabel || `${badge} unread`}>
                   {badge}
                 </span>
               ) : (
                 <span className="ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-[var(--db-fill-strong)] px-1.5 text-[10.5px] font-semibold text-[color:var(--db-text-muted)]"
-                  aria-label={`${badge} unread`}>
+                  aria-label={badgeLabel || `${badge} unread`}>
                   {badge}
                 </span>
               )
