@@ -59,7 +59,7 @@ function MeetingLinkIcon({ link }) {
   )
   return (
     <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-      style={{ background: 'rgba(255,255,255,0.07)', color: '#94a3b8' }}>Link</span>
+      style={{ background: 'var(--db-fill-strong)', color: '#94a3b8' }}>Link</span>
   )
 }
 
@@ -80,7 +80,7 @@ export function BriefPanel({ state, workspaceName, onItemClick }) {
     return (
       <div className="px-3 pb-3 pt-1">
         <div className="rounded-lg px-3 py-2 text-[10px] text-gray-500"
-          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
           Loading brief…
         </div>
       </div>
@@ -121,7 +121,7 @@ export function BriefPanel({ state, workspaceName, onItemClick }) {
             {items.length} open from {workspaceName}
           </span>
         </div>
-        <ul className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+        <ul className="divide-y" style={{ borderColor: 'var(--db-border)' }}>
           {items.map((item, i) => (
             <li key={i}>
               <button
@@ -301,7 +301,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
   function EmptyState({ title, message, actionLabel, onAction }) {
     return (
       <div className="rounded-xl px-3 py-3"
-        style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full" style={{ background: 'rgba(148,163,184,0.18)' }} />
           <span className="text-[11px] font-medium text-gray-400">{title}</span>
@@ -346,8 +346,8 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
 
   if (loading) return hideEmpty ? null : (
     <div className="rounded-xl px-3 py-2.5 flex items-center gap-2"
-      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <div className="w-3 h-3 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.15)' }} />
+      style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
+      <div className="w-3 h-3 rounded-full animate-pulse" style={{ background: 'var(--db-fill-strong)' }} />
       <span className="text-[11px] text-gray-600">Loading calendar…</span>
     </div>
   )
@@ -368,7 +368,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
     <div className="rounded-xl overflow-hidden"
       // Embedded on Home (hideEmpty) the island shell already draws the card —
       // skip the inner border/background so it isn't a box inside a box.
-      style={hideEmpty ? undefined : { border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.015)' }}>
+      style={hideEmpty ? undefined : { border: '1px solid var(--db-border)', background: 'var(--db-fill)' }}>
 
       {/* Header */}
       <button
@@ -394,7 +394,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
 
       {/* Events list */}
       {!collapsed && (
-        <div className="divide-y" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.05)' }}>
+        <div className="divide-y" style={{ borderTop: '1px solid var(--db-border)', borderColor: 'var(--db-border)' }}>
           {joinable.map(event => {
             const mins = minutesUntil(event.start)
             const isNow = mins !== null && mins >= -60 && mins <= 15
@@ -421,7 +421,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
                           </span>
                         ) : (
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                            style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                            style={{ background: 'var(--db-fill-strong)', color: '#94a3b8', border: '1px solid var(--db-border-strong)' }}>
                             Personal
                           </span>
                         )}
@@ -466,9 +466,9 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
                         aria-expanded={briefExpanded}
                         className="text-[10px] font-medium px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
                         style={{
-                          background: briefExpanded ? 'rgba(34,211,238,0.18)' : 'rgba(255,255,255,0.04)',
+                          background: briefExpanded ? 'rgba(34,211,238,0.18)' : 'var(--db-fill)',
                           color: briefExpanded ? '#67e8f9' : '#94a3b8',
-                          border: `1px solid ${briefExpanded ? 'rgba(34,211,238,0.3)' : 'rgba(255,255,255,0.10)'}`,
+                          border: `1px solid ${briefExpanded ? 'rgba(34,211,238,0.3)' : 'var(--db-border-strong)'}`,
                         }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
@@ -490,7 +490,7 @@ export default function UpcomingMeetings({ onJoin, workspaces = [], onOpenMeetin
                         aria-label={`Can't make ${event.title} — have Prism represent you`}
                         title="Can't make it? Have Prism represent you"
                         className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all"
-                        style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.10)' }}>
+                        style={{ background: 'var(--db-fill)', color: '#94a3b8', border: '1px solid var(--db-border-strong)' }}>
                         Can't make it
                       </button>
                     )}

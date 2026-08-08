@@ -36,7 +36,7 @@ function MeetingChips({ ids = [], resolveMeeting, onSelect, max = 4 }) {
           type="button"
           key={meeting.id}
           onClick={() => onSelect?.(meeting)}
-          className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10.5px] text-white/56 transition hover:border-cyan-200/24 hover:text-cyan-100"
+          className="rounded border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-0.5 text-[10.5px] text-[color:var(--db-text-muted)] transition hover:border-cyan-200/24 hover:text-cyan-100"
         >
           {meeting.title || formatMeetingDate(meeting.date)}
         </button>
@@ -49,9 +49,9 @@ function SkeletonRows({ rows = 3 }) {
   return (
     <div className="space-y-2">
       {Array.from({ length: rows }).map((_, index) => (
-        <div key={index} className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-3">
-          <div className="h-3 w-2/3 animate-pulse rounded bg-white/[0.08]" />
-          <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded bg-white/[0.05]" />
+        <div key={index} className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-3">
+          <div className="h-3 w-2/3 animate-pulse rounded bg-[var(--db-fill-strong)]" />
+          <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded bg-[var(--db-fill)]" />
         </div>
       ))}
     </div>
@@ -62,8 +62,8 @@ export function NarrativeBar({ narrative, loading }) {
   if (loading) {
     return (
       <section className={`${glassCard} p-4`} style={cardGlowStyle}>
-        <div className="h-3 w-11/12 animate-pulse rounded bg-white/[0.08]" />
-        <div className="mt-2 h-3 w-3/4 animate-pulse rounded bg-white/[0.05]" />
+        <div className="h-3 w-11/12 animate-pulse rounded bg-[var(--db-fill-strong)]" />
+        <div className="mt-2 h-3 w-3/4 animate-pulse rounded bg-[var(--db-fill)]" />
       </section>
     )
   }
@@ -71,7 +71,7 @@ export function NarrativeBar({ narrative, loading }) {
   return (
     <section className={`${glassCard} p-4`} style={cardGlowStyle}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/80">Across your meetings</p>
-      <p className="mt-1.5 text-[15px] leading-6 text-white/86">{narrative}</p>
+      <p className="mt-1.5 text-[15px] leading-6 text-[color:var(--db-text-soft)]">{narrative}</p>
     </section>
   )
 }
@@ -89,7 +89,7 @@ export function OpenThreadsCard({ threads = [], loading, resolveMeeting, onSelec
         <div className="space-y-2">
           {threads.map((thread, index) => (
             <div key={`${thread.thread}-${index}`} className="rounded-lg border border-amber-200/[0.14] bg-amber-300/[0.05] p-3">
-              <p className="text-sm font-semibold leading-snug text-white">{thread.thread}</p>
+              <p className="text-sm font-semibold leading-snug text-[color:var(--db-text)]">{thread.thread}</p>
               {thread.why_open && <p className={`mt-0.5 ${subtleText}`}>{thread.why_open}</p>}
               {thread.suggested_next_step && (
                 <p className="mt-1.5 text-[12px] leading-4 text-cyan-100/80">
@@ -143,9 +143,9 @@ export function TopicsCard({ topics = [], loading, resolveMeeting, onSelect }) {
           {topics.map((topic, index) => {
             const status = TOPIC_STATUS[topic.status] || TOPIC_STATUS.active
             return (
-              <div key={`${topic.topic}-${index}`} className="rounded-lg border border-white/[0.08] bg-black/20 p-3">
+              <div key={`${topic.topic}-${index}`} className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold leading-snug text-white">{topic.topic}</p>
+                  <p className="text-sm font-semibold leading-snug text-[color:var(--db-text)]">{topic.topic}</p>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${status.cls}`}>{status.label}</span>
                 </div>
                 {topic.gist && <p className={`mt-0.5 ${subtleText}`}>{topic.gist}</p>}
@@ -174,7 +174,7 @@ export function DecisionEvolutionCard({ items = [], loading, resolveMeeting, onS
         <div className="space-y-3">
           {items.map((item, index) => (
             <div key={`${item.topic}-${index}`} className="rounded-lg border border-violet-200/[0.14] bg-violet-300/[0.05] p-3">
-              <p className="text-sm font-semibold text-white">{item.topic}</p>
+              <p className="text-sm font-semibold text-[color:var(--db-text)]">{item.topic}</p>
               <div className="mt-2 space-y-1.5">
                 {/* Defensive: a malformed/cached payload without `timeline` must
                     degrade to an empty card, never white-screen the dashboard. */}
@@ -187,12 +187,12 @@ export function DecisionEvolutionCard({ items = [], loading, resolveMeeting, onS
                         {stepIndex < (item.timeline || []).length - 1 && <span className="mt-0.5 h-full w-px flex-1 bg-violet-200/20" />}
                       </div>
                       <div className="pb-1">
-                        <p className="text-[13px] leading-5 text-white/82">{step.what_changed}</p>
+                        <p className="text-[13px] leading-5 text-[color:var(--db-text-soft)]">{step.what_changed}</p>
                         {meeting && (
                           <button
                             type="button"
                             onClick={() => onSelect?.(meeting)}
-                            className="text-[10.5px] text-white/44 transition hover:text-cyan-100"
+                            className="text-[10.5px] text-[color:var(--db-text-faint)] transition hover:text-cyan-100"
                           >
                             {meeting.title || formatMeetingDate(meeting.date)}
                           </button>
@@ -215,7 +215,7 @@ export function DecisionEvolutionCard({ items = [], loading, resolveMeeting, onS
 export function SemanticLockedBanner({ minMeetings = 3 }) {
   return (
     <section className={`${glassCard} p-5 text-center`} style={cardGlowStyle}>
-      <p className="text-sm font-semibold text-white/88">Cross-meeting insights unlock after {minMeetings} meetings</p>
+      <p className="text-sm font-semibold text-[color:var(--db-text)]">Cross-meeting insights unlock after {minMeetings} meetings</p>
       <p className={`mx-auto mt-1 max-w-md ${subtleText}`}>
         Once you have a few analyzed meetings, Prism synthesizes the throughline — recurring topics, threads left open, and how decisions evolved.
       </p>

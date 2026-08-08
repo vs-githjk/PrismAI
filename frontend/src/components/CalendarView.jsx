@@ -221,14 +221,14 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
           return (
             <button key={k} onClick={() => setFilters((f) => { const h = new Set(f.health); h.has(k) ? h.delete(k) : h.add(k); return { ...f, health: h } })}
               className="ps-anim flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
-              style={on ? { color: c, background: `${c}1a`, borderColor: `${c}40` } : { color: 'rgba(255,255,255,0.35)', borderColor: 'rgba(255,255,255,0.10)' }}>
+              style={on ? { color: c, background: `${c}1a`, borderColor: `${c}40` } : { color: 'var(--db-text-faint)', borderColor: 'var(--db-border)' }}>
               <CircleDot className="h-2.5 w-2.5" style={{ color: on ? c : 'currentColor' }} />{label}
             </button>
           )
         })}
         <button onClick={() => setFilters((f) => ({ ...f, openOnly: !f.openOnly }))}
           className="ps-anim flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
-          style={filters.openOnly ? { color: '#67e8f9', background: 'rgba(34,211,238,0.10)', borderColor: 'rgba(34,211,238,0.30)' } : { color: 'rgba(255,255,255,0.35)', borderColor: 'rgba(255,255,255,0.10)' }}>
+          style={filters.openOnly ? { color: 'var(--db-accent-text)', background: 'var(--db-accent-fill)', borderColor: 'var(--db-accent)' } : { color: 'var(--db-text-faint)', borderColor: 'var(--db-border)' }}>
           <ListTodo className="h-3 w-3" /> Has open actions
         </button>
       </div>
@@ -285,7 +285,7 @@ export default function CalendarView({ history = [], onOpenMeeting, workspaceNam
       {/* Hover preview — portalled to body so position:fixed escapes the dashboard's
           transformed/animated ancestor (which would otherwise capture it). */}
       {hover && createPortal((
-        <div className="pointer-events-none fixed z-[200] max-h-[240px] w-[300px] overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[#0d111b] p-3 shadow-2xl"
+        <div className="pointer-events-none fixed z-[200] max-h-[240px] w-[300px] overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[color:var(--db-card)] p-3 shadow-2xl"
           style={{ left: hover.x, top: hover.y }}>
           <div className="flex items-start justify-between gap-2">
             <p className="text-[13px] font-semibold leading-snug text-[color:var(--db-text)]">{hover.entry.title}</p>

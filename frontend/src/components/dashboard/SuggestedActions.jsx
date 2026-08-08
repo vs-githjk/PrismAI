@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/api'
 import { Mail, Calendar, Ticket, MessageSquare, Check, Loader2, X, Sparkles, ExternalLink } from 'lucide-react'
 import { Button } from '../ui/button'
+import { glassCard, cardGlowStyle } from './dashboardStyles'
 
 // Each suggested action maps to an action_type the agent chose; the concrete tool is
 // resolved from what the user actually has connected (task→Jira/Linear, chat→Slack/Teams).
@@ -85,11 +86,11 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
   if (!list.length) return null
 
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+    <div className={`${glassCard} p-5`} style={cardGlowStyle}>
       <div className="mb-3 flex items-center gap-2">
         <Sparkles className="h-[18px] w-[18px] text-cyan-300" aria-hidden="true" />
-        <h3 className="text-[15px] font-semibold text-white/90">Suggested actions</h3>
-        <span className="text-[12px] text-white/40">— from your action items, ready to send</span>
+        <h3 className="text-[15px] font-semibold text-[color:var(--db-text)]">Suggested actions</h3>
+        <span className="text-[12px] text-[color:var(--db-text-faint)]">— from your action items, ready to send</span>
       </div>
       <ul className="flex flex-col gap-2">
         {list.map((a, i) => {
@@ -99,14 +100,14 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
           const rowResolved = resolveTool(a.action_type, connections)
           const dest = rowResolved.tool ? TOOL_DEST[rowResolved.tool] : null
           return (
-            <li key={i} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+            <li key={i} className="flex items-center gap-3 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-3 py-2.5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                 style={{ background: `${meta.accent}1a`, color: meta.accent }}>
                 <Icon className="h-[17px] w-[17px]" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13.5px] font-medium text-white/85">{a.title || a.task}</p>
-                <p className="truncate text-[12px] text-white/45">{a.task}</p>
+                <p className="truncate text-[13.5px] font-medium text-[color:var(--db-text)]">{a.title || a.task}</p>
+                <p className="truncate text-[12px] text-[color:var(--db-text-muted)]">{a.task}</p>
               </div>
               {doneRef ? (
                 <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-emerald-300">
@@ -121,7 +122,7 @@ export default function SuggestedActions({ actions = [], connections = {}, sugge
               ) : !readOnly && (
                 <div className="flex shrink-0 items-center gap-2">
                   {dest && (
-                    <span className="hidden rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-white/45 sm:inline">
+                    <span className="hidden rounded-md bg-[var(--db-fill-strong)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--db-text-muted)] sm:inline">
                       → {dest}
                     </span>
                   )}
@@ -247,7 +248,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
       onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0c1118] p-5 shadow-2xl"
+      <div className="dashboard-popup w-full max-w-lg rounded-2xl p-5"
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center gap-2.5">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg"
@@ -255,12 +256,12 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
             <Icon className="h-[17px] w-[17px]" aria-hidden="true" />
           </span>
           <div className="flex-1 min-w-0">
-            <h3 className="text-[15px] font-semibold text-white/90">{meta.label}</h3>
+            <h3 className="text-[15px] font-semibold text-[color:var(--db-text)]">{meta.label}</h3>
             {resolved.tool && TOOL_DEST[resolved.tool] && (
-              <p className="text-[12px] text-white/45">Goes to {TOOL_DEST[resolved.tool]}</p>
+              <p className="text-[12px] text-[color:var(--db-text-muted)]">Goes to {TOOL_DEST[resolved.tool]}</p>
             )}
           </div>
-          <button type="button" onClick={onClose} className="text-white/40 hover:text-white/80">
+          <button type="button" onClick={onClose} className="text-[color:var(--db-text-faint)] hover:text-[color:var(--db-text)]">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
@@ -274,7 +275,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
               <Check className="h-6 w-6" aria-hidden="true" />
             </span>
-            <p className="text-[14px] font-medium text-white/85">Done — {meta.done}.</p>
+            <p className="text-[14px] font-medium text-[color:var(--db-text)]">Done — {meta.done}.</p>
             {done.url && (
               <a href={done.url} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-[13px] text-cyan-300 hover:underline">
@@ -282,7 +283,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
               </a>
             )}
             <button type="button" onClick={onClose}
-              className="mt-1 rounded-lg border border-white/10 bg-white/5 px-4 py-1.5 text-[13px] text-white/80 hover:bg-white/10">
+              className="mt-1 rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-4 py-1.5 text-[13px] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]">
               Close
             </button>
           </div>
@@ -290,7 +291,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
           <div className="flex flex-col gap-3">
             <Field label={isEmail ? 'Subject' : isCalendar ? 'Event title' : isSlack ? 'Label' : 'Title'}>
               <input value={title} onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13.5px] text-white/90 outline-none focus:border-cyan-400/45" />
+                className="w-full rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13.5px] text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
             </Field>
 
             {wantsRecipients && (
@@ -308,7 +309,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {availableEmails.slice(0, 8).map((e) => (
                       <button key={e} type="button" onClick={() => setRecipients([...recipients, e])}
-                        className="rounded-full border border-white/10 px-2.5 py-1 text-[12px] text-white/55 hover:border-cyan-400/40 hover:text-cyan-200">
+                        className="rounded-full border border-[color:var(--db-border-strong)] px-2.5 py-1 text-[12px] text-[color:var(--db-text-muted)] hover:border-cyan-400/40 hover:text-cyan-200">
                         + {e}
                       </button>
                     ))}
@@ -323,7 +324,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
                       e.target.value = ''
                     }
                   }}
-                  className="mt-2 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] text-white/90 outline-none focus:border-cyan-400/45" />
+                  className="mt-2 w-full rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
               </Field>
             )}
 
@@ -331,11 +332,11 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
               <div className="flex gap-3">
                 <Field label="Date" className="flex-1">
                   <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] text-white/90 outline-none focus:border-cyan-400/45" />
+                    className="w-full rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
                 </Field>
                 <Field label="Time" className="w-32">
                   <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] text-white/90 outline-none focus:border-cyan-400/45" />
+                    className="w-full rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
                 </Field>
               </div>
             )}
@@ -343,13 +344,13 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
             {isSlack && (
               <Field label="Channel">
                 <input value={channel} onChange={(e) => setChannel(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] text-white/90 outline-none focus:border-cyan-400/45" />
+                  className="w-full rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
               </Field>
             )}
 
             <Field label={isEmail ? 'Body' : isCalendar ? 'Description' : 'Message'}>
               <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={isEmail ? 6 : 4}
-                className="w-full resize-y rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] leading-relaxed text-white/90 outline-none focus:border-cyan-400/45" />
+                className="w-full resize-y rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] px-3 py-2 text-[13px] leading-relaxed text-[color:var(--db-text)] outline-none focus:border-[color:var(--db-accent)]" />
             </Field>
 
             {error && <p className="text-[12.5px] text-rose-300">{error}</p>}
@@ -374,7 +375,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
 function Field({ label, children, className = '' }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-1 block text-[11.5px] font-medium uppercase tracking-wide text-white/40">{label}</span>
+      <span className="mb-1 block text-[11.5px] font-medium uppercase tracking-wide text-[color:var(--db-text-faint)]">{label}</span>
       {children}
     </label>
   )

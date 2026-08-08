@@ -24,11 +24,11 @@ const buttonVariants = cva(
         accent:
           "border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/[0.16] hover:text-cyan-100",
         ghost:
-          "border-white/10 bg-white/5 text-white/75 hover:bg-white/10 hover:text-white/90 aria-expanded:bg-white/10",
+          "border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
         // Borderless, transparent icon button (close ✕, subtle inline controls) —
         // the second real icon flavor alongside the bordered-glass `ghost`+icon size.
         subtle:
-          "border-transparent bg-transparent text-white/40 hover:bg-white/[0.07] hover:text-white/70",
+          "border-transparent bg-transparent text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text)]",
         danger:
           "border-rose-400/40 bg-rose-400/15 text-rose-200 hover:bg-rose-400/25",
         link: "border-transparent text-cyan-300 underline-offset-4 hover:underline",
@@ -36,9 +36,9 @@ const buttonVariants = cva(
         default:
           "border-transparent bg-cyan-400 text-[#07040f] hover:bg-cyan-300",
         outline:
-          "border-white/10 bg-white/5 text-white/75 hover:bg-white/10 hover:text-white/90 aria-expanded:bg-white/10",
+          "border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
         secondary:
-          "border-white/10 bg-white/5 text-white/75 hover:bg-white/10 hover:text-white/90 aria-expanded:bg-white/10",
+          "border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] aria-expanded:bg-[var(--db-fill-strong)]",
         destructive:
           "border-rose-400/40 bg-rose-400/15 text-rose-200 hover:bg-rose-400/25",
       },

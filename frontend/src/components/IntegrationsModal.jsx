@@ -79,7 +79,7 @@ function Field({ label, placeholder, value, onChange, type = 'text', hint, disab
 function Toggle({ label, checked, onChange, hint, disabled = false }) {
   return (
     <div className="rounded-xl p-3 flex items-start justify-between gap-3"
-      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+      style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
       <div>
         <p className="text-xs font-medium text-gray-300">{label}</p>
         {hint && <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed max-w-xs">{hint}</p>}
@@ -90,7 +90,7 @@ function Toggle({ label, checked, onChange, hint, disabled = false }) {
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ background: checked ? 'linear-gradient(135deg, #0284c7, #0d9488)' : 'rgba(255,255,255,0.08)' }}>
+        style={{ background: checked ? 'linear-gradient(135deg, #0284c7, #0d9488)' : 'var(--db-fill-strong)' }}>
         <span
           className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform"
           style={{ left: '2px', transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
@@ -433,7 +433,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
     if (OAUTH_TABS.includes(tab)) {
       return (
         <div className="rounded-xl p-4 text-[11px] text-gray-400 leading-relaxed"
-          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
           Calendar &amp; email stay personal — connect them under <span className="text-gray-200">Personal</span>.
           Workspace scope covers Slack, Teams, Notion, Linear, and Jira.
         </div>
@@ -459,9 +459,9 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
       <div className="space-y-4">
         {/* Current status */}
         <div className="rounded-xl p-3 flex items-center gap-2.5"
-          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
           <span className="w-2 h-2 rounded-full flex-shrink-0"
-            style={{ background: connected ? '#34d399' : 'rgba(255,255,255,0.2)' }} />
+            style={{ background: connected ? '#34d399' : 'var(--db-fill-strong)' }} />
           <div className="min-w-0">
             <p className="text-xs font-medium text-gray-200">
               {connected ? 'Connected' : 'Not configured'}
@@ -497,7 +497,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                   onClick={() => wsTest(cfg.provider)}
                   disabled={testing}
                   className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                  style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border-strong)', color: '#cbd5e1' }}>
                   {testing ? 'Testing…' : 'Test connection'}
                 </button>
                 {testResult && (
@@ -545,7 +545,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               />
             ))}
             <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
               {connected
                 ? <>Configured by the workspace{label ? <> · <span className="text-gray-300">{label}</span></> : null}.</>
                 : 'Not configured.'}
@@ -566,7 +566,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
 
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          style={{ borderBottom: '1px solid var(--db-border)' }}>
           <div>
             <h3 className="text-sm font-semibold text-[color:var(--db-text)]">Integrations</h3>
             <p className="text-[11px] text-gray-500 mt-0.5">
@@ -591,7 +591,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 tab === t ? 'text-[color:var(--db-text)]' : 'text-gray-500 hover:text-gray-300'
               }`}
-              style={tab === t ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' } : {}}
+              style={tab === t ? { background: 'var(--db-fill-strong)', border: '1px solid var(--db-border-strong)' } : {}}
             >
               {t === 'Slack' && (
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
@@ -676,7 +676,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 }`}
                 style={scope === 'personal'
                   ? { background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.30)' }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  : { background: 'var(--db-fill)', border: '1px solid var(--db-border-strong)' }}>
                 Personal
               </button>
               {wsList.map(ws => (
@@ -688,7 +688,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                   }`}
                   style={String(scope) === String(ws.id)
                     ? { background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.30)' }
-                    : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    : { background: 'var(--db-fill)', border: '1px solid var(--db-border-strong)' }}>
                   {ws.name}
                 </button>
               ))}
@@ -701,7 +701,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               <span className="text-[10px] uppercase tracking-wide text-gray-600">Editing</span>
               <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
                 style={scope === 'personal'
-                  ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#cbd5e1' }
+                  ? { background: 'var(--db-fill-strong)', border: '1px solid var(--db-border-strong)', color: '#cbd5e1' }
                   : { background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.30)', color: '#67e8f9' }}>
                 {scope === 'personal' ? 'Personal' : `${activeWs?.name || 'Workspace'} · workspace`}
               </span>
@@ -735,7 +735,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 </div>
               )}
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 When you export to Slack, PrismAI sends a formatted summary with action items and decisions to your webhook channel.
               </div>
               <Toggle
@@ -772,7 +772,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 </div>
               )}
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 PrismAI posts a formatted recap card (summary, action items, decisions) to your Teams channel. Uses Power Automate Workflows — the current method, since Microsoft is retiring the classic Incoming Webhook connector.
               </div>
               <Toggle
@@ -805,7 +805,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 hint="The page where meeting analyses will be created. Share that page with your integration first."
               />
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 PrismAI will create a new Notion page for each meeting with full analysis: summary, action items (as checkboxes), decisions, email draft, and health score.
               </div>
               <Toggle
@@ -822,9 +822,9 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
             <div className="space-y-4">
               {/* Connection status */}
               <div className="rounded-xl p-4 flex items-center gap-3"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
-                  style={{ background: calendarConnected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                  style={{ background: calendarConnected ? 'rgba(16,185,129,0.15)' : 'var(--db-fill)' }}>
                   {calendarConnected ? (
                     <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12"/>
@@ -881,7 +881,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                       className="w-full flex items-start gap-3 rounded-xl p-3 text-left transition-all"
                       style={autoJoinSetting === opt.value
                         ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)' }
-                        : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        : { background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                       <div className={`w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border ${autoJoinSetting === opt.value ? 'border-sky-400' : 'border-gray-600'}`}>
                         {autoJoinSetting === opt.value && (
                           <div className="w-2 h-2 rounded-full bg-sky-400" />
@@ -897,7 +897,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               )}
 
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 PrismAI requests read-only access to your primary calendar. It detects Zoom, Google Meet, and Teams links and lets you join with one click — no link pasting required.
               </div>
             </div>
@@ -906,9 +906,9 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
           {tab === 'Outlook' && (
             <div className="space-y-4">
               <div className="rounded-xl p-4 flex items-center gap-3"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
-                  style={{ background: outlookConnected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                  style={{ background: outlookConnected ? 'rgba(16,185,129,0.15)' : 'var(--db-fill)' }}>
                   {outlookConnected ? (
                     <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12"/>
@@ -964,7 +964,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                       className="w-full flex items-start gap-3 rounded-xl p-3 text-left transition-all"
                       style={autoJoinSetting === opt.value
                         ? { background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)' }
-                        : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        : { background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                       <div className={`w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border ${autoJoinSetting === opt.value ? 'border-sky-400' : 'border-gray-600'}`}>
                         {autoJoinSetting === opt.value && (
                           <div className="w-2 h-2 rounded-full bg-sky-400" />
@@ -983,7 +983,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               )}
 
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 PrismAI requests read-only access to your Outlook calendar (Microsoft Graph). It surfaces upcoming meetings and detects Teams/Zoom/Meet links so you can join in one click.
               </div>
             </div>
@@ -992,9 +992,9 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
           {tab === 'Gmail' && (
             <div className="space-y-4">
               <div className="rounded-xl p-4 flex items-center gap-3"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
-                  style={{ background: calendarConnected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                  style={{ background: calendarConnected ? 'rgba(16,185,129,0.15)' : 'var(--db-fill)' }}>
                   {calendarConnected ? (
                     <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12"/>
@@ -1028,7 +1028,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
               )}
 
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 Gmail tools let PrismAI send follow-up emails and read your inbox when you ask in the chat. For example: "email the action items to the team" or "check my inbox for replies."
               </div>
             </div>
@@ -1051,7 +1051,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                     onClick={testLinear}
                     disabled={isTestAccount || testingLinear}
                     className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                    style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border-strong)', color: '#cbd5e1' }}>
                     {testingLinear ? 'Testing…' : 'Test connection'}
                   </button>
                   {linearTestResult && (
@@ -1062,7 +1062,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 </div>
               )}
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 With Linear connected, you can ask PrismAI to create issues directly from the chat. For example: "create a Linear issue for the auth bug we discussed."
               </div>
             </>
@@ -1108,7 +1108,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                   onClick={testJira}
                   disabled={isTestAccount || testingJira || !jiraBaseUrl.trim() || !jiraEmail.trim() || !jiraApiToken.trim()}
                   className="text-[11px] px-3 py-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                  style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border-strong)', color: '#cbd5e1' }}>
                   {testingJira ? 'Testing…' : 'Test connection'}
                 </button>
                 {jiraTestResult && (
@@ -1120,7 +1120,7 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
                 )}
               </div>
               <div className="rounded-xl p-3 text-[11px] text-gray-500 leading-relaxed"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border)' }}>
                 With Jira connected, ask PrismAI to file issues from chat. For example: "create a Jira ticket for the login bug we discussed."
               </div>
             </>
@@ -1130,10 +1130,10 @@ export default function IntegrationsModal({ integrations, userId = null, onSave,
 
         {/* Footer */}
         <div className="px-5 py-3 flex items-center justify-end gap-2"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+          style={{ borderTop: '1px solid var(--db-border)' }}>
           <button onClick={onClose}
             className="text-xs px-4 py-2 rounded-lg text-gray-400 hover:text-[color:var(--db-text)] transition-colors"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            style={{ background: 'var(--db-fill)', border: '1px solid var(--db-border-strong)' }}>
             {scope === 'personal' ? 'Cancel' : 'Close'}
           </button>
           {/* Workspace scope saves per-provider inline; the footer Save is personal-only.

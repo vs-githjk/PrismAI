@@ -31,9 +31,9 @@ const heroActionBase =
 const heroActionPrimary =
   `${heroActionBase} bg-cyan-400 font-semibold text-[#04222a] shadow-sm hover:bg-cyan-300`
 const heroActionSecondary =
-  `${heroActionBase} border border-white/15 bg-white/[0.04] font-medium text-white/85 hover:bg-white/[0.08]`
+  `${heroActionBase} border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] font-medium text-[color:var(--db-text-soft)] hover:bg-[var(--db-fill-strong)]`
 const heroActionGhost =
-  `${heroActionBase} border border-white/10 bg-transparent font-medium text-white/60 hover:bg-white/[0.05] hover:text-white/80`
+  `${heroActionBase} border border-[color:var(--db-border)] bg-transparent font-medium text-[color:var(--db-text-muted)] hover:bg-[var(--db-fill)] hover:text-[color:var(--db-text)]`
 
 /** "Welcome back, Abhinav." — the brand greeting, personalized (owner's call). */
 function greetingFor(user) {

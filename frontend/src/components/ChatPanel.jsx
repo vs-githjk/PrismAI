@@ -199,7 +199,7 @@ export function SourceCard({ source, flat = false }) {
         <FileText className="h-3 w-3 shrink-0 text-[color:var(--db-accent-text)]" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-[color:var(--db-text-soft)]">{source.doc_name || 'Source'}</span>
       </div>
-      <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-[color:var(--db-text-faint)]">
+      <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-[color:var(--db-text-muted)]">
         <span className="capitalize">{(source.source_type || 'doc').replace('_', ' ')}</span>
         {pct && <><span>·</span><span>{pct}</span></>}
         {anchor && <><span>·</span><span className="inline-flex items-center gap-0.5">

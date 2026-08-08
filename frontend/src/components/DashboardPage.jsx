@@ -108,7 +108,7 @@ function MeetingActionsBar({
   // the single mobile kebab, so the two can never offer different actions.
   const moveItems = canMove && (
     <>
-      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/35">Move to</div>
+      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--db-text-faint)]">Move to</div>
       <DropdownMenuItem
         disabled={curWs === null}
         onSelect={() => onMoveMeeting?.(null)}
@@ -177,7 +177,7 @@ function MeetingActionsBar({
     </>
   )
 
-  const menuContentClass = 'dashboard-body-font w-56 rounded-xl border-[#2f2f2f] bg-[#0b0b0b] p-1.5'
+  const menuContentClass = 'dashboard-popup dashboard-body-font w-56 rounded-xl p-1.5'
 
   return (
     <>
@@ -279,7 +279,7 @@ function AnalyzeButton({ loading, handleAnalyzeClick, cancelActiveAnalysis, tran
         Analyze Meeting
       </Button>
       {!transcript && (
-        <p className="text-center text-[11px] text-white/40">Paste, upload, record, or join a meeting to analyze.</p>
+        <p className="text-center text-[11px] text-[color:var(--db-text-faint)]">Paste, upload, record, or join a meeting to analyze.</p>
       )}
     </div>
   )
@@ -426,7 +426,7 @@ function NewMeetingPanel(props) {
                 {props.transcribing ? `⏳ ${props.transcribeStatus || 'Working…'}` : '📎 Choose Audio or Video'}
               </button>
               {!props.transcribing && !props.transcript && !props.transcribeError && (
-                <p className="text-[10.5px] leading-relaxed text-white/38">
+                <p className="text-[10.5px] leading-relaxed text-[color:var(--db-text-faint)]">
                   Audio or video. Video audio is extracted in your browser — the first
                   large file loads a converter (~30MB, cached after). Keep recordings
                   under ~70 min.
@@ -574,9 +574,9 @@ function NewMeetingPanel(props) {
               {/* Where this live meeting's notes will be saved — the bot's workspace is
                   fixed at join, so this stays accurate even if the global chip changes. */}
               {botActive && (
-                <p className="px-1 text-[10.5px] text-white/40">
+                <p className="px-1 text-[10.5px] text-[color:var(--db-text-faint)]">
                   Recording into:{' '}
-                  <span className="font-medium text-white/65">
+                  <span className="font-medium text-[color:var(--db-text-soft)]">
                     {props.botWorkspaceId
                       ? (props.workspaces?.find((w) => w.id === props.botWorkspaceId)?.name ?? 'a workspace')
                       : 'Personal'}
@@ -1863,7 +1863,7 @@ export default function DashboardPage(props) {
             props.shareLoading ? (
               <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 py-16">
                 <div className="h-8 w-8 animate-pulse rounded-xl" style={{ background: 'linear-gradient(135deg, #0284c7, #0d9488)' }} />
-                <p className="text-xs text-white/40">Loading shared meeting…</p>
+                <p className="text-xs text-[color:var(--db-text-faint)]">Loading shared meeting…</p>
               </div>
             ) : props.shareData ? (
               <Suspense fallback={<SkeletonCard lines={4} tall />}>
@@ -1873,9 +1873,9 @@ export default function DashboardPage(props) {
                   readOnly
                   transcript={props.shareData.transcript || ''}
                 />
-                <section className="mt-8 rounded-xl border border-white/[0.08] bg-white/[0.02] px-5 py-6 text-center">
-                  <p className="text-sm font-semibold text-white">Analyze your own meetings</p>
-                  <p className="mt-1 text-xs text-white/85">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
+                <section className="mt-8 rounded-xl border border-[color:var(--db-border)] bg-[var(--db-fill)] px-5 py-6 text-center">
+                  <p className="text-sm font-semibold text-[color:var(--db-text)]">Analyze your own meetings</p>
+                  <p className="mt-1 text-xs text-[color:var(--db-text-soft)]">Paste any transcript — 8 AI agents produce a full analysis in seconds.</p>
                   <a
                     href={`${window.location.origin}/`}
                     className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/[0.10] px-4 text-[13px] font-semibold text-cyan-200 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.16]"
@@ -1886,7 +1886,7 @@ export default function DashboardPage(props) {
               </Suspense>
             ) : (
               <div className="mx-auto max-w-2xl py-16 text-center">
-                <p className="text-sm text-white/50">This shared meeting could not be found or has expired.</p>
+                <p className="text-sm text-[color:var(--db-text-muted)]">This shared meeting could not be found or has expired.</p>
               </div>
             )
           )}
@@ -2055,7 +2055,7 @@ export default function DashboardPage(props) {
       )}
 
       <Dialog open={showGateDialog} onOpenChange={setShowGateDialog}>
-        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-[color:var(--db-text)] sm:max-w-sm">
+        <DialogContent className="dashboard-popup dashboard-body-font text-[color:var(--db-text)] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold text-[color:var(--db-text)]">More meetings needed</DialogTitle>
             <DialogDescription className="mt-2 text-sm leading-5 text-[color:var(--db-text-muted)]">
@@ -2075,10 +2075,10 @@ export default function DashboardPage(props) {
       </Dialog>
 
       <Dialog open={showSignInGate} onOpenChange={setShowSignInGate}>
-        <DialogContent className="dashboard-body-font border-[#2f2f2f] bg-[#0f0f11] text-white sm:max-w-sm">
+        <DialogContent className="dashboard-popup dashboard-body-font text-[color:var(--db-text)] sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold text-white">Sign in to access this</DialogTitle>
-            <DialogDescription className="mt-2 text-sm leading-5 text-white/58">
+            <DialogTitle className="text-base font-semibold text-[color:var(--db-text)]">Sign in to access this</DialogTitle>
+            <DialogDescription className="mt-2 text-sm leading-5 text-[color:var(--db-text-muted)]">
               Create a free account to analyze your own meetings, save history, and use the full dashboard.
             </DialogDescription>
           </DialogHeader>
@@ -2099,7 +2099,7 @@ export default function DashboardPage(props) {
             <button
               type="button"
               onClick={() => setShowSignInGate(false)}
-              className="rounded-full px-4 py-1.5 text-sm font-medium text-white/55 transition hover:text-white/80"
+              className="rounded-full px-4 py-1.5 text-sm font-medium text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)]"
             >
               Not now
             </button>

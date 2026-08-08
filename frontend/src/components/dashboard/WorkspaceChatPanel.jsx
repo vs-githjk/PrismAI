@@ -98,7 +98,7 @@ export default function WorkspaceChatPanel({ user }) {
     <section className={`${glassCard} flex h-full min-h-0 flex-col`} style={cardGlowStyle} aria-label="Ask Prism">
       <header className="border-b px-4 py-3" style={{ borderColor: 'var(--db-border)' }}>
         <div className="flex items-center gap-2 text-[color:var(--db-text)]">
-          <Sparkles className="h-4 w-4 text-[color:var(--db-accent-text)]" />
+          <Sparkles className="h-4 w-4 text-[color:var(--db-text-muted)]" />
           <span className="text-sm font-semibold">Ask Prism</span>
         </div>
         <p className={`${subtleText} mt-0.5`}>Across your saved meetings</p>

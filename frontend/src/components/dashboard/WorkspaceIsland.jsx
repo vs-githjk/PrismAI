@@ -107,7 +107,7 @@ export default function WorkspaceIsland(props) {
           <DropdownMenuGroup>
             <DropdownMenuItem
               onSelect={() => { closeWsMenu(); switchWorkspace(null) }}
-              className="cursor-pointer gap-2 px-2.5 py-2 text-[12.5px] font-semibold text-[color:var(--db-text-soft)] focus:bg-cyan-300/[0.08]"
+              className="cursor-pointer gap-2 px-2.5 py-2 text-[12.5px] font-semibold text-[color:var(--db-text-soft)] focus:bg-[var(--db-accent-fill)]"
             >
               <span className="grid h-5 w-5 place-items-center rounded bg-[var(--db-fill-strong)] text-[10px] font-bold text-[color:var(--db-text-muted)]">
                 P
@@ -119,7 +119,7 @@ export default function WorkspaceIsland(props) {
             {workspaces.map((ws) => (
               <div
                 key={ws.id}
-                className="group flex items-center rounded-md focus-within:bg-cyan-300/[0.06] hover:bg-cyan-300/[0.06]"
+                className="group flex items-center rounded-md focus-within:bg-[var(--db-accent-fill)] hover:bg-[var(--db-accent-fill)]"
               >
                 <button
                   type="button"

@@ -65,7 +65,7 @@ const IMPORTANCE = {
 const DUE_TINT = {
   overdue: { color: '#fca5a5', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.30)' },
   soon: { color: '#fcd34d', bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.30)' },
-  later: { color: 'rgba(255,255,255,0.55)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.12)' },
+  later: { color: 'var(--db-text-muted)', bg: 'var(--db-fill)', border: 'var(--db-border-strong)' },
 }
 
 const JUNK = ['(none)', 'none', '(empty)', 'n/a']
@@ -437,7 +437,7 @@ export default function ProxyProfile({
                       {/* Full text, not line-clamp-2: this is what Prism will say
                           out loud on your behalf — you should be able to read it. */}
                       {body && (
-                        <p className={`${T.body} mt-3 whitespace-pre-wrap break-words rounded-lg border border-[color:var(--db-border)] bg-black/20 px-3 py-2.5 text-[color:var(--db-text-soft)]`}>
+                        <p className={`${T.body} mt-3 whitespace-pre-wrap break-words rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill-strong)] px-3 py-2.5 text-[color:var(--db-text-soft)]`}>
                           {body}
                         </p>
                       )}

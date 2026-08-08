@@ -1372,6 +1372,13 @@ h1, h2, h3, .font-display {
   outline: 2px solid rgba(34, 211, 238, 0.45);
   outline-offset: 2px;
 }
+/* The dark-tuned 45%-alpha ring computes to ~1.3:1 against the light-theme
+   matte paper (--db-page-bg #f1efeb) — nowhere near the 3:1 WCAG 1.4.11
+   non-text contrast floor. Solid --db-accent (the light theme's darker
+   teal shade) clears ~3.2-3.5:1 against both --db-page-bg and --db-card. */
+.theme-light.dashboard-page :is(button, a, select, [role="tab"]):focus-visible {
+  outline: 2px solid var(--db-accent);
+}
 
 /* ============================================================
    MOBILE SHELL (≤1023px) — the fixed 300px sidebar + margin-content

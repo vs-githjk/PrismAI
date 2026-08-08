@@ -372,11 +372,21 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
         <section className="flex min-w-0 flex-col items-center gap-1.5 py-1">
           {special ? (
             // Health triangle (clarity/engagement/action) is the wrong lens for a
-            // pitch or interview — show the type's own headline score instead.
-            <>
-              <SemicircularGauge score={Number(contentAnalysis.headline_score) || 0} />
-              <p className="mt-1.5 text-sm font-medium text-white/55">{contentAnalysis.score_label || 'Score'}</p>
-            </>
+            // pitch or interview — show the type's own headline score instead. A
+            // missing score must not coerce to a confident 0 (Number(null) is 0
+            // and finite) — check null/undefined/'' first, same guard as the
+            // health-score branch below, and fall back to the same ungraded state.
+            contentAnalysis.headline_score !== null && contentAnalysis.headline_score !== undefined && contentAnalysis.headline_score !== '' ? (
+              <>
+                <SemicircularGauge score={Number(contentAnalysis.headline_score)} />
+                <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">{contentAnalysis.score_label || 'Score'}</p>
+              </>
+            ) : (
+              <>
+                <MeetingHealthTriangle ungraded size={216} />
+                <p className="mt-1.5 text-sm font-medium text-[color:var(--db-text-muted)]">Not graded</p>
+              </>
+            )
           ) : hasBreakdown ? (
             // Explicit size: the rail track tops out at 240px; the triangle's own
             // default (248px) would overflow it. 216px leaves 24px of horizontal

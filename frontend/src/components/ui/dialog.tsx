@@ -64,7 +64,7 @@ function DialogContent({
         className={cn(
           // `dashboard-popup` = the app's real dark-glass modal panel (matches the
           // hand-rolled `fixed inset-0` modals) instead of the stock flat `bg-popover`.
-          "dashboard-popup fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl p-6 text-sm text-white/85 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "dashboard-popup fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl p-6 text-sm text-[color:var(--db-text-soft)] duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -132,7 +132,7 @@ function DialogTitle({
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-none font-semibold text-white/90",
+        "font-heading text-base leading-none font-semibold text-[color:var(--db-text)]",
         className
       )}
       {...props}
@@ -148,7 +148,7 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm text-white/55 *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-white/80",
+        "text-sm text-[color:var(--db-text-muted)] *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-[color:var(--db-text)]",
         className
       )}
       {...props}

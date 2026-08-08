@@ -160,7 +160,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
       <div className="flex flex-col rounded-2xl overflow-hidden" style={{ width: 'min(900px, 94vw)', height: '88vh', maxHeight: '900px', background: '#0d0d12', border: '1px solid rgba(34,211,238,0.2)' }}>
         {/* Header */}
-        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--db-border)' }}>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-[color:var(--db-text)]">Have Prism represent you</p>
             <p className="text-[11px] text-gray-500 truncate">{meeting.label || 'Upcoming meeting'}</p>
@@ -234,7 +234,7 @@ export default function StandInComposer({ meeting, user, onClose }) {
             </form>
 
             {/* Editable approve box */}
-            <div className="px-4 pb-4 pt-2 space-y-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="px-4 pb-4 pt-2 space-y-2" style={{ borderTop: '1px solid var(--db-border)' }}>
               {isApproved && (
                 <p className="text-[10.5px] text-cyan-300/80">
                   ✓ Already approved for this meeting{isDirty ? ' — re-approve to save your edits.' : '.'}

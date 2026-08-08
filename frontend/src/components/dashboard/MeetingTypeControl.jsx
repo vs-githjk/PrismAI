@@ -17,7 +17,7 @@ export default function MeetingTypeControl({
   return (
     <label className="inline-flex items-center gap-2" title={title}>
       {label && (
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-white/40">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--db-text-faint)]">
           {label}
         </span>
       )}
@@ -26,15 +26,15 @@ export default function MeetingTypeControl({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled || loading}
-          className="appearance-none rounded-lg border border-white/[0.12] bg-white/[0.05] py-1 pl-2.5 pr-7 text-[12px] font-medium text-white/85 outline-none transition hover:border-cyan-400/40 focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="appearance-none rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] py-1 pl-2.5 pr-7 text-[12px] font-medium text-[color:var(--db-text-soft)] outline-none transition hover:border-[color:var(--db-accent)] focus:border-[color:var(--db-accent)] focus:ring-1 focus:ring-[color:var(--db-accent-fill)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-[#0b1120] text-white">
+            <option key={o.value} value={o.value} className="bg-[color:var(--db-card)] text-[color:var(--db-text)]">
               {o.label}
             </option>
           ))}
         </select>
-        <span className="pointer-events-none absolute right-2 flex items-center text-white/40">
+        <span className="pointer-events-none absolute right-2 flex items-center text-[color:var(--db-text-faint)]">
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : (
             <svg width="9" height="9" viewBox="0 0 10 6" fill="none" aria-hidden="true">
               <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

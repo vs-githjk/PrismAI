@@ -82,7 +82,7 @@ export default function SentimentCard({ sentiment }) {
               </div>
               <span className="text-sm font-bold text-gray-300">{score}<span className="text-xs text-gray-500 font-normal">/100</span></span>
             </div>
-            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--db-fill-strong)' }}>
               <div
                 className={`h-2 rounded-full bg-gradient-to-r ${config.bar} transition-all duration-1000`}
                 style={{ width: `${score}%` }}
@@ -105,7 +105,7 @@ export default function SentimentCard({ sentiment }) {
                       <span className="text-xs font-medium text-gray-300">{s.name}</span>
                       <span className="text-xs text-gray-500">{tone.label}</span>
                     </div>
-                    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--db-fill-strong)' }}>
                       <div
                         className={`h-1.5 rounded-full bg-gradient-to-r ${tone.bar} transition-all duration-1000`}
                         style={{ width: `${spScore}%` }}

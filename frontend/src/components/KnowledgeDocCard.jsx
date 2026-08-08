@@ -110,7 +110,7 @@ export default function KnowledgeDocCard({ doc, onChange }) {
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => setViewing(true)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-cyan-300"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-cyan-300"
             title="View"
             aria-label="View document"
           >
@@ -118,28 +118,28 @@ export default function KnowledgeDocCard({ doc, onChange }) {
           </button>
           <button
             onClick={handleResync}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-cyan-300"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-cyan-300"
             title="Re-sync"
             aria-label="Re-sync document"
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
           {deleting ? (
-            <span className="flex h-7 w-7 items-center justify-center text-rose-300" aria-label="Deleting">
+            <span className="flex h-9 w-9 items-center justify-center text-rose-300" aria-label="Deleting">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             </span>
           ) : confirming ? (
             <>
               <button
                 onClick={confirmDelete}
-                className="flex h-7 items-center justify-center gap-1 rounded-lg border border-rose-400/40 bg-rose-400/15 px-2 text-[11px] font-medium text-rose-200 transition hover:bg-rose-400/25"
+                className="flex h-9 items-center justify-center gap-1 rounded-lg border border-rose-400/40 bg-rose-400/15 px-2 text-[11px] font-medium text-rose-200 transition hover:bg-rose-400/25"
                 aria-label={`Confirm delete ${doc.name}`}
               >
                 <Check className="h-3.5 w-3.5" /> Delete
               </button>
               <button
                 onClick={cancelDelete}
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-[color:var(--db-text)]"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-[color:var(--db-text)]"
                 aria-label="Cancel delete"
               >
                 <X className="h-3.5 w-3.5" />
@@ -148,7 +148,7 @@ export default function KnowledgeDocCard({ doc, onChange }) {
           ) : (
             <button
               onClick={armDelete}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-rose-400/30 hover:text-rose-300"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[color:var(--db-border-strong)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-rose-400/30 hover:text-rose-300"
               title="Delete"
               aria-label="Delete document"
             >

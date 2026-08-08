@@ -278,7 +278,7 @@ export default function StatusIsland({ status }) {
     // nothing to this box's width — without it the wrapper collapsed to its own
     // px-12 padding (96px) and the pill's max-w-full clipped "Analysed" mid-word.
     <div
-      className="relative flex h-[72px] w-full select-none items-center justify-center px-6"
+      className="relative flex h-[var(--dashboard-topbar-h)] w-full select-none items-center justify-center px-6"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >

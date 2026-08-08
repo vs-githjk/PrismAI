@@ -151,25 +151,25 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
         type="button"
         onClick={() => (signedOut ? null : setOpen((o) => !o))}
         aria-label={badge ? `Notifications, ${badge} unread` : 'Notifications'}
-        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.04] text-white/70 transition hover:border-cyan-400/45 hover:bg-white/[0.07] hover:text-white"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-accent)] hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]"
       >
         <Bell className="h-[19px] w-[19px]" aria-hidden="true" />
         {badge > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-[18px] text-white ring-2 ring-[#0e0f13]">
+          <span className="absolute -right-0.5 -top-0.5 flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-[18px] text-white ring-2 ring-[color:var(--db-island-base)]">
             {badge > 9 ? '9+' : badge}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.10] bg-[#0e0f13] shadow-2xl">
-          <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
-            <span className="text-[13px] font-semibold text-white/85">Notifications</span>
+        <div className="dashboard-popup absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between border-b border-[color:var(--db-border)] px-4 py-3">
+            <span className="text-[13px] font-semibold text-[color:var(--db-text)]">Notifications</span>
             {badge > 0 && (
               <button
                 type="button"
                 onClick={clearAll}
-                className="flex items-center gap-1 text-[11px] font-medium text-white/45 transition hover:text-white/80"
+                className="flex items-center gap-1 text-[11px] font-medium text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)]"
               >
                 <Check className="h-3.5 w-3.5" /> Clear all
               </button>
@@ -178,7 +178,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
 
           <div className="max-h-[min(420px,60vh)] overflow-y-auto">
             {visible.length === 0 ? (
-              <div className="px-4 py-10 text-center text-[13px] text-white/40">You're all caught up.</div>
+              <div className="px-4 py-10 text-center text-[13px] text-[color:var(--db-text-muted)]">You're all caught up.</div>
             ) : (
               visible.map((n) => {
                 const meta = META[n.type] || META.meeting_ready
@@ -195,7 +195,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                 return (
                   <div
                     key={n.id}
-                    className="group flex items-start gap-2 border-b border-white/[0.04] pl-4 pr-2 py-3 transition hover:bg-white/[0.04]"
+                    className="group flex items-start gap-2 border-b border-[color:var(--db-border)] pl-4 pr-2 py-3 transition hover:bg-[var(--db-fill)]"
                   >
                     <button
                       type="button"
@@ -206,14 +206,14 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                         <Icon className={`h-[17px] w-[17px] ${meta.color}`} aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-semibold text-white/90">{headline}</span>
+                        <span className="block truncate text-[13px] font-semibold text-[color:var(--db-text)]">{headline}</span>
                         {badge && (
                           <span className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${overdue ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
                             {badge}
                           </span>
                         )}
-                        {sub && <span className="mt-0.5 block truncate text-[12.5px] text-white/55">{sub}</span>}
-                        {time && <span className="mt-1 block text-[11px] text-white/35">{time}</span>}
+                        {sub && <span className="mt-0.5 block truncate text-[12.5px] text-[color:var(--db-text-muted)]">{sub}</span>}
+                        {time && <span className="mt-1 block text-[11px] text-[color:var(--db-text-faint)]">{time}</span>}
                       </span>
                     </button>
                     <button
@@ -221,7 +221,7 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
                       onClick={(e) => { e.stopPropagation(); dismissItem(n) }}
                       aria-label="Dismiss notification"
                       title="Dismiss"
-                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white group-hover:text-white/75"
+                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[color:var(--db-text-muted)] transition hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)] group-hover:text-[color:var(--db-text-soft)]"
                     >
                       <Check className="h-4 w-4" />
                     </button>
@@ -238,20 +238,20 @@ export default function NotificationBell({ onOpenMeeting, signedOut = false }) {
               type="button"
               onClick={enablePush}
               disabled={pushBusy}
-              className="flex w-full items-center justify-center gap-2 border-t border-white/[0.07] px-4 py-3 text-[12px] font-medium text-cyan-300/85 transition hover:bg-white/[0.04] hover:text-cyan-200 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 border-t border-[color:var(--db-border)] px-4 py-3 text-[12px] font-medium text-cyan-300/85 transition hover:bg-[var(--db-fill)] hover:text-cyan-200 disabled:opacity-50"
             >
               <BellRing className="h-4 w-4" />
               {pushBusy ? 'Enabling…' : 'Enable meeting reminders'}
             </button>
           )}
           {pushState === 'subscribed' && (
-            <div className="flex items-center justify-between border-t border-white/[0.07] px-4 py-2.5 text-[11px] text-white/40">
+            <div className="flex items-center justify-between border-t border-[color:var(--db-border)] px-4 py-2.5 text-[11px] text-[color:var(--db-text-faint)]">
               <span className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" /> Meeting reminders on</span>
               <button
                 type="button"
                 onClick={disablePush}
                 disabled={pushBusy}
-                className="font-medium text-white/45 transition hover:text-white/80 disabled:opacity-50"
+                className="font-medium text-[color:var(--db-text-muted)] transition hover:text-[color:var(--db-text)] disabled:opacity-50"
               >
                 {pushBusy ? 'Turning off…' : 'Turn off'}
               </button>
