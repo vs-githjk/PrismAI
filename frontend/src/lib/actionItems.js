@@ -96,3 +96,10 @@ export function byPriority(a, b) {
   if (OWN_RANK(a) !== OWN_RANK(b)) return OWN_RANK(a) - OWN_RANK(b)
   return new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()
 }
+
+/** Visual band for a row, aligned 1:1 with byPriority's DUE_RANK so banded
+ *  rendering of a byPriority-sorted list is always contiguous. */
+export function dueBand(row) {
+  const rank = DUE_RANK[dueInfo(row.item, row.entry?.date).status] ?? 2
+  return rank === 0 ? 'overdue' : rank === 1 ? 'soon' : 'open'
+}

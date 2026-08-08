@@ -5,6 +5,7 @@ import {
   ChevronRight,
   DoorOpen,
   Home,
+  ListTodo,
   Lock,
   LogIn,
   Plus,
@@ -72,6 +73,8 @@ export default function DashboardSidebar(props) {
     filteredHistory = [],
     activeView,
     onGoHome,
+    onOpenActions,
+    actionsCount = 0,
     onOpenTrend,
     onOpenKnowledge,
     onOpenStandin,
@@ -107,6 +110,7 @@ export default function DashboardSidebar(props) {
 
   const groups = useMemo(() => groupMeetings(filteredHistory), [filteredHistory])
   const onHome = activeView === 'home'
+  const onActions = activeView === 'actions'
   const onTrend = activeView === 'intelligence'
   const onKnowledge = activeView === 'knowledge'
   const onStandin = activeView === 'standin'
@@ -136,11 +140,13 @@ export default function DashboardSidebar(props) {
 
   return (
     <aside id="dashboard-sidebar-nav" className="dashboard-sidebar dashboard-island flex flex-col" aria-label="Dashboard navigation">
-      {/* Pinned: Home + Trend + Knowledge. When signed out, each is locked and
-          clicking opens the sign-in gate instead of navigating. */}
+      {/* Pinned: Home + Actions + Trend + Calendar + Knowledge + Stand-in. When
+          signed out, each is locked and clicking opens the sign-in gate instead
+          of navigating. */}
       <div className="space-y-1 px-3 pt-4">
         {[
           { key: 'home', label: 'Home', Icon: Home, active: onHome, onClick: onGoHome },
+          { key: 'actions', label: 'Actions', Icon: ListTodo, active: onActions, onClick: onOpenActions, badge: actionsCount },
           { key: 'trend', label: 'Trend', Icon: TrendingUp, active: onTrend, onClick: onOpenTrend },
           { key: 'calendar', label: 'Calendar', Icon: CalendarDays, active: onCalendar, onClick: onOpenCalendar },
           { key: 'knowledge', label: 'Knowledge', Icon: BookOpen, active: onKnowledge, onClick: onOpenKnowledge },

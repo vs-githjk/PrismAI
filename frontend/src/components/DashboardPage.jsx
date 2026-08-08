@@ -19,6 +19,7 @@ import { formatHistoryDate } from './dashboard/chrome'
 import { apiFetch } from '../lib/api'
 import { seenKeyFor, STANDIN_READ_EVENT } from '../lib/standinRead'
 import { deriveDisplayTitle } from '../lib/insights'
+import { collectOpenActions } from '../lib/actionItems'
 import StatsCanvas from './dashboard/StatsCanvas'
 import MeetingTypeControl from './dashboard/MeetingTypeControl'
 import { INPUT_TYPE_OPTIONS } from '../lib/meetingType'
@@ -55,6 +56,7 @@ import WorkspaceIsland from './dashboard/WorkspaceIsland'
 
 const MeetingView = lazy(() => import('./dashboard/MeetingView'))
 const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
+const ActionsView = lazy(() => import('./dashboard/ActionsView'))
 const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
@@ -739,8 +741,6 @@ export default function DashboardPage(props) {
     if (props.liveToken) return 'live'
     if (props.shareData || props.shareLoading) return 'shared'
     const stored = sessionStorage.getItem('prism_active_view')
-    // 'actions' was removed as a destination (ADR 0002) — its home is now Trend.
-    if (stored === 'actions') return 'intelligence'
     return stored ||
       (sessionStorage.getItem('prism_last_meeting_id') ? 'meeting' : 'home')
   })
@@ -1471,6 +1471,14 @@ export default function DashboardPage(props) {
     teams: !!props.integrations?.teams_webhook,
   }), [props.calendarConnected, props.integrations])
 
+  // True count of open action items across the active scope — feeds the sidebar
+  // nav pill. Same collector the standalone Actions page uses, so the two can
+  // never disagree.
+  const actionsCount = useMemo(
+    () => collectOpenActions(props.history, props.user).length,
+    [props.history, props.user],
+  )
+
   // Trend (cross-meeting intelligence) is its own top-level view, gated on
   // having at least two meetings to compare.
   function handleOpenTrend() {
@@ -1490,15 +1498,17 @@ export default function DashboardPage(props) {
         ? (props.shareData?.title || 'Shared meeting')
         : activeView === 'intelligence'
           ? 'Trend'
-          : activeView === 'knowledge'
-            ? 'Knowledge'
-            : activeView === 'standin'
-              ? 'Stand-in'
-              : activeView === 'calendar'
-                ? 'Calendar'
-                : activeView === 'meeting' && (currentMeeting || props.result)
-                  ? deriveDisplayTitle(currentMeeting || { result: props.result })
-                  : 'Home'
+          : activeView === 'actions'
+            ? 'Actions'
+            : activeView === 'knowledge'
+              ? 'Knowledge'
+              : activeView === 'standin'
+                ? 'Stand-in'
+                : activeView === 'calendar'
+                  ? 'Calendar'
+                  : activeView === 'meeting' && (currentMeeting || props.result)
+                    ? deriveDisplayTitle(currentMeeting || { result: props.result })
+                    : 'Home'
 
   // Status island state — single source of truth, derived per active view:
   //  - live: maps the lifted live status (recording/joining → live, processing →
@@ -1629,6 +1639,8 @@ export default function DashboardPage(props) {
         filteredHistory={filteredHistory}
         activeView={activeView}
         onGoHome={() => persistView('home')}
+        onOpenActions={() => persistView('actions')}
+        actionsCount={actionsCount}
         onOpenStandin={() => persistView('standin')}
         standinBadge={standinBadge}
         collapsed={railCollapsed}
@@ -1820,6 +1832,17 @@ export default function DashboardPage(props) {
                 teamsWebhook={props.integrations?.teams_webhook || ''}
                 user={props.user}
                 onToggleAction={props.toggleHistoryActionItem}
+              />
+            </Suspense>
+          )}
+          {activeView === 'actions' && (
+            <Suspense fallback={<SkeletonCard lines={4} tall />}>
+              <ActionsView
+                history={props.history}
+                user={props.user}
+                onToggleAction={props.toggleHistoryActionItem}
+                onOpenMeeting={handleSelectMeeting}
+                onOpenTrend={handleOpenTrend}
               />
             </Suspense>
           )}

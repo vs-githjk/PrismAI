@@ -5,7 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { byPriority, collectOpenActions, scopeFilter } from '../src/lib/actionItems.js'
+import { byPriority, collectOpenActions, scopeFilter, dueBand } from '../src/lib/actionItems.js'
 
 const daysFromNow = (n) => {
   const d = new Date()
@@ -63,4 +63,18 @@ test('collectOpenActions tags ownership for the hub filters', () => {
   assert.equal(all.length, 3)
   assert.deepEqual(scopeFilter(all, 'mine').map((r) => r.item.task), ['mine'])
   assert.deepEqual(scopeFilter(all, 'unassigned').map((r) => r.item.task), ['nobody'])
+})
+
+test('dueBand buckets rows by live urgency, matching byPriority tiers', () => {
+  const mk = (due, date = '2026-08-01T10:00') => ({ item: { task: 'x', due_date: due }, entry: { date } })
+  const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10)
+
+  assert.equal(dueBand(mk(iso(-2))), 'overdue')  // recently past
+  assert.equal(dueBand(mk(iso(1))), 'soon')      // within 3 days
+  assert.equal(dueBand(mk(iso(30))), 'open')     // far future
+  assert.equal(dueBand(mk(undefined)), 'open')   // undated
+  // A >14-day-old deadline is dueInfo status 'stale', which byPriority ranks
+  // with the rest (DUE_RANK[...] ?? 2) — so the band must be 'open', never a
+  // live-urgency band. This is the assertion that keeps the two in lockstep.
+  assert.equal(dueBand(mk(iso(-40))), 'open')
 })
