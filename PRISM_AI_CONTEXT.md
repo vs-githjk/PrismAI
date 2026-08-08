@@ -390,9 +390,11 @@ Share links bypass the landing. Logo in the header navigates back to the landing
 
 **Height-aware CSS breakpoints** in `index.css`: at `max-height: 1000px` the hero scales to 0.78, agent grid hides, headline shrinks. At `max-height: 800px` more aggressive compression. This covers standard laptop viewports.
 
-### Landing Visual Layer (as of Apr 2026)
+### Landing Visual Layer (as of Apr 2026; surface-language note amended Aug 2026 — north-star migration)
 
-The landing page may keep the prism metaphor and WebGL effects, but the surrounding UI should follow the current shadcn + cyan/sky direction. Use solid/near-solid surfaces and crisp borders for normal UI. Do not treat glass panels as the default landing or dashboard language.
+The landing page may keep the prism metaphor and WebGL effects, but the surrounding UI should follow the current shadcn + cyan/sky direction. Use solid/near-solid surfaces and crisp borders for normal UI. On the landing/marketing site, glass panels are still not the default — they're reserved for CTAs, focused highlights, or special moments. Landing is unchanged by the north-star migration below.
+
+**Dashboard surface language (Aug 2026):** the dashboard's default surface is matte, not glass — a solid, opaque base color per surface (`--db-card` for content cards, `--db-island-base` for the sidebar/topbar chrome, `--db-popup-base` for menus/dropdowns) under a shallow one-way gradient film. Backdrop blur is reserved for genuinely transient layers only: `.dashboard-status-island`, Radix dialog/dropdown/popover overlays, and the chat image lightbox — never a surface that's on screen for the life of the page. All of it is theme-token-driven in `frontend/src/index.css` (`--db-*`, `:root` for dark + `.theme-light` overrides), including a status-colour triad — `--db-success`/`--db-warn`/`--db-danger`, each with a matching `-fill` — so status colour has a real per-theme token instead of a raw Tailwind shade that only clears contrast in one theme. `frontend/tests/themeTokens.test.mjs` enforces dark/light parity across the full token set.
 
 Three layered WebGL effects sit behind landing content, stacked in DOM order where used (all `position:absolute, inset:0, pointer-events:none`):
 

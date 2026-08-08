@@ -4,10 +4,18 @@ import { deleteDoc, resyncDoc, updateDoc } from '../lib/knowledge'
 import { glassCard, cardGlowStyle, subtleText } from './dashboard/dashboardStyles'
 import KnowledgeDocViewer from './KnowledgeDocViewer'
 
+// Token-driven (Aug 2026 contrast fix): the prior raw Tailwind alpha classes
+// (e.g. text-rose-300 on bg-rose-400/[0.10]) rendered fine on the dark theme's
+// additive-tint composite but collapsed to ~1.4-1.65:1 on light theme's
+// subtractive-tint --db-card composite — effectively invisible. `public` and
+// `confidential` map to the --db-success/--db-danger pair (both calibrated for
+// AA on --db-card in both themes, see index.css). `internal` has no matching
+// hue in the token set, so it uses the neutral text/fill pair instead of an
+// arbitrary hardcoded blue.
 const SENSITIVITY_META = {
-  public:       { label: 'Public',       cls: 'border-emerald-400/30 bg-emerald-400/[0.10] text-emerald-300' },
-  internal:     { label: 'Internal',     cls: 'border-sky-400/30 bg-sky-400/[0.10] text-sky-300' },
-  confidential: { label: 'Confidential', cls: 'border-rose-400/30 bg-rose-400/[0.10] text-rose-300' },
+  public:       { label: 'Public',       cls: 'border-[color:var(--db-success)] bg-[color:var(--db-success-fill)] text-[color:var(--db-success)]' },
+  internal:     { label: 'Internal',     cls: 'border-[color:var(--db-border-strong)] bg-[color:var(--db-fill-strong)] text-[color:var(--db-text-soft)]' },
+  confidential: { label: 'Confidential', cls: 'border-[color:var(--db-danger)] bg-[color:var(--db-danger-fill)] text-[color:var(--db-danger)]' },
 }
 
 const STATUS_META = {

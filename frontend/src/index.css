@@ -1094,7 +1094,7 @@ h1, h2, h3, .font-display {
     --db-popup-base: #fbfaf7;
     --db-scrim: rgba(28, 27, 23, 0.35);
     /* emerald-800 clears 4.5:1 text / 3:1 icon against BOTH real composites
-       (6.23:1 on the list-row's --db-fill-over-card, 7.36:1 on bare
+       (6.817:1 on the list-row's --db-fill-over-card, 7.36:1 on bare
        --db-popup-base). rose-700 clears the same on bare --db-popup-base
        (6.02:1) — the only surface the danger text renders on here. */
     --db-success: #065f46;

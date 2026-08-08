@@ -275,10 +275,16 @@ export default function DashboardSidebar(props) {
           >
             <span className="status-island-livedot relative h-2 w-2 shrink-0 rounded-full bg-rose-500" aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              <span className={`block truncate text-[14px] font-semibold leading-5 ${liveActive ? 'text-rose-100' : 'text-[color:var(--db-text)]'}`}>
+              {/* text-rose-100 measured 1.05:1 on light theme's active-row tint
+                  (--db-danger fill over --db-island-base) — effectively invisible.
+                  --db-danger is calibrated for AA against that exact composite
+                  in both themes (see index.css). */}
+              <span className={`block truncate text-[14px] font-semibold leading-5 ${liveActive ? 'text-[color:var(--db-danger)]' : 'text-[color:var(--db-text)]'}`}>
                 Live meeting
               </span>
-              <span className="block truncate text-[11.5px] leading-4 text-rose-300/80">
+              {/* text-rose-300/80 measured 1.49-1.61:1 on light theme (inactive
+                  and active row backgrounds alike) — same failure as above. */}
+              <span className="block truncate text-[11.5px] leading-4 text-[color:var(--db-danger)]">
                 {LIVE_LABELS[liveStatus] || 'Connecting…'}
               </span>
             </span>
