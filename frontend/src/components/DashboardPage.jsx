@@ -2037,7 +2037,8 @@ export default function DashboardPage(props) {
               onClick={() => setChatOpen(true)}
               aria-label="Open chat"
               aria-pressed={false}
-              className="dashboard-chat-trigger fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full border border-cyan-400/35 bg-[#0c0d0f] text-cyan-200 shadow-[0_12px_30px_rgba(0,0,0,0.4)] transition-all duration-200 ease-out hover:scale-105 hover:border-cyan-300/55 hover:text-cyan-100"
+              className="dashboard-chat-trigger fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--db-accent-fill)] bg-[color:var(--db-card)] text-[color:var(--db-accent-text)] transition-all duration-200 ease-out hover:scale-105 hover:border-[color:var(--db-accent)] hover:text-[color:var(--db-accent)]"
+              style={{ boxShadow: 'var(--db-shadow)' }}
             >
               <MessagesSquare className="h-5 w-5" aria-hidden="true" />
             </button>

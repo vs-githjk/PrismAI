@@ -33,14 +33,14 @@ export function MarkdownMessage({ children }) {
         ul: ({ node, ...p }) => <ul className="mb-2 last:mb-0 list-disc space-y-1 pl-4" {...p} />,
         ol: ({ node, ...p }) => <ol className="mb-2 last:mb-0 list-decimal space-y-1 pl-4" {...p} />,
         li: ({ node, ...p }) => <li className="leading-relaxed" {...p} />,
-        strong: ({ node, ...p }) => <strong className="font-semibold text-white" {...p} />,
-        a: ({ node, ...p }) => <a className="text-cyan-300 underline underline-offset-2" target="_blank" rel="noreferrer" {...p} />,
+        strong: ({ node, ...p }) => <strong className="font-semibold text-[color:var(--db-text)]" {...p} />,
+        a: ({ node, ...p }) => <a className="text-[color:var(--db-accent-text)] underline underline-offset-2" target="_blank" rel="noreferrer" {...p} />,
         code: ({ node, inline, ...p }) => inline
-          ? <code className="rounded bg-white/10 px-1 py-0.5 text-[12px]" {...p} />
-          : <code className="block overflow-x-auto rounded-md bg-black/40 p-2 text-[12px]" {...p} />,
-        h1: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
-        h2: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
-        h3: ({ node, ...p }) => <p className="mb-1 font-semibold text-white" {...p} />,
+          ? <code className="rounded bg-[color:var(--db-fill-strong)] px-1 py-0.5 text-[12px]" {...p} />
+          : <code className="block overflow-x-auto rounded-md bg-[color:var(--db-fill-strong)] p-2 text-[12px]" {...p} />,
+        h1: ({ node, ...p }) => <p className="mb-1 font-semibold text-[color:var(--db-text)]" {...p} />,
+        h2: ({ node, ...p }) => <p className="mb-1 font-semibold text-[color:var(--db-text)]" {...p} />,
+        h3: ({ node, ...p }) => <p className="mb-1 font-semibold text-[color:var(--db-text)]" {...p} />,
       }}
     >
       {children}
@@ -163,11 +163,11 @@ function MessageActions({ content, onSaveToKb }) {
       if (ok) setTimeout(() => setKb('idle'), 2500)
     } catch { setKb('error') }
   }
-  const btn = 'flex items-center gap-1.5 rounded-md border border-white/[0.14] bg-white/[0.05] px-2 py-1 text-[11px] font-medium text-white/75 transition hover:border-cyan-400/50 hover:bg-cyan-400/[0.10] hover:text-cyan-200 disabled:opacity-50'
+  const btn = 'flex items-center gap-1.5 rounded-md border border-[color:var(--db-border-strong)] bg-[color:var(--db-fill)] px-2 py-1 text-[11px] font-medium text-[color:var(--db-text-soft)] transition hover:border-[color:var(--db-border-strong)] hover:bg-[color:var(--db-fill-strong)] hover:text-[color:var(--db-text)] disabled:opacity-50'
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-1.5">
+    <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-[color:var(--db-border)] pt-1.5">
       <button type="button" onClick={copy} title="Copy" className={btn}>
-        {copied ? <Check className="h-3 w-3 text-cyan-300" /> : <Copy className="h-3 w-3" />}
+        {copied ? <Check className="h-3 w-3 text-[color:var(--db-text)]" /> : <Copy className="h-3 w-3" />}
         {copied ? 'Copied' : 'Copy'}
       </button>
       <button type="button" onClick={download} title="Download as a document (.md)" className={btn}>
@@ -178,7 +178,7 @@ function MessageActions({ content, onSaveToKb }) {
       </button>
       {onSaveToKb && (
         <button type="button" onClick={saveKb} disabled={kb === 'saving'} title="Save to your Knowledge Base (becomes searchable)" className={btn}>
-          {kb === 'saved' ? <Check className="h-3 w-3 text-cyan-300" /> : <Library className="h-3 w-3" />}
+          {kb === 'saved' ? <Check className="h-3 w-3 text-[color:var(--db-text)]" /> : <Library className="h-3 w-3" />}
           {kb === 'saving' ? 'Saving…' : kb === 'saved' ? 'Saved to KB' : kb === 'error' ? 'Failed — retry' : 'Save to KB'}
         </button>
       )}
@@ -196,7 +196,7 @@ export function SourceCard({ source }) {
   return (
     <div className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-2">
       <div className="flex items-center gap-1.5">
-        <FileText className="h-3 w-3 shrink-0 text-cyan-300/80" aria-hidden="true" />
+        <FileText className="h-3 w-3 shrink-0 text-[color:var(--db-accent-text)]" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-[color:var(--db-text-soft)]">{source.doc_name || 'Source'}</span>
       </div>
       <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-[color:var(--db-text-faint)]">
@@ -210,7 +210,7 @@ export function SourceCard({ source }) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="mt-1 flex items-center gap-1 pl-[18px] text-[10px] font-medium text-cyan-300/80 hover:text-cyan-200"
+          className="mt-1 flex items-center gap-1 pl-[18px] text-[10px] font-medium text-[color:var(--db-accent-text)] hover:text-[color:var(--db-accent)]"
         >
           <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
           {open ? 'Hide snippet' : 'View snippet'}
@@ -781,15 +781,15 @@ export default function ChatPanel({
         {/* Row 1 — identity + live model status. pr-9 reserves space for the
             absolute close-X (right-3, ~28px) so the badge isn't obstructed. */}
         <div className="flex items-center gap-2 pr-9">
-          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/[0.10]">
-            <MessagesSquare className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
+          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-[color:var(--db-border)] bg-[color:var(--db-fill)]">
+            <MessagesSquare className="h-3.5 w-3.5 text-[color:var(--db-text-muted)]" aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90">Chat</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--db-text-muted)]">Chat</p>
             <p className="truncate text-sm font-semibold text-[color:var(--db-text)]">Ask about this meeting</p>
           </div>
           <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-0.5 text-[10px] text-[color:var(--db-text-faint)]">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--db-text-faint)]" />
             Prism
           </span>
         </div>
@@ -797,7 +797,7 @@ export default function ChatPanel({
         {/* Row 2 — context + controls. Wraps gracefully instead of overlapping. */}
         <div className="flex flex-wrap items-center gap-1.5">
           {result && (
-            <span className="rounded-full border border-cyan-400/25 bg-cyan-400/[0.10] px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-cyan-200/90">
+            <span className="rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-[color:var(--db-text-muted)]">
               agent-aware
             </span>
           )}
@@ -821,7 +821,7 @@ export default function ChatPanel({
                 setViewingSession(null)
                 setShowHistory(false)
               }}
-              className="flex items-center gap-1 rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[10.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/40 hover:text-cyan-200"
+              className="flex items-center gap-1 rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2 py-1 text-[10.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-[color:var(--db-text)]"
               aria-label="Start a new chat for this meeting"
             >
               <MessagesSquare className="h-3 w-3" aria-hidden="true" />
@@ -839,13 +839,13 @@ export default function ChatPanel({
               >
                 <History className="h-3 w-3" aria-hidden="true" />
                 <span>History</span>
-                <span className="ml-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-cyan-400/[0.18] px-1 text-[9px] font-semibold text-cyan-200">
+                <span className="ml-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-[color:var(--db-fill-strong)] px-1 text-[9px] font-semibold text-[color:var(--db-text)]">
                   {pastSessions.length}
                 </span>
               </button>
 
               {showHistory && (
-                <div className="absolute left-0 top-8 z-50 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[color:var(--db-border-strong)] bg-[#08090a] shadow-[0_16px_38px_rgba(0,0,0,0.45)]">
+                <div className="dashboard-popup absolute left-0 top-8 z-50 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl">
                   <div className="flex items-center justify-between border-b border-[color:var(--db-border)] px-3 py-2">
                     <p className="text-[11px] font-semibold text-[color:var(--db-text)]">Past chats</p>
                     <p className="text-[10px] text-[color:var(--db-text-faint)]">{pastSessions.length} of 3</p>
@@ -894,11 +894,11 @@ export default function ChatPanel({
 
       {/* Viewing past session banner */}
       {viewingSession && (
-        <div className="flex flex-shrink-0 items-center gap-2 border-b border-cyan-400/15 bg-cyan-400/[0.06] px-4 py-2">
+        <div className="flex flex-shrink-0 items-center gap-2 border-b border-[color:var(--db-border)] bg-[color:var(--db-fill)] px-4 py-2">
           <button
             type="button"
             onClick={() => setViewingSession(null)}
-            className="flex items-center gap-1 text-[11px] font-medium text-cyan-200 transition hover:text-cyan-100"
+            className="flex items-center gap-1 text-[11px] font-medium text-[color:var(--db-text)] transition hover:text-[color:var(--db-text-soft)]"
           >
             <X className="h-3 w-3" aria-hidden="true" />
             New chat
@@ -916,7 +916,7 @@ export default function ChatPanel({
           // a large void between the prompts and the composer.
           <div className="flex h-full flex-col justify-center gap-3">
             <div className="px-1">
-              <p className={"text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90"}>Suggested</p>
+              <p className={"text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--db-text-muted)]"}>Suggested</p>
               <p className="mt-0.5 text-sm text-[color:var(--db-text-muted)]">Tap a prompt to start — or ask your own below.</p>
             </div>
             <div className="flex flex-col gap-2">
@@ -927,9 +927,9 @@ export default function ChatPanel({
                     key={prompt}
                     type="button"
                     onClick={() => send(prompt)}
-                    className="group flex w-full items-center gap-3 rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-3 text-left transition hover:border-cyan-400/40 hover:bg-[#0f1113]"
+                    className="group flex w-full items-center gap-3 rounded-lg border border-[color:var(--db-border)] bg-[color:var(--db-fill)] px-3 py-3 text-left transition hover:border-[color:var(--db-border-strong)] hover:bg-[color:var(--db-fill-strong)]"
                   >
-                    <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/[0.10] text-cyan-300 transition group-hover:border-cyan-300/40 group-hover:bg-cyan-400/[0.15]">
+                    <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[color:var(--db-border)] bg-[color:var(--db-fill-strong)] text-[color:var(--db-text-muted)] transition group-hover:border-[color:var(--db-border-strong)] group-hover:text-[color:var(--db-text)]">
                       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                     </span>
                     <span className="text-sm text-[color:var(--db-text-soft)] group-hover:text-[color:var(--db-text)]">{prompt}</span>
@@ -943,15 +943,15 @@ export default function ChatPanel({
         {visibleMessages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
             {msg.role === 'assistant' && (
-              <div className="mr-2 mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/[0.10]">
-                <Sparkles className="h-3 w-3 text-cyan-300" aria-hidden="true" />
+              <div className="mr-2 mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-[color:var(--db-border)] bg-[color:var(--db-fill)]">
+                <Sparkles className="h-3 w-3 text-[color:var(--db-text-muted)]" aria-hidden="true" />
               </div>
             )}
             <div
               className={`max-w-[78%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                 msg.role === 'user'
-                  ? 'rounded-tr-sm bg-gradient-to-br from-[#0c4a6e] to-[#155e75] text-[color:var(--db-text)]'
-                  : 'rounded-tl-sm border border-[color:var(--db-border)] bg-[#0d0e10] text-[color:var(--db-text-soft)]'
+                  ? 'rounded-tr-sm bg-[color:var(--db-fill-strong)] text-[color:var(--db-text)]'
+                  : 'rounded-tl-sm border border-[color:var(--db-border)] bg-[color:var(--db-fill)] text-[color:var(--db-text-soft)]'
               }`}
             >
               {msg.images?.length > 0 && (
@@ -962,7 +962,7 @@ export default function ChatPanel({
                       src={img.url}
                       alt="attached"
                       onClick={() => img.url && setLightbox(img.url)}
-                      className="h-28 w-28 cursor-zoom-in rounded-lg border border-white/15 object-cover"
+                      className="h-28 w-28 cursor-zoom-in rounded-lg border border-[color:var(--db-border-strong)] object-cover"
                     />
                   ))}
                 </div>
@@ -976,7 +976,7 @@ export default function ChatPanel({
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {msg.toolsUsed.map((t, ti) => (
-                    <span key={ti} className="inline-flex items-center gap-1 rounded-md border border-cyan-400/20 bg-cyan-400/[0.10] px-1.5 py-0.5 text-[9px] font-medium text-cyan-200">
+                    <span key={ti} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--db-text-muted)]">
                       <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
@@ -986,7 +986,10 @@ export default function ChatPanel({
                 </div>
               )}
               {msg.ragContext?.has_conflict && (
-                <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-400/25 bg-amber-400/[0.08] px-2.5 py-1.5 text-[11px] text-amber-200">
+                <div
+                  className="mt-2 flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px]"
+                  style={{ borderColor: 'var(--db-warn)', background: 'var(--db-warn-fill)', color: 'var(--db-warn)' }}
+                >
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                   <span>Sources disagree — review the cited documents below.</span>
                 </div>
@@ -1006,8 +1009,12 @@ export default function ChatPanel({
               {!viewingSession && msg.pendingConfirmations?.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {msg.pendingConfirmations.map((pc, ci) => (
-                    <div key={ci} className="rounded-lg border border-yellow-400/25 bg-yellow-400/[0.07] p-2.5 text-[11px]">
-                      <p className="mb-1 font-medium text-yellow-300">{pc.message || `Confirm: ${pc.tool}`}</p>
+                    <div
+                      key={ci}
+                      className="rounded-lg border p-2.5 text-[11px]"
+                      style={{ borderColor: 'var(--db-warn)', background: 'var(--db-warn-fill)' }}
+                    >
+                      <p className="mb-1 font-medium" style={{ color: 'var(--db-warn)' }}>{pc.message || `Confirm: ${pc.tool}`}</p>
                       <pre className="mb-2 max-h-24 overflow-y-auto whitespace-pre-wrap text-[10px] text-[color:var(--db-text-muted)]">
                         {typeof pc.preview === 'object' ? JSON.stringify(pc.preview, null, 2) : pc.preview}
                       </pre>
@@ -1032,7 +1039,7 @@ export default function ChatPanel({
                               console.warn('[ChatPanel] confirm-tool failed:', err)
                             }
                           }}
-                          className="rounded-md bg-gradient-to-br from-cyan-500 to-cyan-400 px-3 py-1 text-[10px] font-semibold text-[#07040f] transition hover:from-cyan-400 hover:to-cyan-300"
+                          className="rounded-md bg-[color:var(--db-accent)] px-3 py-1 text-[10px] font-semibold text-[#04222a] transition hover:opacity-90"
                         >Confirm</button>
                         <button
                           type="button"
@@ -1048,7 +1055,7 @@ export default function ChatPanel({
                 </div>
               )}
               {msg.agentUpdated && (
-                <span className="mt-1 block text-[10px] text-cyan-300/80">↑ card updated</span>
+                <span className="mt-1 block text-[10px] text-[color:var(--db-text-muted)]">↑ card updated</span>
               )}
               {msg.globalSearch && (
                 <span className="mt-1 block text-[10px] text-violet-300/80">⊕ searched all meetings</span>
@@ -1059,17 +1066,17 @@ export default function ChatPanel({
 
         {loading && (
           <div className="flex items-center justify-start gap-2">
-            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/[0.10]">
-              <Sparkles className="h-3 w-3 text-cyan-300" aria-hidden="true" />
+            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-[color:var(--db-border)] bg-[color:var(--db-fill)]">
+              <Sparkles className="h-3 w-3 text-[color:var(--db-text-muted)]" aria-hidden="true" />
             </div>
-            <div className="rounded-xl rounded-tl-sm border border-[color:var(--db-border)] bg-[#0d0e10] px-3.5 py-2.5">
+            <div className="rounded-xl rounded-tl-sm border border-[color:var(--db-border)] bg-[color:var(--db-fill)] px-3.5 py-2.5">
               {loadingGlobal ? (
-                <span className="text-[11px] text-cyan-300 animate-pulse">Searching all meetings…</span>
+                <span className="text-[11px] text-[color:var(--db-text-muted)] animate-pulse">Searching all meetings…</span>
               ) : (
                 <div className="flex h-4 items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400" style={{ animationDelay: '0ms' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400" style={{ animationDelay: '150ms' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400" style={{ animationDelay: '300ms' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[color:var(--db-text-faint)]" style={{ animationDelay: '0ms' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[color:var(--db-text-faint)]" style={{ animationDelay: '150ms' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[color:var(--db-text-faint)]" style={{ animationDelay: '300ms' }} />
                 </div>
               )}
             </div>
@@ -1095,7 +1102,7 @@ export default function ChatPanel({
                   type="button"
                   onClick={() => setPendingImages((prev) => prev.filter((_, k) => k !== ii))}
                   aria-label="Remove image"
-                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] bg-[#0d0e10] text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)]"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--db-border-strong)] bg-[color:var(--db-fill-strong)] text-[color:var(--db-text-muted)] hover:text-[color:var(--db-text)]"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -1114,7 +1121,7 @@ export default function ChatPanel({
               disabled={!!viewingSession || pendingImages.length >= MAX_IMAGES || uploadingImage}
               aria-label="Attach image"
               title="Attach image (or paste / drop)"
-              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] text-[color:var(--db-text-muted)] transition hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-[color:var(--db-border)] bg-[color:var(--db-fill)] text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-border-strong)] hover:text-[color:var(--db-text)] disabled:cursor-not-allowed disabled:opacity-30"
             >
               <ImagePlus className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -1143,14 +1150,14 @@ export default function ChatPanel({
                 ? 'Ask or say "redraft email more formally"…'
                 : 'Ask a question… (paste or drop an image)'
             }
-            className="flex-1 resize-none overflow-y-auto rounded-lg border border-[color:var(--db-border)] bg-[#0d0e10] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 resize-none overflow-y-auto rounded-lg border border-[color:var(--db-border)] bg-[color:var(--db-fill)] px-3 py-2.5 text-sm leading-5 text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-[color:var(--db-accent)] focus:ring-1 focus:ring-[color:var(--db-accent-fill)] disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             type="button"
             onClick={() => send()}
             disabled={(!input.trim() && pendingImages.length === 0) || loading || !!viewingSession}
             aria-label="Send message"
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-400 text-[#07040f] transition hover:from-cyan-400 hover:to-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-[color:var(--db-accent)] text-[#04222a] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Send className="h-4 w-4" aria-hidden="true" />
           </button>
