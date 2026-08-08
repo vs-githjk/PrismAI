@@ -1,7 +1,7 @@
 // Standalone Actions page — the canonical execution surface for open action
 // items in the active scope (spec 2026-08-08; supersedes ADR 0002's location
 // decision only — byPriority remains THE order, chips remain filters).
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { ListTodo, ArrowRight } from 'lucide-react'
 import { collectOpenActions, scopeFilter, byPriority, dueBand } from '../../lib/actionItems'
 import ActionItemRow from './ActionItemRow'
@@ -58,12 +58,12 @@ export default function ActionsView({ history = [], user = null, onToggleAction,
               const band = dueBand(row)
               const bandStart = i === 0 || dueBand(rows[i - 1]) !== band
               return (
-                <li key={`${row.entry.id}-${row.index}`}>
+                <Fragment key={`${row.entry.id}-${row.index}`}>
                   {bandStart && (
-                    <p className={`${eyebrow} px-2 pb-1 ${i === 0 ? 'pt-1' : 'pt-4'}`}>{BAND_LABELS[band]}</p>
+                    <li role="presentation" aria-hidden="true" className={`${eyebrow} px-2 pb-1 ${i === 0 ? 'pt-1' : 'pt-4'}`}>{BAND_LABELS[band]}</li>
                   )}
                   <ActionItemRow row={row} onToggle={onToggleAction} onOpenMeeting={onOpenMeeting} showMeeting />
-                </li>
+                </Fragment>
               )
             })}
           </ul>

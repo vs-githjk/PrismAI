@@ -170,7 +170,7 @@ function MeetingsCard({ history, onOpen, selectedMeetingId, onOpenCalendar }) {
           <button
             type="button"
             onClick={onOpenCalendar}
-            className="mt-1.5 w-full rounded-lg border border-[color:var(--db-border)] py-2 text-[12.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.06] hover:text-cyan-100"
+            className="mt-1.5 w-full rounded-lg border border-[color:var(--db-border)] py-2 text-[12.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-accent)] hover:bg-[color:var(--db-accent-fill)] hover:text-[color:var(--db-accent-text)]"
           >
             View all meetings →
           </button>
@@ -252,12 +252,14 @@ export default function StatsCanvas({
             onOpenActions={onOpenActions}
           />
         )}
-        <MeetingsCard
-          history={safeHistory}
-          onOpen={loadFromHistory}
-          selectedMeetingId={selectedMeetingId}
-          onOpenCalendar={onOpenCalendar}
-        />
+        {!isEmpty && (
+          <MeetingsCard
+            history={safeHistory}
+            onOpen={loadFromHistory}
+            selectedMeetingId={selectedMeetingId}
+            onOpenCalendar={onOpenCalendar}
+          />
+        )}
       </div>
       {assistant && <div className="dashboard-home-assistant">{assistant}</div>}
     </div>

@@ -84,7 +84,7 @@ export default function NeedsAttention({ history = [], user = null, openThreads 
               <button
                 type="button"
                 onClick={onOpenActions}
-                className="mt-2.5 w-full rounded-lg border border-[color:var(--db-border)] py-2 text-[12.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.06] hover:text-cyan-100"
+                className="mt-2.5 w-full rounded-lg border border-[color:var(--db-border)] py-2 text-[12.5px] font-medium text-[color:var(--db-text-muted)] transition hover:border-[color:var(--db-accent)] hover:bg-[color:var(--db-accent-fill)] hover:text-[color:var(--db-accent-text)]"
               >
                 View all {total} task{total === 1 ? '' : 's'} →
               </button>

@@ -4,8 +4,8 @@ import { deriveDisplayTitle } from '../../lib/insights'
 
 // Same due-badge styling as MeetingView and Home, so every surface agrees.
 const DUE_STYLE = {
-  overdue: 'border-red-400/30 bg-red-400/[0.10] text-red-300',
-  soon: 'border-amber-400/30 bg-amber-400/[0.10] text-amber-300',
+  overdue: 'border-[color:var(--db-danger)] bg-[color:var(--db-danger-fill)] text-[color:var(--db-danger)]',
+  soon: 'border-[color:var(--db-warn)] bg-[color:var(--db-warn-fill)] text-[color:var(--db-warn)]',
 }
 
 /**
@@ -49,11 +49,11 @@ export default function ActionItemRow({ row, onToggle, onOpenMeeting, showMeetin
         <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px]">
           {/* Owner, with YOU called out explicitly. */}
           {isMine ? (
-            <span className="inline-flex items-center gap-1 font-semibold text-cyan-200">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--db-accent)] bg-[color:var(--db-accent-fill)] px-1.5 py-0.5 font-semibold text-[color:var(--db-accent-text)]">
               <UserRound className="h-3 w-3 shrink-0" aria-hidden="true" />You
             </span>
           ) : unassigned ? (
-            <span className="inline-flex items-center gap-1 text-amber-300/80">
+            <span className="inline-flex items-center gap-1 text-[color:var(--db-warn)]">
               <UserRound className="h-3 w-3 shrink-0" aria-hidden="true" />Unassigned
             </span>
           ) : (
@@ -77,7 +77,7 @@ export default function ActionItemRow({ row, onToggle, onOpenMeeting, showMeetin
             <button
               type="button"
               onClick={() => onOpenMeeting?.(entry)}
-              className="ml-auto max-w-[45%] shrink-0 truncate text-[11px] text-[color:var(--db-text-faint)] transition hover:text-cyan-200"
+              className="ml-auto max-w-[45%] shrink-0 truncate text-[11px] text-[color:var(--db-text-faint)] transition hover:text-[color:var(--db-accent-text)]"
             >
               {deriveDisplayTitle(entry)}
             </button>

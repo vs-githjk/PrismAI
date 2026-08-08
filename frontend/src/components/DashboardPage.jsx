@@ -1771,24 +1771,26 @@ export default function DashboardPage(props) {
               selectedMeetingId={props.selectedMeetingId}
               onToggleAction={props.toggleHistoryActionItem}
               assistant={
-                <Suspense
-                  fallback={
-                    <div
-                      className="rounded-2xl border p-4 text-xs text-[color:var(--db-text-faint)]"
-                      style={{
-                        borderColor: 'var(--db-border)',
-                        // Match .dashboard-home-assistant's own height so the lazy
-                        // WorkspaceChatPanel chunk resolving doesn't snap the column height.
-                        height: 'calc(100dvh - (var(--dashboard-edge) * 2) - var(--dashboard-topbar-h) - var(--dashboard-gutter))',
-                        minHeight: 420,
-                      }}
-                    >
-                      Loading chat…
-                    </div>
-                  }
-                >
-                  <WorkspaceChatPanel user={props.user} />
-                </Suspense>
+                activeView === 'home' ? (
+                  <Suspense
+                    fallback={
+                      <div
+                        className="rounded-2xl border p-4 text-xs text-[color:var(--db-text-faint)]"
+                        style={{
+                          borderColor: 'var(--db-border)',
+                          // Match .dashboard-home-assistant's own height so the lazy
+                          // WorkspaceChatPanel chunk resolving doesn't snap the column height.
+                          height: 'calc(100dvh - (var(--dashboard-edge) * 2) - var(--dashboard-topbar-h) - var(--dashboard-gutter))',
+                          minHeight: 420,
+                        }}
+                      >
+                        Loading chat…
+                      </div>
+                    }
+                  >
+                    <WorkspaceChatPanel user={props.user} />
+                  </Suspense>
+                ) : null
               }
             />
           )}
@@ -1806,7 +1808,6 @@ export default function DashboardPage(props) {
                       gmailConnected={props.calendarConnected}
                       onToggleActionItem={props.toggleActionItem}
                       transcript={props.transcript}
-                      onBack={() => { sessionStorage.removeItem('prism_last_meeting_id'); goBackFromMeeting() }}
                       recordedByEmail={recordedByEmail}
                       workspaceId={activeWorkspaceId}
                       suggestedEmails={suggestedAttendeeEmails}

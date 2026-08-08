@@ -1471,20 +1471,11 @@ h1, h2, h3, .font-display {
     margin-left: var(--dashboard-edge);
     margin-right: var(--dashboard-edge);
   }
-  /* Home no longer fills a fixed viewport height — it stacks and the page
-     scrolls (the internal-scroll 2x2 grid only makes sense on desktop). */
-  .dashboard-content.is-home {
-    display: block;
-    height: auto;
-    min-height: 0;
-    overflow: visible;
-  }
-
   /* Backdrop behind the open drawer. */
   .dashboard-nav-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(3, 6, 12, 0.6);
+    background: var(--db-scrim);
     backdrop-filter: blur(2px);
     z-index: 55;
   }

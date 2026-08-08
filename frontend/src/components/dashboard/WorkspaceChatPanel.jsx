@@ -132,8 +132,8 @@ export default function WorkspaceChatPanel({ user }) {
               <MarkdownMessage>{m.content}</MarkdownMessage>
               {m.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  {m.toolsUsed.map((t) => (
-                    <span key={t} className="rounded-full border px-2 py-0.5 text-[10px] text-[color:var(--db-text-muted)]" style={{ borderColor: 'var(--db-border)' }}>✓ {t}</span>
+                  {m.toolsUsed.map((t, ti) => (
+                    <span key={ti} className="rounded-full border px-2 py-0.5 text-[10px] text-[color:var(--db-text-muted)]" style={{ borderColor: 'var(--db-border)' }}>✓ {t.summary || t.tool}</span>
                   ))}
                 </div>
               )}
@@ -196,7 +196,7 @@ export default function WorkspaceChatPanel({ user }) {
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
           rows={1}
           placeholder="Ask across your meetings…"
-          className="max-h-32 min-h-[40px] flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm text-[color:var(--db-text)] outline-none placeholder:text-[color:var(--db-text-faint)]"
+          className="max-h-32 min-h-[40px] flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm text-[color:var(--db-text)] outline-none transition placeholder:text-[color:var(--db-text-faint)] focus:border-[color:var(--db-accent)] focus:ring-1 focus:ring-[color:var(--db-accent-fill)]"
           style={{ borderColor: 'var(--db-border)' }}
         />
         <button type="submit" disabled={loading || !input.trim()} aria-label="Send"

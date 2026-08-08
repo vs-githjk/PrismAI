@@ -433,7 +433,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
             {actionItems.length > 0 && (
               <span
                 className={eyebrow}
-                style={{ color: openCount > 0 ? '#f59e0b' : '#22c55e' }}
+                style={{ color: openCount > 0 ? 'var(--db-warn)' : 'var(--db-success)' }}
               >
                 {openCount > 0 ? `${openCount} open` : 'All done'}
               </span>
@@ -502,7 +502,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
                         </span>
                       )}
                       {decisionByAction[i] !== undefined && result.decisions?.[decisionByAction[i]] && (
-                        <p className="mt-1 flex items-start gap-1 text-[10.5px] text-violet-300/70">
+                        <p className="mt-1 flex items-start gap-1 text-[10.5px] text-[color:var(--db-text-muted)]">
                           <CornerDownRight className="mt-0.5 h-3 w-3 shrink-0 rotate-180" aria-hidden="true" />
                           <span className="line-clamp-1">From decision: {result.decisions[decisionByAction[i]].decision}</span>
                         </p>
@@ -522,7 +522,7 @@ export default function MeetingView({ result, meeting, gmailConnected = false, o
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2 className={cardTitle}>Decisions</h2>
             {decisions.length > 0 && (
-              <span className={`${eyebrow} text-violet-300`}>{decisions.length}</span>
+              <span className={`${eyebrow} text-[color:var(--db-text-muted)]`}>{decisions.length}</span>
             )}
           </div>
           <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">

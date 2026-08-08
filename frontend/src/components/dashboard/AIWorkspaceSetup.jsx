@@ -106,7 +106,7 @@ export default function AIWorkspaceSetup({ onClose }) {
         aria-modal="true"
         aria-label="Set up my AI workspace"
         onClick={(e) => e.stopPropagation()}
-        className="dashboard-body-font w-full max-w-md overflow-hidden rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-surface,#0f141c)] shadow-2xl"
+        className="dashboard-body-font w-full max-w-md overflow-hidden rounded-2xl border border-[color:var(--db-border)] bg-[var(--db-popup-base)] shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-start gap-3 border-b border-[color:var(--db-border)] px-5 py-4">

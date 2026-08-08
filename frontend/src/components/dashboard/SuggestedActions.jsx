@@ -360,7 +360,7 @@ export function ActionModal({ action, connections, suggestedEmails, meetingId, t
                 Cancel
               </Button>
               <button type="button" onClick={submit} disabled={busy}
-                className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--db-accent)] bg-[var(--db-accent-fill)] px-4 py-2 text-[13px] font-medium text-[color:var(--db-accent-text)] transition hover:bg-[var(--db-accent-fill)] disabled:opacity-50">
+                className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--db-accent)] bg-[var(--db-accent-fill)] px-4 py-2 text-[13px] font-medium text-[color:var(--db-accent-text)] transition hover:bg-[color:var(--db-accent)] hover:text-[#04222a] disabled:opacity-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
                 {meta.verb}
               </button>

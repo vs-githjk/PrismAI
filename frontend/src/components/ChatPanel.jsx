@@ -1058,7 +1058,7 @@ export default function ChatPanel({
                 <span className="mt-1 block text-[10px] text-[color:var(--db-text-muted)]">↑ card updated</span>
               )}
               {msg.globalSearch && (
-                <span className="mt-1 block text-[10px] text-violet-300/80">⊕ searched all meetings</span>
+                <span className="mt-1 block text-[10px] text-[color:var(--db-text-muted)]">⊕ searched all meetings</span>
               )}
             </div>
           </div>

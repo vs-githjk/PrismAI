@@ -2,10 +2,18 @@ import { useState, useEffect } from 'react'
 import { Mic, ChevronDown } from 'lucide-react'
 import { cardGlowStyle, eyebrow, glassCard, subtleText } from './dashboardStyles'
 
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
 function useCountUp(target, duration = 1000) {
   const [display, setDisplay] = useState(0)
   useEffect(() => {
     if (target === undefined || target === null) return
+    if (prefersReducedMotion()) {
+      setDisplay(target)
+      return
+    }
     let start = null
     const step = (timestamp) => {
       if (!start) start = timestamp

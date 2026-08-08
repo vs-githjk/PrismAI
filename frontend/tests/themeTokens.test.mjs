@@ -16,7 +16,7 @@ const darkTokens = tokensIn(/── Dashboard theme tokens[\s\S]*?(?=\.theme-lig
 const lightTokens = tokensIn(/\.theme-light\s*\{[\s\S]*?\}/)
 
 test('every dashboard token is defined for both themes', () => {
-  assert.ok(darkTokens.size >= 17, `expected ≥17 dark tokens, got ${darkTokens.size}`)
+  assert.ok(darkTokens.size >= 26, `expected ≥26 dark tokens, got ${darkTokens.size}`)
   assert.deepEqual([...darkTokens].sort(), [...lightTokens].sort())
 })
 
