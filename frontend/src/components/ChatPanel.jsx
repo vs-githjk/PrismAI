@@ -188,13 +188,13 @@ function MessageActions({ content, onSaveToKb }) {
 
 // One grounding source behind a RAG answer — rendered from structured
 // rag_context (backend), never from the model's prose. Citations stay reliable.
-export function SourceCard({ source }) {
+export function SourceCard({ source, flat = false }) {
   const [open, setOpen] = useState(false)
   const meta = source.metadata || {}
   const pct = source.score != null ? `${Math.round(source.score * 100)}% match` : null
   const anchor = meta.page != null ? `Page ${meta.page}` : (meta.timestamp || null)
   return (
-    <div className="rounded-lg border border-[color:var(--db-border)] bg-[var(--db-fill)] px-2.5 py-2">
+    <div className={`rounded-lg border border-[color:var(--db-border)] px-2.5 py-2 ${flat ? '' : 'bg-[var(--db-fill)]'}`}>
       <div className="flex items-center gap-1.5">
         <FileText className="h-3 w-3 shrink-0 text-[color:var(--db-accent-text)]" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-[color:var(--db-text-soft)]">{source.doc_name || 'Source'}</span>
@@ -976,7 +976,7 @@ export default function ChatPanel({
               {msg.toolsUsed?.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {msg.toolsUsed.map((t, ti) => (
-                    <span key={ti} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--db-border)] bg-[var(--db-fill)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--db-text-muted)]">
+                    <span key={ti} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--db-border)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--db-text-muted)]">
                       <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
@@ -1001,7 +1001,7 @@ export default function ChatPanel({
                   </p>
                   <div className="space-y-1.5">
                     {msg.ragContext.sources.map((s, si) => (
-                      <SourceCard key={s.chunk_id || s.doc_name || si} source={s} />
+                      <SourceCard key={s.chunk_id || s.doc_name || si} source={s} flat />
                     ))}
                   </div>
                 </div>
