@@ -304,6 +304,26 @@ async def wait_for_gap(bot_id: str = "", state: Optional[dict] = None) -> None:
     _record_wait(time.monotonic() - started, "cap", source)
 
 
+def eot_lag_s(bot_id: str) -> Optional[float]:
+    """Seconds between Silero hearing the room fall quiet and Flux declaring end-of-turn.
+
+    The turn detector's own thinking time — the number a "semantic endpointing, no fixed
+    cap" claim is actually about, and the one segment the t0–t4 stopwatch could never see
+    (t0 IS the EndOfTurn event, so the detector's latency sits entirely before it).
+
+    None whenever it can't be measured honestly: no room (Silero absent), nobody has
+    spoken yet, or someone is still talking — the room never went quiet, so there is no
+    silence to measure from.
+    """
+    room = _ROOMS.get(bot_id)
+    if room is None or room.human_speaking or not room.last_speech_ts:
+        return None
+    lag = time.monotonic() - room.last_speech_ts
+    # ponytail: sanity clamp. A stale room (bot idle between turns) would otherwise
+    # report a nonsense lag and poison the median.
+    return lag if 0.0 <= lag <= 10.0 else None
+
+
 def _session_cancelled(state: Optional[dict]) -> bool:
     if not state:
         return False
@@ -380,6 +400,20 @@ if __name__ == "__main__":
         room.interrupted_burst = True
         room.note_speech_start()
         assert room.interrupted_burst is False
+
+        # EOT lag: unmeasurable cases must return None, never 0.0 — a fabricated zero
+        # would read as "Flux decided instantly" and quietly flatter the median.
+        assert eot_lag_s("no-such-bot") is None          # no room at all
+        _ROOMS["lagbot"] = lagroom = RoomAudio("lagbot")
+        assert eot_lag_s("lagbot") is None               # nobody has spoken yet
+        lagroom.note_speech_start()
+        assert eot_lag_s("lagbot") is None               # still talking
+        lagroom.note_speech_stop()
+        lag = eot_lag_s("lagbot")
+        assert lag is not None and 0.0 <= lag < 0.5, lag
+        lagroom.last_speech_ts = time.monotonic() - 60.0  # stale room → clamped out
+        assert eot_lag_s("lagbot") is None
+        del _ROOMS["lagbot"]
 
         # Gap wait with no room + no transcript history → returns on the first poll.
         state: dict = {}

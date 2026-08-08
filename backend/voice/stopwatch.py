@@ -32,15 +32,35 @@ from pathlib import Path
 from typing import Optional
 
 # Ordered markers. Intervals are computed between adjacent present markers.
-_MARKERS = ("t0", "t1", "t2", "t3", "t4")
+#   s0  is back-dated from Silero at open_turn (see `open_turn`), not stamped live.
+#   t1b is absent on the speculative path — the eager call assembles its prompt in a
+#       background task, so a speculation HIT shows a tiny llm_first and no prep split.
+#   t2b is only present on the voice-channel path — the nudge paths call bridge.speak
+#       directly, bypassing the politeness gap, so `tts_first` stays as their fallback.
+#
+# CAVEAT on mix_hop: t3 and t4 are stamped three lines apart in the SAME frame handler
+# (pipeline.py), with only a local `ws.send_bytes` between them, so it reads ~0 and is not
+# measuring Recall's Output Media hop at all. `set_rtt_ms` is never called either, so the
+# rtt/2 compensation promised above is unwired. Read mix_hop as UNMEASURED, not as free,
+# until the speaker page's playout ping closes the loop.
+_MARKERS = ("s0", "t0", "t1", "t1b", "t2", "t2b", "t3", "t4")
 
 # Human labels for the adjacent-pair intervals, for the rolling summary.
 _INTERVALS = (
-    ("t0", "t1", "stt"),        # end-of-turn → final transcript
-    ("t1", "t2", "llm_first"),  # transcript → first LLM token
-    ("t2", "t3", "tts_first"),  # first token → first TTS byte
-    ("t3", "t4", "mix_hop"),    # first TTS byte → first frame to speaker  ← LOUD
-    ("t0", "t4", "total"),      # full voice-to-first-audio
+    ("s0", "t0", "eot_detect"),   # room went quiet → Flux declared end-of-turn
+    ("t0", "t1", "stt"),          # end-of-turn → final transcript (≈0 on Flux: fused)
+    ("t1", "t1b", "prep"),        # transcript → prompt assembled (settings/memory: DB)
+    ("t1b", "t2", "inference"),   # stream opened → first LLM token (the model alone)
+    ("t1", "t2", "llm_first"),    # transcript → first LLM token (prep + inference)
+    ("t2", "t2b", "batch"),       # first token → enough text to hand to TTS. Named for
+                                  # what it measures: TTS_BATCH_MIN_CHARS accumulation.
+                                  # The politeness wait is inside it but reads ~0 —
+                                  # [voice-gap] SUMMARY measures that one directly.
+    ("t2b", "t3", "tts_render"),  # text handed over → first TTS byte (Cartesia alone)
+    ("t2", "t3", "tts_first"),    # first token → first TTS byte (batch + render)
+    ("t3", "t4", "mix_hop"),      # first TTS byte → first frame to speaker  ← see CAVEAT
+    ("t0", "t4", "total"),        # end-of-turn → first audio out
+    ("s0", "t4", "voice_to_voice"),  # the real number: mouth-shut → first audio out
 )
 
 # The mix hop is the unknown; surface it on its own line so ops can grep it.
@@ -170,13 +190,22 @@ _AGG = _RollingAggregator()
 _OPEN: dict[str, TurnStopwatch] = {}
 
 
-def open_turn(bot_id: str, meta: Optional[dict] = None) -> TurnStopwatch:
+def open_turn(bot_id: str, meta: Optional[dict] = None,
+              eot_lag_s: Optional[float] = None) -> TurnStopwatch:
     """A finished human turn arrived. t0 (speech end) and t1 (final transcript) are the
     same instant on the Flux path — the semantic end-of-turn decision IS the transcript,
-    so there is no separate STT wait to measure from out here."""
+    so there is no separate STT wait to measure from out here.
+
+    `eot_lag_s` (from `barge.eot_lag_s`) is how long Flux took to decide, measured from
+    Silero's speech-stop. It arrives on `time.monotonic()` while the stopwatch runs on
+    `time.perf_counter()` — two different epochs — so we never store it as a timestamp:
+    s0 is BACK-DATED off t0 by the lag, which keeps one clock for every interval.
+    """
     turn = TurnStopwatch(bot_id, f"t{int(time.time() * 1000)}", meta)
     turn.mark("t0")
     turn.mark("t1")
+    if eot_lag_s is not None:
+        turn._marks["s0"] = turn._marks["t0"] - eot_lag_s
     _OPEN[bot_id] = turn
     return turn
 
@@ -212,6 +241,31 @@ def _demo() -> None:
     assert abs(iv["tts_first"] - 150.0) < 1.0, iv
     assert abs(iv["mix_hop"] - (200.0 + 20.0)) < 1.0, iv  # t3→t4=200ms + rtt/2=20ms
     assert abs(iv["total"] - 750.0) < 1.0, iv
+    # No s0/t2b on this turn → the split intervals are simply absent, never zero (a
+    # fabricated 0 would drag the medians down and read as "the gap costs nothing").
+    assert "eot_detect" not in iv and "gap" not in iv and "tts_render" not in iv, iv
+
+    # Both splits: the sub-intervals must sum back to the combined one they decompose,
+    # or a segment is being double-counted or lost.
+    sw3 = TurnStopwatch("botxxxxxxxx", "turn-3")
+    sw3._marks = {"t0": base, "t1": base + 0.10, "t1b": base + 0.25, "t2": base + 0.40,
+                  "t2b": base + 0.50, "t3": base + 0.55, "t4": base + 0.75}
+    iv3 = sw3.intervals_ms()
+    assert abs(iv3["prep"] - 150.0) < 1.0, iv3
+    assert abs(iv3["inference"] - 150.0) < 1.0, iv3
+    assert abs(iv3["prep"] + iv3["inference"] - iv3["llm_first"]) < 1.0, iv3
+    assert abs(iv3["batch"] - 100.0) < 1.0, iv3
+    assert abs(iv3["tts_render"] - 50.0) < 1.0, iv3
+    assert abs(iv3["batch"] + iv3["tts_render"] - iv3["tts_first"]) < 1.0, iv3
+
+    # s0 is back-dated off t0 by the measured Flux lag, so eot_detect reads that lag and
+    # voice_to_voice is the real mouth-shut→audio number (total + the detector's think).
+    turn_lag = open_turn("botlag", eot_lag_s=0.25)
+    turn_lag.mark("t4")
+    iv4 = turn_lag.intervals_ms()
+    assert abs(iv4["eot_detect"] - 250.0) < 5.0, iv4
+    assert iv4["voice_to_voice"] > iv4["total"], iv4
+    cleanup_bot("botlag")
 
     # Partial turn (bot declined): only t0/t1 present → only stt interval.
     sw2 = TurnStopwatch("botxxxxxxxx", "turn-2")

@@ -81,6 +81,10 @@ async def _log_query(user_id: str, bot_id: Optional[str], query: str) -> None:
 async def web_search(args: dict, user_settings: Optional[dict] = None) -> dict:
     tavily_key = os.getenv("TAVILY_API_KEY", "")
     if not tavily_key:
+        # Loud: a deployment-config fact, not a per-call outcome. Unlogged, the only
+        # symptom is the bot vaguely failing to look anything up, in every meeting,
+        # forever — with every other log line saying the turn succeeded.
+        print("[web_search] TAVILY_API_KEY is not set — web search is OFF for this deployment")
         return {"error": "Web search is not configured (TAVILY_API_KEY missing)"}
 
     query = (args.get("query") or "").strip()
@@ -107,6 +111,9 @@ async def web_search(args: dict, user_settings: Optional[dict] = None) -> dict:
         return {"no_results": True, "next_step": "Web search was unavailable; answer from what you know or ask the participants."}
 
     if resp.status_code != 200:
+        # 401/403 here means a bad or revoked Tavily key — indistinguishable from
+        # "the web is quiet" unless we say so.
+        print(f"[web_search] Tavily returned {resp.status_code}: {resp.text[:200]!r}")
         return {"error": f"Web search failed ({resp.status_code})"}
 
     data = resp.json()
@@ -131,8 +138,11 @@ async def web_search(args: dict, user_settings: Optional[dict] = None) -> dict:
 register_tool(
     name="web_search",
     description=(
-        "Search the public web. Use this ONLY when knowledge_lookup returned "
-        "NO_GROUNDED_ANSWER or no_match. Returns up to 3 results with citations."
+        "Search the public web. Use it for current real-world information the model "
+        "cannot know — weather, news, prices, scores, live facts — and whenever "
+        "knowledge_lookup returned NO_GROUNDED_ANSWER or no_match. For questions about "
+        "the user's OWN documents or meetings, call knowledge_lookup first. "
+        "Returns up to 3 results with citations."
     ),
     parameters={
         "type": "object",

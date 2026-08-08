@@ -14,6 +14,16 @@ DEFAULT_TIMEOUT = httpx.Timeout(connect=3.0, read=30.0, write=10.0, pool=3.0)
 # + tool calling + vision (Jul 2026). Env-overridable.
 LIVE_MODEL = os.getenv("PRISM_LIVE_MODEL", "gpt-5.6-luna")
 
+# The VOICE channel alone (voice_channel.py — the tool-less talk brain). Split out of
+# LIVE_MODEL because the two live channels want opposite things: the talk brain's
+# time-to-first-token is heard directly by everyone in the room, while the agent
+# channel's latency hides behind a chat ack and it needs the smarts to pick tools well.
+# Measured Jul 2026: luna time-to-first-token is ~1.3–1.9s, which is the floor on any
+# turn eager end-of-turn doesn't cover — so this is the knob for A/B-ing tiers
+# (gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) against the stopwatch's `inference`
+# interval. Unset ⇒ LIVE_MODEL, so this changes nothing until someone sets it.
+VOICE_MODEL = os.getenv("PRISM_VOICE_MODEL", "").strip() or LIVE_MODEL
+
 _shared_http: Optional[httpx.AsyncClient] = None
 _shared_openai: Optional[AsyncOpenAI] = None
 

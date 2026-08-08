@@ -31,7 +31,8 @@ from voice import stopwatch as _sw
 from voice.prompts import DISPATCH_TOKEN
 from voice_pipeline import StreamingSegmenter, TtsDispatcher
 
-from clients import LIVE_MODEL as _VOICE_MODEL  # OpenAI gpt-5.6-luna (Groq removed Jul 2026)
+from clients import VOICE_MODEL as _VOICE_MODEL  # talk brain only; PRISM_VOICE_MODEL
+                                                 # falls back to LIVE_MODEL when unset
 _ACK_DELAY_S = tuning.ACK_DELAY_S
 _DISPATCH_DECIDE_CHARS = len(DISPATCH_TOKEN) + 3  # buffer this many chars before deciding
 
@@ -59,6 +60,11 @@ async def _speak(bot_id: str, text: str, *, more: bool = False) -> None:
     from voice import barge, bridge
     try:
         await barge.wait_for_gap(bot_id)
+        # t2b = the politeness gap let go. Splits what was one opaque `tts_first` into
+        # `gap` (our wait) and `tts_render` (Cartesia's real time-to-first-byte), which
+        # were otherwise indistinguishable. First-write-wins, so only the first chunk of
+        # a streamed reply stamps it — later chunks skip the gap anyway.
+        _sw.mark_turn(bot_id, "t2b")
         await bridge.speak(bot_id, text)
         if not more:
             await bridge.end_utterance(bot_id)
@@ -379,7 +385,13 @@ async def _stream_talk_or_dispatch(bot_id: str, command: str, speaker: str, from
         if spec is not None:
             deltas = spec.deltas()          # already streaming since EagerEndOfTurn
         else:
-            deltas = _open_deltas(await _build_voice_messages(bot_id, command, speaker))
+            messages = await _build_voice_messages(bot_id, command, speaker)
+            # t1b = prompt assembled, stream not yet opened. Splits llm_first into `prep`
+            # (settings + memory + owner lookups — mostly DB round-trips) and `inference`
+            # (the model's own time-to-first-token). Multi-second llm_first is
+            # unactionable until we know which half it is.
+            _sw.mark_turn(bot_id, "t1b")
+            deltas = _open_deltas(messages)
         async for delta in deltas:
             if speak_ok and barge.interrupted_since(bot_id, seq0):
                 # Someone talked over us. Keep the text (chat still gets the full reply);

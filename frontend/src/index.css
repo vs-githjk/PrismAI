@@ -1959,7 +1959,7 @@ h1, h2, h3, .font-display {
 
 .signup-social-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 0.625rem;
   margin-bottom: 1rem;
 }
