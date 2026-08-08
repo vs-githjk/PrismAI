@@ -1012,48 +1012,51 @@ h1, h2, h3, .font-display {
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
-    /* ── Dashboard theme tokens (dark defaults; light class overrides below) ── */
-    --db-chrome-bg: #19191a;
-    --db-page-bg: #202021;
-    --db-glass-top: rgba(255, 255, 255, 0.07);
-    --db-glass-bottom: rgba(255, 255, 255, 0.035);
-    --db-shadow: 0 10px 30px rgba(0,0,0,0.32), 0 1px 0 rgba(255,255,255,0.10) inset, 0 -1px 0 rgba(0,0,0,0.20) inset;
-    --db-text: rgba(255, 255, 255, 0.95);
-    --db-text-soft: rgba(255, 255, 255, 0.85);
-    --db-text-muted: rgba(255, 255, 255, 0.70);
-    --db-text-faint: rgba(255, 255, 255, 0.45);
-    --db-fill: rgba(255, 255, 255, 0.05);
-    --db-fill-strong: rgba(255, 255, 255, 0.08);
-    --db-border: rgba(255, 255, 255, 0.09);
+    /* ── Dashboard theme tokens (dark defaults; light class overrides below) ──
+       Matte north-star (Aug 2026): charcoal canvas, solid low-contrast surfaces,
+       bone-white text, cyan reserved for selection/action/focus/provenance.
+       Glass (blur) survives only on transient layers: .dashboard-popup,
+       .dashboard-status-island. */
+    --db-chrome-bg: #0f0f10;
+    --db-page-bg: #151517;
+    --db-glass-top: rgba(255, 255, 255, 0.03);
+    --db-glass-bottom: rgba(255, 255, 255, 0);
+    --db-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.35);
+    --db-text: #eceae4;
+    --db-text-soft: #c8c6bf;
+    --db-text-muted: #9d9b94;
+    --db-text-faint: #6d6c66;
+    --db-fill: rgba(255, 255, 255, 0.045);
+    --db-fill-strong: rgba(255, 255, 255, 0.075);
+    --db-border: rgba(255, 255, 255, 0.08);
     --db-border-strong: rgba(255, 255, 255, 0.14);
     --db-accent: #22d3ee;
     --db-accent-text: #67e8f9;
     --db-accent-fill: rgba(34, 211, 238, 0.10);
-    /* Opaque base under the island glass film. The film alone (3.5-7% white over
-       transparency) let page content scrolling beneath the FIXED topbar/sidebar
-       read straight through them. Mirrors what .dashboard-status-island already
-       does one block down; the blur + film still do the glass work on top. */
-    --db-island-base: rgba(21, 21, 22, 0.84);
+    /* Solid island surface — matte chrome must not read through. */
+    --db-island-base: #1a1a1c;
+    /* Matte card surface for content cards (cardGlowStyle), one tone above canvas. */
+    --db-card: #19191b;
   }
   .theme-light {
-    --db-chrome-bg: #e6eaef;
-    --db-page-bg: #eef1f5;
-    --db-glass-top: #ffffff;
-    --db-glass-bottom: #fcfdff;
-    --db-shadow: 0 6px 20px rgba(15,23,42,0.08), 0 1px 0 rgba(255,255,255,0.9) inset;
-    --db-text: #0f172a;
-    --db-text-soft: #334155;
-    --db-text-muted: #475569;
-    --db-text-faint: #94a3b8;
-    --db-fill: rgba(15, 23, 42, 0.04);
-    --db-fill-strong: rgba(15, 23, 42, 0.06);
-    --db-border: rgba(15, 23, 42, 0.08);
-    --db-border-strong: rgba(15, 23, 42, 0.12);
-    --db-accent: #06b6d4;
+    --db-chrome-bg: #e9e7e2;
+    --db-page-bg: #f1efeb;
+    --db-glass-top: rgba(255, 255, 255, 0.55);
+    --db-glass-bottom: rgba(255, 255, 255, 0);
+    --db-shadow: 0 1px 0 rgba(255,255,255,0.85) inset, 0 6px 18px rgba(28,27,23,0.10);
+    --db-text: #201f1c;
+    --db-text-soft: #4a4842;
+    --db-text-muted: #6e6c65;
+    --db-text-faint: #a3a19a;
+    --db-fill: rgba(32, 31, 28, 0.04);
+    --db-fill-strong: rgba(32, 31, 28, 0.07);
+    --db-border: rgba(32, 31, 28, 0.10);
+    --db-border-strong: rgba(32, 31, 28, 0.16);
+    --db-accent: #0891b2;
     --db-accent-text: #0e7490;
-    --db-accent-fill: rgba(34, 211, 238, 0.14);
-    /* Light theme's glass-top/bottom are already opaque, so no base is needed. */
-    --db-island-base: transparent;
+    --db-accent-fill: rgba(8, 145, 178, 0.10);
+    --db-island-base: #fbfaf7;
+    --db-card: #fbfaf7;
   }
   .dark {
     --background: oklch(0.145 0 0);
@@ -1133,15 +1136,14 @@ h1, h2, h3, .font-display {
   font-feature-settings: "tnum" 1;
 }
 
-/* Floating glass chrome island — neutral dark glassmorphism (no color tint).
-   A faint white translucent film over the dark-gray page reads as glass under
-   a heavy, lightly-saturated blur, with a bright top edge for the light catch. */
+/* Matte chrome island — solid surface, hairline border, soft shadow. The old
+   glass film (blur 26px over a translucent base) is retired for persistent
+   chrome; blur remains only on transient layers (.dashboard-popup,
+   .dashboard-status-island). */
 .dashboard-island {
   background:
     linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%),
     var(--db-island-base);
-  backdrop-filter: blur(26px) saturate(115%);
-  -webkit-backdrop-filter: blur(26px) saturate(115%);
   border: 1px solid var(--db-border);
   border-radius: 16px;
   box-shadow: var(--db-shadow);

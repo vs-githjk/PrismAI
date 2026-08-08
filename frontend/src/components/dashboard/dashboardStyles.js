@@ -1,10 +1,10 @@
-// Matches the floating chrome islands (.dashboard-island in index.css): theme
-// tokens drive both light + dark. See index.css :root / .theme-light.
+// Matches the matte chrome islands (.dashboard-island in index.css): theme
+// tokens drive solid matte surfaces in both light + dark. See index.css
+// :root / .theme-light. Glass (blur) survives only on transient layers
+// (.dashboard-popup, .dashboard-status-island) — persistent cards are matte.
 export const glassCard = 'rounded-2xl border border-[color:var(--db-border)]'
 export const cardGlowStyle = {
-  background: 'linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%)',
-  backdropFilter: 'blur(26px) saturate(115%)',
-  WebkitBackdropFilter: 'blur(26px) saturate(115%)',
+  background: 'linear-gradient(180deg, var(--db-glass-top) 0%, var(--db-glass-bottom) 100%), var(--db-card)',
   boxShadow: 'var(--db-shadow)',
 }
 export const eyebrow = 'text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--db-text)]'
