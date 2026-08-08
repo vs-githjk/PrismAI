@@ -24,7 +24,7 @@ import PersonaChip from './PersonaChip'
 
 // Assistant replies come back as markdown (bold, numbered/bulleted lists, paragraphs).
 // Render it with real structure + breathing room instead of a cramped raw-text blob.
-function MarkdownMessage({ children }) {
+export function MarkdownMessage({ children }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -188,7 +188,7 @@ function MessageActions({ content, onSaveToKb }) {
 
 // One grounding source behind a RAG answer — rendered from structured
 // rag_context (backend), never from the model's prose. Citations stay reliable.
-function SourceCard({ source }) {
+export function SourceCard({ source }) {
   const [open, setOpen] = useState(false)
   const meta = source.metadata || {}
   const pct = source.score != null ? `${Math.round(source.score * 100)}% match` : null

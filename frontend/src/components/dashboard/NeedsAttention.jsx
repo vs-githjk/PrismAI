@@ -21,7 +21,7 @@ export default function NeedsAttention({ history = [], user = null, openThreads 
   const empty = rows.length === 0 && threads.length === 0
 
   return (
-    <section className={`dashboard-home-attention ${island}`}>
+    <section className={island}>
       <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-[color:var(--db-border)] px-4 py-3.5">
         <h2 className="text-[18px] font-semibold tracking-[-0.015em] text-[color:var(--db-text)] sm:text-[22px]">
           Needs attention
@@ -30,7 +30,11 @@ export default function NeedsAttention({ history = [], user = null, openThreads 
           <span className="shrink-0 text-[11.5px] text-[color:var(--db-text-faint)]">{total} open</span>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      {/* Rows are already capped (top 5 + top 3 threads); max-h is a defensive
+          cap now that the grid no longer gives this card a definite height to
+          flex-fill — without it, long-wrapped rows could push the card past
+          the viewport instead of scrolling internally. */}
+      <div className="max-h-[50vh] overflow-y-auto p-3">
         {empty ? (
           <div className="px-2 py-6 text-center">
             <ListTodo className="mx-auto mb-2 h-5 w-5 text-[color:var(--db-text-faint)]" aria-hidden="true" />

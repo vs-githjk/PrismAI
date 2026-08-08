@@ -1290,61 +1290,36 @@ h1, h2, h3, .font-display {
   background: transparent;
 }
 
-/* Home view fills the viewport exactly (cards scroll internally, page does not).
-   A definite height here bounds the flex-fill <main>, so the grid's 100% height
-   resolves; the nudge banner is absorbed automatically by the flex column. */
+/* Split Home (north-star): operational column scrolls with the page; the
+   assistant is a viewport-height sticky right column. */
 .dashboard-content.is-home {
-  display: flex;
-  flex-direction: column;
-  height: calc(100dvh - var(--dashboard-edge) - var(--dashboard-topbar-h) - var(--dashboard-gutter));
-  min-height: 0;
-  overflow: hidden;
+  padding-bottom: var(--dashboard-gutter);
 }
-
-/* Home view: 2x2 grid that fills the full content height (the home <main> is a
-   flex-fill child of .dashboard-content, so 100% here stretches to the bottom
-   edge regardless of the nudge banner). Left column splits into Welcome (top) +
-   Action items (bottom); the Meetings card spans the full-height right column.
-   Cards scroll internally rather than the page. */
 .dashboard-home-grid {
   display: grid;
-  /* State-aware Home (ADR 0002 amendment): full-width hero row (greeting line +
-     Meeting hero), then ~65% Needs-attention / ~35% Recent meetings. */
-  grid-template-columns: minmax(0, 13fr) minmax(0, 7fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 13fr) minmax(380px, 7fr);
   gap: var(--dashboard-gutter);
-  height: 100%;
-  min-height: 0;
+  align-items: start;
 }
-.dashboard-home-hero { grid-column: 1 / -1; grid-row: 1; min-height: 0; }
-/* Content-height cards, top-aligned: stretching them to the viewport left half
-   a card of dead space below short content. max-height keeps long lists capped
-   with their internal scrollers. */
-.dashboard-home-attention { grid-column: 1; grid-row: 2; min-height: 0; align-self: start; max-height: 100%; }
-
-/* The first-run (empty-history) home is free-flowing copy + CTAs, not a fixed
-   grid: pinned inside the viewport-height overflow:hidden shell its headline
-   painted over the invite banner and covered its own buttons. Let that one case
-   scroll. */
-.dashboard-content.is-home.is-home-empty {
-  height: auto;
-  min-height: calc(100dvh - var(--dashboard-edge) - var(--dashboard-topbar-h) - var(--dashboard-gutter));
-  overflow: visible;
+.dashboard-home-ops {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dashboard-gutter);
+  min-width: 0;
 }
-.dashboard-content.is-home.is-home-empty .dashboard-home-grid { height: auto; }
-
-/* Short windows: the hero + columns can't all fit the viewport-locked shell —
-   let the page scroll instead of crushing a card to a sliver (same treatment
-   the empty state gets). */
-@media (max-height: 800px) {
-  .dashboard-content.is-home {
-    height: auto;
-    min-height: calc(100dvh - var(--dashboard-edge) - var(--dashboard-topbar-h) - var(--dashboard-gutter));
-    overflow: visible;
-  }
-  .dashboard-content.is-home .dashboard-home-grid { height: auto; }
+.dashboard-home-assistant {
+  position: sticky;
+  top: calc(var(--dashboard-edge) + var(--dashboard-topbar-h) + var(--dashboard-gutter));
+  height: calc(100dvh - (var(--dashboard-edge) * 2) - var(--dashboard-topbar-h) - var(--dashboard-gutter));
+  min-height: 420px;
+  min-width: 0;
 }
-.dashboard-home-meetings { grid-column: 2; grid-row: 2; min-height: 0; align-self: start; max-height: 100%; }
+/* Below the shell breakpoint Home is one column; the assistant column hides
+   behind the Ask Prism sheet (Task 4). */
+@media (max-width: 1023px) {
+  .dashboard-home-grid { grid-template-columns: 1fr; }
+  .dashboard-home-assistant { display: none; }
+}
 
 /* Dashboard keyboard-focus ring: the browser default is a harsh white outline
    that outshines the selected state (seen on the Home nav item). Brand cyan,
@@ -1352,28 +1327,6 @@ h1, h2, h3, .font-display {
 .dashboard-page :is(button, a, select, [role="tab"]):focus-visible {
   outline: 2px solid rgba(34, 211, 238, 0.45);
   outline-offset: 2px;
-}
-
-@media (max-width: 900px) {
-  .dashboard-home-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
-    height: auto;
-  }
-  .dashboard-home-hero,
-  .dashboard-home-attention,
-  .dashboard-home-meetings {
-    grid-column: auto;
-    grid-row: auto;
-    /* No min-height: content-sized regions; the lists cap themselves (below). */
-    min-height: 0;
-  }
-  /* Cards keep their own scrollers on mobile rather than growing the page, so
-     Recent meetings stays reachable by thumb. */
-  .dashboard-home-attention > .overflow-y-auto,
-  .dashboard-home-meetings > .overflow-y-auto {
-    max-height: 58vh;
-  }
 }
 
 /* ============================================================

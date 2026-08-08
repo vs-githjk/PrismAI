@@ -48,7 +48,7 @@ function greetingFor(user) {
  */
 function HeroRow({ isEmpty, user, onLoadSample, canLoadSample, onJoinMeeting, onPasteTranscript, hero }) {
   return (
-    <section className="dashboard-home-hero flex flex-col px-1 text-left">
+    <section className="flex flex-col px-1 text-left">
       <h1 className="text-[clamp(2rem,3.6vw,3rem)] font-semibold leading-[1.08] text-[color:var(--db-text)]">
         {isEmpty ? <>Let&rsquo;s get started.</> : greetingFor(user)}
       </h1>
@@ -89,11 +89,15 @@ function MeetingsCard({ history, onOpen, selectedMeetingId, onOpenCalendar }) {
   )
   const shown = sorted.slice(0, RECENT_LIMIT)
   return (
-    <section className={`dashboard-home-meetings ${island}`}>
+    <section className={island}>
       <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-[color:var(--db-border)] px-4 py-3.5">
         <h2 className={cardHeading}>Recent meetings</h2>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      {/* Content is already row-capped (RECENT_LIMIT); max-h is a defensive cap
+          now that the grid no longer gives this card a definite height to
+          flex-fill — without it, long-wrapped titles could push the card past
+          the viewport instead of scrolling internally. */}
+      <div className="max-h-[50vh] overflow-y-auto p-2">
         {shown.length ? (
           <div className="space-y-0.5">
             {shown.map((entry) => {
@@ -175,52 +179,56 @@ export default function StatsCanvas({
   selectedMeetingId = null,
   onToggleAction,
   user = null,
+  assistant = null,
 }) {
   const safeHistory = history || []
   const isEmpty = safeHistory.length === 0
 
   return (
     <div className="dashboard-home-grid">
-      <HeroRow
-        isEmpty={isEmpty}
-        user={user}
-        onLoadSample={loadSample}
-        canLoadSample={canLoadSample}
-        onJoinMeeting={onJoinMeeting}
-        onPasteTranscript={onPasteTranscript}
-        hero={
-          <MeetingHero
-            enabled={heroEnabled}
-            user={user}
-            workspaces={workspaces}
-            botLive={botLive}
-            liveAvailable={liveAvailable}
-            onOpenLive={onOpenLive}
-            onJoinEvent={onJoinEvent}
-            onCantMakeIt={onCantMakeIt}
-            onOpenMeeting={loadFromHistory}
-            onOpenCalendar={onOpenCalendar}
-            showConnectCalendar={showConnectCalendar}
-            onConnectCalendar={onConnectCalendar}
-          />
-        }
-      />
-      {!isEmpty && (
-        <NeedsAttention
-          history={safeHistory}
+      <div className="dashboard-home-ops">
+        <HeroRow
+          isEmpty={isEmpty}
           user={user}
-          openThreads={openThreads}
-          onToggle={onToggleAction}
-          onOpenMeeting={loadFromHistory}
-          onOpenTrend={onOpenTrend}
+          onLoadSample={loadSample}
+          canLoadSample={canLoadSample}
+          onJoinMeeting={onJoinMeeting}
+          onPasteTranscript={onPasteTranscript}
+          hero={
+            <MeetingHero
+              enabled={heroEnabled}
+              user={user}
+              workspaces={workspaces}
+              botLive={botLive}
+              liveAvailable={liveAvailable}
+              onOpenLive={onOpenLive}
+              onJoinEvent={onJoinEvent}
+              onCantMakeIt={onCantMakeIt}
+              onOpenMeeting={loadFromHistory}
+              onOpenCalendar={onOpenCalendar}
+              showConnectCalendar={showConnectCalendar}
+              onConnectCalendar={onConnectCalendar}
+            />
+          }
         />
-      )}
-      <MeetingsCard
-        history={safeHistory}
-        onOpen={loadFromHistory}
-        selectedMeetingId={selectedMeetingId}
-        onOpenCalendar={onOpenCalendar}
-      />
+        {!isEmpty && (
+          <NeedsAttention
+            history={safeHistory}
+            user={user}
+            openThreads={openThreads}
+            onToggle={onToggleAction}
+            onOpenMeeting={loadFromHistory}
+            onOpenTrend={onOpenTrend}
+          />
+        )}
+        <MeetingsCard
+          history={safeHistory}
+          onOpen={loadFromHistory}
+          selectedMeetingId={selectedMeetingId}
+          onOpenCalendar={onOpenCalendar}
+        />
+      </div>
+      {assistant && <div className="dashboard-home-assistant">{assistant}</div>}
     </div>
   )
 }

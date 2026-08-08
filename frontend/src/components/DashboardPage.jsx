@@ -57,6 +57,7 @@ const IntelligenceView = lazy(() => import('./dashboard/IntelligenceView'))
 const KnowledgeBase = lazy(() => import('./KnowledgeBase'))
 const ChatPanel = lazy(() => import('./ChatPanel'))
 const UpcomingMeetings = lazy(() => import('./UpcomingMeetings'))
+const WorkspaceChatPanel = lazy(() => import('./dashboard/WorkspaceChatPanel'))
 
 const secondaryButtonClass = 'inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--db-border)] bg-[var(--db-fill)] text-[color:var(--db-text-soft)] transition hover:border-cyan-400/45 hover:bg-[var(--db-fill-strong)] hover:text-[color:var(--db-text)]'
 
@@ -1656,7 +1657,7 @@ export default function DashboardPage(props) {
         onLockedFeature={requestSignIn}
       />
 
-      <div className={`dashboard-content ${activeView === 'home' ? 'is-home' : ''}${activeView === 'home' && (props.history?.length || 0) === 0 ? ' is-home-empty' : ''}`}>
+      <div className={`dashboard-content ${activeView === 'home' ? 'is-home' : ''}`}>
         {showHomeNudge && (
           <div className="px-5 pt-4 sm:px-8">
             <div className="mx-auto flex max-w-[92rem] items-center gap-3 rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.05] px-4 py-3">
@@ -1747,6 +1748,14 @@ export default function DashboardPage(props) {
               onConnectCalendar={props.onOpenCalendarSetup}
               selectedMeetingId={props.selectedMeetingId}
               onToggleAction={props.toggleHistoryActionItem}
+              assistant={
+                <Suspense fallback={<div className="p-4 text-xs text-[color:var(--db-text-faint)]">Loading chat…</div>}>
+                  <WorkspaceChatPanel
+                    user={props.user}
+                    onOpenMeeting={(meta) => meta?.meeting_id && handleOpenMeetingById(meta.meeting_id)}
+                  />
+                </Suspense>
+              }
             />
           )}
           {activeView === 'meeting' && (
